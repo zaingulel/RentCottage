@@ -36,7 +36,7 @@ export const supportMessages: Record<Locale, SupportCopy> = {
       "Formal payment-provider or chargeback cases handled using booking, payment, cancellation and incident evidence. A complaint does not guarantee a refund. This page cannot open a Payment Dispute.",
     reviews: "Public reviews",
     reviewsText:
-      "Customers can review an eligible Completed Booking within 14 days. Reviews are public; do not include contact details or external links. Cottage Owner replies are not available yet. A review does not submit a support complaint.",
+      "Customers can review an eligible Completed Booking within 14 days. Reviews are public; do not include contact details or external links. The Cottage Owner may post one public reply. A review does not submit a support complaint.",
     records: "Existing records",
     recordsText:
       "Sign in with the appropriate account to see your records. Choose a booking for its available details and actions.",
@@ -60,7 +60,7 @@ export const supportMessages: Record<Locale, SupportCopy> = {
       "قضايا رسمية لدى مزود الدفع أو قضايا اعتراض على الدفع (chargeback) تُعالج باستخدام أدلة الحجز والدفع والإلغاء والحوادث. الشكوى لا تضمن استرداد المبلغ. هذه الصفحة لا تفتح نزاع دفع.",
     reviews: "التقييمات العامة",
     reviewsText:
-      "يمكن للعملاء تقييم حجز مكتمل مؤهل خلال 14 يومًا. التقييمات علنية؛ لا تُدرج بيانات اتصال أو روابط خارجية. ردود مالكي الأكواخ غير متاحة بعد. التقييم لا يقدم شكوى دعم.",
+      "يمكن للعملاء تقييم حجز مكتمل مؤهل خلال 14 يومًا. التقييمات علنية؛ لا تُدرج بيانات اتصال أو روابط خارجية. يمكن لمالك الكوخ نشر رد علني واحد. التقييم لا يقدم شكوى دعم.",
     records: "السجلات الحالية",
     recordsText:
       "سجّل الدخول بالحساب المناسب لعرض سجلاتك. اختر حجزًا للاطلاع على تفاصيله وإجراءاته المتاحة.",
@@ -84,7 +84,7 @@ export const supportMessages: Record<Locale, SupportCopy> = {
       "دۆسیەی فەرمی لای دابینکەری پارەدان یان دۆسیەی ناڕەزایی لە پارەدان (chargeback) کە بە بەڵگەی حجز، پارەدان، هەڵوەشاندنەوە و ڕووداو چارەسەر دەکرێن. سکاڵا گەڕاندنەوەی پارە مسۆگەر ناکات. ئەم لاپەڕەیە ناکۆکیی پارەدان ناکاتەوە.",
     reviews: "هەڵسەنگاندنە گشتییەکان",
     reviewsText:
-      "کڕیار دەتوانێت لە ماوەی 14 ڕۆژدا حجزی تەواوبووی شیاو هەڵبسەنگێنێت. هەڵسەنگاندنەکان گشتین؛ زانیاری پەیوەندی یان بەستەری دەرەکی تێدا دانەنێ. وەڵامی خاوەن کۆتێج هێشتا بەردەست نییە. هەڵسەنگاندن سکاڵای پشتیوانی نانێرێت.",
+      "کڕیار دەتوانێت لە ماوەی 14 ڕۆژدا حجزی تەواوبووی شیاو هەڵبسەنگێنێت. هەڵسەنگاندنەکان گشتین؛ زانیاری پەیوەندی یان بەستەری دەرەکی تێدا دانەنێ. خاوەن کۆتێج دەتوانێت یەک وەڵامی گشتی بڵاو بکاتەوە. هەڵسەنگاندن سکاڵای پشتیوانی نانێرێت.",
     records: "تۆمارە هەبووەکان",
     recordsText:
       "بە هەژماری گونجاو بچۆ ژوورەوە بۆ بینینی تۆمارەکانت. حجزێک هەڵبژێرە بۆ وردەکاری و کردارە بەردەستەکانی.",

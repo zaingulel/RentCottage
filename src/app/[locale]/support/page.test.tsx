@@ -26,9 +26,9 @@ it.each(["en", "ar", "ckb"] as const)(
     );
     expect(main).toHaveTextContent(
       {
-        en: "Cottage Owner replies are not available yet.",
-        ar: "ردود مالكي الأكواخ غير متاحة بعد.",
-        ckb: "وەڵامی خاوەن کۆتێج هێشتا بەردەست نییە.",
+        en: "The Cottage Owner may post one public reply.",
+        ar: "يمكن لمالك الكوخ نشر رد علني واحد.",
+        ckb: "خاوەن کۆتێج دەتوانێت یەک وەڵامی گشتی بڵاو بکاتەوە.",
       }[locale],
     );
     expect(
