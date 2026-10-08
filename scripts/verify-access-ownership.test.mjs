@@ -1006,6 +1006,44 @@ describe("access verification command", () => {
     }
   });
 
+  it("refuses a database in its own place that this run did not start", async () => {
+    const place = await runWithPlaceDoubles({
+      claimed: 1,
+      run: successfulRun({
+        project: "rentcottage-verification-1",
+        workdir: "/tmp/rentcottage-docker-config-1-Other1/project",
+      }),
+    });
+
+    expect(place.status).toBe(1);
+    expect(commands(place.run)).toEqual([
+      placeListingCommand,
+      placeStartCommand,
+      [
+        "docker",
+        [
+          "inspect",
+          "supabase_db_rentcottage-verification-1",
+          "--format",
+          '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
+        ],
+      ],
+    ]);
+    expect(place.stderr).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "does not belong to this disposable local checkout",
+      ),
+    );
+    expect(place.removeTemp).not.toHaveBeenCalled();
+    // The one folder sweep is the look before start; it keeps this run's own folder and found nothing to remove.
+    expect(place.removeStaleFolders.mock.calls).toEqual([
+      [1, "/tmp/place-state"],
+    ]);
+    expect(place.removeStaleFolders.mock.results).toEqual([
+      { type: "return", value: [] },
+    ]);
+  });
+
   it("removes nothing when Docker cannot list its place", async () => {
     for (const listed of [
       { status: 1, stdout: "", stderr: "Cannot connect to the Docker daemon" },
