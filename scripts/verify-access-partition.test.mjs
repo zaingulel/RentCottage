@@ -177,6 +177,17 @@ describe("access verification command", () => {
       expect(actual.at(-1)).toEqual(stopCommand);
       expect(prepareProject).toHaveBeenCalledWith({
         localProject: "rentcottage-verification",
+        ports: {
+          api: 55331,
+          database: 55332,
+          shadowDatabase: 15330,
+          pooler: 55339,
+          studio: 55333,
+          mail: 55334,
+          analytics: 55337,
+          edgeInspector: 8183,
+          next: 3000,
+        },
         stateRoot: "/tmp/access-partition",
         workingDirectory: process.cwd(),
       });

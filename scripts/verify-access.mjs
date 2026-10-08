@@ -18,6 +18,7 @@ import {
   addAccessJourneyTestOtps,
   LOCAL_PROJECT_PATTERN,
 } from "./lib/access-journey-fixtures.mjs";
+import { localCheckSettings } from "./lib/local-check-slot.mjs";
 import {
   accessStepPlan,
   BROWSER_MODE,
@@ -343,6 +344,7 @@ function defaultRemoveTemp(path) {
 
 export function prepareIsolatedSupabaseWorkdir({
   localProject,
+  ports = localCheckSettings().ports,
   stateRoot,
   workingDirectory,
 }) {
@@ -353,15 +355,23 @@ export function prepareIsolatedSupabaseWorkdir({
   let config = readFileSync(join(source, "config.toml"), "utf8");
   const replacements = [
     ['project_id = "rentcottage"', `project_id = "${localProject}"`],
-    ["port = 54331", "port = 55331"],
-    ["port = 54332", "port = 55332"],
+    ["port = 54331", `port = ${ports.api}`],
+    ["port = 54332", `port = ${ports.database}`],
     // Stay below Linux's default automatic client-port range.
-    ["shadow_port = 54330", "shadow_port = 15330"],
-    ["port = 54339", "port = 55339"],
-    ["port = 54333", "port = 55333"],
-    ["port = 54334", "port = 55334"],
-    ["inspector_port = 8083", "inspector_port = 8183"],
-    ["port = 54337", "port = 55337"],
+    ["shadow_port = 54330", `shadow_port = ${ports.shadowDatabase}`],
+    ["port = 54339", `port = ${ports.pooler}`],
+    ["port = 54333", `port = ${ports.studio}`],
+    ["port = 54334", `port = ${ports.mail}`],
+    [
+      'site_url = "http://127.0.0.1:3000"',
+      `site_url = "http://127.0.0.1:${ports.next}"`,
+    ],
+    [
+      'additional_redirect_urls = ["http://127.0.0.1:3000"]',
+      `additional_redirect_urls = ["http://127.0.0.1:${ports.next}"]`,
+    ],
+    ["inspector_port = 8083", `inspector_port = ${ports.edgeInspector}`],
+    ["port = 54337", `port = ${ports.analytics}`],
   ];
   for (const [current, replacement] of replacements) {
     if (!config.includes(current)) {
@@ -413,7 +423,7 @@ export async function main(
     monotonicNow = () => performance.now(),
     utcNow = () => new Date().toISOString(),
     stdout = console.log,
-    makeTemp = () => mkdtempSync(join(tmpdir(), "rentcottage-docker-config-")),
+    makeTemp = (prefix) => mkdtempSync(join(tmpdir(), prefix)),
     prepareProject = prepareIsolatedSupabaseWorkdir,
     removeTemp = defaultRemoveTemp,
     run,
@@ -601,9 +611,10 @@ export async function main(
   };
 
   const preparationStart = startTiming();
+  const { ports, tempPrefix } = localCheckSettings();
   let dockerConfig;
   try {
-    dockerConfig = makeTemp();
+    dockerConfig = makeTemp(tempPrefix);
   } catch (error) {
     finishTiming(
       preparationStart,
@@ -625,6 +636,7 @@ export async function main(
   try {
     localWorkdir = prepareProject({
       localProject,
+      ports,
       stateRoot: dockerConfig,
       workingDirectory: resolve(workingDirectory),
     });

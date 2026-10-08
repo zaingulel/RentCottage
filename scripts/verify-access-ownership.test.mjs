@@ -13,6 +13,7 @@ import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { localCheckSettings } from "./lib/local-check-slot.mjs";
 import { main, prepareIsolatedSupabaseWorkdir } from "./verify-access.mjs";
 import {
   commands,
@@ -333,6 +334,54 @@ describe("access verification command", () => {
     expect(makeTemp).not.toHaveBeenCalled();
     expect(prepareProject).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it("prepares a place's project with its own ports and site address", () => {
+    const stateRoot = mkdtempSync(
+      join(tmpdir(), "rentcottage-access-workdir-place-"),
+    );
+    try {
+      const workdir = prepareIsolatedSupabaseWorkdir({
+        localProject: "rentcottage-verification-1",
+        ports: localCheckSettings(1).ports,
+        stateRoot,
+        workingDirectory: process.cwd(),
+      });
+      const activeLines = readFileSync(
+        join(workdir, "supabase", "config.toml"),
+        "utf8",
+      )
+        .split("\n")
+        .filter((line) => !line.trimStart().startsWith("#"));
+
+      for (const line of [
+        'project_id = "rentcottage-verification-1"',
+        "port = 15341",
+        "port = 15342",
+        "shadow_port = 15340",
+        "port = 15349",
+        "port = 15343",
+        "port = 15344",
+        "port = 15347",
+        "inspector_port = 8193",
+        'site_url = "http://127.0.0.1:3010"',
+        'additional_redirect_urls = ["http://127.0.0.1:3010"]',
+      ]) {
+        expect(activeLines).toContain(line);
+      }
+      for (const defaultValue of [
+        "55331",
+        "55332",
+        "15330",
+        "127.0.0.1:3000",
+      ]) {
+        expect(
+          activeLines.filter((line) => line.includes(defaultValue)),
+        ).toEqual([]);
+      }
+    } finally {
+      rmSync(stateRoot, { recursive: true, force: true });
+    }
   });
 
   it("derives the guarded database container from an isolated local project override", async () => {
