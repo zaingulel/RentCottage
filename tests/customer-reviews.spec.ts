@@ -1219,6 +1219,24 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
 
     await visitorContext.close();
     await administratorContext.close();
+
+    fixture.harness.runSql(reviewFixtureCleanup(namespace, fixture.identities));
+    const reusedUsers = Object.values(fixture.identities)
+      .map((user) => `'${user}'`)
+      .join(",");
+    const cleanupProof = fixture.harness.runSql(`select jsonb_build_object(
+      'accountContexts',(select count(*) from public.account_contexts contexts
+        where contexts.user_id in (${reusedUsers})),
+      'authUsers',(select count(*) from auth.users users
+        where users.id in (${reusedUsers})),
+      'customerReviews',(select count(*) from public.customer_reviews reviews
+        where reviews.booking_request_id='${fixture.ids.requestId}')
+    );`);
+    expect(JSON.parse(cleanupProof)).toEqual({
+      accountContexts: 0,
+      authUsers: 3,
+      customerReviews: 0,
+    });
   } finally {
     fixture.harness.runSql(reviewFixtureCleanup(namespace, fixture.identities));
   }
