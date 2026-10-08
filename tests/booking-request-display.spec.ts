@@ -439,3 +439,34 @@ test("a long page title wraps on evenly spaced lines in every language", async (
     previousTitle = originalTitle;
   }
 });
+
+test("a messaging card keeps its side borders and corners inside the page column at phone width", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mountBookingRequestDisplay(page, testInfo);
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<main class="results-page page page-record"><section class="messaging-shell" data-testid="inside"></section></main>' +
+        '<main class="results-page"><section class="messaging-shell" data-testid="outside"></section></main>',
+    );
+  });
+
+  const measured = await page.evaluate(() =>
+    ["inside", "outside"].map((name) => {
+      const card = document.querySelector(`[data-testid="${name}"]`);
+      if (!card) throw new Error(`Messaging card ${name} is missing`);
+      const style = getComputedStyle(card);
+      return {
+        borderStart: style.borderInlineStartWidth,
+        borderEnd: style.borderInlineEndWidth,
+        radius: style.borderStartStartRadius,
+      };
+    }),
+  );
+  expect(measured).toEqual([
+    { borderStart: "1px", borderEnd: "1px", radius: "10px" },
+    { borderStart: "0px", borderEnd: "0px", radius: "0px" },
+  ]);
+});
