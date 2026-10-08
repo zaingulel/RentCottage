@@ -1087,6 +1087,10 @@ select 'invalid reply: no language',public.submit_customer_review_reply(
 union all
 select 'invalid reply: no body',public.submit_customer_review_reply(
   'RC-REQ-0000000000001001','en',null
+)
+union all
+select 'invalid reply: only newlines and tabs',public.submit_customer_review_reply(
+  'RC-REQ-0000000000001001','en',E'\n\t\n'
 );
 insert into reply_observations
 select 'prohibited reply: phone',public.submit_customer_review_reply(
@@ -1107,7 +1111,7 @@ select 'prohibited reply: handle',public.submit_customer_review_reply(
 reset role;
 select ok(
   (
-    select count(*)=4 and bool_and(value='{"status":"invalid"}'::jsonb)
+    select count(*)=5 and bool_and(value='{"status":"invalid"}'::jsonb)
     from reply_observations where name like 'invalid reply: %'
   )
   and (select count(*)=0 from public.customer_review_replies),
@@ -1141,6 +1145,17 @@ select ok(
 );
 reset role;
 rollback to savepoint customer_review_reply_hidden_review;
+
+savepoint customer_review_reply_whitespace_body;
+select throws_ok(
+  $$insert into public.customer_review_replies(
+    review_id,author_user_id,original_language,original_body
+  )
+  select review_id,'10000000-0000-4000-8000-000000001001','en',E'\n\t'
+  from reply_fixture$$,
+  '23514',null,'a whitespace-only reply body is rejected by the reply body check'
+);
+rollback to savepoint customer_review_reply_whitespace_body;
 
 set local role authenticated;
 insert into reply_observations
@@ -1270,6 +1285,17 @@ select ok(
 reset role;
 rollback to savepoint customer_review_reply_review_hidden;
 
+savepoint customer_review_reply_whitespace_reason;
+select throws_ok(
+  $$insert into public.customer_review_reply_hides(
+    review_id,administrator_user_id,reason
+  )
+  select review_id,'10000000-0000-4000-8000-000000003801',E'\n\t'
+  from reply_fixture$$,
+  '23514',null,'a whitespace-only reply hide reason is rejected by the reason check'
+);
+rollback to savepoint customer_review_reply_whitespace_reason;
+
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001001","role":"authenticated","aal":"aal2"}',true);
 set local role authenticated;
@@ -1304,10 +1330,19 @@ select ok(
     (select review_id from reply_fixture),'   '
   )='{"status":"invalid"}'::jsonb
   and public.hide_customer_review_reply(
+    (select review_id from reply_fixture),E'\n\t\n'
+  )='{"status":"invalid"}'::jsonb
+  and public.hide_customer_review_reply(
     '99999999-0000-4000-8000-000000001001','Unknown review'
   )='{"status":"invalid"}'::jsonb,
   'hiding a reply needs an AAL2 administrator and a reason'
 );
+reset role;
+select is(
+  (select count(*)::integer from public.customer_review_reply_hides),0,
+  'an invalid reply hide stores nothing'
+);
+set local role authenticated;
 insert into reply_observations
 select 'first reply hide',public.hide_customer_review_reply(
   (select review_id from reply_fixture),'  Reply breaches the review rules  '

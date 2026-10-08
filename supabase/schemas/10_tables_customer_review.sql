@@ -38,9 +38,8 @@ CREATE TABLE IF NOT EXISTS public.customer_review_replies (
   original_body text NOT NULL,
   submitted_at timestamptz DEFAULT clock_timestamp() NOT NULL,
   CONSTRAINT customer_review_replies_original_body_check CHECK (
-    char_length(original_body) >= 1
-      AND char_length(original_body) <= 2000
-      AND char_length(btrim(original_body)) >= 1
+    char_length(original_body) <= 2000
+      AND original_body ~ '\S'
   )
 );
 
@@ -52,7 +51,7 @@ CREATE TABLE IF NOT EXISTS public.customer_review_reply_hides (
   reason text NOT NULL,
   hidden_at timestamptz DEFAULT clock_timestamp() NOT NULL,
   CONSTRAINT customer_review_reply_hides_reason_check CHECK (
-    char_length(btrim(reason)) BETWEEN 1 AND 2000
+    reason ~ '\S' AND char_length(btrim(reason)) <= 2000
   )
 );
 

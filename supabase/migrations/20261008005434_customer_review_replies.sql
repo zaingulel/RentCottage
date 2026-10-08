@@ -109,7 +109,8 @@ begin
   end if;
   if target_review_id is null
     or target_reason is null
-    or char_length(btrim(target_reason)) not between 1 and 2000
+    or target_reason !~ '\S'
+    or char_length(btrim(target_reason)) > 2000
   then
     return jsonb_build_object('status','invalid');
   end if;
@@ -495,7 +496,7 @@ begin
   if target_original_language is null
     or target_original_body is null
     or char_length(target_original_body) > 2000
-    or char_length(btrim(target_original_body)) = 0
+    or target_original_body !~ '\S'
   then
     return jsonb_build_object('status','invalid');
   end if;
@@ -558,7 +559,7 @@ ALTER TABLE public.customer_review_replies
 
 ALTER TABLE public.customer_review_replies
   ADD CONSTRAINT customer_review_replies_original_body_check
-    CHECK (char_length(original_body) >= 1 AND char_length(original_body) <= 2000 AND char_length(btrim(original_body)) >= 1);
+    CHECK (char_length(original_body) <= 2000 AND original_body ~ '\S');
 
 ALTER TABLE public.customer_review_replies
   ADD CONSTRAINT customer_review_replies_pkey PRIMARY KEY (review_id);
@@ -588,7 +589,7 @@ ALTER TABLE public.customer_review_reply_hides
   ADD CONSTRAINT customer_review_reply_hides_pkey PRIMARY KEY (review_id);
 
 ALTER TABLE public.customer_review_reply_hides
-  ADD CONSTRAINT customer_review_reply_hides_reason_check CHECK (char_length(btrim(reason)) >= 1 AND char_length(btrim(reason)) <= 2000);
+  ADD CONSTRAINT customer_review_reply_hides_reason_check CHECK (reason ~ '\S' AND char_length(btrim(reason)) <= 2000);
 
 ALTER TABLE public.customer_review_reply_hides
   ADD CONSTRAINT customer_review_reply_hides_review_id_fkey FOREIGN KEY (review_id) REFERENCES public.customer_review_replies(review_id) ON DELETE RESTRICT;
