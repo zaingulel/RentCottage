@@ -698,7 +698,7 @@ function selectVerification(cwd, environment, stdout, stderr) {
   }
 }
 
-export function main(
+export async function main(
   args,
   {
     cwd = process.cwd(),
@@ -921,5 +921,5 @@ export function main(
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = main(process.argv.slice(2));
+  process.exitCode = await main(process.argv.slice(2));
 }

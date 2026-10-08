@@ -149,7 +149,7 @@ export function commit(repository, path, contents, message = "change") {
   return git(repository, ["rev-parse", "HEAD"]);
 }
 
-export function runVerification(repository, options = {}) {
+export async function runVerification(repository, options = {}) {
   const calls = [];
   const stdout = vi.fn();
   const stderr = vi.fn();
@@ -157,7 +157,7 @@ export function runVerification(repository, options = {}) {
     calls.push([command, args, environment]);
     return { status: 0 };
   });
-  const status = main(options.args ?? [], {
+  const status = await main(options.args ?? [], {
     cwd: repository,
     environment: options.environment ?? {},
     run: options.run ?? run,
