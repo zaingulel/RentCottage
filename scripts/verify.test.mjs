@@ -1942,4 +1942,79 @@ describe("repository verification command", () => {
       );
     },
   );
+
+  it("takes a place for a local run with database or browser steps and hands it to every step", async () => {
+    const repository = createRepository();
+    for (const [args, expected] of [
+      [["--full"], [...requiredBaselineSteps, ...requiredExpensiveSteps]],
+      [["--database", "--full"], requiredDatabaseSteps],
+      [["--browser", "--full"], requiredBrowserSteps],
+    ]) {
+      const claimRunSlot = vi.fn(async () => 2);
+      const result = await runVerification(repository, { args, claimRunSlot });
+
+      expect(result.status).toBe(0);
+      expect(claimRunSlot).toHaveBeenCalledTimes(1);
+      expect(
+        result.calls.map(([command, commandArgs]) => [command, commandArgs]),
+      ).toEqual(expected);
+      for (const [, , environment] of result.calls) {
+        expect(environment).toMatchObject({
+          VERIFY_LOCAL_SLOT: "2",
+          PLAYWRIGHT_NEXT_PORT: "3020",
+          PLAYWRIGHT_WORKER_PORT: "8808",
+        });
+      }
+    }
+  });
+
+  it("stops with the limit message and runs nothing when no place is free", async () => {
+    const claimRunSlot = vi.fn(async () => undefined);
+    const result = await runVerification(createRepository(), {
+      args: ["--full"],
+      claimRunSlot,
+    });
+
+    expect(result.status).toBe(4);
+    expect(claimRunSlot).toHaveBeenCalledTimes(1);
+    expect(result.calls).toEqual([]);
+    expect(result.stderr.mock.calls).toEqual([
+      [
+        "The full local check runs at most 2 at a time on this machine, and all 2 places are in use. Nothing ran. Run it again when one of them has finished.",
+      ],
+    ]);
+  });
+
+  it("takes no place for baseline-only, plan-only or hosted runs", async () => {
+    const repository = createRepository();
+    for (const [options, stepCount] of [
+      [{ args: ["--baseline"] }, requiredBaselineSteps.length],
+      [{ args: ["--full", "--plan"] }, 0],
+      [
+        {
+          args: ["--full"],
+          environment: {
+            GITHUB_ACTIONS: "true",
+            RUNNER_ENVIRONMENT: "github-hosted",
+          },
+        },
+        requiredCiSteps(undefined).length,
+      ],
+    ]) {
+      const claimRunSlot = vi.fn(async () => 2);
+      const result = await runVerification(repository, {
+        ...options,
+        claimRunSlot,
+      });
+
+      expect(result.status).toBe(0);
+      expect(claimRunSlot).not.toHaveBeenCalled();
+      expect(result.calls).toHaveLength(stepCount);
+      for (const [, , environment] of result.calls) {
+        expect(environment).not.toHaveProperty("VERIFY_LOCAL_SLOT");
+        expect(environment).not.toHaveProperty("PLAYWRIGHT_NEXT_PORT");
+        expect(environment).not.toHaveProperty("PLAYWRIGHT_WORKER_PORT");
+      }
+    }
+  });
 });

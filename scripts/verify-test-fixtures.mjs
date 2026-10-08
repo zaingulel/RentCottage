@@ -158,6 +158,7 @@ export async function runVerification(repository, options = {}) {
     return { status: 0 };
   });
   const status = await main(options.args ?? [], {
+    claimRunSlot: options.claimRunSlot,
     cwd: repository,
     environment: options.environment ?? {},
     run: options.run ?? run,
