@@ -18,7 +18,17 @@ import {
   addAccessJourneyTestOtps,
   LOCAL_PROJECT_PATTERN,
 } from "./lib/access-journey-fixtures.mjs";
-import { localCheckSettings } from "./lib/local-check-slot.mjs";
+import {
+  claimDatabaseSlot,
+  isHostedCheck,
+  isLocalCheckSlotProject,
+  LOCAL_CHECK_LIMIT_MESSAGE,
+  localCheckServerBusyMessage,
+  localCheckSettings,
+  localCheckSlotBusyMessage,
+  loopbackPortAnswers,
+  parseLocalCheckSlot,
+} from "./lib/local-check-slot.mjs";
 import {
   accessStepPlan,
   BROWSER_MODE,
@@ -419,11 +429,13 @@ export async function main(
   args,
   {
     environment = process.env,
+    claimDatabaseSlot,
     cleanupCommandLimitMs = CLEANUP_COMMAND_LIMIT_MS,
     monotonicNow = () => performance.now(),
     utcNow = () => new Date().toISOString(),
     stdout = console.log,
     makeTemp = (prefix) => mkdtempSync(join(tmpdir(), prefix)),
+    portAnswers,
     prepareProject = prepareIsolatedSupabaseWorkdir,
     removeTemp = defaultRemoveTemp,
     run,
@@ -513,17 +525,52 @@ export async function main(
     );
   }
 
-  const localProject =
-    environment.SUPABASE_LOCAL_PROJECT ?? "rentcottage-verification";
+  const explicitProject = environment.SUPABASE_LOCAL_PROJECT;
   if (
-    localProject === "rentcottage" ||
-    !LOCAL_PROJECT_PATTERN.test(localProject)
+    explicitProject !== undefined &&
+    (explicitProject === "rentcottage" ||
+      !LOCAL_PROJECT_PATTERN.test(explicitProject))
   ) {
     stderr(
       "SUPABASE_LOCAL_PROJECT must name a disposable RentCottage local project.",
     );
     return 2;
   }
+  if (isLocalCheckSlotProject(explicitProject)) {
+    stderr(
+      `SUPABASE_LOCAL_PROJECT must not name a place of the full local check; the check assigns ${explicitProject} itself.`,
+    );
+    return 2;
+  }
+  const disposableCi = isHostedCheck(environment);
+  let slot;
+  if (claimDatabaseSlot && !disposableCi && explicitProject === undefined) {
+    let inheritedSlot;
+    try {
+      inheritedSlot = parseLocalCheckSlot(environment.VERIFY_LOCAL_SLOT);
+    } catch (error) {
+      stderr(error.message);
+      return 2;
+    }
+    slot = await claimDatabaseSlot(inheritedSlot);
+    if (slot === undefined) {
+      stderr(
+        inheritedSlot === undefined
+          ? LOCAL_CHECK_LIMIT_MESSAGE
+          : localCheckSlotBusyMessage(inheritedSlot),
+      );
+      return 4;
+    }
+    const servers = localCheckSettings(slot).ports;
+    for (const port of [servers.next, servers.worker]) {
+      if (await portAnswers(port)) {
+        stderr(localCheckServerBusyMessage(slot, port));
+        return 4;
+      }
+    }
+  }
+  const { ports, project, tempPrefix } = localCheckSettings(slot);
+  const localProject = explicitProject ?? project;
 
   const plan = stepPlan({ mode, phase, partition, shard });
   const originalRecipe = focusedFixtureContract
@@ -611,7 +658,6 @@ export async function main(
   };
 
   const preparationStart = startTiming();
-  const { ports, tempPrefix } = localCheckSettings();
   let dockerConfig;
   try {
     dockerConfig = makeTemp(tempPrefix);
@@ -695,10 +741,13 @@ export async function main(
     DOCKER_CONFIG: dockerConfig,
     SUPABASE_TELEMETRY_DISABLED: "1",
     DO_NOT_TRACK: "1",
+    ...(slot === undefined
+      ? {}
+      : {
+          PLAYWRIGHT_NEXT_PORT: String(ports.next),
+          PLAYWRIGHT_WORKER_PORT: String(ports.worker),
+        }),
   };
-  const disposableCi =
-    environment.GITHUB_ACTIONS === "true" &&
-    environment.RUNNER_ENVIRONMENT === "github-hosted";
   let freshStart = false;
   let started = false;
   let startupAttempted = false;
@@ -1175,5 +1224,8 @@ export async function main(
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = await main(process.argv.slice(2));
+  process.exitCode = await main(process.argv.slice(2), {
+    claimDatabaseSlot,
+    portAnswers: loopbackPortAnswers,
+  });
 }

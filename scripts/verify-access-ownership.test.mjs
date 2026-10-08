@@ -21,7 +21,31 @@ import {
   localCredentials,
   mainWithPreparedProject,
   ownedRun,
+  successfulRun,
 } from "./verify-access-command-doubles.mjs";
+
+// Every slotted run goes through here, so none can bind a real lock or touch the real temporary directory.
+async function runWithPlaceDoubles({
+  answering = [],
+  claimed,
+  environment = {},
+  run = vi.fn(() => ({ status: 0, stdout: "" })),
+}) {
+  const doubles = {
+    claimDatabaseSlot: vi.fn(async () => claimed),
+    makeTemp: vi.fn(() => "/tmp/place-state"),
+    portAnswers: vi.fn(async (port) => answering.includes(port)),
+    prepareProject: vi.fn(({ stateRoot }) => join(stateRoot, "project")),
+    removeTemp: vi.fn(),
+    run,
+    stderr: vi.fn(),
+  };
+  const status = await main(["--fixture-contract"], {
+    ...doubles,
+    environment,
+  });
+  return { ...doubles, status };
+}
 
 describe("access verification command", () => {
   it("uses real isolated preparation by default without changing the source config", async () => {
@@ -596,5 +620,222 @@ describe("access verification command", () => {
           command === "node" && args[0] === "scripts/prepare-access-test.mjs",
       ),
     ).toBe(false);
+  });
+
+  it("stops before any temporary state or command when it cannot take a place", async () => {
+    for (const { answering, claimed, environment, message, probed } of [
+      {
+        answering: [],
+        claimed: undefined,
+        environment: {},
+        message:
+          "The full local check runs at most 2 at a time on this machine, and all 2 places are in use. Nothing ran. Run it again when one of them has finished.",
+        probed: [],
+      },
+      {
+        answering: [],
+        claimed: undefined,
+        environment: { VERIFY_LOCAL_SLOT: "2" },
+        message:
+          "Port 15356, the database lock of place 2 of the full local check, is taken. An earlier check's database step may still be running or shutting down. Nothing ran. Run it again in a moment; if the port stays taken, find what is using it.",
+        probed: [],
+      },
+      {
+        answering: [3010],
+        claimed: 1,
+        environment: {},
+        message:
+          "Something still answers on port 3010, which place 1 of the full local check uses for its test server. A server from an earlier check may still be running. Nothing was removed and nothing ran. Run it again when the port is free; if it stays in use, stop what is using it.",
+        probed: [[3010]],
+      },
+      {
+        answering: [8798],
+        claimed: 1,
+        environment: {},
+        message:
+          "Something still answers on port 8798, which place 1 of the full local check uses for its test server. A server from an earlier check may still be running. Nothing was removed and nothing ran. Run it again when the port is free; if it stays in use, stop what is using it.",
+        probed: [[3010], [8798]],
+      },
+    ]) {
+      const place = await runWithPlaceDoubles({
+        answering,
+        claimed,
+        environment,
+      });
+
+      expect(place.status).toBe(4);
+      expect(place.stderr.mock.calls).toEqual([[message]]);
+      expect(place.portAnswers.mock.calls).toEqual(probed);
+      expect(place.makeTemp).not.toHaveBeenCalled();
+      expect(place.prepareProject).not.toHaveBeenCalled();
+      expect(place.removeTemp).not.toHaveBeenCalled();
+      expect(place.run).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects an invalid inherited place or an explicit project naming a place before claiming", async () => {
+    for (const { environment, message } of [
+      {
+        environment: { VERIFY_LOCAL_SLOT: "0" },
+        message: 'VERIFY_LOCAL_SLOT must be an integer from 1 to 2, got "0"',
+      },
+      {
+        environment: { VERIFY_LOCAL_SLOT: "3" },
+        message: 'VERIFY_LOCAL_SLOT must be an integer from 1 to 2, got "3"',
+      },
+      {
+        environment: { SUPABASE_LOCAL_PROJECT: "rentcottage-verification-1" },
+        message:
+          "SUPABASE_LOCAL_PROJECT must not name a place of the full local check; the check assigns rentcottage-verification-1 itself.",
+      },
+      {
+        environment: {
+          SUPABASE_LOCAL_PROJECT: "rentcottage-verification-2",
+          VERIFY_LOCAL_SLOT: "2",
+        },
+        message:
+          "SUPABASE_LOCAL_PROJECT must not name a place of the full local check; the check assigns rentcottage-verification-2 itself.",
+      },
+    ]) {
+      const place = await runWithPlaceDoubles({ claimed: 1, environment });
+
+      expect(place.status).toBe(2);
+      expect(place.stderr.mock.calls).toEqual([[message]]);
+      expect(place.claimDatabaseSlot).not.toHaveBeenCalled();
+      expect(place.portAnswers).not.toHaveBeenCalled();
+      expect(place.makeTemp).not.toHaveBeenCalled();
+      expect(place.run).not.toHaveBeenCalled();
+    }
+  });
+
+  it("runs in its claimed place with that place's project, folder prefix, ports and addresses", async () => {
+    for (const expected of [
+      {
+        api: 15341,
+        claimedWith: undefined,
+        container: "supabase_db_rentcottage-verification-1",
+        environment: {},
+        next: 3010,
+        prefix: "rentcottage-docker-config-1-",
+        project: "rentcottage-verification-1",
+        slot: 1,
+        worker: 8798,
+      },
+      {
+        api: 15351,
+        claimedWith: 2,
+        container: "supabase_db_rentcottage-verification-2",
+        environment: { VERIFY_LOCAL_SLOT: "2" },
+        next: 3020,
+        prefix: "rentcottage-docker-config-2-",
+        project: "rentcottage-verification-2",
+        slot: 2,
+        worker: 8808,
+      },
+    ]) {
+      const place = await runWithPlaceDoubles({
+        claimed: expected.slot,
+        environment: expected.environment,
+        run: successfulRun({ project: expected.project }),
+      });
+
+      expect(place.status).toBe(0);
+      expect(place.claimDatabaseSlot.mock.calls).toEqual([
+        [expected.claimedWith],
+      ]);
+      expect(place.portAnswers.mock.calls).toEqual([
+        [expected.next],
+        [expected.worker],
+      ]);
+      expect(place.makeTemp.mock.calls).toEqual([[expected.prefix]]);
+      expect(place.prepareProject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          localProject: expected.project,
+          ports: expect.objectContaining({
+            api: expected.api,
+            next: expected.next,
+            worker: expected.worker,
+          }),
+          stateRoot: "/tmp/place-state",
+        }),
+      );
+      const addresses = {
+        PLAYWRIGHT_NEXT_PORT: String(expected.next),
+        PLAYWRIGHT_WORKER_PORT: String(expected.worker),
+      };
+      const [start] = place.run.mock.calls;
+      expect(start[1].slice(0, 2)).toEqual(["supabase", "start"]);
+      expect(start[2].env).toMatchObject(addresses);
+      expect(commands(place.run)).toContainEqual([
+        "docker",
+        [
+          "inspect",
+          expected.container,
+          "--format",
+          '{{ index .Config.Labels "com.supabase.cli.project" }}|{{ index .Config.Labels "com.supabase.cli.workdir" }}',
+        ],
+      ]);
+      const browser = place.run.mock.calls.find(
+        ([command, args]) => command === "npx" && args[0] === "playwright",
+      );
+      expect(browser).toBeDefined();
+      expect(browser[2].env).toMatchObject({
+        ...addresses,
+        SUPABASE_DB_CONTAINER: expected.container,
+        SUPABASE_LOCAL_PROJECT: expected.project,
+        SUPABASE_LOCAL_WORKDIR: "/tmp/place-state/project",
+      });
+      expect(place.run.mock.calls.at(-1)[1]).toEqual([
+        "supabase",
+        "stop",
+        "--no-backup",
+        "--project-id",
+        expected.project,
+        "--workdir",
+        "/tmp/place-state/project",
+      ]);
+      expect(place.removeTemp.mock.calls).toEqual([["/tmp/place-state"]]);
+    }
+  });
+
+  it("takes no place on the hosted check or for an explicitly named project", async () => {
+    for (const { environment, project } of [
+      {
+        environment: {
+          GITHUB_ACTIONS: "true",
+          RUNNER_ENVIRONMENT: "github-hosted",
+        },
+        project: "rentcottage-verification",
+      },
+      {
+        environment: { SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-v3" },
+        project: "rentcottage-issue-32-v3",
+      },
+    ]) {
+      const place = await runWithPlaceDoubles({
+        claimed: 1,
+        environment,
+        run: successfulRun({ project }),
+      });
+
+      expect(place.status).toBe(0);
+      expect(place.claimDatabaseSlot).not.toHaveBeenCalled();
+      expect(place.portAnswers).not.toHaveBeenCalled();
+      expect(place.makeTemp.mock.calls).toEqual([
+        ["rentcottage-docker-config-"],
+      ]);
+      expect(place.prepareProject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          localProject: project,
+          ports: expect.objectContaining({ api: 55331, next: 3000 }),
+        }),
+      );
+      const start = place.run.mock.calls.find(
+        ([command, args]) => command === "npx" && args[1] === "start",
+      );
+      expect(start).toBeDefined();
+      expect(start[2].env).not.toHaveProperty("PLAYWRIGHT_NEXT_PORT");
+      expect(start[2].env).not.toHaveProperty("PLAYWRIGHT_WORKER_PORT");
+    }
   });
 });

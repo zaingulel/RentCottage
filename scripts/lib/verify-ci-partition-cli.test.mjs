@@ -52,3 +52,27 @@ for (const { title, prefix, entryPath } of [
     }
   });
 }
+
+test("access verification CLI rejects an invalid inherited place before any external work", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "access-place-cli-"));
+  try {
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--permission",
+        "--allow-fs-read=*",
+        resolve("scripts/verify-access.mjs"),
+      ],
+      { cwd, encoding: "utf8", env: { PATH: "", VERIFY_LOCAL_SLOT: "0" } },
+    );
+    assert.equal(result.error, undefined);
+    assert.equal(result.signal, null);
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(
+      result.stderr,
+      /VERIFY_LOCAL_SLOT must be an integer from 1 to 2, got "0"/,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
