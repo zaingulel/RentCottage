@@ -20,6 +20,7 @@ import {
 } from "./lib/access-journey-fixtures.mjs";
 import {
   claimDatabaseSlot,
+  classifyPlaceDatabase,
   isHostedCheck,
   isLocalCheckSlotProject,
   LOCAL_CHECK_LIMIT_MESSAGE,
@@ -28,6 +29,8 @@ import {
   localCheckSlotBusyMessage,
   loopbackPortAnswers,
   parseLocalCheckSlot,
+  PLACE_DATABASE_LISTING_FORMAT,
+  removeStaleLocalCheckFolders,
 } from "./lib/local-check-slot.mjs";
 import {
   accessStepPlan,
@@ -437,6 +440,7 @@ export async function main(
     makeTemp = (prefix) => mkdtempSync(join(tmpdir(), prefix)),
     portAnswers,
     prepareProject = prepareIsolatedSupabaseWorkdir,
+    removeStaleFolders,
     removeTemp = defaultRemoveTemp,
     run,
     stderr = console.error,
@@ -884,7 +888,100 @@ export async function main(
   delete databaseConcurrencyEnvironment.SUPABASE_PUBLISHABLE_KEY;
   delete databaseConcurrencyEnvironment.SUPABASE_SECRET_KEY;
 
+  const stopArguments = supabaseArguments([
+    "supabase",
+    "stop",
+    "--no-backup",
+    "--project-id",
+    localProject,
+  ]);
+
+  const clearPlace = async () => {
+    const container = databaseConcurrencyEnvironment.SUPABASE_DB_CONTAINER;
+    const refuse = (message) => {
+      if (!interruptedSignal) stderr(message);
+      return 4;
+    };
+    const listed = await execute(
+      "docker",
+      [
+        "ps",
+        "--all",
+        "--filter",
+        `name=${container}`,
+        "--format",
+        PLACE_DATABASE_LISTING_FORMAT,
+      ],
+      {
+        encoding: "utf8",
+        lifecycleLimit: cleanupCommandLimitMs,
+        stdio: "pipe",
+      },
+    );
+    if (listed.status !== 0 || typeof listed.stdout !== "string") {
+      return refuse(
+        `Unable to see what an earlier check left in place ${slot} of the full local check: Docker did not list the place's database container. Nothing was removed and nothing ran.`,
+      );
+    }
+    const leftover = classifyPlaceDatabase({
+      slot,
+      container,
+      listing: listed.stdout,
+      ownWorkdir: localWorkdir,
+    });
+    if (leftover.state === "unproven") {
+      return refuse(
+        `Place ${slot} of the full local check holds a database container, ${container}, that this check cannot show it made: ${leftover.found}. Nothing was removed and nothing ran. Look at that container and remove it yourself if nothing is using it.`,
+      );
+    }
+    const removed = [];
+    if (leftover.state === "made-here") {
+      // Not a cleanup command, so an interrupt still stops it.
+      const stopped = await execute("npx", stopArguments, {
+        encoding: "utf8",
+        lifecycleLimit: cleanupCommandLimitMs,
+        stdio: "pipe",
+      });
+      if (stopped.status !== 0) {
+        return refuse(
+          `Unable to stop the database an earlier check left in place ${slot} of the full local check. Its folders were kept and nothing ran.`,
+        );
+      }
+      removed.push(`database ${localProject}`);
+    }
+    try {
+      removed.push(...removeStaleFolders(slot, dockerConfig));
+    } catch (error) {
+      return refuse(
+        `Unable to remove a folder an earlier check left in place ${slot} of the full local check: ${error.message}. Nothing ran. Remove that folder, then run it again.`,
+      );
+    }
+    if (removed.length > 0) {
+      stdout(
+        `Place ${slot}: removed what an earlier check left behind: ${removed.join(", ")}.`,
+      );
+    }
+    return 0;
+  };
+
   const verify = async () => {
+    if (slot !== undefined) {
+      const clearingStart = startTiming();
+      let clearingStatus = 1;
+      try {
+        clearingStatus = await clearPlace();
+      } finally {
+        finishTiming(
+          clearingStart,
+          "place-clearing",
+          "shared-setup",
+          null,
+          { type: "exit", status: clearingStatus },
+          true,
+        );
+      }
+      if (clearingStatus !== 0) return clearingStatus;
+    }
     if (disposableCi) {
       freshStart = true;
       // Empty inventory means start builds a new database with migrations and seed; any retained resource requires reset.
@@ -1147,22 +1244,12 @@ export async function main(
           // Hosted runner disposal owns resource teardown.
           stopDeferred = true;
         } else if (!retainedResources) {
-          const stopped = await execute(
-            "npx",
-            supabaseArguments([
-              "supabase",
-              "stop",
-              "--no-backup",
-              "--project-id",
-              localProject,
-            ]),
-            {
-              cleanup: true,
-              encoding: "utf8",
-              lifecycleLimit: cleanupCommandLimitMs,
-              stdio: "pipe",
-            },
-          );
+          const stopped = await execute("npx", stopArguments, {
+            cleanup: true,
+            encoding: "utf8",
+            lifecycleLimit: cleanupCommandLimitMs,
+            stdio: "pipe",
+          });
           if (stopped.status !== 0) {
             retainedResources = true;
             stderr("Local Supabase cleanup failed.");
@@ -1227,5 +1314,6 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.exitCode = await main(process.argv.slice(2), {
     claimDatabaseSlot,
     portAnswers: loopbackPortAnswers,
+    removeStaleFolders: removeStaleLocalCheckFolders,
   });
 }

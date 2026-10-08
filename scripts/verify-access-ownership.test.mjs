@@ -28,7 +28,9 @@ import {
 async function runWithPlaceDoubles({
   answering = [],
   claimed,
+  cleanupCommandLimitMs,
   environment = {},
+  removeStaleFolders = vi.fn(() => []),
   run = vi.fn(() => ({ status: 0, stdout: "" })),
 }) {
   const doubles = {
@@ -36,15 +38,83 @@ async function runWithPlaceDoubles({
     makeTemp: vi.fn(() => "/tmp/place-state"),
     portAnswers: vi.fn(async (port) => answering.includes(port)),
     prepareProject: vi.fn(({ stateRoot }) => join(stateRoot, "project")),
+    removeStaleFolders,
     removeTemp: vi.fn(),
     run,
     stderr: vi.fn(),
+    stdout: vi.fn(),
   };
   const status = await main(["--fixture-contract"], {
     ...doubles,
+    cleanupCommandLimitMs,
     environment,
   });
   return { ...doubles, status };
+}
+
+const placeListingCommand = [
+  "docker",
+  [
+    "ps",
+    "--all",
+    "--filter",
+    "name=supabase_db_rentcottage-verification-1",
+    "--format",
+    '{{.Names}}|{{.Label "com.supabase.cli.project"}}|{{.Label "com.supabase.cli.workdir"}}',
+  ],
+];
+const placeStopCommand = [
+  "npx",
+  [
+    "supabase",
+    "stop",
+    "--no-backup",
+    "--project-id",
+    "rentcottage-verification-1",
+    "--workdir",
+    "/tmp/place-state/project",
+  ],
+];
+const placeStartCommand = [
+  "npx",
+  [
+    "supabase",
+    "start",
+    "-x",
+    "realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor",
+    "--workdir",
+    "/tmp/place-state/project",
+  ],
+];
+const leftoverDatabaseListing =
+  "supabase_db_rentcottage-verification-1|rentcottage-verification-1|/tmp/rentcottage-docker-config-1-Ab3dE9/project\n";
+
+// Place 1 with what an earlier check left in it; commands and the folder double share one ordered event list.
+async function runInLeftoverPlace({
+  cleanupCommandLimitMs,
+  listed = { status: 0, stdout: "" },
+  removeStale = () => [],
+  stopped,
+}) {
+  const events = [];
+  const rest = successfulRun({ project: "rentcottage-verification-1" });
+  const run = vi.fn((command, args, options) => {
+    events.push([command, args]);
+    if (command === "docker" && args[0] === "ps") return listed;
+    if (stopped && command === "npx" && args[1] === "stop") return stopped;
+    return rest(command, args, options);
+  });
+  const removeStaleFolders = vi.fn((...given) => {
+    events.push(["removeStaleFolders", given]);
+    return removeStale();
+  });
+  const place = await runWithPlaceDoubles({
+    claimed: 1,
+    cleanupCommandLimitMs,
+    removeStaleFolders,
+    run,
+  });
+  return { ...place, events };
 }
 
 describe("access verification command", () => {
@@ -763,7 +833,8 @@ describe("access verification command", () => {
         PLAYWRIGHT_NEXT_PORT: String(expected.next),
         PLAYWRIGHT_WORKER_PORT: String(expected.worker),
       };
-      const [start] = place.run.mock.calls;
+      const [listing, start] = place.run.mock.calls;
+      expect(listing[1].slice(0, 2)).toEqual(["ps", "--all"]);
       expect(start[1].slice(0, 2)).toEqual(["supabase", "start"]);
       expect(start[2].env).toMatchObject(addresses);
       expect(commands(place.run)).toContainEqual([
@@ -837,5 +908,168 @@ describe("access verification command", () => {
       expect(start[2].env).not.toHaveProperty("PLAYWRIGHT_NEXT_PORT");
       expect(start[2].env).not.toHaveProperty("PLAYWRIGHT_WORKER_PORT");
     }
+  });
+
+  it("clears a database its own tool left in its place: looks, stops, removes the folders, then starts", async () => {
+    const place = await runInLeftoverPlace({
+      cleanupCommandLimitMs: 4321,
+      listed: { status: 0, stdout: leftoverDatabaseListing },
+      removeStale: () => ["/tmp/rentcottage-docker-config-1-Zz9yX8"],
+    });
+
+    expect(place.status).toBe(0);
+    expect(place.events.slice(0, 4)).toEqual([
+      placeListingCommand,
+      placeStopCommand,
+      ["removeStaleFolders", [1, "/tmp/place-state"]],
+      placeStartCommand,
+    ]);
+    for (const [, , options] of place.run.mock.calls.slice(0, 2)) {
+      expect(options).toMatchObject({
+        encoding: "utf8",
+        lifecycleLimit: 4321,
+        stdio: "pipe",
+      });
+    }
+    const printed = place.stdout.mock.calls.map(([line]) => line);
+    expect(printed).toContain(
+      "Place 1: removed what an earlier check left behind: database rentcottage-verification-1, /tmp/rentcottage-docker-config-1-Zz9yX8.",
+    );
+    const clearing = printed
+      .filter((line) => line.startsWith("{"))
+      .map((line) => JSON.parse(line))
+      .filter(({ name }) => name === "place-clearing");
+    expect(clearing).toEqual([
+      expect.objectContaining({
+        type: "access-phase",
+        scope: "shared-setup",
+        inclusive: true,
+        outcome: { type: "exit", status: 0 },
+      }),
+    ]);
+  });
+
+  it("removes only stale folders when its place holds no database", async () => {
+    const place = await runInLeftoverPlace({
+      removeStale: () => [
+        "/tmp/rentcottage-docker-config-1-Zz9yX8",
+        "/tmp/rentcottage-docker-config-1-Qq7wE6",
+      ],
+    });
+
+    expect(place.status).toBe(0);
+    expect(place.events.slice(0, 3)).toEqual([
+      placeListingCommand,
+      ["removeStaleFolders", [1, "/tmp/place-state"]],
+      placeStartCommand,
+    ]);
+    expect(place.stdout).toHaveBeenCalledWith(
+      "Place 1: removed what an earlier check left behind: /tmp/rentcottage-docker-config-1-Zz9yX8, /tmp/rentcottage-docker-config-1-Qq7wE6.",
+    );
+  });
+
+  it("deletes nothing when the database in its place cannot be shown to be this check's own", async () => {
+    for (const { found, labels } of [
+      {
+        found:
+          'its project label is "rentcottage-verification-1" and its folder label is "/home/someone/rentcottage-docker-config-1-Ab3dE9/project"',
+        labels:
+          "rentcottage-verification-1|/home/someone/rentcottage-docker-config-1-Ab3dE9/project",
+      },
+      {
+        found:
+          'its project label is "rentcottage-verification-1" and its folder label is "/tmp/rentcottage-docker-config-2-Ab3dE9/project"',
+        labels:
+          "rentcottage-verification-1|/tmp/rentcottage-docker-config-2-Ab3dE9/project",
+      },
+      {
+        found: 'its project label is "" and its folder label is ""',
+        labels: "|",
+      },
+    ]) {
+      const place = await runInLeftoverPlace({
+        listed: {
+          status: 0,
+          stdout: `supabase_db_rentcottage-verification-1|${labels}\n`,
+        },
+      });
+
+      expect(place.status).toBe(4);
+      expect(place.events).toEqual([placeListingCommand]);
+      expect(place.removeStaleFolders).not.toHaveBeenCalled();
+      expect(place.stderr.mock.calls).toEqual([
+        [
+          `Place 1 of the full local check holds a database container, supabase_db_rentcottage-verification-1, that this check cannot show it made: ${found}. Nothing was removed and nothing ran. Look at that container and remove it yourself if nothing is using it.`,
+        ],
+      ]);
+      expect(place.removeTemp.mock.calls).toEqual([["/tmp/place-state"]]);
+    }
+  });
+
+  it("removes nothing when Docker cannot list its place", async () => {
+    for (const listed of [
+      { status: 1, stdout: "", stderr: "Cannot connect to the Docker daemon" },
+      { status: 0 },
+    ]) {
+      const place = await runInLeftoverPlace({ listed });
+
+      expect(place.status).toBe(4);
+      expect(place.events).toEqual([placeListingCommand]);
+      expect(place.removeStaleFolders).not.toHaveBeenCalled();
+      expect(place.stderr).toHaveBeenCalledWith(
+        "Unable to see what an earlier check left in place 1 of the full local check: Docker did not list the place's database container. Nothing was removed and nothing ran.",
+      );
+      expect(place.removeTemp.mock.calls).toEqual([["/tmp/place-state"]]);
+    }
+  });
+
+  it("keeps the folders when the leftover database cannot be stopped", async () => {
+    for (const stopped of [
+      { status: 1, stdout: "", stderr: "" },
+      {
+        error: Object.assign(new Error("Command did not exit within 4321ms."), {
+          code: "ETIMEDOUT",
+        }),
+        signal: null,
+        status: null,
+        stderr: "",
+        stdout: "",
+      },
+    ]) {
+      const place = await runInLeftoverPlace({
+        listed: { status: 0, stdout: leftoverDatabaseListing },
+        stopped,
+      });
+
+      expect(place.status).toBe(4);
+      expect(place.events).toEqual([placeListingCommand, placeStopCommand]);
+      expect(place.removeStaleFolders).not.toHaveBeenCalled();
+      expect(place.stderr).toHaveBeenCalledWith(
+        "Unable to stop the database an earlier check left in place 1 of the full local check. Its folders were kept and nothing ran.",
+      );
+      expect(place.removeTemp.mock.calls).toEqual([["/tmp/place-state"]]);
+    }
+  });
+
+  it("fails loudly when a leftover folder cannot be removed", async () => {
+    const place = await runInLeftoverPlace({
+      removeStale: () => {
+        throw new Error(
+          "EACCES: permission denied, rmdir '/tmp/rentcottage-docker-config-1-Zz9yX8'",
+        );
+      },
+    });
+
+    expect(place.status).toBe(4);
+    expect(place.events).toEqual([
+      placeListingCommand,
+      ["removeStaleFolders", [1, "/tmp/place-state"]],
+    ]);
+    expect(place.stderr.mock.calls).toEqual([
+      [
+        "Unable to remove a folder an earlier check left in place 1 of the full local check: EACCES: permission denied, rmdir '/tmp/rentcottage-docker-config-1-Zz9yX8'. Nothing ran. Remove that folder, then run it again.",
+      ],
+    ]);
+    expect(place.removeTemp.mock.calls).toEqual([["/tmp/place-state"]]);
   });
 });
