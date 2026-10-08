@@ -2,7 +2,10 @@ import "server-only";
 
 import { unstable_rethrow } from "next/navigation";
 
-import type { OwnCustomerReviewResult } from "@/customer-review/customer-review";
+import type {
+  OwnCustomerReviewResult,
+  OwnerCustomerReviewResult,
+} from "@/customer-review/customer-review";
 import { createRequestCustomerReview } from "@/customer-review/request-customer-review";
 import {
   loadRequestNotificationStatus,
@@ -57,6 +60,7 @@ export type OwnerBookingRequestDetails =
       readonly outcome: "confirmed";
       readonly confirmed: ConfirmedBooking;
       readonly financial: BookingFinancialView | null;
+      readonly review: OwnerCustomerReviewResult;
       readonly delivery: RequestNotificationPresentation;
     }
   | {
@@ -112,8 +116,20 @@ export async function loadBookingRequestDetails(
     return { outcome: "cancelled", financial, delivery };
   if (loadFailed) return { outcome: "unavailable" };
   if (role === "cottage_owner") {
-    if (confirmed)
-      return { outcome: "confirmed", confirmed, financial, delivery };
+    if (confirmed) {
+      let review: OwnerCustomerReviewResult = { status: "unavailable" };
+      try {
+        const customerReview = await createRequestCustomerReview();
+        if (customerReview)
+          review = await customerReview.getOwnerReview(reference);
+      } catch (error) {
+        unstable_rethrow(error);
+        console.error("Owner customer review load failed", {
+          code: "owner_customer_review_load_unavailable",
+        });
+      }
+      return { outcome: "confirmed", confirmed, financial, review, delivery };
+    }
     if (confirmed === undefined) return { outcome: "unavailable" };
     return ownerRequest
       ? { outcome: "pending", request: ownerRequest, delivery }

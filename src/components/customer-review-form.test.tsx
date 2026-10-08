@@ -127,7 +127,9 @@ describe("CustomerReviewForm", () => {
       expect(within(region).getByRole("status")).toHaveTextContent(
         copy.published,
       );
-      expect(region).toHaveTextContent(copy.visible);
+      expect(region).not.toHaveTextContent("Visible to visitors");
+      expect(region).not.toHaveTextContent("ظاهر للزوار");
+      expect(region).not.toHaveTextContent("بۆ سەردانکەران دیارە");
     },
   );
 

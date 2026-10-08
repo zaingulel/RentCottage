@@ -23,6 +23,7 @@ describe("PublicCustomerReviews", () => {
               originalLanguage: "ckb",
               originalBody: "شوێنێکی ئارام و جوانە",
               submittedAt: "2026-09-21T12:00:00.000Z",
+              ownerReply: null,
             },
           ],
           nextCursor: {
@@ -40,6 +41,7 @@ describe("PublicCustomerReviews", () => {
     expect(
       screen.queryByText(/author|booking|moderation|11111111/i),
     ).toBeNull();
+    expect(screen.queryByText("رد مالك البيت")).toBeNull();
     expect(
       screen.getByRole("link", { name: "التقييمات التالية" }),
     ).toHaveAttribute(
@@ -66,6 +68,7 @@ describe("PublicCustomerReviews", () => {
                 originalLanguage: "en",
                 originalBody: hostile,
                 submittedAt: "2026-09-21T12:00:00.000Z",
+                ownerReply: null,
               },
             ],
             nextCursor: null,
@@ -81,6 +84,83 @@ describe("PublicCustomerReviews", () => {
       expect(within(review).queryByLabelText(copy.rating)).toBeNull();
     },
   );
+
+  it.each([
+    ["en", "Cottage Owner reply"],
+    ["ar", "رد مالك البيت"],
+    ["ckb", "وەڵامی خاوەن کۆتێج"],
+  ] as const)(
+    "shows the Cottage Owner reply under its review in %s",
+    (locale, label) => {
+      render(
+        <PublicCustomerReviews
+          locale={locale}
+          publicSlug={publicSlug}
+          result={{
+            status: "success",
+            items: [
+              {
+                reviewId,
+                rating: 5,
+                originalLanguage: "ckb",
+                originalBody: "شوێنێکی ئارام و جوانە",
+                submittedAt: "2026-09-21T12:00:00.000Z",
+                ownerReply: {
+                  originalLanguage: "ar",
+                  originalBody: "شكراً لزيارتكم",
+                  submittedAt: "2026-09-22T09:30:00.000Z",
+                },
+              },
+            ],
+            nextCursor: null,
+          }}
+        />,
+      );
+
+      const review = screen.getByRole("article");
+      expect(within(review).getByText("شوێنێکی ئارام و جوانە")).toBeVisible();
+      expect(within(review).getByText(label)).toBeVisible();
+      const reply = within(review).getByText("شكراً لزيارتكم");
+      expect(reply).toBeVisible();
+      expect(reply).toHaveAttribute("lang", "ar");
+      expect(reply).toHaveAttribute("dir", "auto");
+      expect(
+        review.querySelector('time[datetime="2026-09-22T09:30:00.000Z"]'),
+      ).not.toBeNull();
+    },
+  );
+
+  it("renders hostile reply text as text, never markup", () => {
+    const hostile = "<img src=x onerror=alert(1)>";
+    render(
+      <PublicCustomerReviews
+        locale="en"
+        publicSlug={publicSlug}
+        result={{
+          status: "success",
+          items: [
+            {
+              reviewId,
+              rating: 5,
+              originalLanguage: "en",
+              originalBody: "A calm place",
+              submittedAt: "2026-09-21T12:00:00.000Z",
+              ownerReply: {
+                originalLanguage: "en",
+                originalBody: hostile,
+                submittedAt: "2026-09-22T09:30:00.000Z",
+              },
+            },
+          ],
+          nextCursor: null,
+        }}
+      />,
+    );
+
+    const review = screen.getByRole("article");
+    expect(within(review).getByText(hostile)).toBeVisible();
+    expect(review.querySelector("img")).toBeNull();
+  });
 
   it("keeps unavailable distinct from an empty successful page", () => {
     const { rerender } = render(

@@ -131,6 +131,69 @@ export type SubmitCustomerReviewActionResult =
       recovery: "refresh-own-review";
     }>;
 
+export type SubmitCustomerReviewReplyInput = Readonly<{
+  bookingRequestReference: string;
+  originalLanguage: CustomerReviewLanguage;
+  originalBody: string;
+}>;
+
+export function isSubmitCustomerReviewReplyInput(
+  value: unknown,
+): value is SubmitCustomerReviewReplyInput {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, [
+      "bookingRequestReference",
+      "originalLanguage",
+      "originalBody",
+    ]) &&
+    isBookingRequestReference(value.bookingRequestReference) &&
+    isCustomerReviewLanguage(value.originalLanguage) &&
+    typeof value.originalBody === "string" &&
+    value.originalBody.trim().length >= 1 &&
+    isCustomerReviewBodyWithinLimit(value.originalBody)
+  );
+}
+
+export type SubmitCustomerReviewReplyResult =
+  | Readonly<{
+      status: "replied";
+      reviewId: string;
+      submittedAt: string;
+      affectedPublicSlug: string;
+    }>
+  | Readonly<{
+      status: "duplicate";
+      reviewId: string;
+      submittedAt: string;
+    }>
+  | Readonly<{
+      status:
+        | "access-required"
+        | "invalid"
+        | "ineligible"
+        | "prohibited-content"
+        | "unavailable";
+    }>;
+
+export type SubmitCustomerReviewReplyActionResult =
+  | Readonly<{
+      status: "replied" | "duplicate";
+      reviewId: string;
+      submittedAt: string;
+    }>
+  | Readonly<{
+      status:
+        | "access-required"
+        | "invalid"
+        | "ineligible"
+        | "prohibited-content";
+    }>
+  | Readonly<{
+      status: "unavailable";
+      recovery: "refresh-owner-review";
+    }>;
+
 export type CustomerReviewCursor = Readonly<{
   submittedAt: string;
   reviewId: string;
@@ -179,12 +242,19 @@ export function isPublicCustomerReviewListInput(
   );
 }
 
+export type PublicCustomerReviewReply = Readonly<{
+  originalLanguage: CustomerReviewLanguage;
+  originalBody: string;
+  submittedAt: string;
+}>;
+
 export type PublicCustomerReview = Readonly<{
   reviewId: string;
   rating: number;
   originalLanguage: CustomerReviewLanguage;
   originalBody: string | null;
   submittedAt: string;
+  ownerReply: PublicCustomerReviewReply | null;
 }>;
 
 export type PublicCustomerReviewListResult =
@@ -210,11 +280,34 @@ export type OwnCustomerReviewResult =
       status: "access-required" | "invalid" | "ineligible" | "unavailable";
     }>;
 
+export type OwnerCustomerReviewReply = PublicCustomerReviewReply &
+  Readonly<{ moderationState: "hidden" | "unhidden" }>;
+
+export type OwnerCustomerReviewResult =
+  | Readonly<{
+      status: "reviewed";
+      rating: number;
+      originalLanguage: CustomerReviewLanguage;
+      originalBody: string | null;
+      submittedAt: string;
+      reply: OwnerCustomerReviewReply | null;
+    }>
+  | Readonly<{
+      status: "review-hidden";
+      reply: OwnerCustomerReviewReply | null;
+    }>
+  | Readonly<{
+      status: "no-review" | "access-required" | "invalid" | "unavailable";
+    }>;
+
 export type CustomerReviewHide = Readonly<{
   administratorUserId: string;
   reason: string;
   hiddenAt: string;
 }>;
+
+export type AdministratorCustomerReviewReply = OwnerCustomerReviewReply &
+  Readonly<{ authorUserId: string; hide: CustomerReviewHide | null }>;
 
 export type AdministratorCustomerReview = Readonly<{
   reviewId: string;
@@ -227,6 +320,7 @@ export type AdministratorCustomerReview = Readonly<{
   submittedAt: string;
   moderationState: "hidden" | "unhidden";
   hide: CustomerReviewHide | null;
+  reply: AdministratorCustomerReviewReply | null;
 }>;
 
 export type AdministratorCustomerReviewListResult =

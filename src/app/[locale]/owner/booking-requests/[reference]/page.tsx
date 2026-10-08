@@ -6,6 +6,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadBookingRequestDetails } from "@/booking-request/request-booking-request-details";
 import { ConfirmedBookingDetails } from "@/components/confirmed-booking-details";
+import { CustomerReviewOwnerReply } from "@/components/customer-review-owner-reply";
 import { isLocale } from "@/i18n/routing";
 import { OwnerBookingRequestNotifications } from "@/components/owner-booking-request-notifications";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
@@ -79,6 +80,11 @@ export default async function OwnerConfirmedBookingPage({
           locale={locale}
           {...details.confirmed}
           lifecycleStatus={details.financial?.lifecycle.status}
+        />
+        <CustomerReviewOwnerReply
+          locale={locale}
+          bookingRequestReference={reference}
+          initialResult={details.review}
         />
         {messaging}
         {details.financial ? (

@@ -280,3 +280,5 @@ ALTER TABLE public.booking_settlement_receipts ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.customer_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_review_hides ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customer_review_replies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customer_review_reply_hides ENABLE ROW LEVEL SECURITY;

@@ -46,7 +46,17 @@ export function PublicCustomerReviews({
                 {formatIraqDateTime(review.submittedAt, locale)}
               </time>
               <small>{copy.translationUnavailable}</small>
-              <small>{copy.repliesUnavailable}</small>
+              {review.ownerReply ? (
+                <div className={styles.reply}>
+                  <strong>{copy.ownerReply}</strong>
+                  <p lang={review.ownerReply.originalLanguage} dir="auto">
+                    {review.ownerReply.originalBody}
+                  </p>
+                  <time dateTime={review.ownerReply.submittedAt}>
+                    {formatIraqDateTime(review.ownerReply.submittedAt, locale)}
+                  </time>
+                </div>
+              ) : null}
             </article>
           ))}
           {result.nextCursor ? (

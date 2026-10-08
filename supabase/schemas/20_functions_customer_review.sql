@@ -298,6 +298,286 @@ $$;
 
 ALTER FUNCTION public.hide_customer_review(uuid,text) OWNER TO postgres;
 
+CREATE OR REPLACE FUNCTION public.submit_customer_review_reply(
+  target_reference text,
+  target_original_language public.cottage_profile_source_language,
+  target_original_body text
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare
+  actor uuid:=(select auth.uid());
+  actor_context public.account_contexts;
+  request public.booking_requests;
+  review public.customer_reviews;
+  existing public.customer_review_replies;
+  replied public.customer_review_replies;
+  affected_public_slug text;
+begin
+  select * into actor_context
+  from public.account_contexts
+  where user_id=actor;
+  if actor is null
+    or actor_context.role is distinct from 'cottage_owner'
+    or actor_context.owner_approval_state is distinct from 'approved'
+    or not exists(
+      select 1 from auth.users users
+      where users.id=actor and users.phone_confirmed_at is not null
+    )
+  then
+    raise exception 'Customer review reply access is unavailable' using errcode='42501';
+  end if;
+
+  select requests.* into request
+  from public.booking_requests requests
+  join public.owner_application_cottage_profiles profiles
+    on profiles.id=requests.profile_id
+    and profiles.owner_user_id=requests.owner_user_id
+  where requests.booking_request_reference=target_reference;
+  if request.id is null or request.owner_user_id is distinct from actor then
+    raise exception 'Customer review reply access is unavailable' using errcode='42501';
+  end if;
+
+  -- The share lock waits for an uncommitted hide; the lookups below then see it.
+  select * into review
+  from public.customer_reviews reviews
+  where reviews.booking_request_id=request.id
+  for share;
+  if review.id is null then
+    return jsonb_build_object('status','ineligible');
+  end if;
+
+  select * into existing
+  from public.customer_review_replies replies
+  where replies.review_id=review.id;
+  if existing.review_id is not null then
+    return jsonb_build_object(
+      'status','duplicate',
+      'reviewId',existing.review_id,
+      'submittedAt',existing.submitted_at
+    );
+  end if;
+
+  if exists(
+    select 1 from public.customer_review_hides hides
+    where hides.review_id=review.id
+  ) then
+    return jsonb_build_object('status','ineligible');
+  end if;
+
+  if target_original_language is null
+    or target_original_body is null
+    or char_length(target_original_body) > 2000
+    or target_original_body !~ '[^\s\uFEFF]'
+  then
+    return jsonb_build_object('status','invalid');
+  end if;
+
+  if not public.contact_protection_text_is_safe(target_original_body) then
+    return jsonb_build_object('status','prohibited-content');
+  end if;
+
+  select listings.public_slug into affected_public_slug
+  from public.cottage_marketplace_listings listings
+  where listings.profile_id=review.profile_id;
+  if affected_public_slug is null
+    or affected_public_slug !~ '^cottage-[0-9a-f]{32}$'
+  then
+    return jsonb_build_object('status','unavailable');
+  end if;
+
+  insert into public.customer_review_replies(
+    review_id,author_user_id,original_language,original_body
+  ) values (
+    review.id,actor,target_original_language,target_original_body
+  ) returning * into replied;
+
+  return jsonb_build_object(
+    'status','replied',
+    'reviewId',replied.review_id,
+    'submittedAt',replied.submitted_at,
+    'affectedPublicSlug',affected_public_slug
+  );
+exception
+  when unique_violation then
+    select * into existing
+    from public.customer_review_replies replies
+    where replies.review_id=review.id;
+    return jsonb_build_object(
+      'status','duplicate',
+      'reviewId',existing.review_id,
+      'submittedAt',existing.submitted_at
+    );
+end;
+$$;
+
+ALTER FUNCTION public.submit_customer_review_reply(text,public.cottage_profile_source_language,text) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.get_owner_customer_review(target_reference text)
+RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
+declare
+  actor uuid:=(select auth.uid());
+  actor_context public.account_contexts;
+  request public.booking_requests;
+  review public.customer_reviews;
+  reply jsonb;
+begin
+  select * into actor_context
+  from public.account_contexts
+  where user_id=actor;
+  if actor is null
+    or actor_context.role is distinct from 'cottage_owner'
+    or actor_context.owner_approval_state is distinct from 'approved'
+    or not exists(
+      select 1 from auth.users users
+      where users.id=actor and users.phone_confirmed_at is not null
+    )
+  then
+    raise exception 'Customer review reply access is unavailable' using errcode='42501';
+  end if;
+
+  select requests.* into request
+  from public.booking_requests requests
+  join public.owner_application_cottage_profiles profiles
+    on profiles.id=requests.profile_id
+    and profiles.owner_user_id=requests.owner_user_id
+  where requests.booking_request_reference=target_reference;
+  if request.id is null or request.owner_user_id is distinct from actor then
+    raise exception 'Customer review reply access is unavailable' using errcode='42501';
+  end if;
+
+  select * into review
+  from public.customer_reviews reviews
+  where reviews.booking_request_id=request.id;
+  if review.id is null then
+    return jsonb_build_object('status','no-review');
+  end if;
+
+  select jsonb_build_object(
+    'originalLanguage',replies.original_language,
+    'originalBody',replies.original_body,
+    'submittedAt',replies.submitted_at,
+    'moderationState',case
+      when exists(
+        select 1 from public.customer_review_reply_hides reply_hides
+        where reply_hides.review_id=replies.review_id
+      ) then 'hidden'
+      else 'unhidden'
+    end
+  ) into reply
+  from public.customer_review_replies replies
+  where replies.review_id=review.id;
+
+  if exists(
+    select 1 from public.customer_review_hides hides
+    where hides.review_id=review.id
+  ) then
+    return jsonb_build_object('status','review-hidden','reply',reply);
+  end if;
+
+  return jsonb_build_object(
+    'status','reviewed',
+    'rating',review.rating,
+    'originalLanguage',review.original_language,
+    'originalBody',review.original_body,
+    'submittedAt',review.submitted_at,
+    'reply',reply
+  );
+end;
+$$;
+
+ALTER FUNCTION public.get_owner_customer_review(text) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.hide_customer_review_reply(
+  target_review_id uuid,
+  target_reason text
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare
+  actor uuid:=(select auth.uid());
+  existing public.customer_review_reply_hides;
+  hidden public.customer_review_reply_hides;
+  affected_public_slug text;
+  affected_booking_request_reference text;
+begin
+  if actor is null or public.is_platform_administrator('aal2') is not true then
+    raise exception 'Customer review moderation is unavailable' using errcode='42501';
+  end if;
+  if target_review_id is null
+    or target_reason is null
+    or target_reason !~ '[^\s\uFEFF]'
+    or char_length(btrim(target_reason)) > 2000
+  then
+    return jsonb_build_object('status','invalid');
+  end if;
+
+  if not exists(
+    select 1 from public.customer_review_replies replies
+    where replies.review_id=target_review_id
+  ) then
+    return jsonb_build_object('status','invalid');
+  end if;
+
+  select * into existing
+  from public.customer_review_reply_hides reply_hides
+  where reply_hides.review_id=target_review_id;
+  if existing.review_id is not null then
+    return jsonb_build_object(
+      'status','already-hidden',
+      'reviewId',existing.review_id,
+      'administratorUserId',existing.administrator_user_id,
+      'reason',existing.reason,
+      'hiddenAt',existing.hidden_at
+    );
+  end if;
+
+  select listings.public_slug,requests.booking_request_reference
+  into affected_public_slug,affected_booking_request_reference
+  from public.customer_reviews reviews
+  join public.booking_requests requests
+    on requests.id=reviews.booking_request_id
+    and requests.profile_id=reviews.profile_id
+  join public.cottage_marketplace_listings listings
+    on listings.profile_id=reviews.profile_id
+  where reviews.id=target_review_id;
+  if affected_public_slug is null
+    or affected_public_slug !~ '^cottage-[0-9a-f]{32}$'
+    or affected_booking_request_reference is null
+    or affected_booking_request_reference !~ '^RC-REQ-[A-F0-9]{16}$'
+  then
+    return jsonb_build_object('status','unavailable');
+  end if;
+
+  insert into public.customer_review_reply_hides(
+    review_id,administrator_user_id,reason
+  ) values (target_review_id,actor,btrim(target_reason))
+  returning * into hidden;
+  return jsonb_build_object(
+    'status','hidden',
+    'reviewId',hidden.review_id,
+    'administratorUserId',hidden.administrator_user_id,
+    'reason',hidden.reason,
+    'hiddenAt',hidden.hidden_at,
+    'affectedPublicSlug',affected_public_slug,
+    'affectedBookingRequestReference',affected_booking_request_reference
+  );
+exception
+  when unique_violation then
+    select * into existing
+    from public.customer_review_reply_hides reply_hides
+    where reply_hides.review_id=target_review_id;
+    return jsonb_build_object(
+      'status','already-hidden',
+      'reviewId',existing.review_id,
+      'administratorUserId',existing.administrator_user_id,
+      'reason',existing.reason,
+      'hiddenAt',existing.hidden_at
+    );
+end;
+$$;
+
+ALTER FUNCTION public.hide_customer_review_reply(uuid,text) OWNER TO postgres;
+
 CREATE OR REPLACE FUNCTION public.list_administrator_customer_reviews(
   target_before_at timestamptz DEFAULT NULL,
   target_before_id uuid DEFAULT NULL,
@@ -326,7 +606,31 @@ begin
     select reviews.id,reviews.profile_id,reviews.author_user_id,
       reviews.rating,reviews.original_language,reviews.original_body,
       reviews.submitted_at,requests.booking_request_reference,
-      hides.administrator_user_id,hides.reason,hides.hidden_at
+      hides.administrator_user_id,hides.reason,hides.hidden_at,
+      (
+        select jsonb_build_object(
+          'authorUserId',replies.author_user_id,
+          'originalLanguage',replies.original_language,
+          'originalBody',replies.original_body,
+          'submittedAt',replies.submitted_at,
+          'moderationState',case
+            when reply_hides.review_id is null then 'unhidden'
+            else 'hidden'
+          end,
+          'hide',case
+            when reply_hides.review_id is null then null
+            else jsonb_build_object(
+              'administratorUserId',reply_hides.administrator_user_id,
+              'reason',reply_hides.reason,
+              'hiddenAt',reply_hides.hidden_at
+            )
+          end
+        )
+        from public.customer_review_replies replies
+        left join public.customer_review_reply_hides reply_hides
+          on reply_hides.review_id=replies.review_id
+        where replies.review_id=reviews.id
+      ) reply
     from public.customer_reviews reviews
     join public.booking_requests requests on requests.id=reviews.booking_request_id
     left join public.customer_review_hides hides on hides.review_id=reviews.id
@@ -357,7 +661,8 @@ begin
             'reason',page.reason,
             'hiddenAt',page.hidden_at
           )
-        end
+        end,
+        'reply',page.reply
       ) item
     from page
   )
@@ -417,7 +722,20 @@ begin
 
   with page as (
     select reviews.id,reviews.rating,reviews.original_language,
-      reviews.original_body,reviews.submitted_at
+      reviews.original_body,reviews.submitted_at,
+      (
+        select jsonb_build_object(
+          'originalLanguage',replies.original_language,
+          'originalBody',replies.original_body,
+          'submittedAt',replies.submitted_at
+        )
+        from public.customer_review_replies replies
+        where replies.review_id=reviews.id
+          and not exists(
+            select 1 from public.customer_review_reply_hides reply_hides
+            where reply_hides.review_id=replies.review_id
+          )
+      ) owner_reply
     from public.customer_reviews reviews
     join public.booking_requests requests
       on requests.id=reviews.booking_request_id
@@ -464,7 +782,8 @@ begin
         'rating',page.rating,
         'originalLanguage',page.original_language,
         'originalBody',page.original_body,
-        'submittedAt',page.submitted_at
+        'submittedAt',page.submitted_at,
+        'ownerReply',page.owner_reply
       ) item
     from page
   )

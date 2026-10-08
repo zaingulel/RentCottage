@@ -131,6 +131,66 @@ commit;`,
       "concurrent submission stores one review",
     );
 
+    const replyHolder = harness.startSession(`
+begin;
+set application_name='customer_review_reply_holder';
+${actor(duplicateFixture.ids.ownerUserId)}
+select public.submit_customer_review_reply(
+  '${duplicateFixture.ids.bookingReference}','en','First committed reply'
+);
+select 'CUSTOMER_REVIEW_REPLY_HELD';
+`);
+    sessions.push(replyHolder);
+    await harness.waitForMarker(replyHolder, "CUSTOMER_REVIEW_REPLY_HELD");
+    const replyContender = harness.startSession(
+      `begin;
+set application_name='customer_review_reply_contender';
+${actor(duplicateFixture.ids.ownerUserId)}
+select public.submit_customer_review_reply(
+  '${duplicateFixture.ids.bookingReference}','en','Competing reply'
+);
+commit;`,
+      true,
+    );
+    sessions.push(replyContender);
+    await harness.waitForLock(
+      "customer_review_reply_contender",
+      replyContender,
+    );
+    assertions += 1;
+    await harness.finishSession(replyHolder, { action: "commit" });
+    await harness.finishSession(replyContender);
+    const replied = jsonResults(replyHolder)[0];
+    check(
+      {
+        status: replied?.status,
+        keys: Object.keys(replied ?? {}).sort(),
+      },
+      {
+        status: "replied",
+        keys: ["affectedPublicSlug", "reviewId", "status", "submittedAt"],
+      },
+      "first reply wins",
+    );
+    const duplicateReply = jsonResults(replyContender)[0];
+    check(
+      {
+        status: duplicateReply?.status,
+        keys: Object.keys(duplicateReply ?? {}).sort(),
+      },
+      { status: "duplicate", keys: ["reviewId", "status", "submittedAt"] },
+      "contending reply observes the committed duplicate",
+    );
+    check(
+      JSON.parse(
+        harness.runSql(
+          `select jsonb_build_object('count',count(*),'bodies',coalesce(jsonb_agg(original_body),'[]'::jsonb)) from public.customer_review_replies where review_id='${submitted.reviewId}';`,
+        ),
+      ),
+      { count: 1, bodies: ["First committed reply"] },
+      "concurrent replies store one reply",
+    );
+
     harness.markTimingPhase("setup");
     const deadlineFixture = customerReviewFixture({
       namespace: "48",
@@ -317,8 +377,23 @@ commit;`,
     sessions.push(hideContender);
     await harness.waitForLock("customer_review_hide_contender", hideContender);
     assertions += 1;
+    const hiddenReviewReplyContender = harness.startSession(
+      `begin;
+set application_name='customer_review_hidden_review_reply_contender';
+${actor(hideFixture.ids.ownerUserId)}
+select public.submit_customer_review_reply('${hideFixture.ids.bookingReference}','en','Reply racing the hide');
+commit;`,
+      true,
+    );
+    sessions.push(hiddenReviewReplyContender);
+    await harness.waitForLock(
+      "customer_review_hidden_review_reply_contender",
+      hiddenReviewReplyContender,
+    );
+    assertions += 1;
     await harness.finishSession(hideHolder, { action: "commit" });
     await harness.finishSession(hideContender);
+    await harness.finishSession(hiddenReviewReplyContender);
     const hidden = jsonResults(hideHolder)[0];
     check(hidden?.status, "hidden", "first hide wins");
     check(
@@ -362,6 +437,96 @@ commit;`,
       ),
       "1",
       "concurrent hiding stores one attribution",
+    );
+    check(
+      jsonResults(hiddenReviewReplyContender)[0],
+      { status: "ineligible" },
+      "a reply that waited on an uncommitted review hide is refused",
+    );
+    check(
+      harness.runSql(
+        `select count(*)::integer from public.customer_review_replies where review_id='${reviewId}';`,
+      ),
+      "0",
+      "the refused reply stores nothing",
+    );
+
+    const replyHideHolder = harness.startSession(`
+begin;
+set application_name='customer_review_reply_hide_holder';
+${actor(hideFixture.ids.administratorUserId, "aal2")}
+select public.hide_customer_review_reply('${submitted.reviewId}','First reply moderation reason');
+select 'CUSTOMER_REVIEW_REPLY_HIDE_HELD';
+`);
+    sessions.push(replyHideHolder);
+    await harness.waitForMarker(
+      replyHideHolder,
+      "CUSTOMER_REVIEW_REPLY_HIDE_HELD",
+    );
+    const replyHideContender = harness.startSession(
+      `begin;
+set application_name='customer_review_reply_hide_contender';
+${actor(secondAdministrator, "aal2")}
+select public.hide_customer_review_reply('${submitted.reviewId}','Replacement reply reason');
+commit;`,
+      true,
+    );
+    sessions.push(replyHideContender);
+    await harness.waitForLock(
+      "customer_review_reply_hide_contender",
+      replyHideContender,
+    );
+    assertions += 1;
+    await harness.finishSession(replyHideHolder, { action: "commit" });
+    await harness.finishSession(replyHideContender);
+    const hiddenReply = jsonResults(replyHideHolder)[0];
+    check(
+      {
+        status: hiddenReply?.status,
+        keys: Object.keys(hiddenReply ?? {}).sort(),
+      },
+      {
+        status: "hidden",
+        keys: [
+          "administratorUserId",
+          "affectedBookingRequestReference",
+          "affectedPublicSlug",
+          "hiddenAt",
+          "reason",
+          "reviewId",
+          "status",
+        ],
+      },
+      "first reply hide wins",
+    );
+    const replyHideReplay = jsonResults(replyHideContender)[0];
+    check(
+      {
+        status: replyHideReplay?.status,
+        keys: Object.keys(replyHideReplay ?? {}).sort(),
+        administratorUserId: replyHideReplay?.administratorUserId,
+        reason: replyHideReplay?.reason,
+      },
+      {
+        status: "already-hidden",
+        keys: [
+          "administratorUserId",
+          "hiddenAt",
+          "reason",
+          "reviewId",
+          "status",
+        ],
+        administratorUserId: hideFixture.ids.administratorUserId,
+        reason: "First reply moderation reason",
+      },
+      "contending reply hide is a replay",
+    );
+    check(
+      harness.runSql(
+        `select count(*)::integer from public.customer_review_reply_hides where review_id='${submitted.reviewId}';`,
+      ),
+      "1",
+      "concurrent reply hiding stores one attribution",
     );
 
     console.log(

@@ -22,5 +22,8 @@ export async function createRequestCustomerReview() {
     listPublic: repository.listPublic.bind(repository),
     listAdministrator: repository.listAdministrator.bind(repository),
     hide: repository.hide.bind(repository),
+    getOwnerReview: repository.getOwnerReview.bind(repository),
+    submitReply: repository.submitReply.bind(repository),
+    hideReply: repository.hideReply.bind(repository),
   };
 }

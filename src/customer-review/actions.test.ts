@@ -11,7 +11,12 @@ vi.mock("./request-customer-review", () => ({
   createRequestCustomerReview: createRequestReview,
 }));
 
-import { hideCustomerReview, submitCustomerReview } from "./actions";
+import {
+  hideCustomerReview,
+  hideCustomerReviewReply,
+  submitCustomerReview,
+  submitCustomerReviewReply,
+} from "./actions";
 
 const affectedPublicSlug = "cottage-deadbeefdeadbeefdeadbeefdead0029";
 const affectedBookingReference = "RC-REQ-FEDCBA9876543210";
@@ -22,6 +27,12 @@ const validSubmission = {
   rating: 5,
   originalLanguage: "ckb",
   originalBody: null,
+} as const;
+
+const validReply = {
+  bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+  originalLanguage: "ar",
+  originalBody: "شكراً لزيارتكم",
 } as const;
 
 describe("Customer review Server Actions", () => {
@@ -96,7 +107,7 @@ describe("Customer review Server Actions", () => {
       originalLanguage: "ckb",
       originalBody: null,
     });
-    expect(revalidatePath).toHaveBeenCalledTimes(9);
+    expect(revalidatePath).toHaveBeenCalledTimes(12);
     expect(revalidatePath.mock.calls).toContainEqual([
       "/ckb/booking-requests/RC-REQ-0123456789ABCDEF",
     ]);
@@ -170,7 +181,7 @@ describe("Customer review Server Actions", () => {
       reviewId: "11111111-1111-4111-8111-111111111111",
       reason: "Contains personal contact details",
     });
-    expect(revalidatePath).toHaveBeenCalledTimes(9);
+    expect(revalidatePath).toHaveBeenCalledTimes(12);
     expect(revalidatePath.mock.calls).toContainEqual([
       `/en/booking-requests/${affectedBookingReference}`,
     ]);
@@ -264,6 +275,160 @@ describe("Customer review Server Actions", () => {
     diagnostic.mockRestore();
   });
 
+  it("rechecks owner identity and revalidates only after a new reply", async () => {
+    const authenticatedUserId = vi
+      .fn()
+      .mockResolvedValue("88888888-8888-4888-8888-888888888888");
+    const submitReply = vi.fn().mockResolvedValue({
+      status: "replied",
+      reviewId: "11111111-1111-4111-8111-111111111111",
+      submittedAt: "2026-09-22T08:00:00.000Z",
+      affectedPublicSlug,
+    });
+    createRequestReview.mockResolvedValue({ authenticatedUserId, submitReply });
+
+    await expect(
+      submitCustomerReviewReply({
+        ...validReply,
+        authorUserId: "88888888-8888-4888-8888-888888888888",
+      }),
+    ).resolves.toEqual({ status: "invalid" });
+    await expect(
+      submitCustomerReviewReply({ ...validReply, originalBody: " \n " }),
+    ).resolves.toEqual({ status: "invalid" });
+    expect(createRequestReview).not.toHaveBeenCalled();
+
+    await expect(submitCustomerReviewReply(validReply)).resolves.toEqual({
+      status: "replied",
+      reviewId: "11111111-1111-4111-8111-111111111111",
+      submittedAt: "2026-09-22T08:00:00.000Z",
+    });
+    expect(authenticatedUserId).toHaveBeenCalledOnce();
+    expect(submitReply).toHaveBeenCalledWith({
+      bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+      originalLanguage: "ar",
+      originalBody: "شكراً لزيارتكم",
+    });
+    expect(revalidatePath).toHaveBeenCalledTimes(12);
+    expect(revalidatePath.mock.calls).toContainEqual([
+      "/ar/owner/booking-requests/RC-REQ-0123456789ABCDEF",
+    ]);
+    expect(revalidatePath.mock.calls).toContainEqual([
+      `/ar/cottages/${affectedPublicSlug}/reviews`,
+    ]);
+
+    revalidatePath.mockClear();
+    authenticatedUserId.mockResolvedValueOnce(undefined);
+    await expect(submitCustomerReviewReply(validReply)).resolves.toEqual({
+      status: "access-required",
+    });
+    expect(submitReply).toHaveBeenCalledOnce();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("preserves reply access, duplicate, prohibited, ineligible and unavailable recovery outcomes", async () => {
+    const authenticatedUserId = vi
+      .fn()
+      .mockResolvedValue("88888888-8888-4888-8888-888888888888");
+    const submitReply = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "access-required" })
+      .mockResolvedValueOnce({
+        status: "duplicate",
+        reviewId: "11111111-1111-4111-8111-111111111111",
+        submittedAt: "2026-09-22T08:00:00.000Z",
+      })
+      .mockResolvedValueOnce({ status: "prohibited-content" })
+      .mockResolvedValueOnce({ status: "ineligible" })
+      .mockResolvedValue({ status: "unavailable" });
+    const hideReply = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: "already-hidden",
+        reviewId: "11111111-1111-4111-8111-111111111111",
+        administratorUserId: "55555555-5555-4555-8555-555555555555",
+        reason: "Original reason",
+        hiddenAt: "2026-09-22T09:30:00.000Z",
+      })
+      .mockResolvedValueOnce({ status: "access-required" })
+      .mockResolvedValue({ status: "unavailable" });
+    createRequestReview.mockResolvedValue({
+      authenticatedUserId,
+      submitReply,
+      hideReply,
+    });
+
+    await expect(submitCustomerReviewReply(validReply)).resolves.toEqual({
+      status: "access-required",
+    });
+    await expect(submitCustomerReviewReply(validReply)).resolves.toEqual({
+      status: "duplicate",
+      reviewId: "11111111-1111-4111-8111-111111111111",
+      submittedAt: "2026-09-22T08:00:00.000Z",
+    });
+    await expect(submitCustomerReviewReply(validReply)).resolves.toEqual({
+      status: "prohibited-content",
+    });
+    await expect(submitCustomerReviewReply(validReply)).resolves.toEqual({
+      status: "ineligible",
+    });
+    await expect(submitCustomerReviewReply(validReply)).resolves.toEqual({
+      status: "unavailable",
+      recovery: "refresh-owner-review",
+    });
+
+    const replyHide = {
+      reviewId: "11111111-1111-4111-8111-111111111111",
+      reason: "Later reason",
+    };
+    await expect(hideCustomerReviewReply(replyHide)).resolves.toEqual({
+      status: "already-hidden",
+      reviewId: "11111111-1111-4111-8111-111111111111",
+      administratorUserId: "55555555-5555-4555-8555-555555555555",
+      reason: "Original reason",
+      hiddenAt: "2026-09-22T09:30:00.000Z",
+    });
+    await expect(hideCustomerReviewReply(replyHide)).resolves.toEqual({
+      status: "access-required",
+    });
+    await expect(hideCustomerReviewReply(replyHide)).resolves.toEqual({
+      status: "unavailable",
+      recovery: "reload-administrator-reviews",
+    });
+    await expect(
+      hideCustomerReviewReply({ ...replyHide, locale: "en" }),
+    ).resolves.toEqual({ status: "invalid" });
+    expect(hideReply).toHaveBeenCalledTimes(3);
+    expect(revalidatePath).not.toHaveBeenCalled();
+
+    const diagnostic = vi.spyOn(console, "error").mockImplementation(() => {});
+    createRequestReview.mockRejectedValueOnce(
+      new Error("secret reply text and bearer-token-value"),
+    );
+    await expect(submitCustomerReviewReply(validReply)).resolves.toEqual({
+      status: "unavailable",
+      recovery: "refresh-owner-review",
+    });
+    createRequestReview.mockRejectedValueOnce(
+      new Error("secret reply text and bearer-token-value"),
+    );
+    await expect(hideCustomerReviewReply(replyHide)).resolves.toEqual({
+      status: "unavailable",
+      recovery: "reload-administrator-reviews",
+    });
+    expect(diagnostic.mock.calls).toEqual([
+      ["customer-review-reply-submit-unavailable"],
+      ["customer-review-reply-hide-unavailable"],
+    ]);
+
+    createRequestReview.mockResolvedValueOnce(undefined);
+    await expect(submitCustomerReviewReply(validReply)).resolves.toEqual({
+      status: "unavailable",
+      recovery: "refresh-owner-review",
+    });
+    diagnostic.mockRestore();
+  });
+
   it("does not contain framework interruptions raised during revalidation", async () => {
     createRequestReview.mockResolvedValue({
       authenticatedUserId: vi.fn().mockResolvedValue("user-id"),
@@ -302,26 +467,61 @@ describe("Customer review Server Actions", () => {
       affectedPublicSlug,
       affectedBookingRequestReference: affectedBookingReference,
     });
+    const submitReply = vi.fn().mockResolvedValue({
+      status: "replied",
+      reviewId: "11111111-1111-4111-8111-111111111111",
+      submittedAt: "2026-09-22T08:00:00.000Z",
+      affectedPublicSlug,
+    });
+    const hideReply = vi.fn().mockResolvedValue({
+      status: "hidden",
+      reviewId: "11111111-1111-4111-8111-111111111111",
+      administratorUserId: "55555555-5555-4555-8555-555555555555",
+      reason: "Required reason",
+      hiddenAt: "2026-09-22T09:30:00.000Z",
+      affectedPublicSlug,
+      affectedBookingRequestReference: affectedBookingReference,
+    });
     createRequestReview.mockResolvedValue({
       authenticatedUserId,
       submit,
       hide,
+      submitReply,
+      hideReply,
     });
+    const pathsForSubmittedReference = [
+      "/en/booking-requests/RC-REQ-0123456789ABCDEF",
+      "/en/owner/booking-requests/RC-REQ-0123456789ABCDEF",
+      "/en/cottages/cottage-deadbeefdeadbeefdeadbeefdead0029/reviews",
+      "/en/administrator/reviews",
+      "/ar/booking-requests/RC-REQ-0123456789ABCDEF",
+      "/ar/owner/booking-requests/RC-REQ-0123456789ABCDEF",
+      "/ar/cottages/cottage-deadbeefdeadbeefdeadbeefdead0029/reviews",
+      "/ar/administrator/reviews",
+      "/ckb/booking-requests/RC-REQ-0123456789ABCDEF",
+      "/ckb/owner/booking-requests/RC-REQ-0123456789ABCDEF",
+      "/ckb/cottages/cottage-deadbeefdeadbeefdeadbeefdead0029/reviews",
+      "/ckb/administrator/reviews",
+    ];
+    const pathsForDatabaseReference = [
+      "/en/booking-requests/RC-REQ-FEDCBA9876543210",
+      "/en/owner/booking-requests/RC-REQ-FEDCBA9876543210",
+      "/en/cottages/cottage-deadbeefdeadbeefdeadbeefdead0029/reviews",
+      "/en/administrator/reviews",
+      "/ar/booking-requests/RC-REQ-FEDCBA9876543210",
+      "/ar/owner/booking-requests/RC-REQ-FEDCBA9876543210",
+      "/ar/cottages/cottage-deadbeefdeadbeefdeadbeefdead0029/reviews",
+      "/ar/administrator/reviews",
+      "/ckb/booking-requests/RC-REQ-FEDCBA9876543210",
+      "/ckb/owner/booking-requests/RC-REQ-FEDCBA9876543210",
+      "/ckb/cottages/cottage-deadbeefdeadbeefdeadbeefdead0029/reviews",
+      "/ckb/administrator/reviews",
+    ];
+    const revalidated = () =>
+      revalidatePath.mock.calls.map(([path]) => path).sort();
 
     await submitCustomerReview(validSubmission);
-    expect(new Set(revalidatePath.mock.calls.flat())).toEqual(
-      new Set([
-        "/en/booking-requests/RC-REQ-0123456789ABCDEF",
-        `/en/cottages/${affectedPublicSlug}/reviews`,
-        "/en/administrator/reviews",
-        "/ar/booking-requests/RC-REQ-0123456789ABCDEF",
-        `/ar/cottages/${affectedPublicSlug}/reviews`,
-        "/ar/administrator/reviews",
-        "/ckb/booking-requests/RC-REQ-0123456789ABCDEF",
-        `/ckb/cottages/${affectedPublicSlug}/reviews`,
-        "/ckb/administrator/reviews",
-      ]),
-    );
+    expect(revalidated()).toEqual([...pathsForSubmittedReference].sort());
     expect(revalidatePath.mock.calls.flat()).not.toContain(
       `/en/cottages/${distractorPublicSlug}/reviews`,
     );
@@ -331,21 +531,19 @@ describe("Customer review Server Actions", () => {
       reviewId: "11111111-1111-4111-8111-111111111111",
       reason: "Required reason",
     });
-    expect(new Set(revalidatePath.mock.calls.flat())).toEqual(
-      new Set([
-        `/en/booking-requests/${affectedBookingReference}`,
-        `/en/cottages/${affectedPublicSlug}/reviews`,
-        "/en/administrator/reviews",
-        `/ar/booking-requests/${affectedBookingReference}`,
-        `/ar/cottages/${affectedPublicSlug}/reviews`,
-        "/ar/administrator/reviews",
-        `/ckb/booking-requests/${affectedBookingReference}`,
-        `/ckb/cottages/${affectedPublicSlug}/reviews`,
-        "/ckb/administrator/reviews",
-      ]),
-    );
-    expect(revalidatePath.mock.calls.flat()).not.toContain(
-      "/en/booking-requests/RC-REQ-0123456789ABCDEF",
-    );
+    expect(revalidated()).toEqual([...pathsForDatabaseReference].sort());
+
+    revalidatePath.mockClear();
+    await submitCustomerReviewReply(validReply);
+    expect(revalidated()).toEqual([...pathsForSubmittedReference].sort());
+
+    revalidatePath.mockClear();
+    await hideCustomerReviewReply({
+      reviewId: "11111111-1111-4111-8111-111111111111",
+      reason: "Required reason",
+    });
+    expect(revalidated()).toEqual([...pathsForDatabaseReference].sort());
+    expect(hide).toHaveBeenCalledOnce();
+    expect(hideReply).toHaveBeenCalledOnce();
   });
 });

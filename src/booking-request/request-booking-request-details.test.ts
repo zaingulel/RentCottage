@@ -7,6 +7,7 @@ const {
   deliveryStatus,
   financialView,
   getOwnReview,
+  getOwnerReview,
   ownerRequest,
   rethrow,
 } = vi.hoisted(() => ({
@@ -16,6 +17,7 @@ const {
   deliveryStatus: vi.fn(),
   financialView: vi.fn(),
   getOwnReview: vi.fn(),
+  getOwnerReview: vi.fn(),
   ownerRequest: vi.fn(),
   rethrow: vi.fn(),
 }));
@@ -74,6 +76,15 @@ const ownReview = {
   reviewExpiresAt: "2099-09-21T09:00:00.000Z",
 };
 
+const ownerReview = {
+  status: "reviewed",
+  rating: 4,
+  originalLanguage: "en",
+  originalBody: "A quiet stay",
+  submittedAt: "2099-08-25T09:00:00.000Z",
+  reply: null,
+};
+
 const load = (role: Role) =>
   role === "customer"
     ? loadBookingRequestDetails(reference, "customer")
@@ -90,8 +101,12 @@ describe("Booking Request details access", () => {
     financialView.mockResolvedValue(null);
     customerRequest.mockResolvedValue(null);
     ownerRequest.mockResolvedValue(null);
-    createReview.mockResolvedValue({ getOwn: getOwnReview });
+    createReview.mockResolvedValue({
+      getOwn: getOwnReview,
+      getOwnerReview,
+    });
     getOwnReview.mockResolvedValue(ownReview);
+    getOwnerReview.mockResolvedValue(ownerReview);
   });
 
   afterEach(() => consoleError.mockRestore());
@@ -309,7 +324,7 @@ describe("Booking Request details access", () => {
     });
   });
 
-  it("returns a Cottage Owner's Confirmed Booking without reading a review", async () => {
+  it("returns a Cottage Owner's Confirmed Booking with the Customer review", async () => {
     confirmedAccess.mockResolvedValue(ownerAccess);
 
     await expect(
@@ -318,9 +333,32 @@ describe("Booking Request details access", () => {
       outcome: "confirmed",
       confirmed: ownerAccess,
       financial: null,
+      review: ownerReview,
       delivery,
     });
-    expect(createReview).not.toHaveBeenCalled();
+    expect(getOwnerReview).toHaveBeenCalledWith(reference);
+    expect(getOwnReview).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Cottage Owner's Confirmed Booking when the Customer review cannot be read", async () => {
+    confirmedAccess.mockResolvedValue(ownerAccess);
+    getOwnerReview.mockRejectedValue(readFailure);
+
+    await expect(
+      loadBookingRequestDetails(reference, "cottage_owner"),
+    ).resolves.toStrictEqual({
+      outcome: "confirmed",
+      confirmed: ownerAccess,
+      financial: null,
+      review: { status: "unavailable" },
+      delivery,
+    });
+    expect(rethrow).toHaveBeenCalledWith(readFailure);
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(
+      "Owner customer review load failed",
+      { code: "owner_customer_review_load_unavailable" },
+    );
   });
 
   it.each([

@@ -810,6 +810,18 @@ values(
   'cottage-deadbeefdeadbeefdeadbeefdead1001','paused'
 );
 set local role authenticated;
+savepoint customer_review_reply_without_review;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001001","role":"authenticated","aal":"aal1"}',true);
+select ok(
+  public.get_owner_customer_review('RC-REQ-0000000000001001')
+    ='{"status":"no-review"}'::jsonb
+  and public.submit_customer_review_reply(
+    'RC-REQ-0000000000001001','en','Thank you for staying with us.'
+  )='{"status":"ineligible"}'::jsonb,
+  'a booking without a review has nothing to read or reply to'
+);
+rollback to savepoint customer_review_reply_without_review;
 create temp table submitted_review_result as
 select public.submit_customer_review(
     'RC-REQ-0000000000001001',5,'en','A peaceful stay with a lovely garden.'
@@ -863,7 +875,7 @@ select ok(
       and (value#>>'{items,0,rating}')::integer=5
       and value#>>'{items,0,originalBody}'='A peaceful stay with a lovely garden.'
       and (select array_agg(key order by key) from jsonb_object_keys(value#>'{items,0}') key)
-        =array['originalBody','originalLanguage','rating','reviewId','submittedAt']
+        =array['originalBody','originalLanguage','ownerReply','rating','reviewId','submittedAt']
     from result
   ),
   'anonymous public review reading returns only the admitted public projection'
@@ -897,12 +909,634 @@ select ok(
     select value->>'status'='success'
       and jsonb_array_length(value->'items')=1
       and (select array_agg(key order by key) from jsonb_object_keys(value#>'{items,0}') key)
-        =array['originalBody','originalLanguage','rating','reviewId','submittedAt']
+        =array['originalBody','originalLanguage','ownerReply','rating','reviewId','submittedAt']
     from result
   ),
   'restoring the listing returns the unchanged minimal public review projection'
 );
 reset role;
+
+savepoint customer_review_reply;
+create temp table reply_fixture as
+select reviews.id review_id,reviews.submitted_at
+from public.customer_reviews reviews
+where reviews.booking_request_id='60000000-0000-4000-8000-000000001001';
+grant select on reply_fixture to authenticated;
+create temp table reply_observations(name text primary key,value jsonb not null);
+grant select,insert on reply_observations to anon,authenticated;
+
+select ok(
+  not exists(
+    select 1
+    from unnest(array['anon','authenticated','service_role']::name[]) grantee,
+      unnest(array[
+        'public.customer_review_replies','public.customer_review_reply_hides'
+      ]) relation
+    where has_table_privilege(
+      grantee,relation,
+      'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+    )
+  )
+  and (
+    select bool_and(
+      has_function_privilege('authenticated',routine,'EXECUTE')
+      and not has_function_privilege('anon',routine,'EXECUTE')
+      and not has_function_privilege('service_role',routine,'EXECUTE')
+    )
+    from unnest(array[
+      'public.submit_customer_review_reply(text,public.cottage_profile_source_language,text)',
+      'public.get_owner_customer_review(text)',
+      'public.hide_customer_review_reply(uuid,text)'
+    ]) routine
+  ),
+  'reply tables deny direct access and only the three reply functions are granted'
+);
+
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001002","role":"authenticated","aal":"aal1"}',true);
+set local role authenticated;
+select throws_ok(
+  $$select public.get_owner_customer_review('RC-REQ-0000000000001001')$$,
+  '42501',null,
+  'only the approved Cottage Owner of the reviewed booking can read its review (the Customer)'
+);
+select throws_ok(
+  $$select public.submit_customer_review_reply('RC-REQ-0000000000001001','en','Denied reply')$$,
+  '42501',null,
+  'only the approved Cottage Owner of the reviewed booking can reply (the Customer)'
+);
+reset role;
+
+savepoint customer_review_reply_other_owner;
+update public.account_contexts
+set role='cottage_owner',owner_approval_state='approved'
+where user_id='10000000-0000-4000-8000-000000001003';
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001003',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001003","role":"authenticated","aal":"aal1"}',true);
+set local role authenticated;
+select throws_ok(
+  $$select public.get_owner_customer_review('RC-REQ-0000000000001001')$$,
+  '42501',null,
+  'only the approved Cottage Owner of the reviewed booking can read its review (another approved Cottage Owner)'
+);
+select throws_ok(
+  $$select public.submit_customer_review_reply('RC-REQ-0000000000001001','en','Denied reply')$$,
+  '42501',null,
+  'only the approved Cottage Owner of the reviewed booking can reply (another approved Cottage Owner)'
+);
+reset role;
+rollback to savepoint customer_review_reply_other_owner;
+
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","role":"authenticated","aal":"aal2"}',true);
+set local role authenticated;
+select throws_ok(
+  $$select public.get_owner_customer_review('RC-REQ-0000000000001001')$$,
+  '42501',null,
+  'only the approved Cottage Owner of the reviewed booking can read its review (an AAL2 administrator)'
+);
+select throws_ok(
+  $$select public.submit_customer_review_reply('RC-REQ-0000000000001001','en','Denied reply')$$,
+  '42501',null,
+  'only the approved Cottage Owner of the reviewed booking can reply (an AAL2 administrator)'
+);
+reset role;
+
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001001","role":"authenticated","aal":"aal1"}',true);
+set local role authenticated;
+select throws_ok(
+  $$select public.get_owner_customer_review('RC-REQ-00000000000000FF')$$,
+  '42501',null,
+  'only the approved Cottage Owner of the reviewed booking can read its review (an unknown reference)'
+);
+select throws_ok(
+  $$select public.submit_customer_review_reply('RC-REQ-00000000000000FF','en','Denied reply')$$,
+  '42501',null,
+  'only the approved Cottage Owner of the reviewed booking can reply (an unknown reference)'
+);
+reset role;
+
+savepoint customer_review_reply_suspended_owner;
+update public.account_contexts
+set owner_approval_state='suspended'
+where user_id='10000000-0000-4000-8000-000000001001';
+set local role authenticated;
+select throws_ok(
+  $$select public.get_owner_customer_review('RC-REQ-0000000000001001')$$,
+  '42501',null,
+  'only the approved Cottage Owner of the reviewed booking can read its review (the owner while suspended)'
+);
+select throws_ok(
+  $$select public.submit_customer_review_reply('RC-REQ-0000000000001001','en','Denied reply')$$,
+  '42501',null,
+  'only the approved Cottage Owner of the reviewed booking can reply (the owner while suspended)'
+);
+reset role;
+rollback to savepoint customer_review_reply_suspended_owner;
+
+savepoint customer_review_reply_owner_phone;
+update auth.users
+set phone_confirmed_at=null
+where id='10000000-0000-4000-8000-000000001001';
+set local role authenticated;
+select throws_ok(
+  $$select public.get_owner_customer_review('RC-REQ-0000000000001001')$$,
+  '42501',null,
+  'only the approved Cottage Owner of the reviewed booking can read its review (the owner without a confirmed phone)'
+);
+select throws_ok(
+  $$select public.submit_customer_review_reply('RC-REQ-0000000000001001','en','Denied reply')$$,
+  '42501',null,
+  'only the approved Cottage Owner of the reviewed booking can reply (the owner without a confirmed phone)'
+);
+reset role;
+rollback to savepoint customer_review_reply_owner_phone;
+
+select is(
+  (select count(*)::integer from public.customer_review_replies),0,
+  'denied reply attempts store nothing'
+);
+
+set local role authenticated;
+select is(
+  public.get_owner_customer_review('RC-REQ-0000000000001001'),
+  jsonb_build_object(
+    'status','reviewed',
+    'rating',5,
+    'originalLanguage','en',
+    'originalBody','A peaceful stay with a lovely garden.',
+    'submittedAt',(select submitted_at from reply_fixture),
+    'reply',null
+  ),
+  'the owner reads the review without Customer identity before replying'
+);
+
+insert into reply_observations
+select 'invalid reply: blank',public.submit_customer_review_reply(
+  'RC-REQ-0000000000001001','en','   '
+)
+union all
+select 'invalid reply: oversized',public.submit_customer_review_reply(
+  'RC-REQ-0000000000001001','en',repeat('x',2001)
+)
+union all
+select 'invalid reply: no language',public.submit_customer_review_reply(
+  'RC-REQ-0000000000001001',null,'Thank you for staying with us.'
+)
+union all
+select 'invalid reply: no body',public.submit_customer_review_reply(
+  'RC-REQ-0000000000001001','en',null
+)
+union all
+select 'invalid reply: only newlines and tabs',public.submit_customer_review_reply(
+  'RC-REQ-0000000000001001','en',E'\n\t\n'
+);
+insert into reply_observations
+select 'prohibited reply: phone',public.submit_customer_review_reply(
+  'RC-REQ-0000000000001001','en','Call us on +964 750 123 4567'
+)
+union all
+select 'prohibited reply: email',public.submit_customer_review_reply(
+  'RC-REQ-0000000000001001','en','Write to owner@example.test'
+)
+union all
+select 'prohibited reply: link',public.submit_customer_review_reply(
+  'RC-REQ-0000000000001001','en','Book again at https://example.test'
+)
+union all
+select 'prohibited reply: handle',public.submit_customer_review_reply(
+  'RC-REQ-0000000000001001','en','Find us as @cottageowner'
+);
+reset role;
+select ok(
+  (
+    select count(*)=5 and bool_and(value='{"status":"invalid"}'::jsonb)
+    from reply_observations where name like 'invalid reply: %'
+  )
+  and (select count(*)=0 from public.customer_review_replies),
+  'a blank, oversized or language-less reply is invalid and stores nothing'
+);
+select ok(
+  (
+    select count(*)=4 and bool_and(value='{"status":"prohibited-content"}'::jsonb)
+    from reply_observations where name like 'prohibited reply: %'
+  )
+  and (select count(*)=0 from public.customer_review_replies),
+  'a reply with contact details is refused before storage'
+);
+
+savepoint customer_review_reply_byte_order_mark_submit;
+set local role authenticated;
+insert into reply_observations
+select 'byte order mark reply',public.submit_customer_review_reply(
+  'RC-REQ-0000000000001001','en',E'\n' || chr(65279) || ' '
+);
+reset role;
+select ok(
+  (
+    select value='{"status":"invalid"}'::jsonb
+    from reply_observations where name='byte order mark reply'
+  )
+  and (select count(*)=0 from public.customer_review_replies),
+  'a reply made only of whitespace and byte order marks is invalid and stores nothing'
+);
+rollback to savepoint customer_review_reply_byte_order_mark_submit;
+
+savepoint customer_review_reply_hidden_review;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","role":"authenticated","aal":"aal2"}',true);
+set local role authenticated;
+select public.hide_customer_review(
+  (select review_id from reply_fixture),'Review hidden before any reply'
+);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001001","role":"authenticated","aal":"aal1"}',true);
+select ok(
+  public.submit_customer_review_reply(
+    'RC-REQ-0000000000001001','en','Thank you for staying with us.'
+  )='{"status":"ineligible"}'::jsonb
+  and public.get_owner_customer_review('RC-REQ-0000000000001001')
+    ='{"status":"review-hidden","reply":null}'::jsonb,
+  'a hidden review accepts no reply and shows the owner no review text'
+);
+reset role;
+rollback to savepoint customer_review_reply_hidden_review;
+
+savepoint customer_review_reply_whitespace_body;
+select throws_ok(
+  $$insert into public.customer_review_replies(
+    review_id,author_user_id,original_language,original_body
+  )
+  select review_id,'10000000-0000-4000-8000-000000001001','en',E'\n\t'
+  from reply_fixture$$,
+  '23514',null,'a whitespace-only reply body is rejected by the reply body check'
+);
+rollback to savepoint customer_review_reply_whitespace_body;
+
+savepoint customer_review_reply_byte_order_mark_body;
+select throws_ok(
+  $$insert into public.customer_review_replies(
+    review_id,author_user_id,original_language,original_body
+  )
+  select review_id,'10000000-0000-4000-8000-000000001001','en',
+    E'\n' || chr(65279) || ' '
+  from reply_fixture$$,
+  '23514',null,'a byte-order-mark-only reply body is rejected by the reply body check'
+);
+rollback to savepoint customer_review_reply_byte_order_mark_body;
+
+set local role authenticated;
+insert into reply_observations
+select 'first reply',public.submit_customer_review_reply(
+  'RC-REQ-0000000000001001','en','Thank you for staying with us.'
+);
+reset role;
+select ok(
+  (
+    select value->>'status'='replied'
+      and (select array_agg(key order by key) from jsonb_object_keys(value) key)
+        =array['affectedPublicSlug','reviewId','status','submittedAt']
+      and value->>'affectedPublicSlug'='cottage-deadbeefdeadbeefdeadbeefdead1001'
+      and value->>'reviewId'=(select review_id::text from reply_fixture)
+      and (value->>'submittedAt')::timestamptz
+        =(select submitted_at from public.customer_review_replies)
+    from reply_observations where name='first reply'
+  )
+  and (
+    select count(*)=1
+      and bool_and(
+        replies.review_id=(select review_id from reply_fixture)
+        and replies.author_user_id='10000000-0000-4000-8000-000000001001'
+        and replies.original_language='en'
+        and replies.original_body='Thank you for staying with us.'
+      )
+    from public.customer_review_replies replies
+  ),
+  'the first reply is stored once with its author and returns the exact mutation target'
+);
+
+set local role authenticated;
+insert into reply_observations
+select 'second reply',public.submit_customer_review_reply(
+  'RC-REQ-0000000000001001','ckb','Call us on +964 750 123 4567'
+);
+reset role;
+select ok(
+  (
+    select value->>'status'='duplicate'
+      and (select array_agg(key order by key) from jsonb_object_keys(value) key)
+        =array['reviewId','status','submittedAt']
+      and value->>'reviewId'=(select review_id::text from reply_fixture)
+      and (value->>'submittedAt')::timestamptz
+        =(select submitted_at from public.customer_review_replies)
+    from reply_observations where name='second reply'
+  )
+  and (
+    select count(*)=1
+      and bool_and(
+        replies.original_language='en'
+        and replies.original_body='Thank you for staying with us.'
+      )
+    from public.customer_review_replies replies
+  ),
+  'a second reply returns duplicate and leaves the first reply unchanged'
+);
+select throws_ok(
+  $$insert into public.customer_review_replies(
+    review_id,author_user_id,original_language,original_body
+  )
+  select review_id,'10000000-0000-4000-8000-000000001001','en','A second direct reply'
+  from reply_fixture$$,
+  '23505',null,'a direct second reply row is rejected by the reply key'
+);
+
+select set_config('request.jwt.claim.sub','',true);
+select set_config('request.jwt.claims','{}',true);
+set local role anon;
+select ok(
+  (
+    with result as (
+      select public.list_public_customer_reviews(
+        'cottage-deadbeefdeadbeefdeadbeefdead1001',null,null,20
+      ) value
+    )
+    select value->>'status'='success'
+      and jsonb_array_length(value->'items')=1
+      and (
+        select array_agg(key order by key)
+        from jsonb_object_keys(value#>'{items,0,ownerReply}') key
+      )=array['originalBody','originalLanguage','submittedAt']
+      and value#>>'{items,0,ownerReply,originalLanguage}'='en'
+      and value#>>'{items,0,ownerReply,originalBody}'='Thank you for staying with us.'
+    from result
+  ),
+  'visitors read the reply with its review and no author identity'
+);
+reset role;
+
+savepoint customer_review_reply_review_hidden;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","role":"authenticated","aal":"aal2"}',true);
+set local role authenticated;
+select public.hide_customer_review(
+  (select review_id from reply_fixture),'Review hidden after its reply'
+);
+reset role;
+select set_config('request.jwt.claim.sub','',true);
+select set_config('request.jwt.claims','{}',true);
+set local role anon;
+insert into reply_observations
+select 'public list after review hide',public.list_public_customer_reviews(
+  'cottage-deadbeefdeadbeefdeadbeefdead1001',null,null,20
+);
+reset role;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001001","role":"authenticated","aal":"aal1"}',true);
+set local role authenticated;
+select ok(
+  (
+    select value->>'status'='success' and jsonb_array_length(value->'items')=0
+    from reply_observations where name='public list after review hide'
+  )
+  and (
+    with owner_view as (
+      select public.get_owner_customer_review('RC-REQ-0000000000001001') value
+    )
+    select value->>'status'='review-hidden'
+      and (select array_agg(key order by key) from jsonb_object_keys(value) key)
+        =array['reply','status']
+      and value#>>'{reply,moderationState}'='unhidden'
+    from owner_view
+  ),
+  'a hidden review removes its reply from visitors'
+);
+reset role;
+rollback to savepoint customer_review_reply_review_hidden;
+
+savepoint customer_review_reply_whitespace_reason;
+select throws_ok(
+  $$insert into public.customer_review_reply_hides(
+    review_id,administrator_user_id,reason
+  )
+  select review_id,'10000000-0000-4000-8000-000000003801',E'\n\t'
+  from reply_fixture$$,
+  '23514',null,'a whitespace-only reply hide reason is rejected by the reason check'
+);
+rollback to savepoint customer_review_reply_whitespace_reason;
+
+savepoint customer_review_reply_byte_order_mark_reason;
+select throws_ok(
+  $$insert into public.customer_review_reply_hides(
+    review_id,administrator_user_id,reason
+  )
+  select review_id,'10000000-0000-4000-8000-000000003801',
+    E'\n' || chr(65279) || ' '
+  from reply_fixture$$,
+  '23514',null,'a byte-order-mark-only reply hide reason is rejected by the reason check'
+);
+rollback to savepoint customer_review_reply_byte_order_mark_reason;
+
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001001","role":"authenticated","aal":"aal2"}',true);
+set local role authenticated;
+select throws_ok(
+  format(
+    'select public.hide_customer_review_reply(%L,%L)',
+    (select review_id from reply_fixture),'Cottage Owner attempt'
+  ),
+  '42501',null,'hiding a reply needs an AAL2 administrator and a reason'
+);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001002","role":"authenticated","aal":"aal2"}',true);
+select throws_ok(
+  format(
+    'select public.hide_customer_review_reply(%L,%L)',
+    (select review_id from reply_fixture),'Customer attempt'
+  ),
+  '42501',null,'hiding a reply needs an AAL2 administrator and a reason'
+);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","role":"authenticated","aal":"aal1"}',true);
+select throws_ok(
+  format(
+    'select public.hide_customer_review_reply(%L,%L)',
+    (select review_id from reply_fixture),'AAL1 administrator attempt'
+  ),
+  '42501',null,'hiding a reply needs an AAL2 administrator and a reason'
+);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","role":"authenticated","aal":"aal2"}',true);
+select ok(
+  public.hide_customer_review_reply(
+    (select review_id from reply_fixture),'   '
+  )='{"status":"invalid"}'::jsonb
+  and public.hide_customer_review_reply(
+    (select review_id from reply_fixture),E'\n\t\n'
+  )='{"status":"invalid"}'::jsonb
+  and public.hide_customer_review_reply(
+    '99999999-0000-4000-8000-000000001001','Unknown review'
+  )='{"status":"invalid"}'::jsonb,
+  'hiding a reply needs an AAL2 administrator and a reason'
+);
+reset role;
+select is(
+  (select count(*)::integer from public.customer_review_reply_hides),0,
+  'an invalid reply hide stores nothing'
+);
+savepoint customer_review_reply_byte_order_mark_hide;
+set local role authenticated;
+insert into reply_observations
+select 'byte order mark reply hide',public.hide_customer_review_reply(
+  (select review_id from reply_fixture),E'\n' || chr(65279) || ' '
+);
+reset role;
+select ok(
+  (
+    select value='{"status":"invalid"}'::jsonb
+    from reply_observations where name='byte order mark reply hide'
+  )
+  and (select count(*)=0 from public.customer_review_reply_hides),
+  'a reply hide reason made only of whitespace and byte order marks is invalid and stores nothing'
+);
+rollback to savepoint customer_review_reply_byte_order_mark_hide;
+set local role authenticated;
+insert into reply_observations
+select 'first reply hide',public.hide_customer_review_reply(
+  (select review_id from reply_fixture),'  Reply breaches the review rules  '
+);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003802',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003802","role":"authenticated","aal":"aal2"}',true);
+insert into reply_observations
+select 'second reply hide',public.hide_customer_review_reply(
+  (select review_id from reply_fixture),'Replacement reply reason'
+);
+reset role;
+select ok(
+  (
+    select value->>'status'='hidden'
+      and (select array_agg(key order by key) from jsonb_object_keys(value) key)
+        =array[
+          'administratorUserId','affectedBookingRequestReference',
+          'affectedPublicSlug','hiddenAt','reason','reviewId','status'
+        ]
+      and value->>'reviewId'=(select review_id::text from reply_fixture)
+      and value->>'administratorUserId'='10000000-0000-4000-8000-000000003801'
+      and value->>'reason'='Reply breaches the review rules'
+      and value->>'affectedPublicSlug'='cottage-deadbeefdeadbeefdeadbeefdead1001'
+      and value->>'affectedBookingRequestReference'='RC-REQ-0000000000001001'
+    from reply_observations where name='first reply hide'
+  )
+  and (
+    select value->>'status'='already-hidden'
+      and (select array_agg(key order by key) from jsonb_object_keys(value) key)
+        =array['administratorUserId','hiddenAt','reason','reviewId','status']
+      and value->>'administratorUserId'='10000000-0000-4000-8000-000000003801'
+      and value->>'reason'='Reply breaches the review rules'
+    from reply_observations where name='second reply hide'
+  )
+  and (
+    select count(*)=1
+      and bool_and(
+        hides.review_id=(select review_id from reply_fixture)
+        and hides.administrator_user_id='10000000-0000-4000-8000-000000003801'
+        and hides.reason='Reply breaches the review rules'
+      )
+    from public.customer_review_reply_hides hides
+  ),
+  'the first reply hide is retained with its administrator and reason'
+);
+
+select set_config('request.jwt.claim.sub','',true);
+select set_config('request.jwt.claims','{}',true);
+set local role anon;
+select ok(
+  (
+    with result as (
+      select public.list_public_customer_reviews(
+        'cottage-deadbeefdeadbeefdeadbeefdead1001',null,null,20
+      ) value
+    )
+    select value->>'status'='success'
+      and jsonb_array_length(value->'items')=1
+      and value#>'{items,0,ownerReply}'='null'::jsonb
+      and value#>>'{items,0,originalBody}'='A peaceful stay with a lovely garden.'
+    from result
+  ),
+  'a hidden reply leaves visitors the review without the reply'
+);
+reset role;
+
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001001","role":"authenticated","aal":"aal1"}',true);
+set local role authenticated;
+select ok(
+  (
+    with owner_view as (
+      select public.get_owner_customer_review('RC-REQ-0000000000001001') value
+    )
+    select value->>'status'='reviewed'
+      and (
+        select array_agg(key order by key)
+        from jsonb_object_keys(value->'reply') key
+      )=array['moderationState','originalBody','originalLanguage','submittedAt']
+      and value#>>'{reply,moderationState}'='hidden'
+      and value#>>'{reply,originalBody}'='Thank you for staying with us.'
+    from owner_view
+  ),
+  'the owner sees their hidden reply marked hidden without the reason'
+);
+reset role;
+
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","role":"authenticated","aal":"aal2"}',true);
+set local role authenticated;
+select ok(
+  (
+    with result as (
+      select public.list_administrator_customer_reviews(null,null,50) value
+    )
+    select value->>'status'='success'
+      and jsonb_array_length(value->'items')=1
+      and value#>>'{items,0,moderationState}'='unhidden'
+      and (
+        select array_agg(key order by key)
+        from jsonb_object_keys(value#>'{items,0,reply}') key
+      )=array[
+        'authorUserId','hide','moderationState',
+        'originalBody','originalLanguage','submittedAt'
+      ]
+      and value#>>'{items,0,reply,authorUserId}'='10000000-0000-4000-8000-000000001001'
+      and value#>>'{items,0,reply,originalBody}'='Thank you for staying with us.'
+      and value#>>'{items,0,reply,moderationState}'='hidden'
+      and (
+        select array_agg(key order by key)
+        from jsonb_object_keys(value#>'{items,0,reply,hide}') key
+      )=array['administratorUserId','hiddenAt','reason']
+      and value#>>'{items,0,reply,hide,administratorUserId}'='10000000-0000-4000-8000-000000003801'
+      and value#>>'{items,0,reply,hide,reason}'='Reply breaches the review rules'
+    from result
+  ),
+  'administrators read the reply, its author and its hide audit'
+);
+reset role;
+
+select throws_ok(
+  $$update public.customer_review_replies set original_body='overwritten'$$,
+  'RC409',null,'replies and reply hides cannot be changed or deleted'
+);
+select throws_ok(
+  $$delete from public.customer_review_replies$$,
+  'RC409',null,'replies and reply hides cannot be changed or deleted'
+);
+select throws_ok(
+  $$update public.customer_review_reply_hides set reason='overwritten'$$,
+  'RC409',null,'replies and reply hides cannot be changed or deleted'
+);
+select throws_ok(
+  $$delete from public.customer_review_reply_hides$$,
+  'RC409',null,'replies and reply hides cannot be changed or deleted'
+);
+rollback to savepoint customer_review_reply;
 
 create or replace function public.contact_protection_text_is_safe(target_value text)
 returns boolean language sql immutable set search_path='' as $$select false$$;
@@ -1340,13 +1974,21 @@ select throws_ok(
 
 select ok(
   (select count(*)=1 from pg_constraint where conname='customer_reviews_booking_request_id_key')
-  and (select count(*)=6 from pg_constraint where conname in (
+  and (select count(*)=2 from pg_constraint where contype='p' and conname in (
+    'customer_review_replies_pkey',
+    'customer_review_reply_hides_pkey'
+  ))
+  and (select count(*)=10 from pg_constraint where contype='f' and conname in (
     'customer_reviews_booking_request_id_fkey',
     'customer_reviews_booking_confirmation_id_fkey',
     'customer_reviews_profile_id_fkey',
     'customer_reviews_author_user_id_fkey',
     'customer_review_hides_review_id_fkey',
-    'customer_review_hides_administrator_user_id_fkey'
+    'customer_review_hides_administrator_user_id_fkey',
+    'customer_review_replies_review_id_fkey',
+    'customer_review_replies_author_user_id_fkey',
+    'customer_review_reply_hides_review_id_fkey',
+    'customer_review_reply_hides_administrator_user_id_fkey'
   ))
   and (select indexdef like '%(profile_id, submitted_at DESC, id DESC)'
     from pg_indexes where indexname='customer_reviews_profile_cursor_idx')

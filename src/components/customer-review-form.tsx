@@ -45,9 +45,6 @@ export function CustomerReviewForm({
             ? copy.hidden
             : copy.published}
         </p>
-        {initialResult.moderationState === "unhidden" ? (
-          <p>{copy.visible}</p>
-        ) : null}
         <p>
           {copy.rating}: {initialResult.rating} / 5 {copy.ratingValue}
         </p>
@@ -59,7 +56,6 @@ export function CustomerReviewForm({
           {formatIraqDateTime(initialResult.submittedAt, locale)}
         </p>
         <small>{copy.translationUnavailable}</small>
-        <small>{copy.repliesUnavailable}</small>
       </section>
     );
 

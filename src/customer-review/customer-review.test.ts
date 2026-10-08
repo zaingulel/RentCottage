@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { isCustomerReviewBodyWithinLimit } from "./customer-review";
+import {
+  isCustomerReviewBodyWithinLimit,
+  isSubmitCustomerReviewReplyInput,
+} from "./customer-review";
 
 describe("customer review body validation", () => {
   it("matches the database character limit for supplementary Unicode characters", () => {
@@ -35,5 +38,40 @@ describe("customer review body validation", () => {
 
     expect(result).toBe(false);
     expect(observedCodePoints).toBe(2001);
+  });
+});
+
+describe("customer review reply validation", () => {
+  const validReply = {
+    bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+    originalLanguage: "ar",
+    originalBody: "شكراً لزيارتكم",
+  };
+
+  it("rejects a reply with unknown keys, a blank body or a body above the database limit", () => {
+    expect(isSubmitCustomerReviewReplyInput(validReply)).toBe(true);
+    expect(
+      isSubmitCustomerReviewReplyInput({
+        ...validReply,
+        originalBody: "🏡".repeat(2000),
+      }),
+    ).toBe(true);
+
+    for (const rejected of [
+      { ...validReply, authorUserId: "77777777-7777-4777-8777-777777777777" },
+      { ...validReply, rating: 5 },
+      {
+        bookingRequestReference: validReply.bookingRequestReference,
+        originalLanguage: validReply.originalLanguage,
+      },
+      { ...validReply, originalBody: "" },
+      { ...validReply, originalBody: "   \n\t " },
+      { ...validReply, originalBody: null },
+      { ...validReply, originalBody: "🏡".repeat(2001) },
+      { ...validReply, originalLanguage: "fr" },
+      { ...validReply, bookingRequestReference: "not-a-reference" },
+    ]) {
+      expect(isSubmitCustomerReviewReplyInput(rejected)).toBe(false);
+    }
   });
 });

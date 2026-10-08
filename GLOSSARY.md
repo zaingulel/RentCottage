@@ -253,7 +253,7 @@ The exact cottage directions, map pin and mutual customer-and-owner contact deta
 _Avoid_: Public listing address, approximate location, pending-request contact details
 
 **Customer Review**:
-The one-to-five-star rating a customer may submit once for a Completed Booking within 14 days, with an optional written assessment. The cottage owner may post one public reply. Reviews and replies cannot contain contact details or external links. A Platform Administrator may hide content that breaches the review rules without erasing the underlying record.
+The one-to-five-star rating a customer may submit once for a Completed Booking within 14 days, with an optional written assessment. The cottage owner may post one public reply to a visible review; a published reply cannot be edited or deleted. Reviews and replies cannot contain contact details or external links. A Platform Administrator may hide a review or a reply that breaches the review rules without erasing the underlying record; hiding a review also removes its reply from public view.
 _Avoid_: Required written assessment, public comment without a booking, contact exchange, duplicate review, private incident record
 
 **Launch Language**:
