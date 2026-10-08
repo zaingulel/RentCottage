@@ -2,6 +2,13 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+import {
+  LOCAL_CHECK_LIMIT_MESSAGE,
+  claimRunSlot as claimLocalRunSlot,
+  isHostedCheck,
+  localCheckSettings,
+} from "./lib/local-check-slot.mjs";
+
 const USAGE =
   "Usage: npm run verify [-- [--baseline|--database|--browser] [--full] [--plan]]";
 
@@ -698,9 +705,10 @@ function selectVerification(cwd, environment, stdout, stderr) {
   }
 }
 
-export function main(
+export async function main(
   args,
   {
+    claimRunSlot,
     cwd = process.cwd(),
     environment = process.env,
     monotonicNow = () => Number(process.hrtime.bigint()) / 1e6,
@@ -849,6 +857,21 @@ export function main(
     stdout("Plan only: no verification ran.");
     return 0;
   }
+  let stepEnvironment = verificationEnvironment;
+  if (claimRunSlot && expensive && !isHostedCheck(environment)) {
+    const slot = await claimRunSlot();
+    if (slot === undefined) {
+      stderr(LOCAL_CHECK_LIMIT_MESSAGE);
+      return 4;
+    }
+    const { ports } = localCheckSettings(slot);
+    stepEnvironment = {
+      ...verificationEnvironment,
+      VERIFY_LOCAL_SLOT: String(slot),
+      PLAYWRIGHT_NEXT_PORT: String(ports.next),
+      PLAYWRIGHT_WORKER_PORT: String(ports.worker),
+    };
+  }
   if (steps.length > 0 && !checkLockedDependencies(cwd, stderr)) return 1;
   for (let index = 0; index < steps.length; index += 1) {
     const [command, commandArgs] = steps[index];
@@ -858,7 +881,7 @@ export function main(
         : undefined;
     const startedAt = utcNow();
     const started = monotonicNow();
-    const result = run(command, commandArgs, verificationEnvironment, cwd);
+    const result = run(command, commandArgs, stepEnvironment, cwd);
     const durationMs = monotonicNow() - started;
     const completedAt = utcNow();
     const outcome = result.error
@@ -921,5 +944,7 @@ export function main(
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = main(process.argv.slice(2));
+  process.exitCode = await main(process.argv.slice(2), {
+    claimRunSlot: claimLocalRunSlot,
+  });
 }

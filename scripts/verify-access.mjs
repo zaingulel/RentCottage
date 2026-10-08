@@ -19,6 +19,20 @@ import {
   LOCAL_PROJECT_PATTERN,
 } from "./lib/access-journey-fixtures.mjs";
 import {
+  claimDatabaseSlot,
+  classifyPlaceDatabase,
+  isHostedCheck,
+  isLocalCheckSlotProject,
+  LOCAL_CHECK_LIMIT_MESSAGE,
+  localCheckServerBusyMessage,
+  localCheckSettings,
+  localCheckSlotBusyMessage,
+  loopbackPortAnswers,
+  parseLocalCheckSlot,
+  PLACE_DATABASE_LISTING_FORMAT,
+  removeStaleLocalCheckFolders,
+} from "./lib/local-check-slot.mjs";
+import {
   accessStepPlan,
   BROWSER_MODE,
   DATABASE_MODE,
@@ -343,6 +357,7 @@ function defaultRemoveTemp(path) {
 
 export function prepareIsolatedSupabaseWorkdir({
   localProject,
+  ports = localCheckSettings().ports,
   stateRoot,
   workingDirectory,
 }) {
@@ -353,15 +368,23 @@ export function prepareIsolatedSupabaseWorkdir({
   let config = readFileSync(join(source, "config.toml"), "utf8");
   const replacements = [
     ['project_id = "rentcottage"', `project_id = "${localProject}"`],
-    ["port = 54331", "port = 55331"],
-    ["port = 54332", "port = 55332"],
+    ["port = 54331", `port = ${ports.api}`],
+    ["port = 54332", `port = ${ports.database}`],
     // Stay below Linux's default automatic client-port range.
-    ["shadow_port = 54330", "shadow_port = 15330"],
-    ["port = 54339", "port = 55339"],
-    ["port = 54333", "port = 55333"],
-    ["port = 54334", "port = 55334"],
-    ["inspector_port = 8083", "inspector_port = 8183"],
-    ["port = 54337", "port = 55337"],
+    ["shadow_port = 54330", `shadow_port = ${ports.shadowDatabase}`],
+    ["port = 54339", `port = ${ports.pooler}`],
+    ["port = 54333", `port = ${ports.studio}`],
+    ["port = 54334", `port = ${ports.mail}`],
+    [
+      'site_url = "http://127.0.0.1:3000"',
+      `site_url = "http://127.0.0.1:${ports.next}"`,
+    ],
+    [
+      'additional_redirect_urls = ["http://127.0.0.1:3000"]',
+      `additional_redirect_urls = ["http://127.0.0.1:${ports.next}"]`,
+    ],
+    ["inspector_port = 8083", `inspector_port = ${ports.edgeInspector}`],
+    ["port = 54337", `port = ${ports.analytics}`],
   ];
   for (const [current, replacement] of replacements) {
     if (!config.includes(current)) {
@@ -409,12 +432,15 @@ export async function main(
   args,
   {
     environment = process.env,
+    claimDatabaseSlot,
     cleanupCommandLimitMs = CLEANUP_COMMAND_LIMIT_MS,
     monotonicNow = () => performance.now(),
     utcNow = () => new Date().toISOString(),
     stdout = console.log,
-    makeTemp = () => mkdtempSync(join(tmpdir(), "rentcottage-docker-config-")),
+    makeTemp = (prefix) => mkdtempSync(join(tmpdir(), prefix)),
+    portAnswers,
     prepareProject = prepareIsolatedSupabaseWorkdir,
+    removeStaleFolders,
     removeTemp = defaultRemoveTemp,
     run,
     stderr = console.error,
@@ -503,17 +529,52 @@ export async function main(
     );
   }
 
-  const localProject =
-    environment.SUPABASE_LOCAL_PROJECT ?? "rentcottage-verification";
+  const explicitProject = environment.SUPABASE_LOCAL_PROJECT;
   if (
-    localProject === "rentcottage" ||
-    !LOCAL_PROJECT_PATTERN.test(localProject)
+    explicitProject !== undefined &&
+    (explicitProject === "rentcottage" ||
+      !LOCAL_PROJECT_PATTERN.test(explicitProject))
   ) {
     stderr(
       "SUPABASE_LOCAL_PROJECT must name a disposable RentCottage local project.",
     );
     return 2;
   }
+  if (isLocalCheckSlotProject(explicitProject)) {
+    stderr(
+      `SUPABASE_LOCAL_PROJECT must not name a place of the full local check; the check assigns ${explicitProject} itself.`,
+    );
+    return 2;
+  }
+  const disposableCi = isHostedCheck(environment);
+  let slot;
+  if (claimDatabaseSlot && !disposableCi && explicitProject === undefined) {
+    let inheritedSlot;
+    try {
+      inheritedSlot = parseLocalCheckSlot(environment.VERIFY_LOCAL_SLOT);
+    } catch (error) {
+      stderr(error.message);
+      return 2;
+    }
+    slot = await claimDatabaseSlot(inheritedSlot);
+    if (slot === undefined) {
+      stderr(
+        inheritedSlot === undefined
+          ? LOCAL_CHECK_LIMIT_MESSAGE
+          : localCheckSlotBusyMessage(inheritedSlot),
+      );
+      return 4;
+    }
+    const servers = localCheckSettings(slot).ports;
+    for (const port of [servers.next, servers.worker]) {
+      if (await portAnswers(port)) {
+        stderr(localCheckServerBusyMessage(slot, port));
+        return 4;
+      }
+    }
+  }
+  const { ports, project, tempPrefix } = localCheckSettings(slot);
+  const localProject = explicitProject ?? project;
 
   const plan = stepPlan({ mode, phase, partition, shard });
   const originalRecipe = focusedFixtureContract
@@ -603,7 +664,7 @@ export async function main(
   const preparationStart = startTiming();
   let dockerConfig;
   try {
-    dockerConfig = makeTemp();
+    dockerConfig = makeTemp(tempPrefix);
   } catch (error) {
     finishTiming(
       preparationStart,
@@ -625,6 +686,7 @@ export async function main(
   try {
     localWorkdir = prepareProject({
       localProject,
+      ports,
       stateRoot: dockerConfig,
       workingDirectory: resolve(workingDirectory),
     });
@@ -683,10 +745,13 @@ export async function main(
     DOCKER_CONFIG: dockerConfig,
     SUPABASE_TELEMETRY_DISABLED: "1",
     DO_NOT_TRACK: "1",
+    ...(slot === undefined
+      ? {}
+      : {
+          PLAYWRIGHT_NEXT_PORT: String(ports.next),
+          PLAYWRIGHT_WORKER_PORT: String(ports.worker),
+        }),
   };
-  const disposableCi =
-    environment.GITHUB_ACTIONS === "true" &&
-    environment.RUNNER_ENVIRONMENT === "github-hosted";
   let freshStart = false;
   let started = false;
   let startupAttempted = false;
@@ -823,7 +888,100 @@ export async function main(
   delete databaseConcurrencyEnvironment.SUPABASE_PUBLISHABLE_KEY;
   delete databaseConcurrencyEnvironment.SUPABASE_SECRET_KEY;
 
+  const stopArguments = supabaseArguments([
+    "supabase",
+    "stop",
+    "--no-backup",
+    "--project-id",
+    localProject,
+  ]);
+
+  const clearPlace = async () => {
+    const container = databaseConcurrencyEnvironment.SUPABASE_DB_CONTAINER;
+    const refuse = (message) => {
+      if (!interruptedSignal) stderr(message);
+      return 4;
+    };
+    const listed = await execute(
+      "docker",
+      [
+        "ps",
+        "--all",
+        "--filter",
+        `name=${container}`,
+        "--format",
+        PLACE_DATABASE_LISTING_FORMAT,
+      ],
+      {
+        encoding: "utf8",
+        lifecycleLimit: cleanupCommandLimitMs,
+        stdio: "pipe",
+      },
+    );
+    if (listed.status !== 0 || typeof listed.stdout !== "string") {
+      return refuse(
+        `Unable to see what an earlier check left in place ${slot} of the full local check: Docker did not list the place's database container. Nothing was removed and nothing ran.`,
+      );
+    }
+    const leftover = classifyPlaceDatabase({
+      slot,
+      container,
+      listing: listed.stdout,
+      ownWorkdir: localWorkdir,
+    });
+    if (leftover.state === "unproven") {
+      return refuse(
+        `Place ${slot} of the full local check holds a database container, ${container}, that this check cannot show it made: ${leftover.found}. Nothing was removed and nothing ran. Look at that container and remove it yourself if nothing is using it.`,
+      );
+    }
+    const removed = [];
+    if (leftover.state === "made-here") {
+      // Not a cleanup command, so an interrupt still stops it.
+      const stopped = await execute("npx", stopArguments, {
+        encoding: "utf8",
+        lifecycleLimit: cleanupCommandLimitMs,
+        stdio: "pipe",
+      });
+      if (stopped.status !== 0) {
+        return refuse(
+          `Unable to stop the database an earlier check left in place ${slot} of the full local check. Its folders were kept and nothing ran.`,
+        );
+      }
+      removed.push(`database ${localProject}`);
+    }
+    try {
+      removed.push(...removeStaleFolders(slot, dockerConfig));
+    } catch (error) {
+      return refuse(
+        `Unable to remove a folder an earlier check left in place ${slot} of the full local check: ${error.message}. Nothing ran. Remove that folder, then run it again.`,
+      );
+    }
+    if (removed.length > 0) {
+      stdout(
+        `Place ${slot}: removed what an earlier check left behind: ${removed.join(", ")}.`,
+      );
+    }
+    return 0;
+  };
+
   const verify = async () => {
+    if (slot !== undefined) {
+      const clearingStart = startTiming();
+      let clearingStatus = 1;
+      try {
+        clearingStatus = await clearPlace();
+      } finally {
+        finishTiming(
+          clearingStart,
+          "place-clearing",
+          "shared-setup",
+          null,
+          { type: "exit", status: clearingStatus },
+          true,
+        );
+      }
+      if (clearingStatus !== 0) return clearingStatus;
+    }
     if (disposableCi) {
       freshStart = true;
       // Empty inventory means start builds a new database with migrations and seed; any retained resource requires reset.
@@ -1086,22 +1244,12 @@ export async function main(
           // Hosted runner disposal owns resource teardown.
           stopDeferred = true;
         } else if (!retainedResources) {
-          const stopped = await execute(
-            "npx",
-            supabaseArguments([
-              "supabase",
-              "stop",
-              "--no-backup",
-              "--project-id",
-              localProject,
-            ]),
-            {
-              cleanup: true,
-              encoding: "utf8",
-              lifecycleLimit: cleanupCommandLimitMs,
-              stdio: "pipe",
-            },
-          );
+          const stopped = await execute("npx", stopArguments, {
+            cleanup: true,
+            encoding: "utf8",
+            lifecycleLimit: cleanupCommandLimitMs,
+            stdio: "pipe",
+          });
           if (stopped.status !== 0) {
             retainedResources = true;
             stderr("Local Supabase cleanup failed.");
@@ -1163,5 +1311,9 @@ export async function main(
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = await main(process.argv.slice(2));
+  process.exitCode = await main(process.argv.slice(2), {
+    claimDatabaseSlot,
+    portAnswers: loopbackPortAnswers,
+    removeStaleFolders: removeStaleLocalCheckFolders,
+  });
 }

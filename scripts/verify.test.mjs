@@ -135,19 +135,19 @@ function createCrissCrossRepository() {
 }
 
 describe("repository verification command", () => {
-  it("rejects arguments before running an external command", () => {
+  it("rejects arguments before running an external command", async () => {
     const run = vi.fn();
     const stderr = vi.fn();
 
-    expect(main(["unexpected"], { run, stderr })).toBe(2);
+    expect(await main(["unexpected"], { run, stderr })).toBe(2);
     expect(run).not.toHaveBeenCalled();
     expect(stderr).toHaveBeenCalledWith(
       "Usage: npm run verify [-- [--baseline|--database|--browser] [--full] [--plan]]",
     );
   });
 
-  it("runs the baseline independently without selecting services", () => {
-    const result = runVerification(createRepository(), {
+  it("runs the baseline independently without selecting services", async () => {
+    const result = await runVerification(createRepository(), {
       args: ["--baseline"],
     });
     expect(result.status).toBe(0);
@@ -159,10 +159,10 @@ describe("repository verification command", () => {
 
   it.each(["--database", "--browser"])(
     "routes %s independently through the existing selector",
-    (mode) => {
+    async (mode) => {
       const repository = createRepository();
       commit(repository, "AGENTS.md", "updated instructions\n");
-      const prose = runVerification(repository, { args: [mode] });
+      const prose = await runVerification(repository, { args: [mode] });
       expect(prose.status).toBe(0);
       expect(prose.calls).toEqual([]);
       expect(prose.stdout).toHaveBeenCalledWith(
@@ -180,14 +180,14 @@ describe("repository verification command", () => {
         [mode, "--full"],
         ["--full", mode],
       ]) {
-        const forced = runVerification(repository, { args });
+        const forced = await runVerification(repository, { args });
         expect(forced.status).toBe(0);
         expect(
           forced.calls.map(([command, commandArgs]) => [command, commandArgs]),
         ).toEqual(expected);
       }
       write(repository, "tsconfig.json", "{ dirty }\n");
-      const selected = runVerification(repository, { args: [mode] });
+      const selected = await runVerification(repository, { args: [mode] });
       expect(selected.status).toBe(0);
       expect(selected.calls.map(([command, args]) => [command, args])).toEqual(
         expected,
@@ -197,7 +197,7 @@ describe("repository verification command", () => {
 
   it.each(["--database", "--browser"])(
     "runs the selected %s group again on an unchanged local rerun",
-    (mode) => {
+    async (mode) => {
       const repository = createRepository();
       write(repository, "tsconfig.json", "{ dirty }\n");
       const expected =
@@ -208,7 +208,7 @@ describe("repository verification command", () => {
               ...requiredExpensiveSteps.slice(1),
             ];
       for (let run = 0; run < 2; run += 1) {
-        const result = runVerification(repository, { args: [mode] });
+        const result = await runVerification(repository, { args: [mode] });
         expect(result.status).toBe(0);
         expect(result.calls.map(([command, args]) => [command, args])).toEqual(
           expected,
@@ -225,8 +225,8 @@ describe("repository verification command", () => {
     ["--plan", "--plan"],
     ["--database", "--database"],
     ["--browser", "unexpected"],
-  ])("rejects conflicting or malformed modes %j", (...args) => {
-    const result = runVerification("/missing-git-evidence", { args });
+  ])("rejects conflicting or malformed modes %j", async (...args) => {
+    const result = await runVerification("/missing-git-evidence", { args });
     expect(result.status).toBe(2);
     expect(result.run).not.toHaveBeenCalled();
     expect(result.stdout).not.toHaveBeenCalled();
@@ -234,8 +234,8 @@ describe("repository verification command", () => {
 
   it.each(["--baseline", "--database", "--browser"])(
     "installs Chromium only for the full browser mode in CI: %s",
-    (mode) => {
-      const result = runVerification(createRepository(), {
+    async (mode) => {
+      const result = await runVerification(createRepository(), {
         args: [mode, "--full"],
         environment: { GITHUB_ACTIONS: "true" },
       });
@@ -263,7 +263,7 @@ describe("repository verification command", () => {
     );
   });
 
-  it("runs every check with safe test bindings when full is explicit", () => {
+  it("runs every check with safe test bindings when full is explicit", async () => {
     const repository = createRepository();
     const run = vi.fn(() => ({ status: 0 }));
     const expectedEnvironment = {
@@ -278,7 +278,7 @@ describe("repository verification command", () => {
     };
 
     expect(
-      main(["--full"], {
+      await main(["--full"], {
         cwd: repository,
         environment: { EXISTING: "kept" },
         run,
@@ -292,7 +292,7 @@ describe("repository verification command", () => {
     }
   });
 
-  it("stops before every selected command when installed Wrangler or Workerd differs from the lockfile", () => {
+  it("stops before every selected command when installed Wrangler or Workerd differs from the lockfile", async () => {
     const repository = createRepository();
     writeDependencyMetadata(repository, {
       installedVersions: {
@@ -300,7 +300,7 @@ describe("repository verification command", () => {
         workerd: "1.20260811.1",
       },
     });
-    const result = runVerification(repository, { args: ["--full"] });
+    const result = await runVerification(repository, { args: ["--full"] });
 
     expect(result.status).toBe(1);
     expect(result.run).not.toHaveBeenCalled();
@@ -314,12 +314,12 @@ describe("repository verification command", () => {
     expect(report).toContain("npm ci");
   });
 
-  it("does not execute when dependency metadata is missing or malformed", () => {
+  it("does not execute when dependency metadata is missing or malformed", async () => {
     const repository = createRepository();
     write(repository, "package-lock.json", "{ malformed\n");
     rmSync(join(repository, "node_modules/workerd/package.json"));
 
-    const result = runVerification(repository, { args: ["--full"] });
+    const result = await runVerification(repository, { args: ["--full"] });
 
     expect(result.status).toBe(1);
     expect(result.run).not.toHaveBeenCalled();
@@ -331,12 +331,14 @@ describe("repository verification command", () => {
     expect(report).toContain("npm ci");
   });
 
-  it("keeps plan-only output non-mutating when dependency metadata is unavailable", () => {
+  it("keeps plan-only output non-mutating when dependency metadata is unavailable", async () => {
     const repository = createRepository();
     rmSync(join(repository, "package-lock.json"));
     rmSync(join(repository, "node_modules/wrangler/package.json"));
 
-    const result = runVerification(repository, { args: ["--full", "--plan"] });
+    const result = await runVerification(repository, {
+      args: ["--full", "--plan"],
+    });
 
     expect(result.status).toBe(0);
     expect(result.run).not.toHaveBeenCalled();
@@ -345,14 +347,16 @@ describe("repository verification command", () => {
     );
   });
 
-  it("skips the dependency preflight when no verification commands are selected", () => {
+  it("skips the dependency preflight when no verification commands are selected", async () => {
     const repository = createRepository();
     commit(repository, "AGENTS.md", "updated instructions\n");
     rmSync(join(repository, "node_modules/wrangler/package.json"));
     rmSync(join(repository, "node_modules/workerd/package.json"));
 
-    const executed = runVerification(repository, { args: ["--database"] });
-    const planned = runVerification(repository, {
+    const executed = await runVerification(repository, {
+      args: ["--database"],
+    });
+    const planned = await runVerification(repository, {
       args: ["--database", "--plan"],
     });
 
@@ -365,14 +369,14 @@ describe("repository verification command", () => {
     );
   });
 
-  it("does not reuse a placeholder Worker build unless compilation succeeds", () => {
+  it("does not reuse a placeholder Worker build unless compilation succeeds", async () => {
     const repository = createRepository();
     const run = vi.fn((command, args) => ({
       status:
         command === "npm" && args.join(" ") === "run build:worker" ? 8 : 0,
     }));
     expect(
-      main(["--browser", "--full"], {
+      await main(["--browser", "--full"], {
         cwd: repository,
         environment: {},
         run,
@@ -386,7 +390,7 @@ describe("repository verification command", () => {
     ]);
   });
 
-  it("stops immediately and preserves a failing exit code", () => {
+  it("stops immediately and preserves a failing exit code", async () => {
     const repository = createRepository();
     const run = vi
       .fn()
@@ -394,14 +398,14 @@ describe("repository verification command", () => {
       .mockReturnValueOnce({ status: 7 });
     const stderr = vi.fn();
 
-    expect(main(["--full"], { cwd: repository, run, stderr })).toBe(7);
+    expect(await main(["--full"], { cwd: repository, run, stderr })).toBe(7);
     expect(run).toHaveBeenCalledTimes(2);
     expect(stderr).toHaveBeenCalledWith(
       expect.stringContaining("later selected checks were not reached"),
     );
   });
 
-  it("reports prepared failure recipes without guessing a combined access group", () => {
+  it("reports prepared failure recipes without guessing a combined access group", async () => {
     const repository = createRepository();
     const baselineRecipe = ["npm", "run", "verify", "--", "--baseline"];
     const databaseRecipe = [
@@ -467,7 +471,7 @@ describe("repository verification command", () => {
         );
 
         expect(
-          main(scenario.args, {
+          await main(scenario.args, {
             cwd: repository,
             environment: { GITHUB_ACTIONS: "true" },
             run,
@@ -496,7 +500,7 @@ describe("repository verification command", () => {
     }
   });
 
-  it("reproduces a failed browser group with its bindings and Worker artifact prerequisites", () => {
+  it("reproduces a failed browser group with its bindings and Worker artifact prerequisites", async () => {
     const repository = createRepository();
     commit(repository, "docs/research/study.md", "# Study\n");
     const requiredBindings = {
@@ -516,7 +520,7 @@ describe("repository verification command", () => {
     );
 
     for (const environment of [{}, conflictingBindings]) {
-      const execute = (args) => {
+      const execute = async (args) => {
         let artifactPresent = false;
         const stdout = vi.fn();
         const stderr = vi.fn();
@@ -543,7 +547,7 @@ describe("repository verification command", () => {
           }
           return { status: 0 };
         });
-        const status = main(args, {
+        const status = await main(args, {
           cwd: repository,
           environment,
           run,
@@ -566,7 +570,7 @@ describe("repository verification command", () => {
         return { diagnostic, run, status };
       };
 
-      const failed = execute(["--browser", "--full"]);
+      const failed = await execute(["--browser", "--full"]);
       expect(failed.status).toBe(7);
       expect(failed.diagnostic.attemptedCommand).toEqual([
         "npm",
@@ -580,7 +584,9 @@ describe("repository verification command", () => {
         "--",
       ]);
 
-      const reproduced = execute(failed.diagnostic.reproduceGroup.slice(4));
+      const reproduced = await execute(
+        failed.diagnostic.reproduceGroup.slice(4),
+      );
       expect(reproduced.status).toBe(7);
       for (const result of [failed, reproduced]) {
         expect(
@@ -594,7 +600,7 @@ describe("repository verification command", () => {
     }
   });
 
-  it("records command timing only after execution and preserves fail-fast outcomes", () => {
+  it("records command timing only after execution and preserves fail-fast outcomes", async () => {
     const repository = createRepository();
     const expectedSteps = [...requiredBaselineSteps, ...requiredExpensiveSteps];
     const scenarios = [
@@ -645,7 +651,7 @@ describe("repository verification command", () => {
       });
 
       expect(
-        main(["--full"], {
+        await main(["--full"], {
           cwd: repository,
           environment: {},
           monotonicNow: () => monotonic,
@@ -684,7 +690,7 @@ describe("repository verification command", () => {
       }
     }
 
-    const planned = runVerification(repository, {
+    const planned = await runVerification(repository, {
       args: ["--full", "--plan"],
     });
     expect(planned.status).toBe(0);
@@ -700,7 +706,7 @@ describe("repository verification command", () => {
     ).toEqual(expectedSteps.map(([command, args]) => [command, ...args]));
 
     rmSync(join(repository, "node_modules/wrangler/package.json"));
-    const blocked = runVerification(repository, { args: ["--full"] });
+    const blocked = await runVerification(repository, { args: ["--full"] });
     expect(blocked.status).toBe(1);
     expect(blocked.run).not.toHaveBeenCalled();
     expect(
@@ -708,7 +714,7 @@ describe("repository verification command", () => {
     ).toBe(false);
   });
 
-  it("fails loudly when a verification executable cannot start or is signalled", () => {
+  it("fails loudly when a verification executable cannot start or is signalled", async () => {
     const repository = createRepository();
     const stderr = vi.fn();
     const run = vi.fn(() => ({
@@ -716,23 +722,23 @@ describe("repository verification command", () => {
       status: null,
     }));
 
-    expect(main(["--full"], { cwd: repository, run, stderr })).toBe(1);
+    expect(await main(["--full"], { cwd: repository, run, stderr })).toBe(1);
     expect(stderr).toHaveBeenCalledWith(
       expect.stringContaining("Unable to run npm: executable unavailable"),
     );
 
     run.mockReturnValue({ signal: "SIGTERM", status: null });
-    expect(main(["--full"], { cwd: repository, run, stderr })).toBe(1);
+    expect(await main(["--full"], { cwd: repository, run, stderr })).toBe(1);
     expect(stderr).toHaveBeenCalledWith(
       expect.stringContaining("Unable to run npm: terminated by SIGTERM"),
     );
   });
 
-  it("runs the baseline only when every changed path is explicitly approved prose", () => {
+  it("runs the baseline only when every changed path is explicitly approved prose", async () => {
     const repository = createRepository();
     commit(repository, "AGENTS.md", "updated instructions\n");
 
-    const result = runVerification(repository);
+    const result = await runVerification(repository);
 
     expect(result.status).toBe(0);
     expect(result.calls.map(([command, args]) => [command, args])).toEqual(
@@ -1173,11 +1179,11 @@ describe("repository verification command", () => {
     ].map(([paths, ...rest]) => [paths.join(" and "), paths, ...rest]),
   )(
     "selects the route for %s",
-    (_label, paths, steps, database, browser, concurrency) => {
+    async (_label, paths, steps, database, browser, concurrency) => {
       const repository = createRepository();
       for (const path of paths) commit(repository, path, "fixture\n");
 
-      const result = runVerification(repository);
+      const result = await runVerification(repository);
 
       expect(result.status).toBe(0);
       expect(result.calls.map(([command, args]) => [command, args])).toEqual(
@@ -1197,11 +1203,11 @@ describe("repository verification command", () => {
     },
   );
 
-  it("stops without running anything when a changed path is unclassified", () => {
+  it("stops without running anything when a changed path is unclassified", async () => {
     const repository = createRepository();
     commit(repository, "unknown-policy.fixture", "unclassified\n");
 
-    const result = runVerification(repository);
+    const result = await runVerification(repository);
 
     expect(result.status).toBe(3);
     expect(result.run).not.toHaveBeenCalled();
@@ -1231,12 +1237,12 @@ describe("repository verification command", () => {
     );
   });
 
-  it("names only the unclassified path when a classified path also changed", () => {
+  it("names only the unclassified path when a classified path also changed", async () => {
     const repository = createRepository();
     commit(repository, "unknown-policy.fixture", "unclassified\n");
     commit(repository, "custom-worker.ts", "export const value = 'changed';\n");
 
-    const result = runVerification(repository);
+    const result = await runVerification(repository);
 
     expect(result.status).toBe(3);
     expect(result.run).not.toHaveBeenCalled();
@@ -1246,12 +1252,12 @@ describe("repository verification command", () => {
     expect(report).toMatch(/1 changed path is not listed/);
   });
 
-  it("counts every unclassified path in one report", () => {
+  it("counts every unclassified path in one report", async () => {
     const repository = createRepository();
     commit(repository, "unknown-policy.fixture", "unclassified\n");
     commit(repository, "unknown-runtime.fixture", "runtime\n");
 
-    const result = runVerification(repository);
+    const result = await runVerification(repository);
 
     expect(result.status).toBe(3);
     const report = result.stderr.mock.calls.map(([line]) => line).join("\n");
@@ -1261,11 +1267,11 @@ describe("repository verification command", () => {
 
   it.each(["--database", "--browser", "--plan"])(
     "stops %s on an unclassified path because each one still selects a route",
-    (mode) => {
+    async (mode) => {
       const repository = createRepository();
       commit(repository, "unknown-policy.fixture", "unclassified\n");
 
-      const result = runVerification(repository, { args: [mode] });
+      const result = await runVerification(repository, { args: [mode] });
 
       expect(result.status).toBe(3);
       expect(result.run).not.toHaveBeenCalled();
@@ -1277,11 +1283,11 @@ describe("repository verification command", () => {
 
   it.each(["--full", "--baseline"])(
     "lets %s confirm the route while an unclassified path is present",
-    (mode) => {
+    async (mode) => {
       const repository = createRepository();
       commit(repository, "unknown-policy.fixture", "unclassified\n");
 
-      const result = runVerification(repository, { args: [mode] });
+      const result = await runVerification(repository, { args: [mode] });
 
       expect(result.status).toBe(0);
       expect(result.calls.map(([command, args]) => [command, args])).toEqual(
@@ -1293,11 +1299,11 @@ describe("repository verification command", () => {
     },
   );
 
-  it("lets --full bypass documentation selection", () => {
+  it("lets --full bypass documentation selection", async () => {
     const repository = createRepository();
     commit(repository, "AGENTS.md", "updated instructions\n");
 
-    const result = runVerification(repository, { args: ["--full"] });
+    const result = await runVerification(repository, { args: ["--full"] });
 
     expect(result.status).toBe(0);
     expect(result.calls.map(([command, args]) => [command, args])).toEqual([
@@ -1309,12 +1315,12 @@ describe("repository verification command", () => {
     );
   });
 
-  it("keeps an earlier runtime commit visible after a documentation commit", () => {
+  it("keeps an earlier runtime commit visible after a documentation commit", async () => {
     const repository = createRepository();
     commit(repository, "tsconfig.json", "{ changed }\n");
     commit(repository, "AGENTS.md", "updated instructions\n");
 
-    const result = runVerification(repository);
+    const result = await runVerification(repository);
 
     expect(result.status).toBe(0);
     expect(result.calls).toHaveLength(
@@ -1322,7 +1328,7 @@ describe("repository verification command", () => {
     );
   });
 
-  it("unions dirty, staged-cancelled, and untracked paths", () => {
+  it("unions dirty, staged-cancelled, and untracked paths", async () => {
     const cases = [
       (repository) => write(repository, "tsconfig.json", "{ dirty }\n"),
       (repository) => {
@@ -1337,7 +1343,7 @@ describe("repository verification command", () => {
     for (const arrange of cases) {
       const repository = createRepository();
       arrange(repository);
-      const result = runVerification(repository);
+      const result = await runVerification(repository);
       expect(result.status).toBe(0);
       expect(result.calls).toHaveLength(
         requiredBaselineSteps.length + requiredExpensiveSteps.length,
@@ -1345,11 +1351,11 @@ describe("repository verification command", () => {
     }
   });
 
-  it("uses both endpoints of deletions and renames", () => {
+  it("uses both endpoints of deletions and renames", async () => {
     const deletedRepository = createRepository();
     git(deletedRepository, ["rm", "tsconfig.json"]);
     git(deletedRepository, ["commit", "-m", "delete runtime"]);
-    expect(runVerification(deletedRepository).calls).toHaveLength(
+    expect((await runVerification(deletedRepository)).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
     );
 
@@ -1357,19 +1363,19 @@ describe("repository verification command", () => {
     mkdirSync(join(renamedRepository, "scripts"));
     git(renamedRepository, ["mv", "AGENTS.md", "scripts/verify-preview.mjs"]);
     git(renamedRepository, ["commit", "-m", "rename manual"]);
-    expect(runVerification(renamedRepository).calls).toHaveLength(
+    expect((await runVerification(renamedRepository)).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
     );
   });
 
-  it("rejects symlink and tracked file-type exemptions", () => {
+  it("rejects symlink and tracked file-type exemptions", async () => {
     const untrackedRepository = createRepository();
     mkdirSync(join(untrackedRepository, "docs/agents"), { recursive: true });
     symlinkSync(
       "../../custom-worker.ts",
       join(untrackedRepository, "docs/agents/domain.md"),
     );
-    expect(runVerification(untrackedRepository).calls).toHaveLength(
+    expect((await runVerification(untrackedRepository)).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
     );
 
@@ -1377,14 +1383,14 @@ describe("repository verification command", () => {
     rmSync(join(changedRepository, "AGENTS.md"));
     symlinkSync("custom-worker.ts", join(changedRepository, "AGENTS.md"));
     git(changedRepository, ["add", "AGENTS.md"]);
-    expect(runVerification(changedRepository).calls).toHaveLength(
+    expect((await runVerification(changedRepository)).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
     );
   });
 
   it.each(["committed", "staged", "unstaged", "untracked"])(
     "rejects %s executable agent prose",
-    (state) => {
+    async (state) => {
       const repository = createRepository();
       const path = ".agents/templates/future-template.md";
       write(repository, path, "# Future template\n");
@@ -1400,7 +1406,7 @@ describe("repository verification command", () => {
         git(repository, ["commit", "-m", "executable template"]);
       }
 
-      const result = runVerification(repository);
+      const result = await runVerification(repository);
 
       expect(result.calls.map(([command, args]) => [command, args])).toEqual([
         ...requiredBaselineSteps,
@@ -1412,20 +1418,20 @@ describe("repository verification command", () => {
     },
   );
 
-  it("keeps mixed prose and runtime changes on full evidence", () => {
+  it("keeps mixed prose and runtime changes on full evidence", async () => {
     const repository = createRepository();
     commit(repository, "docs/research/study.md", "# Study\n");
     commit(repository, "tsconfig.json", "{ changed }\n");
 
-    expect(runVerification(repository).calls).toHaveLength(
+    expect((await runVerification(repository)).calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
     );
   });
 
-  it("selects full verification when Git evidence is missing or shallow", () => {
+  it("selects full verification when Git evidence is missing or shallow", async () => {
     const missingRepository = createRepository();
     git(missingRepository, ["update-ref", "-d", "refs/remotes/origin/main"]);
-    const missing = runVerification(missingRepository);
+    const missing = await runVerification(missingRepository);
     expect(missing.calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
     );
@@ -1446,7 +1452,7 @@ describe("repository verification command", () => {
       shallowRepository,
     ]);
     writeDependencyMetadata(shallowRepository);
-    const shallow = runVerification(shallowRepository);
+    const shallow = await runVerification(shallowRepository);
     expect(shallow.calls).toHaveLength(
       requiredBaselineSteps.length + requiredExpensiveSteps.length,
     );
@@ -1457,7 +1463,7 @@ describe("repository verification command", () => {
 
   it.each([undefined, "--database", "--browser"])(
     "uses source and checked-out merge histories in CI: %s",
-    (mode) => {
+    async (mode) => {
       const repository = createRepository();
       const originalBase = git(repository, ["rev-parse", "HEAD"]);
 
@@ -1481,7 +1487,7 @@ describe("repository verification command", () => {
       git(repository, ["add", "."]);
       git(repository, ["commit", "-m", "merge source"]);
 
-      const result = runVerification(repository, {
+      const result = await runVerification(repository, {
         args: mode ? [mode] : [],
         environment: {
           GITHUB_ACTIONS: "true",
@@ -1500,7 +1506,7 @@ describe("repository verification command", () => {
     },
   );
 
-  it("preserves hosted partitions, source selection and local isolation", () => {
+  it("preserves hosted partitions, source selection and local isolation", async () => {
     const rows = [
       ...[
         "database-core",
@@ -1553,7 +1559,7 @@ describe("repository verification command", () => {
         [docs, docsBase, docsSource, false],
         [code, codeBase, "0".repeat(40), true],
       ]) {
-        const result = runVerification(repository, {
+        const result = await runVerification(repository, {
           args: [mode],
           environment: {
             ...controls,
@@ -1660,7 +1666,7 @@ describe("repository verification command", () => {
         reason: "--full",
       },
     ]) {
-      const result = runVerification("/missing-git-evidence", {
+      const result = await runVerification("/missing-git-evidence", {
         args,
         environment,
       });
@@ -1671,21 +1677,21 @@ describe("repository verification command", () => {
         expect.stringContaining(reason),
       );
     }
-    const local = runVerification(docs, { args: ["--browser"] });
+    const local = await runVerification(docs, { args: ["--browser"] });
     expect(local.status).toBe(0);
     expect(local.calls).toEqual([]);
   }, 30_000);
 
   it.each([undefined, "--database", "--browser"])(
     "keeps the CI quick path for a docs-only merge: %s",
-    (mode) => {
+    async (mode) => {
       const repository = createRepository();
       const base = git(repository, ["rev-parse", "HEAD"]);
       const source = commit(repository, "AGENTS.md", "source instructions\n");
       git(repository, ["switch", "main"]);
       git(repository, ["merge", "--no-ff", source]);
 
-      const result = runVerification(repository, {
+      const result = await runVerification(repository, {
         args: mode ? [mode] : [],
         environment: {
           GITHUB_ACTIONS: "true",
@@ -1711,30 +1717,33 @@ describe("repository verification command", () => {
     ].flatMap((path) =>
       [undefined, "--database", "--browser"].map((mode) => [path, mode]),
     ),
-  )("runs every check in CI for a product change: %s %s", (path, mode) => {
-    const repository = createRepository();
-    const base = git(repository, ["rev-parse", "HEAD"]);
-    const source = commit(repository, path, "export const value = true;\n");
-    git(repository, ["switch", "main"]);
-    git(repository, ["merge", "--no-ff", source]);
+  )(
+    "runs every check in CI for a product change: %s %s",
+    async (path, mode) => {
+      const repository = createRepository();
+      const base = git(repository, ["rev-parse", "HEAD"]);
+      const source = commit(repository, path, "export const value = true;\n");
+      git(repository, ["switch", "main"]);
+      git(repository, ["merge", "--no-ff", source]);
 
-    const result = runVerification(repository, {
-      args: mode ? [mode] : [],
-      environment: {
-        GITHUB_ACTIONS: "true",
-        VERIFY_BASE_SHA: base,
-        VERIFY_SOURCE_SHA: source,
-      },
-    });
+      const result = await runVerification(repository, {
+        args: mode ? [mode] : [],
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_BASE_SHA: base,
+          VERIFY_SOURCE_SHA: source,
+        },
+      });
 
-    expect(result.status).toBe(0);
-    expect(result.calls.map(([command, args]) => [command, args])).toEqual(
-      requiredCiSteps(mode),
-    );
-    expect(result.stdout).toHaveBeenCalledWith(
-      expect.stringContaining("continuous integration runs every check"),
-    );
-  });
+      expect(result.status).toBe(0);
+      expect(result.calls.map(([command, args]) => [command, args])).toEqual(
+        requiredCiSteps(mode),
+      );
+      expect(result.stdout).toHaveBeenCalledWith(
+        expect.stringContaining("continuous integration runs every check"),
+      );
+    },
+  );
 
   it.each([
     ["modification", undefined],
@@ -1742,7 +1751,7 @@ describe("repository verification command", () => {
     ["deletion", "--browser"],
   ])(
     "ignores an advanced-base-only runtime %s in CI: %s",
-    (baseChange, mode) => {
+    async (baseChange, mode) => {
       const repository = createRepository();
       const originalBase = git(repository, ["rev-parse", "HEAD"]);
 
@@ -1764,7 +1773,7 @@ describe("repository verification command", () => {
       const base = git(repository, ["rev-parse", "HEAD"]);
       git(repository, ["merge", "--no-ff", "source"]);
 
-      const result = runVerification(repository, {
+      const result = await runVerification(repository, {
         args: mode ? [mode] : [],
         environment: {
           GITHUB_ACTIONS: "true",
@@ -1785,7 +1794,7 @@ describe("repository verification command", () => {
 
   it.each([undefined, "--database", "--browser"])(
     "selects full CI evidence for a runtime change visible only in the merge result: %s",
-    (mode) => {
+    async (mode) => {
       const repository = createRepository();
       const base = git(repository, ["rev-parse", "HEAD"]);
       const source = commit(repository, "AGENTS.md", "source instructions\n");
@@ -1795,7 +1804,7 @@ describe("repository verification command", () => {
       git(repository, ["add", "."]);
       git(repository, ["commit", "-m", "merge source"]);
 
-      const result = runVerification(repository, {
+      const result = await runVerification(repository, {
         args: mode ? [mode] : [],
         environment: {
           GITHUB_ACTIONS: "true",
@@ -1814,7 +1823,7 @@ describe("repository verification command", () => {
     },
   );
 
-  it("prints full and group-scoped plans from execution vectors without running them", () => {
+  it("prints full and group-scoped plans from execution vectors without running them", async () => {
     const cases = [
       {
         args: ["--full"],
@@ -1829,7 +1838,7 @@ describe("repository verification command", () => {
     ];
 
     for (const { args, expected, scope } of cases) {
-      const result = runVerification("/missing-git-evidence", {
+      const result = await runVerification("/missing-git-evidence", {
         args: [...args, "--plan"],
       });
       const planned = result.stdout.mock.calls
@@ -1850,11 +1859,11 @@ describe("repository verification command", () => {
     }
   });
 
-  it("prints the same narrow commands that execution consumes", () => {
+  it("prints the same narrow commands that execution consumes", async () => {
     const repository = createRepository();
     commit(repository, "docs/research/study.md", "# Study\n");
-    const executed = runVerification(repository);
-    const planned = runVerification(repository, { args: ["--plan"] });
+    const executed = await runVerification(repository);
+    const planned = await runVerification(repository, { args: ["--plan"] });
     const plannedCommands = planned.stdout.mock.calls
       .map(([line]) => line)
       .filter((line) => line.startsWith("Planned command: "))
@@ -1867,8 +1876,8 @@ describe("repository verification command", () => {
     );
   });
 
-  it("plans CI browser preparation without invoking the Chromium installer", () => {
-    const result = runVerification("/missing-git-evidence", {
+  it("plans CI browser preparation without invoking the Chromium installer", async () => {
+    const result = await runVerification("/missing-git-evidence", {
       args: ["--browser", "--full", "--plan"],
       environment: { GITHUB_ACTIONS: "true" },
     });
@@ -1881,7 +1890,7 @@ describe("repository verification command", () => {
 
   it.each(["local", "CI"])(
     "fails closed when %s history has multiple merge bases",
-    (context) => {
+    async (context) => {
       const { left, repository, right } = createCrissCrossRepository();
       let options = {};
       if (context === "local") {
@@ -1898,7 +1907,7 @@ describe("repository verification command", () => {
         };
       }
 
-      const result = runVerification(repository, options);
+      const result = await runVerification(repository, options);
 
       expect(result.calls.map(([command, args]) => [command, args])).toEqual(
         context === "CI"
@@ -1913,10 +1922,10 @@ describe("repository verification command", () => {
 
   it.each([undefined, "--database", "--browser"])(
     "fails closed for invalid CI merge identity: %s",
-    (mode) => {
+    async (mode) => {
       const repository = createRepository();
       commit(repository, "AGENTS.md", "updated instructions\n");
-      const result = runVerification(repository, {
+      const result = await runVerification(repository, {
         args: mode ? [mode] : [],
         environment: {
           GITHUB_ACTIONS: "true",
@@ -1933,4 +1942,79 @@ describe("repository verification command", () => {
       );
     },
   );
+
+  it("takes a place for a local run with database or browser steps and hands it to every step", async () => {
+    const repository = createRepository();
+    for (const [args, expected] of [
+      [["--full"], [...requiredBaselineSteps, ...requiredExpensiveSteps]],
+      [["--database", "--full"], requiredDatabaseSteps],
+      [["--browser", "--full"], requiredBrowserSteps],
+    ]) {
+      const claimRunSlot = vi.fn(async () => 2);
+      const result = await runVerification(repository, { args, claimRunSlot });
+
+      expect(result.status).toBe(0);
+      expect(claimRunSlot).toHaveBeenCalledTimes(1);
+      expect(
+        result.calls.map(([command, commandArgs]) => [command, commandArgs]),
+      ).toEqual(expected);
+      for (const [, , environment] of result.calls) {
+        expect(environment).toMatchObject({
+          VERIFY_LOCAL_SLOT: "2",
+          PLAYWRIGHT_NEXT_PORT: "3020",
+          PLAYWRIGHT_WORKER_PORT: "8808",
+        });
+      }
+    }
+  });
+
+  it("stops with the limit message and runs nothing when no place is free", async () => {
+    const claimRunSlot = vi.fn(async () => undefined);
+    const result = await runVerification(createRepository(), {
+      args: ["--full"],
+      claimRunSlot,
+    });
+
+    expect(result.status).toBe(4);
+    expect(claimRunSlot).toHaveBeenCalledTimes(1);
+    expect(result.calls).toEqual([]);
+    expect(result.stderr.mock.calls).toEqual([
+      [
+        "The full local check runs at most 2 at a time on this machine, and all 2 places are in use. Nothing ran. Run it again when one of them has finished.",
+      ],
+    ]);
+  });
+
+  it("takes no place for baseline-only, plan-only or hosted runs", async () => {
+    const repository = createRepository();
+    for (const [options, stepCount] of [
+      [{ args: ["--baseline"] }, requiredBaselineSteps.length],
+      [{ args: ["--full", "--plan"] }, 0],
+      [
+        {
+          args: ["--full"],
+          environment: {
+            GITHUB_ACTIONS: "true",
+            RUNNER_ENVIRONMENT: "github-hosted",
+          },
+        },
+        requiredCiSteps(undefined).length,
+      ],
+    ]) {
+      const claimRunSlot = vi.fn(async () => 2);
+      const result = await runVerification(repository, {
+        ...options,
+        claimRunSlot,
+      });
+
+      expect(result.status).toBe(0);
+      expect(claimRunSlot).not.toHaveBeenCalled();
+      expect(result.calls).toHaveLength(stepCount);
+      for (const [, , environment] of result.calls) {
+        expect(environment).not.toHaveProperty("VERIFY_LOCAL_SLOT");
+        expect(environment).not.toHaveProperty("PLAYWRIGHT_NEXT_PORT");
+        expect(environment).not.toHaveProperty("PLAYWRIGHT_WORKER_PORT");
+      }
+    }
+  });
 });
