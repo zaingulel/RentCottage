@@ -320,9 +320,21 @@ describe("stylesheet colour tokens", () => {
         ...source.matchAll(/(?<![\w-])color\s*:[^;{}]*var\(\s*--gold\s*[,)]/g),
       ].map((match) => `${file}:${lineOf(source, match.index)}`),
     );
+    const globals =
+      stylesheets.find(({ file }) => file === globalsFile)?.source ?? "";
+    const darkBandLabel = [
+      ...globals.matchAll(/(?<![\w-])color\s*:([^;{}]*)(?=[;}])/g),
+    ]
+      .filter((declaration) =>
+        ruleSelector(globals, declaration.index)
+          .split(", ")
+          .includes(".trusted-copy > p:first-child"),
+      )
+      .map(([, value]) => value.trim());
 
     expect(low).toEqual([]);
     expect(goldText).toEqual([]);
+    expect(darkBandLabel.at(-1)).toBe("var(--ink-on-dark-accent)");
   });
 });
 
