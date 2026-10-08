@@ -67,6 +67,11 @@ export const customerReviewMessages = {
     replyNotPublic:
       "Your reply is not shown to visitors because the review is hidden.",
     ownerReply: "Cottage Owner reply",
+    replyAuthor: "Reply author UUID",
+    hideReplyReason: "Reason for hiding the reply",
+    hideReply: "Hide reply",
+    hideReplyReasonRequired: "Enter a reason before hiding this reply.",
+    replyHiddenSuccess: "The reply was hidden.",
   },
   ar: {
     title: "قيّم هذا البيت",
@@ -130,6 +135,11 @@ export const customerReviewMessages = {
     replyPublished: "تم نشر ردّك.",
     replyNotPublic: "ردّك لا يظهر للزوار لأن التقييم مخفي.",
     ownerReply: "رد مالك البيت",
+    replyAuthor: "معرّف مالك البيت UUID",
+    hideReplyReason: "سبب إخفاء الرد",
+    hideReply: "إخفاء الرد",
+    hideReplyReasonRequired: "أدخل سبباً قبل إخفاء الرد.",
+    replyHiddenSuccess: "تم إخفاء الرد.",
   },
   ckb: {
     title: "هەڵسەنگاندن بۆ ئەم کۆتێجە",
@@ -200,5 +210,10 @@ export const customerReviewMessages = {
     replyNotPublic:
       "وەڵامەکەت بۆ سەردانکەران دیار نییە چونکە هەڵسەنگاندنەکە شاردراوەتەوە.",
     ownerReply: "وەڵامی خاوەن کۆتێج",
+    replyAuthor: "UUIDی خاوەن کۆتێج",
+    hideReplyReason: "هۆکاری شاردنەوەی وەڵام",
+    hideReply: "شاردنەوەی وەڵام",
+    hideReplyReasonRequired: "پێش شاردنەوەی وەڵام هۆکارێک بنووسە.",
+    replyHiddenSuccess: "وەڵامەکە شاردراوەتەوە.",
   },
 } as const;

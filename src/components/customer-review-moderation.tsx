@@ -4,7 +4,10 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 
 import { administratorAccessHref } from "@/access/return-destination";
-import { hideCustomerReview } from "@/customer-review/actions";
+import {
+  hideCustomerReview,
+  hideCustomerReviewReply,
+} from "@/customer-review/actions";
 import type {
   AdministratorCustomerReview,
   AdministratorCustomerReviewListResult,
@@ -15,22 +18,55 @@ import { formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 
 import styles from "./customer-reviews.module.css";
+import {
+  ActionButton,
+  ActionFeedback,
+  FormControl,
+} from "./interaction-controls";
 
-function ModerationCard({
+const hideTargets = {
+  review: {
+    action: hideCustomerReview,
+    reasonId: "hide-reason-",
+    helpId: "hide-help-",
+    reasonLabel: "hideReason",
+    submitLabel: "hide",
+    reasonRequired: "hideReasonRequired",
+    success: "hiddenSuccess",
+  },
+  reply: {
+    action: hideCustomerReviewReply,
+    reasonId: "hide-reply-reason-",
+    helpId: "hide-reply-help-",
+    reasonLabel: "hideReplyReason",
+    submitLabel: "hideReply",
+    reasonRequired: "hideReplyReasonRequired",
+    success: "replyHiddenSuccess",
+  },
+} as const;
+
+function HideWithReason({
   locale,
-  review,
+  target,
+  reviewId,
+  initialHide,
 }: {
   locale: Locale;
-  review: AdministratorCustomerReview;
+  target: "review" | "reply";
+  reviewId: string;
+  initialHide: CustomerReviewHide | null;
 }) {
   const copy = customerReviewMessages[locale];
-  const [hide, setHide] = useState<CustomerReviewHide | null>(review.hide);
+  const keys = hideTargets[target];
+  const reasonId = `${keys.reasonId}${reviewId}`;
+  const helpId = `${keys.helpId}${reviewId}`;
+  const [hide, setHide] = useState<CustomerReviewHide | null>(initialHide);
   const [notice, setNotice] = useState<{
     kind: "error" | "success";
     text: string;
   }>();
   const [pending, startTransition] = useTransition();
-  const noticeRef = useRef<HTMLParagraphElement>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (notice?.kind === "error") noticeRef.current?.focus();
@@ -40,22 +76,19 @@ function ModerationCard({
     const value = formData.get("reason");
     const reason = typeof value === "string" ? value.trim() : "";
     if (!reason) {
-      setNotice({ kind: "error", text: copy.hideReasonRequired });
+      setNotice({ kind: "error", text: copy[keys.reasonRequired] });
       return;
     }
     setNotice(undefined);
     startTransition(async () => {
-      const result = await hideCustomerReview({
-        reviewId: review.reviewId,
-        reason,
-      });
+      const result = await keys.action({ reviewId, reason });
       if (result.status === "hidden" || result.status === "already-hidden") {
         setHide({
           administratorUserId: result.administratorUserId,
           reason: result.reason,
           hiddenAt: result.hiddenAt,
         });
-        setNotice({ kind: "success", text: copy.hiddenSuccess });
+        setNotice({ kind: "success", text: copy[keys.success] });
         return;
       }
       setNotice({
@@ -71,24 +104,7 @@ function ModerationCard({
   }
 
   return (
-    <article className={styles.card}>
-      <div className={styles.identifiers}>
-        <span>
-          {copy.bookingReference}: <bdi>{review.bookingRequestReference}</bdi>
-        </span>
-        <span>
-          {copy.author}: <bdi>{review.authorUserId}</bdi>
-        </span>
-      </div>
-      <p>
-        {copy.rating}: {review.rating} / 5 {copy.ratingValue}
-      </p>
-      <p lang={review.originalLanguage} dir="auto">
-        {review.originalBody ?? copy.ratingOnly}
-      </p>
-      <time dateTime={review.submittedAt}>
-        {copy.submittedAt}: {formatIraqDateTime(review.submittedAt, locale)}
-      </time>
+    <>
       {hide ? (
         <dl className={styles.audit}>
           <div>
@@ -108,30 +124,90 @@ function ModerationCard({
         </dl>
       ) : (
         <form action={submit} className={styles.form}>
-          <label htmlFor={`hide-reason-${review.reviewId}`}>
-            {copy.hideReason}
-          </label>
-          <textarea
-            id={`hide-reason-${review.reviewId}`}
+          <label htmlFor={reasonId}>{copy[keys.reasonLabel]}</label>
+          <FormControl
+            kind="textarea"
+            id={reasonId}
             name="reason"
             maxLength={2000}
-            aria-describedby={`hide-help-${review.reviewId}`}
+            aria-describedby={helpId}
             disabled={pending}
           />
-          <small id={`hide-help-${review.reviewId}`}>{copy.hideHelp}</small>
-          <button type="submit" disabled={pending}>
-            {pending ? copy.hiding : copy.hide}
-          </button>
+          <small id={helpId}>{copy.hideHelp}</small>
+          <ActionButton
+            kind="secondary"
+            size="regular"
+            type="submit"
+            pending={pending}
+          >
+            {pending ? copy.hiding : copy[keys.submitLabel]}
+          </ActionButton>
         </form>
       )}
       {notice ? (
-        <p
+        <div
           ref={noticeRef}
-          role={notice.kind === "error" ? "alert" : "status"}
           tabIndex={notice.kind === "error" ? -1 : undefined}
         >
-          {notice.text}
-        </p>
+          <ActionFeedback kind={notice.kind}>{notice.text}</ActionFeedback>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function ModerationCard({
+  locale,
+  review,
+}: {
+  locale: Locale;
+  review: AdministratorCustomerReview;
+}) {
+  const copy = customerReviewMessages[locale];
+  return (
+    <article className={styles.card}>
+      <div className={styles.identifiers}>
+        <span>
+          {copy.bookingReference}: <bdi>{review.bookingRequestReference}</bdi>
+        </span>
+        <span>
+          {copy.author}: <bdi>{review.authorUserId}</bdi>
+        </span>
+      </div>
+      <p>
+        {copy.rating}: {review.rating} / 5 {copy.ratingValue}
+      </p>
+      <p lang={review.originalLanguage} dir="auto">
+        {review.originalBody ?? copy.ratingOnly}
+      </p>
+      <time dateTime={review.submittedAt}>
+        {copy.submittedAt}: {formatIraqDateTime(review.submittedAt, locale)}
+      </time>
+      <HideWithReason
+        locale={locale}
+        target="review"
+        reviewId={review.reviewId}
+        initialHide={review.hide}
+      />
+      {review.reply ? (
+        <section className={styles.reply} aria-label={copy.ownerReply}>
+          <span>
+            {copy.replyAuthor}: <bdi>{review.reply.authorUserId}</bdi>
+          </span>
+          <p lang={review.reply.originalLanguage} dir="auto">
+            {review.reply.originalBody}
+          </p>
+          <time dateTime={review.reply.submittedAt}>
+            {copy.submittedAt}:{" "}
+            {formatIraqDateTime(review.reply.submittedAt, locale)}
+          </time>
+          <HideWithReason
+            locale={locale}
+            target="reply"
+            reviewId={review.reviewId}
+            initialHide={review.reply.hide}
+          />
+        </section>
       ) : null}
     </article>
   );
