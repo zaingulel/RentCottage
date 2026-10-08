@@ -60,7 +60,7 @@ const placeListingCommand = [
     "--filter",
     "name=supabase_db_rentcottage-verification-1",
     "--format",
-    '{{.Names}}|{{.Label "com.supabase.cli.project"}}|{{.Label "com.supabase.cli.workdir"}}',
+    '[{{json .Names}},{{json (.Label "com.supabase.cli.project")}},{{json (.Label "com.supabase.cli.workdir")}}]',
   ],
 ];
 const placeStopCommand = [
@@ -87,7 +87,7 @@ const placeStartCommand = [
   ],
 ];
 const leftoverDatabaseListing =
-  "supabase_db_rentcottage-verification-1|rentcottage-verification-1|/tmp/rentcottage-docker-config-1-Ab3dE9/project\n";
+  '["supabase_db_rentcottage-verification-1","rentcottage-verification-1","/tmp/rentcottage-docker-config-1-Ab3dE9/project"]\n';
 
 // Place 1 with what an earlier check left in it; commands and the folder double share one ordered event list.
 async function runInLeftoverPlace({
@@ -969,29 +969,32 @@ describe("access verification command", () => {
   });
 
   it("deletes nothing when the database in its place cannot be shown to be this check's own", async () => {
-    for (const { found, labels } of [
+    for (const { found, listing } of [
       {
         found:
           'its project label is "rentcottage-verification-1" and its folder label is "/home/someone/rentcottage-docker-config-1-Ab3dE9/project"',
-        labels:
-          "rentcottage-verification-1|/home/someone/rentcottage-docker-config-1-Ab3dE9/project",
+        listing:
+          '["supabase_db_rentcottage-verification-1","rentcottage-verification-1","/home/someone/rentcottage-docker-config-1-Ab3dE9/project"]\n',
       },
       {
         found:
           'its project label is "rentcottage-verification-1" and its folder label is "/tmp/rentcottage-docker-config-2-Ab3dE9/project"',
-        labels:
-          "rentcottage-verification-1|/tmp/rentcottage-docker-config-2-Ab3dE9/project",
+        listing:
+          '["supabase_db_rentcottage-verification-1","rentcottage-verification-1","/tmp/rentcottage-docker-config-2-Ab3dE9/project"]\n',
       },
       {
         found: 'its project label is "" and its folder label is ""',
-        labels: "|",
+        listing: '["supabase_db_rentcottage-verification-1","",""]\n',
+      },
+      {
+        found:
+          'its project label is "rentcottage-verification-1" and its folder label is "/tmp/rentcottage-docker-config-1-Ab3dE9/project\n/owner/protected"',
+        listing:
+          '["supabase_db_rentcottage-verification-1","rentcottage-verification-1","/tmp/rentcottage-docker-config-1-Ab3dE9/project\\n/owner/protected"]\n',
       },
     ]) {
       const place = await runInLeftoverPlace({
-        listed: {
-          status: 0,
-          stdout: `supabase_db_rentcottage-verification-1|${labels}\n`,
-        },
+        listed: { status: 0, stdout: listing },
       });
 
       expect(place.status).toBe(4);

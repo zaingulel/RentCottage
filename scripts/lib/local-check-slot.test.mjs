@@ -243,7 +243,7 @@ test("tells a loopback port that answers from one that refuses", async () => {
 test("proves a leftover database only by its place's exact project label and a folder this tool made beside the run's own", () => {
   assert.equal(
     PLACE_DATABASE_LISTING_FORMAT,
-    '{{.Names}}|{{.Label "com.supabase.cli.project"}}|{{.Label "com.supabase.cli.workdir"}}',
+    '[{{json .Names}},{{json (.Label "com.supabase.cli.project")}},{{json (.Label "com.supabase.cli.workdir")}}]',
   );
 
   const container = "supabase_db_rentcottage-verification-1";
@@ -253,7 +253,7 @@ test("proves a leftover database only by its place's exact project label and a f
     found: "its labels could not be read",
   };
   const unproven = (project, workdir) => ({
-    listing: `${container}|${project}|${workdir}\n`,
+    listing: `["${container}","${project}","${workdir}"]\n`,
     expected: {
       state: "unproven",
       found: `its project label is "${project}" and its folder label is "${workdir}"`,
@@ -262,11 +262,11 @@ test("proves a leftover database only by its place's exact project label and a f
   const rows = {
     "empty listing": { listing: "", expected: { state: "absent" } },
     "a longer container name that only contains ours": {
-      listing: `${container}_copy|rentcottage-verification-1|/tmp/rentcottage-docker-config-1-Old001/project\n`,
+      listing: `["${container}_copy","rentcottage-verification-1","/tmp/rentcottage-docker-config-1-Old001/project"]\n`,
       expected: { state: "absent" },
     },
     "made here": {
-      listing: `${container}|rentcottage-verification-1|/tmp/rentcottage-docker-config-1-Old001/project\n`,
+      listing: `["${container}","rentcottage-verification-1","/tmp/rentcottage-docker-config-1-Old001/project"]\n`,
       expected: { state: "made-here" },
     },
     "another project label": unproven(
@@ -305,7 +305,7 @@ test("proves a leftover database only by its place's exact project label and a f
     // Beside the run's own folder once resolved against the working directory, so only the
     // absolute-path condition refuses it.
     "a relative folder label": {
-      listing: `${container}|rentcottage-verification-1|rentcottage-docker-config-1-Old001/project\n`,
+      listing: `["${container}","rentcottage-verification-1","rentcottage-docker-config-1-Old001/project"]\n`,
       expected: {
         state: "unproven",
         found:
@@ -313,15 +313,52 @@ test("proves a leftover database only by its place's exact project label and a f
       },
       ownWorkdir: resolve("rentcottage-docker-config-1-Own001/project"),
     },
-    "a fourth field": {
-      listing: `${container}|rentcottage-verification-1|/tmp/rentcottage-docker-config-1-Old001/project|extra\n`,
+    "four strings": {
+      listing: `["${container}","rentcottage-verification-1","/tmp/rentcottage-docker-config-1-Old001/project","extra"]\n`,
+      expected: unreadable,
+    },
+    "a label that is not a string": {
+      listing: `["${container}","rentcottage-verification-1",null]\n`,
+      expected: unreadable,
+    },
+    "a line that is not JSON": {
+      listing: `${container}\n`,
+      expected: unreadable,
+    },
+    "an old-style line": {
+      listing: `${container}|rentcottage-verification-1|/tmp/rentcottage-docker-config-1-Old001/project\n`,
       expected: unreadable,
     },
     "two exact-name lines": {
       listing:
-        `${container}|rentcottage-verification-1|/tmp/rentcottage-docker-config-1-Old001/project\n`.repeat(
+        `["${container}","rentcottage-verification-1","/tmp/rentcottage-docker-config-1-Old001/project"]\n`.repeat(
           2,
         ),
+      expected: unreadable,
+    },
+    // Docker's json function escapes a label's newline, so the whole label stays in one string.
+    "a folder label with a newline after a valid folder": {
+      listing:
+        '["supabase_db_rentcottage-verification-1","rentcottage-verification-1","/tmp/rentcottage-docker-config-1-Ab3dE9/project\\n/owner/protected"]\n',
+      expected: {
+        state: "unproven",
+        found:
+          'its project label is "rentcottage-verification-1" and its folder label is "/tmp/rentcottage-docker-config-1-Ab3dE9/project\n/owner/protected"',
+      },
+    },
+    "a longer-named container whose folder label holds a counterfeit record": {
+      listing:
+        '["supabase_db_rentcottage-verification-1_copy","rentcottage-verification-1","/owner/protected\\n[\\"supabase_db_rentcottage-verification-1\\",\\"rentcottage-verification-1\\",\\"/tmp/rentcottage-docker-config-1-Ab3dE9/project\\"]"]\n',
+      expected: { state: "absent" },
+    },
+    "an unescaped folder label with a newline after a valid folder": {
+      listing:
+        "supabase_db_rentcottage-verification-1|rentcottage-verification-1|/tmp/rentcottage-docker-config-1-Ab3dE9/project\n/owner/protected\n",
+      expected: unreadable,
+    },
+    "an unescaped folder label holding a counterfeit line": {
+      listing:
+        "supabase_db_rentcottage-verification-1_copy|rentcottage-verification-1|/owner/protected\nsupabase_db_rentcottage-verification-1|rentcottage-verification-1|/tmp/rentcottage-docker-config-1-Ab3dE9/project\n",
       expected: unreadable,
     },
   };

@@ -16,8 +16,9 @@ export const LOCAL_CHECK_LIMIT_MESSAGE = `The full local check runs at most ${LO
 const HOSTED_PROJECT = "rentcottage-verification";
 const HOSTED_TEMP_PREFIX = "rentcottage-docker-config-";
 
+// One JSON array per container: Docker's json function escapes a newline or quote inside a label.
 export const PLACE_DATABASE_LISTING_FORMAT =
-  '{{.Names}}|{{.Label "com.supabase.cli.project"}}|{{.Label "com.supabase.cli.workdir"}}';
+  '[{{json .Names}},{{json (.Label "com.supabase.cli.project")}},{{json (.Label "com.supabase.cli.workdir")}}]';
 
 const heldLocks = [];
 
@@ -172,20 +173,40 @@ function placeFolderPattern(slot) {
   return new RegExp(`^${localCheckSettings(slot).tempPrefix}[A-Za-z0-9]{6}$`);
 }
 
+function parseListingLine(line) {
+  let record;
+  try {
+    record = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  const isRecord =
+    Array.isArray(record) &&
+    record.length === 3 &&
+    record.every((field) => typeof field === "string");
+  return isRecord ? record : undefined;
+}
+
 export function classifyPlaceDatabase({
   slot,
   container,
   listing,
   ownWorkdir,
 }) {
-  const lines = listing
+  const unreadable = {
+    state: "unproven",
+    found: "its labels could not be read",
+  };
+  const records = listing
     .split("\n")
-    .map((line) => line.split("|"))
-    .filter(([name]) => name === container);
-  if (lines.length === 0) return { state: "absent" };
-  if (lines.length > 1 || lines[0].length !== 3)
-    return { state: "unproven", found: "its labels could not be read" };
-  const [, project, workdir] = lines[0];
+    .filter((line) => line !== "")
+    .map(parseListingLine);
+  // A listing that cannot be read in full proves nothing, absence included.
+  if (records.includes(undefined)) return unreadable;
+  const named = records.filter(([name]) => name === container);
+  if (named.length === 0) return { state: "absent" };
+  if (named.length > 1) return unreadable;
+  const [, project, workdir] = named[0];
   const madeHere =
     project === localCheckSettings(slot).project &&
     isAbsolute(workdir) &&
