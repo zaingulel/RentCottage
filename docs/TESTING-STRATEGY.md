@@ -98,12 +98,22 @@ downgrade it. An asserted-but-unexecuted mutation is a review finding.
 - Keep an expensive fixture alive across related assertions only when isolation is proven and a failure still
   identifies the broken claim; construction-asserting evidence keeps fresh fixtures, per
   [Test economics](CODING-STANDARDS.md#test-economics) in CODING-STANDARDS.md.
-- The teardown of the disposable project that `npm run verify:access` starts is what finally removes test data:
-  explicit Supabase stop, or disposal of the GitHub-hosted runner. A concurrency program or Playwright
-  specification that reuses fixed identifiers also clears its own rows before and after a run, so it can run again
-  in the same project; a new check that reuses fixed identifiers does the same. A failed attempt can leave rows
-  behind until the next run of that check or that teardown clears them, and synthetic identities carry no
-  credentials or sessions.
+- Each local run of `npm run verify:access`, alone or inside `npm run verify`, takes one of two places on the
+  machine and starts its own disposable project there, with its own database, containers, ports and temporary
+  folder, so runs from different job worktrees proceed side by side. At most two full local checks run at once; a
+  third stops before running anything and says so. At its end a run stops its project and deletes its folder, and
+  it refuses any database it did not start. The GitHub-hosted check keeps one fixed project per runner. That
+  teardown, an explicit Supabase stop or disposal of the GitHub-hosted runner, is what finally removes test data. A
+  concurrency program or Playwright specification that reuses fixed identifiers also clears its own rows before and
+  after a run, so it can run again in the same project; a new check that reuses fixed identifiers does the same. A
+  failed attempt can leave rows behind until the next run of that check or that teardown clears them, and synthetic
+  identities carry no credentials or sessions.
+- A run killed outright leaves its database and folder behind. The next run to take that place looks before it
+  deletes: it stops a leftover database only when its labels show a local check made it in that place, stops it
+  before removing that place's leftover folders, and removes nothing and stops with a plain message when it cannot
+  show that or when a server from an earlier check still answers in that place. The places assume every check on the
+  machine reaches one Docker daemon over one local network; a dev container, or Windows and Linux sharing one Docker
+  daemon, does not, and must not run the local check beside another.
 - A concurrency program or Playwright specification that clears one of the fixed-identifier fixtures owned by
   `scripts/lib/booking-fixture.mjs` (the confirmed booking, capture, confirmed-booking-access and customer review
   row sets, and the Published Cottage the Booking Period hold and cottage inventory programs seed) takes its reset
