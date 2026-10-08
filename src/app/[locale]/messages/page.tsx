@@ -103,10 +103,12 @@ export default async function MessagesPage({
   }
   const related = cottage ? page.items : [];
   return (
-    <main className="results-page">
+    <main className="results-page page page-record">
       {cottage && account.context.role !== "platform_administrator" ? (
         <section className="messaging-shell">
-          <h1>{messagingMessages[locale].messageCottage}</h1>
+          <h1 className="page-title">
+            {messagingMessages[locale].messageCottage}
+          </h1>
           {related.length ? (
             <ul>
               {related.map((item) => (

@@ -25,7 +25,7 @@ export function MessagingInbox({
   const copy = messagingMessages[locale];
   return (
     <section className="messaging-shell" dir={directionFor(locale)}>
-      <h1>{copy.inbox}</h1>
+      <h1 className="page-title">{copy.inbox}</h1>
       {items.length === 0 ? (
         <p>{copy.empty}</p>
       ) : (

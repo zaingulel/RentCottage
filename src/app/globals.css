@@ -3426,7 +3426,7 @@ section.request-follow-up {
 }
 
 @media (max-width: 40rem) {
-  .messaging-shell {
+  :not(.page) > .messaging-shell {
     border-inline: 0;
     border-radius: 0;
   }
