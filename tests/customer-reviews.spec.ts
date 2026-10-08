@@ -1082,6 +1082,10 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     });
     await expect(ownerReview.getByText(reviewBody)).toBeVisible();
     await expect(ownerReview.getByLabel("Public reply")).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("owner-reply-form-en.png"),
+      fullPage: true,
+    });
 
     const publishReply = ownerReview.getByRole("button", {
       name: "Publish reply",
@@ -1091,6 +1095,10 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     await expect(ownerReview.getByRole("alert")).toContainText(
       "Remove contact details",
     );
+    await page.screenshot({
+      path: testInfo.outputPath("owner-reply-contact-refused-en.png"),
+      fullPage: true,
+    });
     expect(countReviewRows("customer_review_replies")).toBe("0");
 
     await ownerReview.getByLabel("Public reply").fill(replyBody);
@@ -1144,6 +1152,10 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
         "auto",
       );
       await expect(visitor.locator("html")).toHaveAttribute("dir", direction);
+      await visitor.screenshot({
+        path: testInfo.outputPath(`public-reply-${locale}.png`),
+        fullPage: true,
+      });
     }
 
     for (const { locale, replyTitle } of [
@@ -1155,6 +1167,11 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
         page.getByRole("heading", { name: replyTitle }),
       ).toBeVisible();
       await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+      if (locale === "ar")
+        await page.screenshot({
+          path: testInfo.outputPath("owner-reply-published-ar.png"),
+          fullPage: true,
+        });
     }
 
     const administrator = await provisionAdministrator(
@@ -1184,6 +1201,10 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     });
     await expect(administratorReply.getByText(replyBody)).toBeVisible();
     await expect(administratorReply).toContainText(fixture.identities.owner);
+    await administratorPage.screenshot({
+      path: testInfo.outputPath("administrator-reply-hide-form-en.png"),
+      fullPage: true,
+    });
     const hideReply = administratorReply.getByRole("button", {
       name: "Hide reply",
     });
@@ -1199,6 +1220,10 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
       "The reply was hidden.",
     );
     await expect(administratorReply).toContainText(reason);
+    await administratorPage.screenshot({
+      path: testInfo.outputPath("administrator-reply-hidden-en.png"),
+      fullPage: true,
+    });
     await expect(
       review.getByRole("button", { name: "Hide review" }),
     ).toBeVisible();
@@ -1216,6 +1241,12 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     );
     await expect(ownerReview).not.toContainText(reason);
     await expect(publishReply).toHaveCount(0);
+    await page.goto(ownerPath("ckb"));
+    await expect(page.getByText(replyBody)).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("owner-reply-hidden-ckb.png"),
+      fullPage: true,
+    });
 
     await visitorContext.close();
     await administratorContext.close();
