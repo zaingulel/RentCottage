@@ -162,6 +162,54 @@ function offScaleHits(property: RegExp, allowedTerm: RegExp): string[] {
   );
 }
 
+function tokenColour(name: string) {
+  const value =
+    rootBlock
+      .match(new RegExp(`(?<![\\w-])${name}\\s*:([^;{}]*)`))?.[1]
+      .trim() ?? "";
+  const hex = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)?.[1];
+  if (hex) {
+    const digits = hex.length === 3 ? hex.replace(/./g, "$&$&") : hex;
+    return {
+      channels: [0, 2, 4].map((start) =>
+        parseInt(digits.slice(start, start + 2), 16),
+      ),
+      alpha: 1,
+    };
+  }
+  const rgb = value.match(/^rgb\((\d+) (\d+) (\d+) \/ (\d+)%\)$/);
+  if (!rgb) throw new Error(`${name} is not a hex or rgb() colour: "${value}"`);
+  return { channels: rgb.slice(1, 4).map(Number), alpha: Number(rgb[4]) / 100 };
+}
+
+function flatten(layers: string) {
+  const [base, ...above] = layers.split(" over ").reverse().map(tokenColour);
+  if (base.alpha < 1) throw new Error(`${layers} has no opaque base surface`);
+  return above.reduce(
+    (under, { channels, alpha }) =>
+      channels.map(
+        (channel, index) => channel * alpha + under[index] * (1 - alpha),
+      ),
+    base.channels,
+  );
+}
+
+function luminance(channels: number[]) {
+  const [red, green, blue] = channels.map((channel) => {
+    const share = channel / 255;
+    return share <= 0.04045 ? share / 12.92 : ((share + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function contrast(text: string, surface: string) {
+  const [darker, lighter] = [
+    luminance(flatten(`${text} over ${surface}`)),
+    luminance(flatten(surface)),
+  ].sort((first, second) => first - second);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 describe("stylesheet colour tokens", () => {
   it("keeps every stylesheet colour in the :root token block", () => {
     const hits = stylesheets.flatMap(({ file, source }) => {
@@ -234,6 +282,47 @@ describe("stylesheet colour tokens", () => {
     );
 
     expect([...declared, ...used]).toEqual([]);
+  });
+
+  it("keeps grey and gold text at 4.5 to 1 on every surface it sits on", () => {
+    const surfacesOf = {
+      "--muted": [
+        "--background",
+        "--card",
+        "--surface-field",
+        "--surface-bright",
+        "--surface-notice",
+        "--surface-footer",
+        "--surface-verification",
+        "--status-neutral-bg",
+        "--gold-tint over --background",
+      ],
+      "--ink-accent": [
+        "--background",
+        "--card",
+        "--surface-raised",
+        "--surface-footer",
+        "--gold-tint over --card",
+        "--gold-tint over --background",
+      ],
+      "--ink-on-dark-accent": ["--green"],
+    };
+    const low = Object.entries(surfacesOf).flatMap(([text, surfaces]) =>
+      surfaces
+        .map((surface) => ({ surface, ratio: contrast(text, surface) }))
+        .filter(({ ratio }) => ratio < 4.5)
+        .map(
+          ({ surface, ratio }) => `${text} on ${surface} ${ratio.toFixed(2)}`,
+        ),
+    );
+    const goldText = stylesheets.flatMap(({ file, source }) =>
+      [
+        ...source.matchAll(/(?<![\w-])color\s*:[^;{}]*var\(\s*--gold\s*[,)]/g),
+      ].map((match) => `${file}:${lineOf(source, match.index)}`),
+    );
+
+    expect(low).toEqual([]);
+    expect(goldText).toEqual([]);
   });
 });
 
