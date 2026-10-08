@@ -217,7 +217,7 @@ export function classifyPlaceDatabase({
   if (madeHere) return { state: "made-here" };
   return {
     state: "unproven",
-    found: `its project label is "${project}" and its folder label is "${workdir}"`,
+    found: `its project label is ${JSON.stringify(project)} and its folder label is ${JSON.stringify(workdir)}`,
   };
 }
 

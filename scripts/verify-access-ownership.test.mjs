@@ -988,7 +988,7 @@ describe("access verification command", () => {
       },
       {
         found:
-          'its project label is "rentcottage-verification-1" and its folder label is "/tmp/rentcottage-docker-config-1-Ab3dE9/project\n/owner/protected"',
+          'its project label is "rentcottage-verification-1" and its folder label is "/tmp/rentcottage-docker-config-1-Ab3dE9/project\\n/owner/protected"',
         listing:
           '["supabase_db_rentcottage-verification-1","rentcottage-verification-1","/tmp/rentcottage-docker-config-1-Ab3dE9/project\\n/owner/protected"]\n',
       },
@@ -1005,6 +1005,7 @@ describe("access verification command", () => {
           `Place 1 of the full local check holds a database container, supabase_db_rentcottage-verification-1, that this check cannot show it made: ${found}. Nothing was removed and nothing ran. Look at that container and remove it yourself if nothing is using it.`,
         ],
       ]);
+      expect(place.stderr.mock.calls[0][0]).not.toContain("\n");
       expect(place.removeTemp.mock.calls).toEqual([["/tmp/place-state"]]);
     }
   });

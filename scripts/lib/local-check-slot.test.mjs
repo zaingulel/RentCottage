@@ -343,7 +343,16 @@ test("proves a leftover database only by its place's exact project label and a f
       expected: {
         state: "unproven",
         found:
-          'its project label is "rentcottage-verification-1" and its folder label is "/tmp/rentcottage-docker-config-1-Ab3dE9/project\n/owner/protected"',
+          'its project label is "rentcottage-verification-1" and its folder label is "/tmp/rentcottage-docker-config-1-Ab3dE9/project\\n/owner/protected"',
+      },
+    },
+    "a folder label holding an escape character": {
+      listing:
+        '["supabase_db_rentcottage-verification-1","rentcottage-verification-1","/tmp/rentcottage-docker-config-1-Ab3dE9/project\\u001b[2K/owner/protected"]\n',
+      expected: {
+        state: "unproven",
+        found:
+          'its project label is "rentcottage-verification-1" and its folder label is "/tmp/rentcottage-docker-config-1-Ab3dE9/project\\u001b[2K/owner/protected"',
       },
     },
     "a longer-named container whose folder label holds a counterfeit record": {
