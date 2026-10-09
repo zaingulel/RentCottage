@@ -660,10 +660,20 @@ select throws_ok(
   '42501',null,'the administrator reader denies missing identity'
 );
 select throws_ok(
+  $$select public.list_administrator_customer_reviews(null,null,50,null,null,null)$$,
+  '42501',null,'the filtered administrator reader denies missing identity'
+);
+select throws_ok(
   $$select public.hide_customer_review(gen_random_uuid(),'Reason')$$,
   '42501',null,'review hiding denies missing identity'
 );
 reset role;
+
+select ok(
+  not has_function_privilege('anon','public.list_administrator_customer_reviews(timestamptz,uuid,integer,text,date,date)','EXECUTE')
+  and not has_function_privilege('service_role','public.list_administrator_customer_reviews(timestamptz,uuid,integer,text,date,date)','EXECUTE'),
+  'the filtered administrator reader is not executable by anon or service_role'
+);
 
 create temp table open_review_eligibility_expected as
 select jsonb_build_object(
@@ -1487,6 +1497,11 @@ select ok(
 );
 reset role;
 
+create temp table review_submitted_day as
+select (reviews.submitted_at at time zone 'Asia/Baghdad')::date value
+from public.customer_reviews reviews;
+grant select on review_submitted_day to authenticated;
+
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","role":"authenticated","aal":"aal2"}',true);
 set local role authenticated;
@@ -1517,6 +1532,85 @@ select ok(
     from result
   ),
   'administrators read the reply, its author and its hide audit'
+);
+select ok(
+  (
+    with result as (
+      select public.list_administrator_customer_reviews(null,null,50) value
+    )
+    select (select array_agg(key order by key) from jsonb_object_keys(value) key)
+        =array['items','nextCursor','stateCounts','status','total']
+      and value->'total'='1'::jsonb
+      and value->'stateCounts'='{"unhidden":1,"hidden":0}'::jsonb
+    from result
+  ),
+  'the administrator list counts one visible review in total and by state'
+);
+select ok(
+  (
+    with result as (
+      select public.list_administrator_customer_reviews(null,null,50,'hidden',null,null) value
+    )
+    select value->'items'='[]'::jsonb
+      and value->'total'='0'::jsonb
+      and value->'stateCounts'='{"unhidden":1,"hidden":0}'::jsonb
+    from result
+  ),
+  'the hidden filter lists no visible review while the state counts ignore the state filter'
+);
+select ok(
+  (
+    with result as (
+      select public.list_administrator_customer_reviews(
+        null,null,50,null,
+        (select value from review_submitted_day),
+        (select value from review_submitted_day)
+      ) value
+    )
+    select jsonb_array_length(value->'items')=1
+      and value->'total'='1'::jsonb
+      and value->'stateCounts'='{"unhidden":1,"hidden":0}'::jsonb
+    from result
+  ),
+  'a window on the Baghdad day of submission lists the review'
+);
+select ok(
+  (
+    with result as (
+      select public.list_administrator_customer_reviews(
+        null,null,50,null,null,
+        (select value-1 from review_submitted_day)
+      ) value
+    )
+    select value->'items'='[]'::jsonb
+      and value->'total'='0'::jsonb
+    from result
+  ),
+  'a window ending the Baghdad day before submission lists no review'
+);
+select ok(
+  (
+    with result as (
+      select public.list_administrator_customer_reviews(
+        null,null,50,null,
+        (select value+1 from review_submitted_day),
+        null
+      ) value
+    )
+    select value->'items'='[]'::jsonb
+      and value->'total'='0'::jsonb
+      and value->'stateCounts'='{"unhidden":0,"hidden":0}'::jsonb
+    from result
+  ),
+  'a window beginning the Baghdad day after submission lists and counts no review'
+);
+select throws_ok(
+  $$select public.list_administrator_customer_reviews(null,null,50,'replied',null,null)$$,
+  '22023',null,'the administrator reader refuses an unknown moderation state'
+);
+select throws_ok(
+  $$select public.list_administrator_customer_reviews(null,null,50,null,'2101-01-02','2101-01-01')$$,
+  '22023',null,'the administrator reader refuses a reversed date range'
 );
 reset role;
 
@@ -1590,6 +1684,10 @@ select throws_ok(
   '42501',null,'Customer AAL2 cannot list private administrator review facts'
 );
 select throws_ok(
+  $$select public.list_administrator_customer_reviews(null,null,50,'hidden',null,null)$$,
+  '42501',null,'Customer AAL2 cannot list filtered administrator review facts'
+);
+select throws_ok(
   format(
     'select public.hide_customer_review(%L,%L)',
     (select value->>'reviewId' from own_review_expected),'Customer AAL2 attempt'
@@ -1625,6 +1723,10 @@ set local role authenticated;
 select throws_ok(
   $$select public.list_administrator_customer_reviews(null,null,50)$$,
   '42501',null,'Cottage Owner AAL2 cannot list private administrator review facts'
+);
+select throws_ok(
+  $$select public.list_administrator_customer_reviews(null,null,50,'hidden',null,null)$$,
+  '42501',null,'Cottage Owner AAL2 cannot list filtered administrator review facts'
 );
 select throws_ok(
   format(
@@ -1718,6 +1820,41 @@ select ok(
     from result
   ),
   'the AAL2 administrator list retains the original and first hide attribution'
+);
+select ok(
+  (
+    with result as (
+      select public.list_administrator_customer_reviews(null,null,50) value
+    )
+    select value->'total'='1'::jsonb
+      and value->'stateCounts'='{"unhidden":0,"hidden":1}'::jsonb
+    from result
+  ),
+  'the administrator list counts the hidden review as hidden'
+);
+select ok(
+  (
+    with result as (
+      select public.list_administrator_customer_reviews(null,null,50,'unhidden',null,null) value
+    )
+    select value->'items'='[]'::jsonb
+      and value->'total'='0'::jsonb
+      and value->'stateCounts'='{"unhidden":0,"hidden":1}'::jsonb
+    from result
+  ),
+  'the visible filter lists no hidden review'
+);
+select ok(
+  (
+    with result as (
+      select public.list_administrator_customer_reviews(null,null,50,'hidden',null,null) value
+    )
+    select jsonb_array_length(value->'items')=1
+      and value#>>'{items,0,moderationState}'='hidden'
+      and value->'total'='1'::jsonb
+    from result
+  ),
+  'the hidden filter lists the hidden review'
 );
 reset role;
 
@@ -1894,6 +2031,36 @@ select ok(
     from observed
   ),
   'equal-timestamp administrator cursor pages use the id tie-break without skips and end with a null cursor'
+);
+select ok(
+  (
+    with first_page as (
+      select public.list_administrator_customer_reviews(null,null,1) value
+    ), second_page as (
+      select public.list_administrator_customer_reviews(
+        (value#>>'{nextCursor,submittedAt}')::timestamptz,
+        (value#>>'{nextCursor,reviewId}')::uuid,1
+      ) value
+      from first_page
+    ), third_page as (
+      select public.list_administrator_customer_reviews(
+        (value#>>'{nextCursor,submittedAt}')::timestamptz,
+        (value#>>'{nextCursor,reviewId}')::uuid,1
+      ) value
+      from second_page
+    ), observed as (
+      select value from first_page
+      union all
+      select value from second_page
+      union all
+      select value from third_page
+    )
+    select count(*)=3
+      and bool_and(value->'total'='3'::jsonb)
+      and bool_and(value->'stateCounts'='{"unhidden":2,"hidden":1}'::jsonb)
+    from observed
+  ),
+  'every administrator cursor page reports the same total and state counts for three reviews'
 );
 reset role;
 rollback to savepoint customer_review_guarded_pagination;

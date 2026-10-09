@@ -160,6 +160,9 @@ describe("AdministratorCustomerReviewsPage", () => {
       beforeAt: "2026-09-21T12:00:00.000Z",
       beforeId: "11111111-1111-4111-8111-111111111111",
       limit: 20,
+      state: null,
+      from: null,
+      through: null,
     });
     expect(resolveAccount).toHaveBeenCalledWith();
     expect(

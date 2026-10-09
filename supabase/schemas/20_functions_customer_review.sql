@@ -581,13 +581,18 @@ ALTER FUNCTION public.hide_customer_review_reply(uuid,text) OWNER TO postgres;
 CREATE OR REPLACE FUNCTION public.list_administrator_customer_reviews(
   target_before_at timestamptz DEFAULT NULL,
   target_before_id uuid DEFAULT NULL,
-  target_limit integer DEFAULT 50
+  target_limit integer DEFAULT 50,
+  target_state text DEFAULT NULL,
+  target_from date DEFAULT NULL,
+  target_through date DEFAULT NULL
 ) RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
 declare
   items jsonb;
   has_more boolean;
   next_cursor jsonb;
+  total bigint;
+  state_counts jsonb;
 begin
   if (select auth.uid()) is null
     or public.is_platform_administrator('aal2') is not true
@@ -601,12 +606,33 @@ begin
   then
     raise exception 'Customer review cursor is invalid' using errcode='22023';
   end if;
+  if target_state is not null and target_state not in ('unhidden','hidden') then
+    raise exception 'Customer review state is invalid' using errcode='22023';
+  end if;
+  if target_from is not null and target_through is not null and target_from > target_through then
+    raise exception 'Date range is reversed' using errcode='22023';
+  end if;
 
-  with page as (
+  with windowed as (
     select reviews.id,reviews.profile_id,reviews.author_user_id,
       reviews.rating,reviews.original_language,reviews.original_body,
       reviews.submitted_at,requests.booking_request_reference,
       hides.administrator_user_id,hides.reason,hides.hidden_at,
+      case
+        when hides.review_id is null then 'unhidden'
+        else 'hidden'
+      end moderation_state
+    from public.customer_reviews reviews
+    join public.booking_requests requests on requests.id=reviews.booking_request_id
+    left join public.customer_review_hides hides on hides.review_id=reviews.id
+    where (target_from is null or reviews.submitted_at >= (target_from::timestamp at time zone 'Asia/Baghdad'))
+      and (target_through is null or reviews.submitted_at < ((target_through + 1)::timestamp at time zone 'Asia/Baghdad'))
+  ), filtered as (
+    select windowed.*
+    from windowed
+    where target_state is null or windowed.moderation_state=target_state
+  ), page as (
+    select filtered.*,
       (
         select jsonb_build_object(
           'authorUserId',replies.author_user_id,
@@ -629,14 +655,12 @@ begin
         from public.customer_review_replies replies
         left join public.customer_review_reply_hides reply_hides
           on reply_hides.review_id=replies.review_id
-        where replies.review_id=reviews.id
+        where replies.review_id=filtered.id
       ) reply
-    from public.customer_reviews reviews
-    join public.booking_requests requests on requests.id=reviews.booking_request_id
-    left join public.customer_review_hides hides on hides.review_id=reviews.id
+    from filtered
     where target_before_at is null
-      or (reviews.submitted_at,reviews.id)<(target_before_at,target_before_id)
-    order by reviews.submitted_at desc,reviews.id desc
+      or (filtered.submitted_at,filtered.id)<(target_before_at,target_before_id)
+    order by filtered.submitted_at desc,filtered.id desc
     limit target_limit+1
   ), enumerated as (
     select page.*,
@@ -650,10 +674,7 @@ begin
         'originalLanguage',page.original_language,
         'originalBody',page.original_body,
         'submittedAt',page.submitted_at,
-        'moderationState',case
-          when page.administrator_user_id is null then 'unhidden'
-          else 'hidden'
-        end,
+        'moderationState',page.moderation_state,
         'hide',case
           when page.administrator_user_id is null then null
           else jsonb_build_object(
@@ -676,19 +697,29 @@ begin
     (jsonb_agg(
       jsonb_build_object('submittedAt',submitted_at,'reviewId',id)
       order by submitted_at desc,id desc
-    ) filter (where ordinal=target_limit))->0
-  into items,has_more,next_cursor
+    ) filter (where ordinal=target_limit))->0,
+    (select count(*) from filtered),
+    (
+      select jsonb_build_object(
+        'unhidden',count(*) filter (where windowed.moderation_state='unhidden'),
+        'hidden',count(*) filter (where windowed.moderation_state='hidden')
+      )
+      from windowed
+    )
+  into items,has_more,next_cursor,total,state_counts
   from enumerated;
 
   return jsonb_build_object(
     'status','success',
     'items',items,
-    'nextCursor',case when has_more then next_cursor end
+    'nextCursor',case when has_more then next_cursor end,
+    'total',total,
+    'stateCounts',state_counts
   );
 end;
 $$;
 
-ALTER FUNCTION public.list_administrator_customer_reviews(timestamptz,uuid,integer) OWNER TO postgres;
+ALTER FUNCTION public.list_administrator_customer_reviews(timestamptz,uuid,integer,text,date,date) OWNER TO postgres;
 
 CREATE OR REPLACE FUNCTION public.list_public_customer_reviews(
   target_slug text,

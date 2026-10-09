@@ -49,6 +49,9 @@ export default async function AdministratorCustomerReviewsPage({
             beforeAt: completeCursor ? (query.beforeAt as string) : null,
             beforeId: completeCursor ? (query.beforeId as string) : null,
             limit: 20,
+            state: null,
+            from: null,
+            through: null,
           });
         }
       } catch (error) {

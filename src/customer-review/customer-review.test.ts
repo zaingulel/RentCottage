@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isAdministratorCustomerReviewListInput,
   isCustomerReviewBodyWithinLimit,
   isSubmitCustomerReviewReplyInput,
 } from "./customer-review";
@@ -72,6 +73,60 @@ describe("customer review reply validation", () => {
       { ...validReply, bookingRequestReference: "not-a-reference" },
     ]) {
       expect(isSubmitCustomerReviewReplyInput(rejected)).toBe(false);
+    }
+  });
+});
+
+describe("administrator review list input validation", () => {
+  const firstPage = {
+    beforeAt: null,
+    beforeId: null,
+    limit: 20,
+    state: null,
+    from: null,
+    through: null,
+  };
+
+  it("accepts an unfiltered page, each moderation state and an inclusive date range", () => {
+    for (const accepted of [
+      firstPage,
+      { ...firstPage, state: "unhidden" },
+      { ...firstPage, state: "hidden" },
+      { ...firstPage, from: "2026-09-21" },
+      { ...firstPage, through: "2026-09-21" },
+      { ...firstPage, from: "2026-09-21", through: "2026-09-21" },
+      { ...firstPage, from: "2024-02-29", through: "2026-09-21" },
+      {
+        ...firstPage,
+        beforeAt: "2026-09-21T12:00:00.123456Z",
+        beforeId: "11111111-1111-4111-8111-111111111111",
+        state: "hidden",
+      },
+    ]) {
+      expect(isAdministratorCustomerReviewListInput(accepted)).toBe(true);
+    }
+  });
+
+  it("refuses unknown keys, missing filters, unknown states, impossible dates, a reversed range and a broken page", () => {
+    for (const refused of [
+      null,
+      { beforeAt: null, beforeId: null, limit: 20 },
+      { ...firstPage, reply: "hidden" },
+      { ...firstPage, state: "replied" },
+      { ...firstPage, state: "" },
+      { ...firstPage, state: undefined },
+      { ...firstPage, from: "" },
+      { ...firstPage, from: "2026-9-21" },
+      { ...firstPage, from: "2026-13-01" },
+      { ...firstPage, from: "2026-02-29" },
+      { ...firstPage, through: "2026-09-31" },
+      { ...firstPage, through: "2026-09-21T00:00:00Z" },
+      { ...firstPage, through: 20260921 },
+      { ...firstPage, from: "2026-09-22", through: "2026-09-21" },
+      { ...firstPage, limit: 51 },
+      { ...firstPage, beforeAt: "2026-09-21T12:00:00.000Z" },
+    ]) {
+      expect(isAdministratorCustomerReviewListInput(refused)).toBe(false);
     }
   });
 });

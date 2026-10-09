@@ -87,7 +87,13 @@ describe("CustomerReviewModeration", () => {
     render(
       <CustomerReviewModeration
         locale="en"
-        result={{ status: "success", items: [review], nextCursor: null }}
+        result={{
+          status: "success",
+          items: [review],
+          nextCursor: null,
+          total: 1,
+          stateCounts: { unhidden: 1, hidden: 0 },
+        }}
       />,
     );
     const card = screen.getByRole("article");
@@ -116,7 +122,13 @@ describe("CustomerReviewModeration", () => {
     render(
       <CustomerReviewModeration
         locale="en"
-        result={{ status: "success", items: [review], nextCursor: null }}
+        result={{
+          status: "success",
+          items: [review],
+          nextCursor: null,
+          total: 1,
+          stateCounts: { unhidden: 1, hidden: 0 },
+        }}
       />,
     );
     const card = screen.getByRole("article");
@@ -135,6 +147,8 @@ describe("CustomerReviewModeration", () => {
           status: "success",
           items: [{ ...review, reply }],
           nextCursor: null,
+          total: 1,
+          stateCounts: { unhidden: 1, hidden: 0 },
         }}
       />,
     );
@@ -189,6 +203,8 @@ describe("CustomerReviewModeration", () => {
           status: "success",
           items: [{ ...review, reply }],
           nextCursor: null,
+          total: 1,
+          stateCounts: { unhidden: 1, hidden: 0 },
         }}
       />,
     );
@@ -229,6 +245,8 @@ describe("CustomerReviewModeration", () => {
           status: "success",
           items: [{ ...review, reply }],
           nextCursor: null,
+          total: 1,
+          stateCounts: { unhidden: 1, hidden: 0 },
         }}
       />,
     );
@@ -306,6 +324,8 @@ describe("CustomerReviewModeration", () => {
             status: "success",
             items: [{ ...review, reply }],
             nextCursor: null,
+            total: 1,
+            stateCounts: { unhidden: 1, hidden: 0 },
           }}
         />,
       );
@@ -337,6 +357,8 @@ describe("CustomerReviewModeration", () => {
               { ...review, originalLanguage: "en", originalBody: hostile },
             ],
             nextCursor: null,
+            total: 1,
+            stateCounts: { unhidden: 1, hidden: 0 },
           }}
         />,
       );

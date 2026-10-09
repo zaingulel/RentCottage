@@ -242,6 +242,55 @@ export function isPublicCustomerReviewListInput(
   );
 }
 
+export type AdministratorCustomerReviewListInput = CustomerReviewPageInput &
+  Readonly<{
+    state: "unhidden" | "hidden" | null;
+    from: string | null;
+    through: string | null;
+  }>;
+
+function isCalendarDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+  const [year, month, day] = value.split("-").map(Number);
+  return (
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= new Date(Date.UTC(year, month, 0)).getUTCDate()
+  );
+}
+
+export function isAdministratorCustomerReviewListInput(
+  value: unknown,
+): value is AdministratorCustomerReviewListInput {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, [
+      "beforeAt",
+      "beforeId",
+      "limit",
+      "state",
+      "from",
+      "through",
+    ]) &&
+    (value.state === null ||
+      value.state === "unhidden" ||
+      value.state === "hidden") &&
+    (value.from === null || isCalendarDate(value.from)) &&
+    (value.through === null || isCalendarDate(value.through)) &&
+    (value.from === null ||
+      value.through === null ||
+      value.from <= value.through) &&
+    isCustomerReviewPageInput({
+      beforeAt: value.beforeAt,
+      beforeId: value.beforeId,
+      limit: value.limit,
+    })
+  );
+}
+
 export type PublicCustomerReviewReply = Readonly<{
   originalLanguage: CustomerReviewLanguage;
   originalBody: string;
@@ -328,6 +377,8 @@ export type AdministratorCustomerReviewListResult =
       status: "success";
       items: readonly AdministratorCustomerReview[];
       nextCursor: CustomerReviewCursor | null;
+      total: number;
+      stateCounts: Readonly<{ unhidden: number; hidden: number }>;
     }>
   | Readonly<{ status: "access-required" | "invalid" | "unavailable" }>;
 
