@@ -2773,7 +2773,8 @@ a:focus-visible {
   gap: var(--space-2);
 }
 
-.booking-history > .list-rows {
+.booking-history > .list-rows,
+.booking-history > .empty-state {
   margin-block-start: var(--space-4);
 }
 
@@ -2819,6 +2820,20 @@ a:focus-visible {
   color: var(--ink);
   font-size: var(--font-size-1);
   font-weight: 700;
+}
+
+.empty-state {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.empty-state > p {
+  margin: 0;
 }
 
 .booking-request-decision-controls,

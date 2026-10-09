@@ -1,6 +1,8 @@
 import { requireRequestAccount } from "@/access/request-account-context";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
+import { ActionLink } from "@/components/interaction-controls";
 import { accessMessages } from "@/i18n/access-messages";
+import { messages } from "@/i18n/messages";
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 import { loadBookingHistory } from "@/booking-request/request-booking-history";
@@ -105,7 +107,22 @@ export default async function BookingHistoryPage({
           <OwnerBookingEarningsSummary locale={locale} totals={ownerTotals} />
         ) : null}
         {items.length === 0 ? (
-          <p>{copy[locale].empty}</p>
+          <div className="empty-state">
+            <p>{copy[locale].empty}</p>
+            {workspace === "owner" ? (
+              <ActionLink
+                kind="secondary"
+                width="content"
+                href={`/${locale}/owner/cottages`}
+              >
+                {accessMessages[locale].manageCottages}
+              </ActionLink>
+            ) : (
+              <ActionLink kind="secondary" width="content" href={`/${locale}`}>
+                {messages[locale].footerSearch}
+              </ActionLink>
+            )}
+          </div>
         ) : (
           <BookingHistoryList items={items} locale={locale} />
         )}
