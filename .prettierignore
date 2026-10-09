@@ -19,7 +19,7 @@ GLOSSARY.md
 .agents/factory-manifest.json
 .agents/skills/
 .agents/templates/
-.agents/upstream/mattpocock-skills
+.agents/upstream/
 .claude/agents/
 .claude/hooks/
 .claude/settings.json
