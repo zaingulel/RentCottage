@@ -1056,6 +1056,8 @@ REVOKE ALL ON FUNCTION "public"."resolve_owner_calendar_without_auth_claim"("tar
 
 REVOKE ALL ON FUNCTION "public"."resolve_public_cottage_inventory"("target_schedule_revision_id" "uuid", "from_day" "date", "to_day" "date") FROM PUBLIC, "anon", "authenticated", "service_role";
 
+REVOKE ALL ON FUNCTION "public"."public_cottage_inventory_units"("target_schedule_revision_id" "uuid", "from_day" "date", "to_day" "date") FROM PUBLIC, "anon", "authenticated", "service_role";
+
 REVOKE ALL ON FUNCTION "public"."resolve_public_cottage_selection"("target_schedule_revision_id" "uuid", "requested_search" "jsonb") FROM PUBLIC;
 
 REVOKE ALL ON FUNCTION "public"."respond_to_owner_application_request"("expected_version" bigint, "requested_field_values" "jsonb", "confirmed_document_kinds" "public"."owner_verification_document_kind"[]) FROM PUBLIC;

@@ -58,7 +58,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(294);
+select plan(297);
 
 select has_function(
   'public', 'prepare_booking_request_submission', array['uuid', 'uuid', 'jsonb'],
@@ -1670,6 +1670,46 @@ select is(
   false,
   'a reconciled authorization keeps inventory reserved through its Pending Hold'
 );
+-- A prepared statement outlives the savepoint rollbacks, so the later comparisons reuse it.
+prepare inventory_units_from_helpers as
+  with units as (
+    select shifts.id as unit_id,
+      'shift'::public.cottage_inventory_unit_kind as unit_kind,
+      shifts.position, shifts.name, shifts.start_time, shifts.end_time
+    from public.cottage_shifts shifts
+    where shifts.schedule_revision_id = '60000000-0000-4000-8000-000000003201'
+    union all
+    select schedules.full_day_bundle_id,
+      'full_day_bundle'::public.cottage_inventory_unit_kind,
+      null::smallint, 'Full-day bundle'::text,
+      (select shifts.start_time from public.cottage_shifts shifts
+        where shifts.schedule_revision_id = schedules.id order by shifts.position limit 1),
+      (select shifts.end_time from public.cottage_shifts shifts
+        where shifts.schedule_revision_id = schedules.id order by shifts.position desc limit 1)
+    from public.cottage_shift_schedule_revisions schedules
+    where schedules.id = '60000000-0000-4000-8000-000000003201'
+  )
+  select days.service_day::date, units.unit_kind, units.position, units.name,
+    units.start_time, units.end_time,
+    public.public_cottage_effective_price(
+      '60000000-0000-4000-8000-000000003201', units.unit_kind, units.unit_id,
+      days.service_day::date
+    ),
+    coalesce(public.public_cottage_unit_is_available(
+      '60000000-0000-4000-8000-000000003201', units.unit_kind, units.unit_id,
+      days.service_day::date
+    ), false)
+  from generate_series(
+    '2099-08-20'::timestamp, '2099-08-22'::timestamp, interval '1 day'
+  ) days(service_day)
+  cross join units;
+select set_eq(
+  $$select * from public.public_cottage_inventory_units(
+    '60000000-0000-4000-8000-000000003201', '2099-08-20', '2099-08-22'
+  )$$,
+  'inventory_units_from_helpers',
+  'set-based inventory unit rows match the unit helpers while a Pending Hold occupies the unit'
+);
 select results_eq(
   $$select attempts.state, claims.state::text, occupancies.active, outbox.state,
       outbox.lease_token is null, outbox.lease_expires_at is null,
@@ -2481,6 +2521,13 @@ select is(
   ),
   false,
   'the private claim removes its unit from public availability without becoming a product hold'
+);
+select set_eq(
+  $$select * from public.public_cottage_inventory_units(
+    '60000000-0000-4000-8000-000000003201', '2099-08-20', '2099-08-22'
+  )$$,
+  'inventory_units_from_helpers',
+  'set-based inventory unit rows match the unit helpers while a live authorization claim occupies the unit'
 );
 set local role service_role;
 select results_eq(
@@ -4210,6 +4257,13 @@ select results_eq(
   $$values ('withdrawn'::text, 'complete'::text, 'released_hold'::text,
     true, 2::integer, 1::integer, 1::integer, 2::integer)$$,
   'reconciliation produces one release, released hold, terminal outcome, and notice pair'
+);
+select set_eq(
+  $$select * from public.public_cottage_inventory_units(
+    '60000000-0000-4000-8000-000000003201', '2099-08-20', '2099-08-22'
+  )$$,
+  'inventory_units_from_helpers',
+  'set-based inventory unit rows match the unit helpers after the Pending Hold is released'
 );
 
 set local role anon;

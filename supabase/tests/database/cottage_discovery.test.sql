@@ -1,5 +1,5 @@
 begin;
-select plan(86);
+select plan(89);
 
 select has_table(
   'public', 'cottage_marketplace_listings',
@@ -548,6 +548,94 @@ where schedule_revision_id = (
   select current_shift_schedule_id from public.owner_application_cottage_profiles
   where id = '30000000-0000-4000-8000-000000002801'
 ) and service_day = '2099-08-21';
+
+savepoint inventory_unit_rows;
+insert into public.cottage_inventory_weekday_price_overrides (
+  schedule_revision_id, unit_kind, unit_id, weekday, price_iqd
+)
+select shifts.schedule_revision_id, 'shift', shifts.id,
+  extract(dow from weekdays.service_day)::smallint, weekdays.price_iqd
+from public.cottage_shifts shifts
+cross join (values
+  ('2099-08-22'::date, 71000), ('2099-08-23'::date, 70000)
+) weekdays(service_day, price_iqd)
+where shifts.schedule_revision_id = current_setting('rentcottage.test_schedule_id')::uuid
+  and shifts.position = 1;
+update public.cottage_inventory_availability availability set state = 'closed'
+from public.cottage_shifts shifts
+where shifts.schedule_revision_id = current_setting('rentcottage.test_schedule_id')::uuid
+  and shifts.position = 2
+  and availability.schedule_revision_id = shifts.schedule_revision_id
+  and availability.unit_kind = 'shift' and availability.unit_id = shifts.id
+  and availability.service_day = '2099-08-23';
+insert into public.cottage_inventory_availability (
+  schedule_revision_id, unit_kind, unit_id, service_day, state
+)
+select availability.schedule_revision_id, availability.unit_kind, availability.unit_id,
+  (now() at time zone 'Asia/Baghdad')::date - 1, 'open'
+from public.cottage_inventory_availability availability
+where availability.schedule_revision_id = current_setting('rentcottage.test_schedule_id')::uuid
+  and availability.service_day = '2099-08-22';
+prepare inventory_units_from_helpers(date, date) as
+  with units as (
+    select shifts.id as unit_id,
+      'shift'::public.cottage_inventory_unit_kind as unit_kind,
+      shifts.position, shifts.name, shifts.start_time, shifts.end_time
+    from public.cottage_shifts shifts
+    where shifts.schedule_revision_id = current_setting('rentcottage.test_schedule_id')::uuid
+    union all
+    select schedules.full_day_bundle_id,
+      'full_day_bundle'::public.cottage_inventory_unit_kind,
+      null::smallint, 'Full-day bundle'::text,
+      (select shifts.start_time from public.cottage_shifts shifts
+        where shifts.schedule_revision_id = schedules.id order by shifts.position limit 1),
+      (select shifts.end_time from public.cottage_shifts shifts
+        where shifts.schedule_revision_id = schedules.id order by shifts.position desc limit 1)
+    from public.cottage_shift_schedule_revisions schedules
+    where schedules.id = current_setting('rentcottage.test_schedule_id')::uuid
+  )
+  select days.service_day::date, units.unit_kind, units.position, units.name,
+    units.start_time, units.end_time,
+    public.public_cottage_effective_price(
+      current_setting('rentcottage.test_schedule_id')::uuid,
+      units.unit_kind, units.unit_id, days.service_day::date
+    ),
+    coalesce(public.public_cottage_unit_is_available(
+      current_setting('rentcottage.test_schedule_id')::uuid,
+      units.unit_kind, units.unit_id, days.service_day::date
+    ), false)
+  from generate_series($1::timestamp, $2::timestamp, interval '1 day') days(service_day)
+  cross join units;
+select set_eq(
+  $$select * from public.public_cottage_inventory_units(
+    current_setting('rentcottage.test_schedule_id')::uuid, '2099-08-21', '2099-08-23'
+  )$$,
+  $$execute inventory_units_from_helpers('2099-08-21', '2099-08-23')$$,
+  'set-based inventory unit rows match the unit helpers across date, weekday and standard prices and a closed shift'
+);
+delete from public.cottage_inventory_standard_prices prices
+using public.cottage_shifts shifts
+where shifts.schedule_revision_id = current_setting('rentcottage.test_schedule_id')::uuid
+  and shifts.position = 2
+  and prices.schedule_revision_id = shifts.schedule_revision_id
+  and prices.unit_kind = 'shift' and prices.unit_id = shifts.id;
+select set_eq(
+  $$select * from public.public_cottage_inventory_units(
+    current_setting('rentcottage.test_schedule_id')::uuid,
+    (now() at time zone 'Asia/Baghdad')::date - 1, (now() at time zone 'Asia/Baghdad')::date + 1
+  )$$,
+  $$execute inventory_units_from_helpers(
+    (now() at time zone 'Asia/Baghdad')::date - 1, (now() at time zone 'Asia/Baghdad')::date + 1
+  )$$,
+  'set-based inventory unit rows match the unit helpers for past, missing and unpriced open inventory'
+);
+select ok(
+  not has_function_privilege('anon', 'public.public_cottage_inventory_units(uuid, date, date)', 'execute')
+  and not has_function_privilege('authenticated', 'public.public_cottage_inventory_units(uuid, date, date)', 'execute')
+  and not has_function_privilege('service_role', 'public.public_cottage_inventory_units(uuid, date, date)', 'execute'),
+  'no API role can execute the set-based inventory unit rows'
+);
+rollback to savepoint inventory_unit_rows;
 
 update public.cottage_marketplace_listings set state = 'paused'
 where profile_id = '30000000-0000-4000-8000-000000002801';
