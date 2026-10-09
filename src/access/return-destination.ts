@@ -2,6 +2,7 @@ import type { Locale } from "@/i18n/routing";
 import {
   hasCompleteCottageBookingSelection,
   parseCottageDiscoveryQuery,
+  publicCottageSlugPattern,
 } from "@/cottage-discovery/discovery-query";
 
 const uuid =
@@ -84,6 +85,15 @@ export function safeReturnDestination(locale: Locale, value: unknown): string {
       )
         return fallback;
       params.delete("conversation");
+    }
+    if (route === "/results") {
+      const afters = params.getAll("after");
+      if (
+        afters.length > 1 ||
+        (afters.length === 1 && !publicCottageSlugPattern.test(afters[0]))
+      )
+        return fallback;
+      params.delete("after");
     }
     if (
       !discoveryQueryFrom(

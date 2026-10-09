@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   hasCompleteCottageBookingSelection,
   parseCottageDiscoveryQuery,
+  parseCottageResultsQuery,
   preserveRawCottageDiscoveryQuery,
   serializeCottageDiscoveryQuery,
+  serializeCottageResultsQuery,
 } from "./discovery-query";
 
 describe("Cottage discovery query", () => {
@@ -165,5 +167,70 @@ describe("Cottage discovery query", () => {
         ignored: undefined,
       }),
     ).toBe("selection=2026-08-21%3Ashift%3A1&selection=2026-08-21%3Ashift%3A2");
+  });
+
+  it("accepts a continuation on the results query only and serializes it after the search", () => {
+    const after = "cottage-0123456789abcdef0123456789abcdef";
+    const search = {
+      from: "2026-08-21",
+      to: "2026-08-21",
+      selection: "2026-08-21:shift:2",
+      guests: "4",
+      amenity: "wifi",
+    };
+    const continued = parseCottageResultsQuery({ ...search, after });
+    expect(continued).toEqual({
+      status: "loaded",
+      query: {
+        from: "2026-08-21",
+        to: "2026-08-21",
+        selections: [{ serviceDay: "2026-08-21", kind: "shift", position: 2 }],
+        guests: 4,
+        amenities: ["wifi"],
+      },
+      after,
+    });
+    expect(parseCottageResultsQuery(search)).toEqual({
+      status: "loaded",
+      query: expect.objectContaining({ guests: 4 }),
+      after: null,
+    });
+    expect(parseCottageDiscoveryQuery({ ...search, after })).toEqual({
+      status: "invalid",
+    });
+    if (continued.status !== "loaded") throw new Error("expected loaded query");
+
+    expect(serializeCottageResultsQuery(continued.query, after)).toBe(
+      "from=2026-08-21&to=2026-08-21&selection=2026-08-21%3Ashift%3A2&guests=4&amenity=wifi&after=cottage-0123456789abcdef0123456789abcdef",
+    );
+    expect(serializeCottageResultsQuery(continued.query, null)).toBe(
+      "from=2026-08-21&to=2026-08-21&selection=2026-08-21%3Ashift%3A2&guests=4&amenity=wifi",
+    );
+  });
+
+  it("rejects a malformed, empty or repeated continuation", () => {
+    const search = {
+      from: "2026-08-21",
+      to: "2026-08-21",
+      selection: "2026-08-21:shift:2",
+      guests: "4",
+    };
+    const valid = "cottage-0123456789abcdef0123456789abcdef";
+    for (const after of [
+      "",
+      "cottage-0123456789abcdef0123456789abcde",
+      "cottage-0123456789abcdef0123456789abcdef0",
+      "cottage-0123456789ABCDEF0123456789ABCDEF",
+      "cottage-0123456789abcdef0123456789abcdeg",
+      "river-house",
+      ` ${valid}`,
+      [valid],
+      [valid, valid],
+      [valid, "cottage-fedcba9876543210fedcba9876543210"],
+    ]) {
+      expect(parseCottageResultsQuery({ ...search, after })).toEqual({
+        status: "invalid",
+      });
+    }
   });
 });

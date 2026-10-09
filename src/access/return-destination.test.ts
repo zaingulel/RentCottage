@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  serializeCottageResultsQuery,
+  type CottageDiscoverySelection,
+} from "@/cottage-discovery/discovery-query";
+import {
   accessLanguageHref,
   administratorAccessHref,
   administratorAccessLanguageHref,
@@ -105,6 +109,66 @@ describe("account return destinations", () => {
     "/en/owner/cottages/10000000-0000-4000-8000-000000000001",
   ])("preserves permitted context %s", (destination) => {
     expect(safeReturnDestination("en", destination)).toBe(destination);
+  });
+  it("returns to a continued results page and refuses a continuation anywhere else", () => {
+    const slug = "cottage-0123456789abcdef0123456789abcdef";
+    const after = "cottage-50000000000040008000000000000018";
+    const dayOnly = "from=2030-01-12&to=2030-01-13&guests=4";
+    const search = `${dayOnly}&selection=2030-01-12:shift:1`;
+    for (const filters of [dayOnly, search]) {
+      const destination = `/en/results?${filters}&after=${slug}`;
+      expect(safeReturnDestination("en", destination)).toBe(destination);
+    }
+    for (const invalidAfter of [
+      "after=",
+      "after=cottage-0123456789abcdef0123456789abcde",
+      "after=cottage-0123456789ABCDEF0123456789ABCDEF",
+      "after=river-house",
+      `after=${slug}&after=${slug}`,
+    ]) {
+      expect(
+        safeReturnDestination("en", `/en/results?${search}&${invalidAfter}`),
+      ).toBe("/en/bookings");
+    }
+    expect(safeReturnDestination("en", `/en/results?after=${slug}`)).toBe(
+      "/en/bookings",
+    );
+    for (const route of [
+      `cottages/${slug}`,
+      `quote/${slug}`,
+      `request/${slug}`,
+      "messages",
+    ]) {
+      const context = route === "messages" ? `cottage=${slug}&` : "";
+      expect(
+        safeReturnDestination(
+          "en",
+          `/en/${route}?${context}${search}&selection=2030-01-13:full-day&after=${slug}`,
+        ),
+      ).toBe("/en/bookings");
+    }
+
+    const selections: CottageDiscoverySelection[] = [];
+    for (let offset = 0; offset < 31; offset += 1) {
+      const serviceDay = new Date(Date.UTC(2100, 0, 7 + offset))
+        .toISOString()
+        .slice(0, 10);
+      for (const position of [1, 2, 3] as const) {
+        selections.push({ serviceDay, kind: "shift", position });
+      }
+    }
+    const largest = `/en/results?${serializeCottageResultsQuery(
+      {
+        from: "2100-01-07",
+        to: "2100-02-06",
+        selections,
+        guests: 4,
+        amenities: [],
+      },
+      after,
+    )}`;
+    expect(selections).toHaveLength(93);
+    expect(safeReturnDestination("en", largest)).toBe(largest);
   });
   it.each(untrustedDestinations)(
     "rejects untrusted destination %s",
