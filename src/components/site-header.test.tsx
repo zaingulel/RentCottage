@@ -293,7 +293,7 @@ describe("shared site header", () => {
     expect(language).toHaveAttribute("aria-expanded", "false");
     expect(menu).toHaveAttribute("aria-expanded", "false");
   });
-  it("closes the open panel on Escape and returns focus to the button that opened it", () => {
+  it("closes the open panel on Escape and returns focus to its visible button", () => {
     render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
     const menu = screen.getByRole("button", { name: "Menu" });
     fireEvent.click(menu);

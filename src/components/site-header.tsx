@@ -54,7 +54,7 @@ function PanelToggle({
   label: string;
   controls: string;
   open: boolean;
-  onToggle: (event: MouseEvent<HTMLButtonElement>) => void;
+  onToggle: () => void;
   children: ReactNode;
 }) {
   return (
@@ -109,7 +109,6 @@ export function SiteHeader({
   }, [landing]);
   const [openPanel, setOpenPanel] = useState<HeaderPanel | null>(null);
   const header = useRef<HTMLElement>(null);
-  const opener = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     if (openPanel === null) return;
     const closeOutside = (event: Event) => {
@@ -122,7 +121,13 @@ export function SiteHeader({
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setOpenPanel(null);
-      opener.current?.focus();
+      [
+        ...(header.current?.querySelectorAll<HTMLButtonElement>(
+          'button[aria-expanded="true"]',
+        ) ?? []),
+      ]
+        .find((button) => getComputedStyle(button).display !== "none")
+        ?.focus();
     };
     document.addEventListener("pointerdown", closeOutside);
     document.addEventListener("focusin", closeOutside);
@@ -133,8 +138,7 @@ export function SiteHeader({
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [openPanel]);
-  const toggle = (panel: HeaderPanel, event: MouseEvent<HTMLButtonElement>) => {
-    opener.current = event.currentTarget;
+  const toggle = (panel: HeaderPanel) => {
     setOpenPanel((current) => (current === panel ? null : panel));
   };
   const closeOnChoice = (event: MouseEvent<HTMLElement>) => {
@@ -165,7 +169,7 @@ export function SiteHeader({
             label={messages[locale].languageLabel}
             controls="site-header-language"
             open={openPanel === "language"}
-            onToggle={(event) => toggle("language", event)}
+            onToggle={() => toggle("language")}
           >
             <circle cx="12" cy="12" r="9" />
             <ellipse cx="12" cy="12" rx="4" ry="9" />
@@ -193,7 +197,7 @@ export function SiteHeader({
             label={copy.menu}
             controls="site-header-account"
             open={openPanel === "menu"}
-            onToggle={(event) => toggle("menu", event)}
+            onToggle={() => toggle("menu")}
           >
             <path d="M4 7h16M4 12h16M4 17h16" />
           </PanelToggle>
@@ -218,7 +222,7 @@ export function SiteHeader({
                   className="account-menu-toggle"
                   aria-expanded={openPanel === "menu"}
                   aria-controls="site-header-account-menu"
-                  onClick={(event) => toggle("menu", event)}
+                  onClick={() => toggle("menu")}
                 >
                   {copy.account}
                 </button>

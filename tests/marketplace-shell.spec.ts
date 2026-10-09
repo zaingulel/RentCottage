@@ -490,6 +490,7 @@ test("the open account menu stays inside a 390 pixel screen for every role and l
           menu.width > 0 &&
           menu.left >= 0 &&
           menu.right <= root.clientWidth &&
+          menu.top >= 0 &&
           menu.bottom <= window.innerHeight,
         rows: rows.length > 0,
         clippedRows: rows.filter((row) => {
@@ -497,6 +498,8 @@ test("the open account menu stays inside a 390 pixel screen for every role and l
           return (
             box.width === 0 ||
             box.left < 0 ||
+            box.top < 0 ||
+            box.bottom > window.innerHeight ||
             box.right > root.clientWidth ||
             row.scrollWidth > row.clientWidth
           );
@@ -544,4 +547,23 @@ test("the open account menu stays inside a 390 pixel screen for every role and l
       await expect(opener, label).toHaveAttribute("aria-expanded", "false");
     }
   }
+
+  await page.evaluate((input) => window.renderSiteHeader(input), {
+    locale: "en" as const,
+    account: {
+      status: "authenticated" as const,
+      context: { role: "customer" as const },
+    },
+  });
+  const header = page.getByRole("banner");
+  await header
+    .locator('button[aria-controls^="site-header-account"]')
+    .filter({ visible: true })
+    .tap();
+  await header.locator("#site-header-account-menu a").first().focus();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.keyboard.press("Escape");
+  const accountToggle = header.locator(".account-menu-toggle");
+  await expect(accountToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(accountToggle).toBeFocused();
 });
