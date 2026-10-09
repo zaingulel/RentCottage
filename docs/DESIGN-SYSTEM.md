@@ -41,13 +41,15 @@ the code keeps them.
     Normal-size text in these three text tokens reaches 4.5:1 on every surface it sits on, which
     [globals.test.ts](../src/app/globals.test.ts) checks against a list of surfaces, so new work that puts such
     text on another surface adds that surface to the test.
-  - `--ink-on-dark` is the text colour on every dark surface, the green panels and buttons and the shaded hero
-    photograph alike. `--ink-on-dark-soft` is the supporting paragraph there and `--ink-on-dark-muted` the small
+  - `--ink-on-dark` is the text colour on a dark surface, the green panels and buttons and the shaded hero
+    photograph alike; the one exception is `--ink-on-green-bright`, the white label of the solid green buttons and
+    links that the administrator review list, the publication review and the cottage profile editor style for
+    themselves. `--ink-on-dark-soft` is the supporting paragraph there and `--ink-on-dark-muted` the small
     label.
   - `--line-panel` is the outline of a panel and of a message.
-  - `--gold-tint` is the one gold wash, behind a notice, a label or a page corner. `--green-tint` is the green
-    wash behind content; `--action-pressed` stays separate because it is a state, the fill of a pressed toggle
-    and of the current backoffice destination.
+  - `--gold-tint` is the one gold wash, behind a label or a page corner; a notice sits on `--surface-notice`.
+    `--green-tint` is the green wash behind content; `--action-pressed` stays separate because it is a state, the
+    fill of a pressed toggle and of the current backoffice destination.
 - A translucent variant of a colour is its own token written as `rgb(r g b / a%)`. `color-mix()` and relative colour
   syntax are not used: they are newer than the browsers Next.js supports (Chrome, Edge and Firefox 111, Safari
   16.4).
@@ -127,11 +129,11 @@ A stylesheet may write these as literals:
 - Six display heading size declarations larger than the largest step. Each stays until its screen is moved onto the
   page template, when a page title takes the style under Page template and its entry is removed here; a heading
   that is not a page title, as the home page hero headline and section headings are, keeps its entry until a rule
-  in this document replaces it. One of them is written on a rule that two headings share, so its entry names the whole rule:
+  in this document replaces it:
   - `.retreat-copy h1 { font-size: clamp(2.5rem, 6vw, 4.4rem) }`
   - `.retreat-copy h1 { font-size: clamp(2.25rem, 12vw, 3.3rem) }`
   - `.results-intro h1 { font-size: clamp(2.6rem, 6vw, 4.5rem) }`
-  - `.profile-heading h1, .request-layout h1 { font-size: clamp(2.5rem, 6vw, 4rem) }`
+  - `.profile-heading h1 { font-size: clamp(2.5rem, 6vw, 4rem) }`
   - `.access-required-card h1 { font-size: clamp(2.2rem, 6vw, 3.5rem) }`
   - `.trusted-copy h2 { font-size: clamp(2rem, 4vw, 3rem) }`
 
@@ -145,9 +147,9 @@ Anything else is a token.
 ## Page template
 
 - A page on the template puts `page` on its `<main>`, beside the class that gives the page its background and
-  height. The column is centred, leaves a `2.25rem` gutter (18 pixels on each side, the site header's) and starts
-  `--space-6` (32 pixels) below the site header. It is the same at every width and in both directions, with no
-  breakpoint and no direction selector.
+  height (`results-page` on every page moved so far). The column is centred, leaves a `2.25rem` gutter (18 pixels on
+  each side, the site header's) and starts `--space-6` (32 pixels) below the site header. It is the same at every
+  width and in both directions, with no breakpoint and no direction selector.
 - A page has one of two content widths. `--page-width` is 1120 pixels and is the default. `--page-width-record`
   is 760 pixels, chosen by adding `page-record`, for a record page: one that shows a single record, such as a
   Booking Request status or a receipt, or a single-column list of a person's own records, such as My bookings or
@@ -170,17 +172,17 @@ Anything else is a token.
   - `ActionButton`: a primary, secondary or toggle button (`.action`, `.action-primary`, `.action-secondary`,
     `.action-toggle`, sized by `.action-compact` or `.action-regular` and `.action-content` or `.action-full`). A pending button sets
     `aria-busy` and is disabled. A toggle at rest looks like a secondary button, a pressed one carries the
-    `--shadow-pressed` ring, and a disabled one has a dashed outline.
+    `--shadow-pressed` ring, and a disabled one has a dashed border.
   - `ActionLink`: a link styled as a primary, secondary or text action (`.action-link`, `.action-text`).
   - `FormControl`: an input, select or textarea with `.form-control`, which shows `aria-invalid` as an error
     border.
   - `FormControl` with `type="date"` is the date field. It keeps the platform's date picker; the date text and the
     calendar glyph the browser draws inside the field are not restyled.
   - `ChoiceControl`: a native checkbox or radio button inside its label (`.choice-control`). The label is the
-    touch target. The mark has the form field's fill and focus treatment and a full-strength `--green` outline,
+    touch target. The mark has the form field's fill and focus treatment and a full-strength `--green` border,
     because the field's `--line` hairline is too faint to show a mark this small. No state is shown by colour
     alone: a checked checkbox is filled and carries a drawn tick, a checked radio button carries a drawn dot, a
-    disabled mark has a dashed outline, and `aria-invalid` thickens the outline as well as colouring it, beside a
+    disabled mark has a dashed border, and `aria-invalid` thickens the border as well as colouring it, beside a
     `.field-error` message.
   - `OptionGroup`: a native `fieldset` and `legend` around a set of choices (`.option-group`), one per line
     (`.option-group-stack`) or wrapping along a row (`.option-group-wrap`). An option is a row of mark and text.
@@ -201,9 +203,12 @@ Anything else is a token.
   only the brand and two icon buttons (`.site-header-toggle`), each a pill `2.75rem` wide and tall: the globe
   opens the language selector and the three bars open the account navigation. An open panel
   (`.site-header-panel`) spans the screen directly under the header on `--surface-raised` at `--layer-menu`, one
-  destination per row, each row at least `2.75rem` tall; it lies over the page and moves nothing. Each button is
-  named by `aria-label`, reports `aria-expanded` and names its panel with `aria-controls`; the stylesheet shows
-  and hides a panel from its button's `aria-expanded`, so the two cannot disagree. One panel is open at a time.
+  destination per row, each row at least `2.75rem` tall; it lies over the page and moves nothing. Each of these
+  buttons, the Account button included, reports `aria-expanded` and names its panel with `aria-controls`; an icon
+  button is named by `aria-label` and the Account button by its visible text; at the `phone` breakpoint the
+  stylesheet shows and hides a panel from its button's `aria-expanded`, so the two cannot disagree, and above it
+  the Account menu carries the `hidden` attribute, set from the same state as its button's `aria-expanded`. One
+  panel is open at a time.
   It closes when a destination or Sign out is chosen, on Escape, which returns focus to the button that opened
   it, on a press outside the header and when focus leaves the header. It is a disclosure, not a dialog: focus is
   not trapped and no `menu` role is used.
@@ -303,7 +308,12 @@ its own; the block it sits in sets the space around it.
   input, select, textarea or link.
 - The `prefers-reduced-motion: reduce` rule turns off transitions and smooth scrolling.
 - `.action`, `.action-link`, `.action-regular`, `.form-control`, `.choice-control` and the `.disclosure` summary
-  are at least `2.75rem` tall; only `.action-compact` (`2.25rem`) and the inline `.action-text` link are smaller.
+  are at least `2.75rem` tall; of the shared controls only `.action-compact` (`2.25rem`) and the inline
+  `.action-text` link are smaller. Three controls outside those classes are smaller as well: above the `phone`
+  breakpoint the site header's account and support pills are `2.5rem` tall and its language links `2rem`, and the
+  choose-file button inside a file field is `2.25rem`. The search form's Booking Period filters are
+  `.action-compact` toggles; before dates are chosen, `.booking-period-defaults .action-toggle` sets them to
+  `2.4rem`.
 - Status and errors are announced through `ActionFeedback`, which renders `role="status"` for success and
   `role="alert"` for errors.
 - No new interaction ships without a visible focus state.
@@ -317,7 +327,7 @@ its own; the block it sits in sets the space around it.
 | Name | `max-width` | Pixels | At or below it |
 |---|---|---|---|
 | compact | `24rem` | 384 | a two-up grid of short values becomes one column |
-| phone | `40rem` | 640 | the phone layout: fields, rows and headers stack, and buttons fill the width; the site header keeps one row and opens its links as panels |
+| phone | `40rem` | 640 | the phone layout: fields, rows and headers stack, and a form may set its buttons to fill the width; the site header keeps one row and opens its links as panels |
 | tablet | `47.5rem` | 760 | a main column and its side column stack |
 | wide | `53rem` | 848 | a form and its fixed side panel stack |
 
