@@ -1,13 +1,18 @@
 begin;
-select plan(89);
+select plan(101);
 
 select has_table(
   'public', 'cottage_marketplace_listings',
   'Cottage marketplace lifecycle is separate from publication history'
 );
 select has_function(
-  'public', 'search_public_cottages', array['public.cottage_profile_source_language', 'jsonb'],
+  'public', 'search_public_cottages',
+  array['public.cottage_profile_source_language', 'jsonb', 'text', 'integer'],
   'anonymous Cottage discovery has one validated search boundary'
+);
+select hasnt_function(
+  'public', 'search_public_cottages', array['public.cottage_profile_source_language', 'jsonb'],
+  'the unpaged Cottage search signature is gone'
 );
 select has_function(
   'public', 'get_default_public_cottage_search', array['text'],
@@ -23,9 +28,13 @@ select has_function(
 );
 
 select ok(
-  has_function_privilege('anon', 'public.search_public_cottages(public.cottage_profile_source_language,jsonb)', 'execute')
+  has_function_privilege('anon', 'public.search_public_cottages(public.cottage_profile_source_language,jsonb,text,integer)', 'execute')
     and not has_table_privilege('anon', 'public.cottage_marketplace_listings', 'select'),
   'anonymous callers execute discovery without direct lifecycle-table access'
+);
+select ok(
+  has_function_privilege('authenticated', 'public.search_public_cottages(public.cottage_profile_source_language,jsonb,text,integer)', 'execute'),
+  'authenticated callers execute paged discovery'
 );
 select ok(
   has_function_privilege('anon', 'public.get_public_cottage_profile(public.cottage_profile_source_language,text,jsonb)', 'execute'),
@@ -44,7 +53,7 @@ select is(
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 select throws_ok(format(
-  'select public.search_public_cottages(''en'', %L::jsonb)', requested_search
+  'select public.search_public_cottages(''en'', %L::jsonb, null, 12)', requested_search
 ), '22023', null, 'discovery rejects malformed input: ' || label) from (values
   (null::text, 'SQL NULL'),
   ('null', 'JSON null'),
@@ -83,6 +92,17 @@ select throws_ok(format(
   ('{"from":"2099-08-21","to":"2099-08-21","guests":4,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}],"area":null}', 'null area'),
   ('{"from":"2099-08-21","to":"2099-08-21","guests":4,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}],"exactAddress":"private"}', 'unknown query key')
 ) inputs(requested_search, label);
+select throws_ok(format(
+  'select public.search_public_cottages(''en'', ''{"from":"2099-08-21","to":"2099-08-21","guests":4}''::jsonb, %L, %s)',
+  target_after_slug, target_limit
+), '22023', 'Public Cottage search input is invalid', 'discovery rejects malformed paging: ' || label) from (values
+  (null::text, '0', 'zero limit'),
+  (null, '13', 'limit 13'),
+  (null, 'null', 'null limit'),
+  ('cottage-2811', '12', 'malformed continuation'),
+  ('', '12', 'empty continuation'),
+  ('cottage-ABCDEF00000040008000000000002811', '12', 'uppercase continuation')
+) inputs(target_after_slug, target_limit, label);
 reset role;
 
 insert into auth.users (id, aud, role, phone, phone_confirmed_at)
@@ -277,13 +297,13 @@ select throws_ok(
 );
 select results_eq(
   $$select array_agg(key order by key)
-    from jsonb_object_keys((select result from public.search_public_cottages('en', '{
+    from jsonb_object_keys(public.search_public_cottages('en', '{
       "from":"2099-08-21","to":"2099-08-21","guests":6,
       "amenities":["pool"],"selections":[
         {"serviceDay":"2099-08-21","kind":"shift","position":1},
         {"serviceDay":"2099-08-21","kind":"shift","position":2}
       ]
-    }'::jsonb) result)) keys(key)$$,
+    }'::jsonb, null, 12) -> 'items' -> 0) keys(key)$$,
   $$values (array['amenities','approximateLocation','capacity','governorate',
     'inventory','mediaIds','name','slug']::text[])$$,
   'anonymous search returns only its exact safe projection'
@@ -301,7 +321,7 @@ select ok(
         {"serviceDay":"2099-08-21","kind":"shift","position":1},
         {"serviceDay":"2099-08-21","kind":"shift","position":2}
       ]
-    }'::jsonb) result),
+    }'::jsonb, null, 12) result),
   'anonymous search omits private location, owner and moderation sentinels'
 );
 select results_eq(
@@ -387,14 +407,14 @@ select results_eq(
   'a direct Cottage Profile defaults to every remaining Shift on its Service Day'
 );
 select results_eq(
-  $$select result -> 'inventory'
+  $$select result -> 'items' -> 0 -> 'inventory'
     from public.search_public_cottages('en', '{
       "from":"2099-08-21","to":"2099-08-21","guests":6,
       "amenities":["pool"],"selections":[
         {"serviceDay":"2099-08-21","kind":"shift","position":1},
         {"serviceDay":"2099-08-21","kind":"shift","position":2}
       ]
-    }'::jsonb) result$$,
+    }'::jsonb, null, 12) result$$,
   $$values ('[
     {"serviceDay":"2099-08-21","kind":"shift","position":1,"name":"Morning","startTime":"08:00","endTime":"14:00","priceIqd":60000,"available":true},
     {"serviceDay":"2099-08-21","kind":"shift","position":2,"name":"Evening","startTime":"18:00","endTime":"23:00","priceIqd":80000,"available":true},
@@ -419,8 +439,8 @@ reset role;
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 select results_eq(
-  $$select result -> 'inventory' from public.search_public_cottages('en',
-    '{"from":"2099-08-21","to":"2099-08-22","guests":4}'::jsonb) result$$,
+  $$select result -> 'items' -> 0 -> 'inventory' from public.search_public_cottages('en',
+    '{"from":"2099-08-21","to":"2099-08-22","guests":4}'::jsonb, null, 12) result$$,
   $$values ('[
     {"serviceDay":"2099-08-21","kind":"shift","position":1,"name":"Morning","startTime":"08:00","endTime":"14:00","priceIqd":60000,"available":true},
     {"serviceDay":"2099-08-21","kind":"shift","position":2,"name":"Evening","startTime":"18:00","endTime":"23:00","priceIqd":80000,"available":false},
@@ -432,15 +452,15 @@ select results_eq(
   'day-first discovery projects exact two-day prices and safe partial availability'
 );
 select results_eq(format(
-  'select count(*) from public.search_public_cottages(''en'', %L::jsonb)', requested_search
-), $$values (1::bigint)$$, label) from (values
+  'select jsonb_array_length(public.search_public_cottages(''en'', %L::jsonb, null, 12) -> ''items'')', requested_search
+), $$values (1)$$, label) from (values
   ('{"from":"2099-08-21","to":"2099-08-22","guests":4}', 'discovery accepts absent period filters'),
   ('{"from":"2099-08-21","to":"2099-08-22","guests":4,"selections":[]}', 'discovery accepts empty period filters'),
   ('{"from":"2099-08-21","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]}', 'discovery accepts filters on only some Service Days')
 ) inputs(requested_search, label);
 select results_eq(format(
-  'select count(*) from public.search_public_cottages(''en'', %L::jsonb)', requested_search
-), $$values (0::bigint)$$, label) from (values
+  'select jsonb_array_length(public.search_public_cottages(''en'', %L::jsonb, null, 12) -> ''items'')', requested_search
+), $$values (0)$$, label) from (values
   ('{"from":"2099-08-21","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1},{"serviceDay":"2099-08-21","kind":"shift","position":2}]}', 'every explicit shift filter must be available'),
   ('{"from":"2099-08-21","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-21","kind":"full-day"}]}', 'an unavailable bundle filter excludes the cottage'),
   ('{"from":"2099-08-21","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":3}]}', 'a missing offered position excludes the cottage')
@@ -480,9 +500,9 @@ reset role;
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 select results_eq(
-  $$select count(*) from public.search_public_cottages('en',
-    '{"from":"2099-08-21","to":"2099-08-23","guests":4}'::jsonb)$$,
-  $$values (0::bigint)$$,
+  $$select jsonb_array_length(public.search_public_cottages('en',
+    '{"from":"2099-08-21","to":"2099-08-23","guests":4}'::jsonb, null, 12) -> 'items')$$,
+  $$values (0)$$,
   'an intermediate wholly closed Service Day excludes a cottage despite available first and last days'
 );
 reset role;
@@ -528,10 +548,10 @@ where schedule_revision_id = (
 ) and service_day = '2099-08-21';
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
-select is((select count(*) from public.search_public_cottages('en', '{
+select is(jsonb_array_length(public.search_public_cottages('en', '{
   "from":"2099-08-21","to":"2099-08-21","guests":1,"amenities":[],
   "selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]
-}'::jsonb)), 0::bigint, 'an all-closed published Cottage stays out of search');
+}'::jsonb, null, 12) -> 'items'), 0,'an all-closed published Cottage stays out of search');
 select is(
   public.get_public_cottage_profile('en',
     'cottage-30000000000040008000000000002801', '{
@@ -651,10 +671,10 @@ select throws_ok(
 reset role;
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
-select is((select count(*) from public.search_public_cottages('en', '{
+select is(jsonb_array_length(public.search_public_cottages('en', '{
   "from":"2099-08-21","to":"2099-08-21","guests":1,"amenities":[],
   "selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]
-}'::jsonb)), 0::bigint, 'a paused Cottage is excluded from anonymous search');
+}'::jsonb, null, 12) -> 'items'), 0,'a paused Cottage is excluded from anonymous search');
 select throws_ok(
   $$select public.resolve_cottage_inventory_public_availability(
     '30000000-0000-4000-8000-000000002801',
@@ -703,10 +723,10 @@ update public.cottage_marketplace_listings set state = 'suspended'
 where profile_id = '30000000-0000-4000-8000-000000002801';
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
-select is((select count(*) from public.search_public_cottages('en', '{
+select is(jsonb_array_length(public.search_public_cottages('en', '{
   "from":"2099-08-21","to":"2099-08-21","guests":1,"amenities":[],
   "selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]
-}'::jsonb)), 0::bigint, 'a suspended Cottage is excluded from anonymous search');
+}'::jsonb, null, 12) -> 'items'), 0,'a suspended Cottage is excluded from anonymous search');
 reset role;
 
 insert into public.cottage_profile_review_cycles (
@@ -747,10 +767,10 @@ update public.account_contexts set owner_approval_state = 'suspended'
 where user_id = '00000000-0000-0000-0000-000000002801';
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
-select is((select count(*) from public.search_public_cottages('en', '{
+select is(jsonb_array_length(public.search_public_cottages('en', '{
   "from":"2099-08-21","to":"2099-08-21","guests":1,"amenities":[],
   "selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]
-}'::jsonb)), 0::bigint, 'an unapproved Cottage Owner excludes every Cottage from anonymous search');
+}'::jsonb, null, 12) -> 'items'), 0,'an unapproved Cottage Owner excludes every Cottage from anonymous search');
 reset role;
 
 update public.owner_application_cottage_profiles
@@ -778,6 +798,169 @@ select throws_ok($$select public.validate_public_cottage_discovery(
 select throws_ok($$select public.resolve_public_cottage_inventory(
   current_setting('rentcottage.test_schedule_id')::uuid, '2099-08-21', '2099-08-22'
 )$$, '42501', null, 'authenticated callers cannot enumerate inventory through the private helper');
+reset role;
+
+insert into auth.users (id, aud, role, phone, phone_confirmed_at)
+values (
+  '00000000-0000-0000-0000-000000002803', 'authenticated', 'authenticated',
+  '+9647500002803', now()
+);
+insert into public.account_contexts (user_id, role, owner_approval_state)
+values ('00000000-0000-0000-0000-000000002803', 'cottage_owner', 'approved');
+insert into public.owner_application_cottage_profiles (
+  id, owner_user_id, name, governorate, approximate_location, exact_address,
+  exact_latitude, exact_longitude, private_directions, capacity, bedrooms,
+  bathrooms, amenities, source_language, description, house_rules, status
+)
+select ('30000000-0000-4000-8000-00000000' || cottage)::uuid,
+  '00000000-0000-0000-0000-000000002803', 'Paged Cottage ' || cottage, 'Erbil',
+  'Shaqlawa', 'Paged private address', 36.2, 44.3, 'Paged private directions',
+  4, 2, 1, array['wifi'], 'en', 'Paged description', 'Paged rules', 'draft'
+from (values ('2811'), ('2812'), ('2813'), ('2814')) cottages(cottage);
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000002803","role":"authenticated","aal":"aal1"}', true);
+select public.replace_cottage_shift_schedule(
+  ('30000000-0000-4000-8000-00000000' || cottage)::uuid, 0,
+  '[{"name":"Morning","startTime":"08:00","endTime":"14:00"},{"name":"Evening","startTime":"18:00","endTime":"23:00"}]'
+) from (values ('2811'), ('2812'), ('2813'), ('2814')) cottages(cottage);
+reset role;
+insert into public.cottage_profile_source_revisions (
+  id, profile_id, owner_user_id, source_language, description, house_rules, revision
+)
+select ('31000000-0000-4000-8000-00000000' || cottage)::uuid,
+  ('30000000-0000-4000-8000-00000000' || cottage)::uuid,
+  '00000000-0000-0000-0000-000000002803', 'en', 'Paged description', 'Paged rules', 1
+from (values ('2811'), ('2812'), ('2813'), ('2814')) cottages(cottage);
+insert into public.cottage_profile_review_cycles (
+  id, profile_id, owner_user_id, source_revision_id, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities,
+  cycle_number, state, decided_at
+)
+select ('32000000-0000-4000-8000-00000000' || cottage)::uuid,
+  ('30000000-0000-4000-8000-00000000' || cottage)::uuid,
+  '00000000-0000-0000-0000-000000002803',
+  ('31000000-0000-4000-8000-00000000' || cottage)::uuid,
+  'Paged Cottage ' || cottage, 'Erbil', 'Shaqlawa', 4, 2, 1, array['wifi'], 1, 'approved', now()
+from (values ('2811'), ('2812'), ('2813'), ('2814')) cottages(cottage);
+insert into public.cottage_profile_localized_revisions (
+  id, review_cycle_id, locale, revision, origin, description, house_rules
+)
+select ('33000000-0000-4000-8000-00000000' || cottage)::uuid,
+  ('32000000-0000-4000-8000-00000000' || cottage)::uuid,
+  'en', 1, 'owner_source', 'Paged description', 'Paged rules'
+from (values ('2811'), ('2812'), ('2813'), ('2814')) cottages(cottage);
+insert into public.cottage_publication_snapshots (
+  id, profile_id, review_cycle_id, publication_number, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities
+)
+select ('34000000-0000-4000-8000-00000000' || cottage)::uuid,
+  ('30000000-0000-4000-8000-00000000' || cottage)::uuid,
+  ('32000000-0000-4000-8000-00000000' || cottage)::uuid, 1,
+  'Paged Cottage ' || cottage, 'Erbil', 'Shaqlawa', 4, 2, 1, array['wifi']
+from (values ('2811'), ('2812'), ('2813'), ('2814')) cottages(cottage);
+insert into public.cottage_publication_localizations (
+  publication_id, locale, localized_revision_id, description, house_rules
+)
+select ('34000000-0000-4000-8000-00000000' || cottage)::uuid, 'en',
+  ('33000000-0000-4000-8000-00000000' || cottage)::uuid, 'Paged description', 'Paged rules'
+from (values ('2811'), ('2812'), ('2813'), ('2814')) cottages(cottage);
+update public.owner_application_cottage_profiles
+set current_publication_id = ('34' || substr(id::text, 3))::uuid
+where owner_user_id = '00000000-0000-0000-0000-000000002803';
+select set_config('rentcottage.test_paged_inventory', (
+  select jsonb_agg(jsonb_build_object(
+    'profileId', profiles.id, 'scheduleId', profiles.current_shift_schedule_id,
+    'pricing', jsonb_build_object('units', shifts.prices), 'openStates', shifts.open_states
+  ))::text
+  from public.owner_application_cottage_profiles profiles
+  cross join lateral (
+    select jsonb_agg(jsonb_build_object(
+        'unitKind', 'shift', 'unitId', cottage_shifts.id, 'standardPriceIqd', 50000
+      )) as prices,
+      jsonb_agg(jsonb_build_object(
+        'unitKind', 'shift', 'unitId', cottage_shifts.id, 'state', 'open'
+      )) as open_states
+    from public.cottage_shifts
+    where cottage_shifts.schedule_revision_id = profiles.current_shift_schedule_id
+  ) shifts
+  where profiles.owner_user_id = '00000000-0000-0000-0000-000000002803'
+), true);
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000002803","role":"authenticated","aal":"aal1"}', true);
+select public.save_cottage_inventory_pricing(
+    (cottage ->> 'profileId')::uuid, (cottage ->> 'scheduleId')::uuid, cottage -> 'pricing'
+  ), public.set_cottage_inventory_availability(
+    (cottage ->> 'profileId')::uuid, (cottage ->> 'scheduleId')::uuid, '2099-08-21',
+    cottage -> 'openStates'
+  )
+from jsonb_array_elements(current_setting('rentcottage.test_paged_inventory')::jsonb) cottage;
+reset role;
+update public.cottage_marketplace_listings set state = 'paused'
+where profile_id = '30000000-0000-4000-8000-000000002812';
+
+set local role anon;
+select set_config('request.jwt.claims', '{"role":"anon"}', true);
+select results_eq(
+  $$with first_page as (
+      select public.search_public_cottages('en',
+        '{"from":"2099-08-21","to":"2099-08-21","guests":1}'::jsonb, null, 2) as page
+    ), second_page as (
+      select public.search_public_cottages('en',
+        '{"from":"2099-08-21","to":"2099-08-21","guests":1}'::jsonb,
+        first_page.page ->> 'nextCursor', 2) as page
+      from first_page
+    )
+    select jsonb_path_query_array(first_page.page, '$.items[*].slug'),
+      first_page.page -> 'nextCursor',
+      jsonb_path_query_array(second_page.page, '$.items[*].slug'),
+      second_page.page -> 'nextCursor'
+    from first_page, second_page$$,
+  $$values (
+    '["cottage-30000000000040008000000000002811","cottage-30000000000040008000000000002813"]'::jsonb,
+    '"cottage-30000000000040008000000000002813"'::jsonb,
+    '["cottage-30000000000040008000000000002814"]'::jsonb,
+    'null'::jsonb
+  )$$,
+  'paged search returns every eligible cottage exactly once across pages'
+);
+select results_eq(
+  $$select jsonb_path_query_array(public.search_public_cottages('en',
+      '{"from":"2099-08-21","to":"2099-08-21","guests":1}'::jsonb, pages.target_after_slug, 2
+    ), '$.items[*].slug')
+    from (values
+      (1, null),
+      (2, 'cottage-30000000000040008000000000002811'),
+      (3, 'cottage-30000000000040008000000000002812')
+    ) pages(page_order, target_after_slug)
+    order by pages.page_order$$,
+  $$values
+    ('["cottage-30000000000040008000000000002811","cottage-30000000000040008000000000002813"]'::jsonb),
+    ('["cottage-30000000000040008000000000002813","cottage-30000000000040008000000000002814"]'::jsonb),
+    ('["cottage-30000000000040008000000000002813","cottage-30000000000040008000000000002814"]'::jsonb)$$,
+  'paged search never returns an undiscoverable cottage on any page'
+);
+reset role;
+update public.cottage_marketplace_listings set state = 'paused'
+where profile_id = '30000000-0000-4000-8000-000000002813';
+set local role anon;
+select set_config('request.jwt.claims', '{"role":"anon"}', true);
+select results_eq(
+  $$select jsonb_path_query_array(page, '$.items[*].slug'), page -> 'nextCursor'
+    from public.search_public_cottages('en',
+      '{"from":"2099-08-21","to":"2099-08-21","guests":1}'::jsonb,
+      'cottage-30000000000040008000000000002813', 2) page$$,
+  $$values ('["cottage-30000000000040008000000000002814"]'::jsonb, 'null'::jsonb)$$,
+  'paged search continues past a cottage that stops matching'
+);
+select is(
+  public.search_public_cottages('en',
+    '{"from":"2099-08-21","to":"2099-08-21","guests":1}'::jsonb,
+    'cottage-30000000000040008000000000002814', 2),
+  '{"items":[],"nextCursor":null}'::jsonb,
+  'a continuation past the last cottage returns an empty final page'
+);
 reset role;
 
 select * from finish();

@@ -1114,11 +1114,11 @@ GRANT ALL ON FUNCTION "public"."save_owner_application"("requested_applicant_kin
 
 REVOKE ALL ON FUNCTION "public"."save_owner_application_draft_implementation"("requested_applicant_kind" "public"."owner_applicant_kind", "requested_legal_name" "text", "requested_company_name" "text", "requested_licensing_basis" "public"."owner_licensing_basis", "requested_exemption_basis" "text", "requested_cottage_name" "text", "requested_governorate" "text", "requested_approximate_location" "text", "requested_exact_address" "text", "requested_capacity" integer, "requested_bedrooms" integer, "requested_bathrooms" integer, "requested_amenities" "text"[], "requested_description" "text", "requested_house_rules" "text") FROM PUBLIC;
 
-REVOKE ALL ON FUNCTION "public"."search_public_cottages"("target_locale" "public"."cottage_profile_source_language", "requested_search" "jsonb") FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."search_public_cottages"("target_locale" "public"."cottage_profile_source_language", "requested_search" "jsonb", "target_after_slug" "text", "target_limit" integer) FROM PUBLIC;
 
-GRANT ALL ON FUNCTION "public"."search_public_cottages"("target_locale" "public"."cottage_profile_source_language", "requested_search" "jsonb") TO "anon";
+GRANT ALL ON FUNCTION "public"."search_public_cottages"("target_locale" "public"."cottage_profile_source_language", "requested_search" "jsonb", "target_after_slug" "text", "target_limit" integer) TO "anon";
 
-GRANT ALL ON FUNCTION "public"."search_public_cottages"("target_locale" "public"."cottage_profile_source_language", "requested_search" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."search_public_cottages"("target_locale" "public"."cottage_profile_source_language", "requested_search" "jsonb", "target_after_slug" "text", "target_limit" integer) TO "authenticated";
 
 REVOKE ALL ON FUNCTION "public"."send_test_sms"("event" "jsonb") FROM PUBLIC;
 
