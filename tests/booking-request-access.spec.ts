@@ -288,6 +288,8 @@ test("a verified Customer double-submit creates one Pending request and one mini
     : (["en"] as const)) {
     await reachQuoteFromDiscovery(locale);
   }
+  await expect(page.getByText("IQD 5,000", { exact: true })).toBeVisible();
+  await expect(page.getByText("IQD 185,000", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Verify your phone to continue" }),
   ).toBeVisible();
@@ -337,6 +339,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await expect(
     page.getByRole("heading", { name: "Booking Request pending" }),
   ).toBeVisible();
+  await expect(page.getByText("IQD 185,000", { exact: true })).toBeVisible();
   await expect(page.getByText(/does not reserve/)).toHaveCount(0);
   await expect(page.getByText("Owner response deadline")).toBeVisible();
   expect(await page.locator("body").innerText()).not.toContain(exactAddress);
@@ -989,6 +992,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await expect(
       paidDetails.getByRole("button", { name: "Retry confirmation notice" }),
     ).toHaveCount(0);
+    await expect(
+      paidDetails.getByText("IQD 185,000", { exact: true }),
+    ).toBeVisible();
     expect(paidIdentity()).toEqual(identityBeforeRetry);
     const notificationSourceCount = Number(
       harness.runSql(`select
@@ -1158,6 +1164,19 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await assertPaymentViews("payment-required-open", failureReference);
     expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
     expect(observeFailure()).toEqual(terminal);
+    // Only the current notice reaches the adapter; the ones the request moved past are suppressed.
+    expect(
+      JSON.parse(
+        harness.runSql(
+          `select coalesce(jsonb_agg(jsonb_build_array(e.event_kind,e.recipient_role,w.state,(select count(*) from public.fictional_booking_confirmation_notification_effects f where f.event_id=e.id)) order by e.event_kind,e.recipient_role),'[]') from public.booking_notification_events e join public.booking_requests q on q.id=e.booking_request_id left join public.booking_confirmation_notification_work w on w.event_id=e.id where q.booking_request_reference='${failureReference}' and e.receipt_id is null;`,
+        ),
+      ),
+    ).toEqual([
+      ["request_accepted", "cottage_owner", "suppressed", 0],
+      ["request_accepted", "customer", "suppressed", 0],
+      ["request_new", "cottage_owner", "suppressed", 0],
+      ["request_payment_required", "customer", "delivered", 1],
+    ]);
 
     const windowDefinition = harness.runSql(
       paymentEvidenceSql +
