@@ -193,6 +193,24 @@ Anything else is a token.
   flight and supplies the `pending` state the buttons show.
 - Site chrome is `site-header.tsx`, `site-footer.tsx` and `marketplace-shell.tsx` in `src/components/`; the
   language selector is `locale-links.tsx`.
+- Site header: `header.site-header` holds the brand link, the language selector and the account navigation
+  (`nav.account-navigation`). Its items are the header's own pattern, pills that do not use `ActionButton`,
+  `ActionLink` or `Disclosure`. Above the `phone` breakpoint the language selector and the account links sit in
+  the row, and a signed-in person's own links open from the Account button (`.account-menu-toggle`) as a menu
+  (`.account-menu-panel`) under that button, aligned to its end edge. At the `phone` breakpoint the row holds
+  only the brand and two icon buttons (`.site-header-toggle`), each a pill `2.75rem` wide and tall: the globe
+  opens the language selector and the three bars open the account navigation. An open panel
+  (`.site-header-panel`) spans the screen directly under the header on `--surface-raised` at `--layer-menu`, one
+  destination per row, each row at least `2.75rem` tall; it lies over the page and moves nothing. Each button is
+  named by `aria-label`, reports `aria-expanded` and names its panel with `aria-controls`; the stylesheet shows
+  and hides a panel from its button's `aria-expanded`, so the two cannot disagree. One panel is open at a time.
+  It closes when a destination or Sign out is chosen, on Escape, which returns focus to the button that opened
+  it, on a press outside the header and when focus leaves the header. It is a disclosure, not a dialog: focus is
+  not trapped and no `menu` role is used.
+- Icons: an icon is an inline `svg` in the component that uses it, with `aria-hidden="true"`, a 24-unit
+  `viewBox`, no fill and a 2-unit `currentColor` stroke with round ends, so it takes its control's text colour.
+  The control's rule sets its size and the control's `aria-label` names the control; an icon never carries the
+  name. The site header's globe and three bars are the only two. There is no icon library and no icon font.
 - Backoffice navigation: `BackofficeNavigation` in
   [backoffice-navigation.tsx](../src/components/backoffice-navigation.tsx) is the one navigation of the Owner
   Backoffice and the Platform Administrator pages, and owns each area's list of destinations. It is a server
@@ -299,7 +317,7 @@ its own; the block it sits in sets the space around it.
 | Name | `max-width` | Pixels | At or below it |
 |---|---|---|---|
 | compact | `24rem` | 384 | a two-up grid of short values becomes one column |
-| phone | `40rem` | 640 | the phone layout: fields, rows and headers stack, and buttons fill the width |
+| phone | `40rem` | 640 | the phone layout: fields, rows and headers stack, and buttons fill the width; the site header keeps one row and opens its links as panels |
 | tablet | `47.5rem` | 760 | a main column and its side column stack |
 | wide | `53rem` | 848 | a form and its fixed side panel stack |
 
