@@ -228,40 +228,43 @@ const DIRECT_ROUTE_DIRECTORIES = [
   "docs/research/",
 ];
 
-const INDEX_KINDS = ["explanation", "instruction", "record", "reference"];
+const HEADER = "| Document | Kind | What it is |";
+const SEPARATOR = "|---|---|---|";
+// The one row form the index uses: a link or a backticked directory, one of four kinds, a description.
+const ROW =
+  /^\| (?<document>\[[^\]]+\]\((?<link>[^\s<>)#]+)\)|`(?<directory>[^`\s]+\/)`) \| (?<kind>explanation|instruction|record|reference) \| \S.* \|$/;
 
 // The instruction rows of an index whose target sits in a direct-route location, and how many
-// instruction rows the index has. A Kind outside INDEX_KINDS throws, so no row is skipped unread.
+// instruction rows the index has. The header must be present with the separator under it; each line
+// under the separator up to the first blank line is a row, and so is any other line starting with
+// `|`. A row in any form but the exact one throws, so no row is skipped or misread.
 function directRouteInstructions(index) {
-  const instructions = [];
-  const rows = index
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("|"))
-    .map((line) => line.split("|").map((cell) => cell.trim()))
-    .filter(([, , kind]) => kind !== "Kind" && !/^:?-+:?$/.test(kind));
-  for (const [, document, rawKind] of rows) {
-    const kind = rawKind.replace(/[*_`]/g, "");
-    if (!INDEX_KINDS.includes(kind))
-      throw new Error(
-        `the index row for ${document} has the unknown kind ${rawKind}`,
-      );
-    if (kind === "instruction") instructions.push(document);
-  }
-  const offending = [];
-  for (const document of instructions) {
-    // A link is relative to docs/, and a `../` target leaves it; a backticked directory is under docs/.
-    const target =
-      document.match(/\]\(<?([^)#>]+)/)?.[1] ??
-      document.match(/`([^`]+)`/)?.[1];
-    assert.ok(target, `no target found in the row for ${document}`);
-    const path = posix.normalize(posix.join("docs", target));
-    if (
-      DIRECT_ROUTE_DIRECTORIES.some((directory) => path.startsWith(directory))
-    )
-      offending.push(document);
-  }
-  return { instructions: instructions.length, offending };
+  const lines = index.split("\n");
+  const start = lines.indexOf(HEADER);
+  if (start < 0) throw new Error("the index table header is not present");
+  if (lines[start + 1] !== SEPARATOR)
+    throw new Error("the index table separator does not follow the header");
+  const blank = lines.findIndex((line, i) => i > start + 1 && !line.trim());
+  const end = blank < 0 ? lines.length : blank;
+  const outside = [...lines.slice(0, start), ...lines.slice(end)].filter(
+    (line) => line.trim().startsWith("|"),
+  );
+  const rows = [...lines.slice(start + 2, end), ...outside]
+    .map((line) => {
+      const row = ROW.exec(line)?.groups;
+      if (!row)
+        throw new Error(`the index row is not in the exact form: ${line}`);
+      return row;
+    })
+    .filter(({ kind }) => kind === "instruction");
+  const offending = rows
+    .filter(({ link, directory }) => {
+      // A link is relative to docs/, and a `../` target leaves it; a backticked directory is under docs/.
+      const path = posix.normalize(posix.join("docs", link ?? directory));
+      return DIRECT_ROUTE_DIRECTORIES.some((root) => path.startsWith(root));
+    })
+    .map(({ document }) => document);
+  return { instructions: rows.length, offending };
 }
 
 test("the index marks no document in a direct-route location as an instruction", () => {
@@ -274,25 +277,37 @@ test("the index marks no document in a direct-route location as an instruction",
   assert.deepEqual(offending, []);
 });
 
-test("the index observer reads an indented row, an emphasised kind and a bracketed link", () => {
+test("the index observer refuses any row not written in the index's exact form", () => {
   const table = (row) =>
     ["| Document | Kind | What it is |", "|---|---|---|", row].join("\n");
   const link = "[shortcuts.md](engineering/shortcuts.md)";
-  const bracketed = "[shortcuts.md](<engineering/shortcuts.md>)";
-  const rows = [
-    [` | ${link} | instruction | x |`, link],
-    [`| ${link} | **instruction** | x |`, link],
-    [`| ${bracketed} | instruction | x |`, bracketed],
+  assert.deepEqual(
+    directRouteInstructions(table(`| ${link} | instruction | x |`)),
+    { instructions: 1, offending: [link] },
+  );
+  const refused = [
+    ` | ${link} | instruction | x |`,
+    `| ${link} | **instruction** | x |`,
+    "| [shortcuts.md](<engineering/shortcuts.md>) | instruction | x |",
+    "| [shortcuts.md]( <engineering/shortcuts.md> ) | instruction | x |",
+    `| ${link} | Kind | x |`,
+    `| ${link} | --- | x |`,
+    `| ${link} | guideline | x |`,
+    `${link} | instruction | x`,
+    `${link} | instruction | x |`,
   ];
-  for (const [row, document] of rows)
-    assert.deepEqual(
-      directRouteInstructions(table(row)).offending,
-      [document],
-      row,
-    );
+  for (const row of refused)
+    assert.throws(() => directRouteInstructions(table(row)), Error, row);
   assert.throws(
-    () => directRouteInstructions(table("| [a.md](a.md) | guideline | x |")),
-    /guideline/,
+    () => directRouteInstructions(`| ${link} | instruction | x |`),
+    Error,
+    "no header line",
+  );
+  const whole = table(`| ${link} | instruction | x |`);
+  assert.throws(
+    () => directRouteInstructions(`${whole}\n\n${whole}`),
+    Error,
+    "the header twice",
   );
 });
 
