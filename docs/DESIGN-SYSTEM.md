@@ -242,7 +242,7 @@ its own; the block it sits in sets the space around it.
   `1px` `--line` border, `--radius-card` corners and `--space-3` between rows. A row has exactly one link,
   `a.list-row-title`, which holds only the record's name in bold, spans the row's width and is at least `2.75rem`
   tall. Everything else is plain supporting text outside the link: `p.list-row-meta`, in `--muted` at
-  `--font-size-2`, holds plain text, a reference in `bdi` and a date in `time`, and wraps. Further blocks of the
+  `--font-size-2`, holds plain text, a reference in `bdi`, a status badge and a date in `time`, and wraps. Further blocks of the
   same record follow inside the `li`.
 - Status badge: `span.status-badge` is the compact status of one item in a list row or card. Its text is the
   translated status label, so the status never depends on colour. It is a pill on `--status-neutral-bg` with bold

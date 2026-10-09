@@ -367,7 +367,9 @@ test.describe("scheduled completion and restricted lifecycle journeys", () => {
     ).toBeVisible();
     await page.goto("/en/bookings");
     await expect(
-      page.getByRole("link", { name: /Preserved Cottage/ }),
+      page
+        .getByRole("listitem")
+        .filter({ has: page.getByRole("link", { name: /Preserved Cottage/ }) }),
     ).toContainText(lifecycle.en.completed);
     await assertLifecycleViews(page, "customer", "completed");
     const adminContext = await browser.newContext({ baseURL });

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import type { BookingHistoryItem } from "@/booking-request/booking-history";
 import { BookingHistoryList } from "./booking-history-list";
@@ -41,4 +41,23 @@ it("adds the shared earnings presentation only to owner booking cards", () => {
   expect(
     screen.queryByRole("region", { name: "Earnings and payout" }),
   ).toBeNull();
+});
+
+it("names a row's one link by the cottage alone and keeps the reference, status and date outside it", () => {
+  render(
+    <BookingHistoryList
+      locale="en"
+      items={[{ ...item, actorRole: "customer", ownerEarnings: undefined }]}
+    />,
+  );
+  const row = screen.getByRole("listitem");
+  expect(within(row).getAllByRole("link")).toHaveLength(1);
+  const link = within(row).getByRole("link", { name: "Preserved Cottage" });
+  expect(link).not.toHaveTextContent("RC-REQ-0000000000003501");
+  expect(row).toHaveTextContent("RC-REQ-0000000000003501");
+  expect(within(row).getByText("Pending")).toHaveClass("status-badge");
+  expect(row.querySelector("time")).toHaveAttribute(
+    "datetime",
+    "2101-01-01T05:00:00Z",
+  );
 });

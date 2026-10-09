@@ -56,7 +56,7 @@ test("complete customer and owner history stays role-specific, private, translat
           }));
           pluginBuild.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({
             contents:
-              "import React from 'react'; export default function Link({href,children}) { return React.createElement('a',{href},children); }",
+              "import React from 'react'; export default function Link({href,className,children}) { return React.createElement('a',{href,className},children); }",
             loader: "js",
             resolveDir: process.cwd(),
           }));
@@ -88,12 +88,14 @@ test("complete customer and owner history stays role-specific, private, translat
       const links = page.locator("#fixture-root").getByRole("link");
       await expect(links).toHaveCount(7);
       const [titleEdge, rowEdge] = await Promise.all(
-        [page.locator(".booking-history .page-title"), links.first()].map(
-          (locator) =>
-            locator.evaluate(
-              (element, edge) => element.getBoundingClientRect()[edge],
-              locale === "en" ? ("left" as const) : ("right" as const),
-            ),
+        [
+          page.locator(".booking-history .page-title"),
+          page.locator("#fixture-root .list-rows > li").first(),
+        ].map((locator) =>
+          locator.evaluate(
+            (element, edge) => element.getBoundingClientRect()[edge],
+            locale === "en" ? ("left" as const) : ("right" as const),
+          ),
         ),
       );
       expect(titleEdge).toBeCloseTo(rowEdge, 0);
@@ -111,6 +113,9 @@ test("complete customer and owner history stays role-specific, private, translat
         await expect(links.nth(index)).toHaveAttribute(
           "href",
           `/${locale}/${role === "customer" ? "booking-requests" : "owner/booking-requests"}/RC-REQ-${String(index + 1).padStart(16, "0")}`,
+        );
+        await expect(links.nth(index)).toHaveText(
+          `Preserved Cottage ${index + 1}`,
         );
       }
       const overflow = await page.evaluate(
@@ -315,22 +320,24 @@ test("same-phone reauthentication restores the same real history and owner unpai
     ).toContainText(
       "Earnings totals are unavailable. Check the booking records below for details.",
     );
-    const unavailableLink = ownerPage.getByRole("link", {
-      name: /Preserved Cottage name.*CONFIRMED-BOOKING-35/,
-    });
     await expect(
-      ownerPage.locator("li").filter({ has: unavailableLink }),
+      ownerPage
+        .getByRole("listitem")
+        .filter({ hasText: "CONFIRMED-BOOKING-35" }),
     ).toContainText(
       "Earnings are temporarily unavailable for this booking. No amount is shown until the record can be verified.",
     );
-    const unpaidLink = ownerPage.getByRole("link", {
-      name: /Preserved Cottage name.*RC-REQ-0000000000003511/,
+    const unpaidItem = ownerPage
+      .getByRole("listitem")
+      .filter({ hasText: unpaidReference });
+    const unpaidLink = unpaidItem.getByRole("link", {
+      name: "Preserved Cottage name",
+      exact: true,
     });
     await expect(unpaidLink).toHaveAttribute(
       "href",
       `/en/owner/booking-requests/${unpaidReference}`,
     );
-    const unpaidItem = ownerPage.locator("li").filter({ has: unpaidLink });
     await expect(unpaidItem).toContainText(
       "Payment has not been collected for this request, so it has no earnings yet.",
     );

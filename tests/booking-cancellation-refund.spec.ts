@@ -548,7 +548,9 @@ test.describe("retained cancellation and refund controls", () => {
     const retainedBooking = page.getByRole("link", {
       name: /Preserved Cottage/,
     });
-    await expect(retainedBooking).toContainText("Cancelled booking");
+    await expect(
+      page.getByRole("listitem").filter({ has: retainedBooking }),
+    ).toContainText("Cancelled booking");
     await expect(retainedBooking).toHaveAttribute(
       "href",
       `/en/booking-requests/${reference}`,
