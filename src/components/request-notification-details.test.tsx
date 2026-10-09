@@ -118,6 +118,9 @@ it.each(["en", "ar", "ckb"] as const)(
     );
     expect(screen.getByRole("status")).toBeVisible();
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+    expect(screen.getByRole("heading", { level: 2 })).toHaveClass(
+      "section-title",
+    );
   },
 );
 

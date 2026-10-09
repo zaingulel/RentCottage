@@ -60,7 +60,7 @@ export function RequestNotificationDetails({
   const copy = messages[locale];
   return (
     <section className="request-follow-up" aria-label={copy.title}>
-      <h2>{copy.title}</h2>
+      <h2 className="section-title">{copy.title}</h2>
       {delivery.status === "unavailable" ? (
         <p role="status">{copy.unavailable}</p>
       ) : (

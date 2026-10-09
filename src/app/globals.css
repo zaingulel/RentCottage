@@ -1365,7 +1365,7 @@ html[lang="ckb"] .page-title {
 }
 
 .booking-summary h2,
-.request-follow-up > h2 {
+.section-title {
   margin: 0 0 var(--space-4);
   color: var(--green);
   font-family: var(--display);
