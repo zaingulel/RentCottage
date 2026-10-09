@@ -232,7 +232,7 @@ const HEADER = "| Document | Kind | What it is |";
 const SEPARATOR = "|---|---|---|";
 // The one row form the index uses: a link or a backticked directory, one of four kinds, a description.
 const ROW =
-  /^\| (?<document>\[[^\]]+\]\((?<link>[^\s<>)#:/][^\s<>)#:]*)\)|`(?<directory>[^`\s]+\/)`) \| (?<kind>explanation|instruction|record|reference) \| \S.* \|$/;
+  /^\| (?<document>\[[^\]]+\]\((?<link>[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)\)|`(?<directory>[^`\s]+\/)`) \| (?<kind>explanation|instruction|record|reference) \| \S.* \|$/;
 
 // The instruction rows of an index whose target sits in a direct-route location, and how many
 // instruction rows the index has. The header must be present with the separator under it; each line
@@ -297,6 +297,8 @@ test("the index observer refuses any row not written in the index's exact form",
     `${link} | instruction | x |`,
     "| [shortcuts.md](https://github.com/zaingulel/rentcottage/blob/main/docs/engineering/shortcuts.md) | instruction | x |",
     "| [shortcuts.md](//github.com/zaingulel/rentcottage/blob/main/docs/engineering/shortcuts.md) | instruction | x |",
+    "| [shortcuts.md](https&colon;//github.com/zaingulel/rentcottage/blob/main/docs/engineering/shortcuts.md) | instruction | x |",
+    "| [shortcuts.md](\\//github.com/zaingulel/rentcottage/blob/main/docs/engineering/shortcuts.md) | instruction | x |",
   ];
   for (const row of refused)
     assert.throws(() => directRouteInstructions(table(row)), Error, row);
@@ -544,20 +546,18 @@ test("a push whose earlier commit changed code is refused even when a later comm
   });
 });
 
-test("a merge commit that changes code of its own is refused", () => {
-  withScratchRemote(({ commit, gate, git, remoteMain, repo }) => {
-    const seed = remoteMain();
+test("a merge that discards code main already holds is refused whatever the merge listing is configured to", () => {
+  withScratchRemote(({ commit, gate, git, repo }) => {
+    // A configured combined listing shows nothing for a merge whose result equals one parent.
+    git(repo, "config", "log.diffMerges", "combined");
     git(repo, "checkout", "-q", "-b", "side");
-    commit(["docs/research/side.md"]);
     git(repo, "checkout", "-q", "main");
-    commit(["docs/research/main.md"]);
-    // The merge itself adds the code, so it differs from both of its parents; no other commit lists it.
-    git(repo, "merge", "-q", "--no-commit", "--no-ff", "side");
-    mkdirSync(join(repo, "src"));
-    writeFileSync(join(repo, "src/x.js"), "src/x.js\n");
-    git(repo, "add", "src/x.js");
-    git(repo, "commit", "-q", "-m", "merge");
-    const run = gate(seed, git(repo, "rev-parse", "HEAD"));
+    const base = commit(["src/x.js"]);
+    git(repo, "checkout", "-q", "side");
+    commit(["docs/research/note.md"]);
+    // Keeping side's tree discards src/x.js again, so the merge equals side but differs from main's line.
+    git(repo, "merge", "-q", "-s", "ours", "-m", "merge", "main");
+    const run = gate(base, git(repo, "rev-parse", "HEAD"));
     assert.notEqual(run.status, 0);
     assert.match(run.stderr, /src\/x\.js/);
   });

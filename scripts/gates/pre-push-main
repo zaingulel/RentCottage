@@ -26,8 +26,9 @@ command -v node >/dev/null 2>&1 || refuse "node is not on PATH, so the changed p
 # both enter main's history. Captured before node sees it: POSIX sh has no pipefail, so a piped listing
 # that failed after printing some paths would hand node a partial list. An empty list reaches node,
 # which refuses it; the blank lines the empty format leaves are dropped there. --no-renames keeps a
-# moved file's old path in the list: a detected rename would list only its destination.
-changed=$(git -c core.quotePath=false log --format= --name-only --no-renames --diff-merges=on \
+# moved file's old path in the list: a detected rename would list only its destination. --diff-merges=separate
+# names the per-parent form outright, because a configured default (log.diffMerges) could otherwise change it.
+changed=$(git -c core.quotePath=false log --format= --name-only --no-renames --diff-merges=separate \
   "$remote_sha..$local_sha") || refuse "listing the changed paths failed"
 printf '%s\n' "$changed" | node scripts/lib/docs-route.mjs || exit 1
 
