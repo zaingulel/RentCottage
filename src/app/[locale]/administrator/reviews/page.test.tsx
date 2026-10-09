@@ -118,6 +118,127 @@ describe("AdministratorCustomerReviewsPage", () => {
     expect(resolveAccount).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [{ foo: "1" }],
+    [{ state: "hidden", foo: "1" }],
+    [{ state: ["hidden", "unhidden"] }],
+    [{ from: undefined }],
+    [{ beforeAt: "2026-09-21T12:00:00.000Z" }],
+    [{ beforeId: "11111111-1111-4111-8111-111111111111" }],
+    [{ state: "hidden", beforeAt: "invalid", beforeId: "invalid" }],
+  ])("fails closed on the unaccepted query %j", async (query) => {
+    const signal = new Error("NEXT_NOT_FOUND");
+    notFound.mockImplementation(() => {
+      throw signal;
+    });
+
+    await expect(
+      AdministratorCustomerReviewsPage({
+        params: Promise.resolve({ locale: "en" }),
+        searchParams: Promise.resolve(query),
+      }),
+    ).rejects.toBe(signal);
+
+    expect(resolveAccount).not.toHaveBeenCalled();
+    expect(listAdministrator).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      {},
+      {
+        beforeAt: null,
+        beforeId: null,
+        state: null,
+        from: null,
+        through: null,
+      },
+    ],
+    [
+      { state: "hidden", from: "2026-09-01", through: "2026-09-30" },
+      {
+        beforeAt: null,
+        beforeId: null,
+        state: "hidden",
+        from: "2026-09-01",
+        through: "2026-09-30",
+      },
+    ],
+    [
+      { state: "", from: "", through: "" },
+      {
+        beforeAt: null,
+        beforeId: null,
+        state: null,
+        from: null,
+        through: null,
+      },
+    ],
+    [
+      {
+        state: "unhidden",
+        beforeAt: "2026-09-21T12:00:00.000Z",
+        beforeId: "11111111-1111-4111-8111-111111111111",
+      },
+      {
+        beforeAt: "2026-09-21T12:00:00.000Z",
+        beforeId: "11111111-1111-4111-8111-111111111111",
+        state: "unhidden",
+        from: null,
+        through: null,
+      },
+    ],
+  ])("passes the accepted query %j to the reader", async (query, expected) => {
+    resolveAccount.mockResolvedValue({
+      status: "authenticated",
+      context: { userId: "administrator-1", role: "platform_administrator" },
+    });
+    listAdministrator.mockResolvedValue({
+      status: "success",
+      items: [],
+      nextCursor: null,
+      total: 0,
+      stateCounts: { unhidden: 0, hidden: 0 },
+    });
+
+    render(
+      await AdministratorCustomerReviewsPage({
+        params: Promise.resolve({ locale: "en" }),
+        searchParams: Promise.resolve(query),
+      }),
+    );
+
+    expect(listAdministrator).toHaveBeenCalledWith({ ...expected, limit: 20 });
+    expect(screen.getByLabelText("Status")).toHaveValue(expected.state ?? "");
+    expect(screen.getByLabelText("From date (Baghdad)")).toHaveValue(
+      expected.from ?? "",
+    );
+  });
+
+  it("shows the invalid-filter message beside the filters when the reader refuses a value", async () => {
+    resolveAccount.mockResolvedValue({
+      status: "authenticated",
+      context: { userId: "administrator-1", role: "platform_administrator" },
+    });
+    listAdministrator.mockResolvedValue({ status: "invalid" });
+
+    render(
+      await AdministratorCustomerReviewsPage({
+        params: Promise.resolve({ locale: "en" }),
+        searchParams: Promise.resolve({ state: "bogus" }),
+      }),
+    );
+
+    expect(listAdministrator).toHaveBeenCalledWith(
+      expect.objectContaining({ state: "bogus" }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "These filters are not valid. Check the dates and try again.",
+    );
+    expect(screen.getByLabelText("Status")).toBeVisible();
+    expect(screen.queryByText(/Matching reviews/)).toBeNull();
+  });
+
   it("renders unavailable when the administrator queue read fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     resolveAccount.mockResolvedValue({

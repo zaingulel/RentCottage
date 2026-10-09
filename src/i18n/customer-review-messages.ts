@@ -70,6 +70,10 @@ export const customerReviewMessages = {
     hideReply: "Hide reply",
     hideReplyReasonRequired: "Enter a reason before hiding this reply.",
     replyHiddenSuccess: "The reply was hidden.",
+    visible: "Visible",
+    hiddenState: "Hidden",
+    matchingTotal: "Matching reviews",
+    emptyFiltered: "No reviews match these filters.",
   },
   ar: {
     title: "قيّم هذا البيت",
@@ -136,6 +140,10 @@ export const customerReviewMessages = {
     hideReply: "إخفاء الرد",
     hideReplyReasonRequired: "أدخل سبباً قبل إخفاء الرد.",
     replyHiddenSuccess: "تم إخفاء الرد.",
+    visible: "ظاهر",
+    hiddenState: "مخفي",
+    matchingTotal: "التقييمات المطابقة",
+    emptyFiltered: "لا توجد تقييمات تطابق هذه المرشحات.",
   },
   ckb: {
     title: "هەڵسەنگاندن بۆ ئەم کۆتێجە",
@@ -209,5 +217,9 @@ export const customerReviewMessages = {
     hideReply: "شاردنەوەی وەڵام",
     hideReplyReasonRequired: "پێش شاردنەوەی وەڵام هۆکارێک بنووسە.",
     replyHiddenSuccess: "وەڵامەکە شاردراوەتەوە.",
+    visible: "دیار",
+    hiddenState: "شاردراوە",
+    matchingTotal: "هەڵسەنگاندنە هاوتاکان",
+    emptyFiltered: "هیچ هەڵسەنگاندنێک لەگەڵ ئەم پاڵێوەرانە ناگونجێت.",
   },
 } as const;

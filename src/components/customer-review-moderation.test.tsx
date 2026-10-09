@@ -21,6 +21,8 @@ import { customerReviewMessages } from "@/i18n/customer-review-messages";
 
 import { CustomerReviewModeration } from "./customer-review-moderation";
 
+const noFilters = { state: "", from: "", through: "" };
+
 const review = {
   reviewId: "11111111-1111-4111-8111-111111111111",
   bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
@@ -61,6 +63,7 @@ describe("CustomerReviewModeration", () => {
       render(
         <CustomerReviewModeration
           locale={locale}
+          filters={noFilters}
           result={{ status: "access-required" }}
         />,
       );
@@ -87,6 +90,7 @@ describe("CustomerReviewModeration", () => {
     render(
       <CustomerReviewModeration
         locale="en"
+        filters={noFilters}
         result={{
           status: "success",
           items: [review],
@@ -122,6 +126,7 @@ describe("CustomerReviewModeration", () => {
     render(
       <CustomerReviewModeration
         locale="en"
+        filters={noFilters}
         result={{
           status: "success",
           items: [review],
@@ -143,6 +148,7 @@ describe("CustomerReviewModeration", () => {
     render(
       <CustomerReviewModeration
         locale="en"
+        filters={noFilters}
         result={{
           status: "success",
           items: [{ ...review, reply }],
@@ -199,6 +205,7 @@ describe("CustomerReviewModeration", () => {
     render(
       <CustomerReviewModeration
         locale="en"
+        filters={noFilters}
         result={{
           status: "success",
           items: [{ ...review, reply }],
@@ -241,6 +248,7 @@ describe("CustomerReviewModeration", () => {
     render(
       <CustomerReviewModeration
         locale="en"
+        filters={noFilters}
         result={{
           status: "success",
           items: [{ ...review, reply }],
@@ -320,6 +328,7 @@ describe("CustomerReviewModeration", () => {
       render(
         <CustomerReviewModeration
           locale={locale}
+          filters={noFilters}
           result={{
             status: "success",
             items: [{ ...review, reply }],
@@ -351,6 +360,7 @@ describe("CustomerReviewModeration", () => {
       render(
         <CustomerReviewModeration
           locale={locale}
+          filters={noFilters}
           result={{
             status: "success",
             items: [
@@ -371,4 +381,217 @@ describe("CustomerReviewModeration", () => {
       expect(within(card).queryByLabelText(copy.rating)).toBeNull();
     },
   );
+
+  describe("filters", () => {
+    const filters = {
+      state: "hidden",
+      from: "2026-09-01",
+      through: "2026-09-30",
+    };
+    const empty = {
+      status: "success" as const,
+      items: [],
+      nextCursor: null,
+      total: 0,
+      stateCounts: { unhidden: 0, hidden: 0 },
+    };
+
+    it("shows the filter values, the count per state and the total", () => {
+      render(
+        <CustomerReviewModeration
+          locale="en"
+          filters={filters}
+          result={{
+            ...empty,
+            items: [review],
+            total: 1234,
+            stateCounts: { unhidden: 3, hidden: 1234 },
+          }}
+        />,
+      );
+
+      const status = screen.getByLabelText("Status");
+      expect(status).toHaveValue("hidden");
+      expect(status).toHaveAttribute("name", "state");
+      expect(
+        within(status)
+          .getAllByRole("option")
+          .map((option) => [option.getAttribute("value"), option.textContent]),
+      ).toEqual([
+        ["", "All statuses"],
+        ["unhidden", "Visible (3)"],
+        ["hidden", "Hidden (1,234)"],
+      ]);
+      expect(screen.getByLabelText("From date (Baghdad)")).toHaveValue(
+        "2026-09-01",
+      );
+      expect(screen.getByLabelText("Through date (Baghdad)")).toHaveValue(
+        "2026-09-30",
+      );
+      expect(screen.getByLabelText("From date (Baghdad)")).toHaveAttribute(
+        "name",
+        "from",
+      );
+      expect(screen.getByLabelText("Through date (Baghdad)")).toHaveAttribute(
+        "name",
+        "through",
+      );
+      const form = status.closest("form");
+      expect(form).toHaveAttribute("action", "/en/administrator/reviews");
+      expect(form).toHaveAttribute("method", "get");
+      expect(
+        within(form as HTMLFormElement).getByRole("button", {
+          name: "Apply filters",
+        }),
+      ).toHaveAttribute("type", "submit");
+      expect(
+        within(form as HTMLFormElement).getByRole("link", {
+          name: "Reset filters",
+        }),
+      ).toHaveAttribute("href", "/en/administrator/reviews");
+      expect(
+        screen.getByText(/Matching reviews/).closest("p"),
+      ).toHaveTextContent("Matching reviews: 1,234");
+    });
+
+    it.each([
+      ["ar", "ظاهر", "مخفي", "التقييمات المطابقة"],
+      ["ckb", "دیار", "شاردراوە", "هەڵسەنگاندنە هاوتاکان"],
+    ] as const)(
+      "labels the states and the total in %s",
+      (locale, visible, hidden, matching) => {
+        render(
+          <CustomerReviewModeration
+            locale={locale}
+            filters={noFilters}
+            result={empty}
+          />,
+        );
+
+        const options = screen
+          .getAllByRole("option")
+          .map((option) => option.textContent ?? "");
+        expect(options[1].startsWith(`${visible} (`)).toBe(true);
+        expect(options[2].startsWith(`${hidden} (`)).toBe(true);
+        expect(screen.getByText(new RegExp(matching))).toBeVisible();
+      },
+    );
+
+    it("tells an unfiltered empty queue from a filtered one", () => {
+      const { rerender } = render(
+        <CustomerReviewModeration
+          locale="en"
+          filters={noFilters}
+          result={empty}
+        />,
+      );
+      expect(screen.getByText("No reviews yet.")).toBeVisible();
+      expect(screen.queryByText("No reviews match these filters.")).toBeNull();
+
+      for (const set of [
+        { ...noFilters, state: "unhidden" },
+        { ...noFilters, from: "2026-09-01" },
+        { ...noFilters, through: "2026-09-30" },
+      ]) {
+        rerender(
+          <CustomerReviewModeration locale="en" filters={set} result={empty} />,
+        );
+        expect(
+          screen.getByText("No reviews match these filters."),
+        ).toBeVisible();
+        expect(screen.queryByText("No reviews yet.")).toBeNull();
+      }
+    });
+
+    it("keeps the set filters on the next link and adds none when none are set", () => {
+      const nextCursor = {
+        submittedAt: "2026-09-21T12:00:00.000Z",
+        reviewId: review.reviewId,
+      };
+      const { rerender } = render(
+        <CustomerReviewModeration
+          locale="en"
+          filters={filters}
+          result={{ ...empty, items: [review], total: 25, nextCursor }}
+        />,
+      );
+      expect(
+        screen.getByRole("link", { name: "Next reviews" }),
+      ).toHaveAttribute(
+        "href",
+        "/en/administrator/reviews?state=hidden&from=2026-09-01&through=2026-09-30&beforeAt=2026-09-21T12%3A00%3A00.000Z&beforeId=11111111-1111-4111-8111-111111111111",
+      );
+
+      rerender(
+        <CustomerReviewModeration
+          locale="en"
+          filters={{ ...noFilters, state: "unhidden" }}
+          result={{ ...empty, items: [review], total: 25, nextCursor }}
+        />,
+      );
+      expect(
+        screen.getByRole("link", { name: "Next reviews" }),
+      ).toHaveAttribute(
+        "href",
+        "/en/administrator/reviews?state=unhidden&beforeAt=2026-09-21T12%3A00%3A00.000Z&beforeId=11111111-1111-4111-8111-111111111111",
+      );
+
+      rerender(
+        <CustomerReviewModeration
+          locale="en"
+          filters={noFilters}
+          result={{ ...empty, items: [review], total: 25, nextCursor }}
+        />,
+      );
+      expect(
+        screen.getByRole("link", { name: "Next reviews" }),
+      ).toHaveAttribute(
+        "href",
+        "/en/administrator/reviews?beforeAt=2026-09-21T12%3A00%3A00.000Z&beforeId=11111111-1111-4111-8111-111111111111",
+      );
+    });
+
+    it("shows the invalid alert beside the filter form with no list or total", () => {
+      render(
+        <CustomerReviewModeration
+          locale="en"
+          filters={{ state: "bogus", from: "", through: "" }}
+          result={{ status: "invalid" }}
+        />,
+      );
+
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "These filters are not valid. Check the dates and try again.",
+      );
+      expect(screen.getByLabelText("Status")).toBeVisible();
+      expect(
+        screen.getAllByRole("option").map((option) => option.textContent),
+      ).toEqual(["All statuses", "Visible", "Hidden"]);
+      expect(screen.queryByText(/Matching reviews/)).toBeNull();
+      expect(screen.queryByRole("article")).toBeNull();
+    });
+
+    it("still shows the owner reply and both hide controls under filters", () => {
+      render(
+        <CustomerReviewModeration
+          locale="en"
+          filters={filters}
+          result={{ ...empty, items: [{ ...review, reply }], total: 1 }}
+        />,
+      );
+
+      const section = within(screen.getByRole("article")).getByRole("region", {
+        name: "Cottage Owner reply",
+      });
+      expect(within(section).getByText("سوپاس بۆ سەردانەکەت")).toBeVisible();
+      expect(
+        within(section).getByRole("button", { name: "Hide reply" }),
+      ).toBeEnabled();
+      expect(
+        within(screen.getByRole("article")).getByRole("button", {
+          name: "Hide review",
+        }),
+      ).toBeEnabled();
+    });
+  });
 });

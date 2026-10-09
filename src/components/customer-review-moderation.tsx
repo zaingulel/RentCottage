@@ -13,14 +13,18 @@ import type {
   AdministratorCustomerReviewListResult,
   CustomerReviewHide,
 } from "@/customer-review/customer-review";
+import { administratorQueuesMessages } from "@/i18n/administrator-queues-messages";
+import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
 import { customerReviewMessages } from "@/i18n/customer-review-messages";
 import { formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 
+import recordStyles from "./administrator-records.module.css";
 import styles from "./customer-reviews.module.css";
 import {
   ActionButton,
   ActionFeedback,
+  ActionLink,
   FormControl,
 } from "./interaction-controls";
 
@@ -219,14 +223,102 @@ function ModerationCard({
   );
 }
 
+type ReviewFilters = { state: string; from: string; through: string };
+
+function nextSearch(
+  filters: ReviewFilters,
+  cursor: { submittedAt: string; reviewId: string },
+) {
+  const search = new URLSearchParams();
+  if (filters.state) search.set("state", filters.state);
+  if (filters.from) search.set("from", filters.from);
+  if (filters.through) search.set("through", filters.through);
+  search.set("beforeAt", cursor.submittedAt);
+  search.set("beforeId", cursor.reviewId);
+  return search;
+}
+
+function ReviewFilterForm({
+  locale,
+  filters,
+  stateCounts,
+}: {
+  locale: Locale;
+  filters: ReviewFilters;
+  stateCounts?: Readonly<{ unhidden: number; hidden: number }>;
+}) {
+  const copy = customerReviewMessages[locale];
+  const records = administratorRecordsMessages[locale];
+  const number = new Intl.NumberFormat(locale);
+  const base = `/${locale}/administrator/reviews`;
+  const count = (state: "unhidden" | "hidden") =>
+    stateCounts ? ` (${number.format(stateCounts[state])})` : "";
+  return (
+    <form action={base} method="get" className={recordStyles.filters}>
+      <label>
+        <span>{records.status}</span>
+        <FormControl kind="select" name="state" defaultValue={filters.state}>
+          <option value="">{records.allStatuses}</option>
+          <option value="unhidden">
+            {copy.visible}
+            {count("unhidden")}
+          </option>
+          <option value="hidden">
+            {copy.hiddenState}
+            {count("hidden")}
+          </option>
+        </FormControl>
+      </label>
+      <label>
+        <span>{records.from}</span>
+        <FormControl
+          kind="input"
+          type="date"
+          name="from"
+          defaultValue={filters.from}
+        />
+      </label>
+      <label>
+        <span>{records.through}</span>
+        <FormControl
+          kind="input"
+          type="date"
+          name="through"
+          defaultValue={filters.through}
+        />
+      </label>
+      <div className={recordStyles.actions}>
+        <ActionButton kind="primary" width="content" type="submit">
+          {administratorQueuesMessages[locale].apply}
+        </ActionButton>
+        <ActionLink kind="secondary" width="content" href={base}>
+          {records.reset}
+        </ActionLink>
+      </div>
+    </form>
+  );
+}
+
 export function CustomerReviewModeration({
   locale,
+  filters,
   result,
 }: {
   locale: Locale;
+  filters: ReviewFilters;
   result: AdministratorCustomerReviewListResult;
 }) {
   const copy = customerReviewMessages[locale];
+  if (result.status === "invalid")
+    return (
+      <main className={styles.page}>
+        <h1>{copy.administratorTitle}</h1>
+        <ReviewFilterForm locale={locale} filters={filters} />
+        <ActionFeedback kind="error">
+          {administratorQueuesMessages[locale].invalid}
+        </ActionFeedback>
+      </main>
+    );
   if (result.status !== "success")
     return (
       <main className={styles.page}>
@@ -251,7 +343,22 @@ export function CustomerReviewModeration({
   return (
     <main className={styles.page}>
       <h1>{copy.administratorTitle}</h1>
-      {result.items.length === 0 ? <p>{copy.empty}</p> : null}
+      <ReviewFilterForm
+        locale={locale}
+        filters={filters}
+        stateCounts={result.stateCounts}
+      />
+      <p className={recordStyles.total}>
+        {copy.matchingTotal}:{" "}
+        <strong>{new Intl.NumberFormat(locale).format(result.total)}</strong>
+      </p>
+      {result.items.length === 0 ? (
+        <p>
+          {filters.state || filters.from || filters.through
+            ? copy.emptyFiltered
+            : copy.empty}
+        </p>
+      ) : null}
       <div className={styles.list}>
         {result.items.map((review) => (
           <ModerationCard
@@ -264,10 +371,10 @@ export function CustomerReviewModeration({
       {result.nextCursor ? (
         <Link
           className={styles.next}
-          href={`/${locale}/administrator/reviews?${new URLSearchParams({
-            beforeAt: result.nextCursor.submittedAt,
-            beforeId: result.nextCursor.reviewId,
-          })}`}
+          href={`/${locale}/administrator/reviews?${nextSearch(
+            filters,
+            result.nextCursor,
+          )}`}
         >
           {copy.next}
         </Link>

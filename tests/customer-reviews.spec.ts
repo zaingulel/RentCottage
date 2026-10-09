@@ -952,6 +952,24 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   await expect(review.getByText(original)).toBeVisible();
   await expect(review.getByText(reason)).toBeVisible();
 
+  const baghdadDate = (at: number) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Baghdad" }).format(at);
+  const from = baghdadDate(Date.now() - 24 * 60 * 60 * 1000);
+  const through = baghdadDate(Date.now());
+  await page.getByLabel("Status").selectOption("hidden");
+  await page.getByLabel("From date (Baghdad)").fill(from);
+  await page.getByLabel("Through date (Baghdad)").fill(through);
+  await page.getByRole("button", { name: "Apply filters" }).click();
+  await expect(page).toHaveURL(
+    `/en/administrator/reviews?state=hidden&from=${from}&through=${through}`,
+  );
+  const hiddenReview = await openAdministratorReview(
+    page,
+    primary.ids.bookingReference,
+  );
+  await expect(hiddenReview.getByText(reason)).toBeVisible();
+  await expect(page.getByText("Matching reviews")).toBeVisible();
+
   const hiddenAuthorContext = await browser.newContext({
     baseURL: new URL(page.url()).origin,
   });

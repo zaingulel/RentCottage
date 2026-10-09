@@ -6,10 +6,13 @@ import { CustomerReviewModeration } from "@/components/customer-review-moderatio
 import {
   isCustomerReviewTimestamp,
   isCustomerReviewUuid,
+  type AdministratorCustomerReviewListInput,
   type AdministratorCustomerReviewListResult,
 } from "@/customer-review/customer-review";
 import { createRequestCustomerReview } from "@/customer-review/request-customer-review";
 import { isLocale } from "@/i18n/routing";
+
+const queryKeys = ["state", "from", "through", "beforeAt", "beforeId"] as const;
 
 export default async function AdministratorCustomerReviewsPage({
   params,
@@ -21,15 +24,29 @@ export default async function AdministratorCustomerReviewsPage({
   const { locale } = await params;
   const query = await searchParams;
   if (!isLocale(locale)) notFound();
-  const keys = Object.keys(query);
-  const emptyCursor = keys.length === 0;
-  const completeCursor =
-    keys.length === 2 &&
-    keys.includes("beforeAt") &&
-    keys.includes("beforeId") &&
-    isCustomerReviewTimestamp(query.beforeAt) &&
-    isCustomerReviewUuid(query.beforeId);
-  if (!emptyCursor && !completeCursor) notFound();
+  const hasCursor = "beforeAt" in query || "beforeId" in query;
+  if (
+    Object.entries(query).some(
+      ([key, value]) =>
+        !(queryKeys as readonly string[]).includes(key) ||
+        typeof value !== "string",
+    ) ||
+    (hasCursor &&
+      !(
+        isCustomerReviewTimestamp(query.beforeAt) &&
+        isCustomerReviewUuid(query.beforeId)
+      ))
+  )
+    notFound();
+  const text = (key: (typeof queryKeys)[number]) => {
+    const value = query[key];
+    return typeof value === "string" ? value : "";
+  };
+  const filters = {
+    state: text("state"),
+    from: text("from"),
+    through: text("through"),
+  };
 
   const account = await resolveRequestAccount();
   if (account.status === "signed_out")
@@ -46,12 +63,14 @@ export default async function AdministratorCustomerReviewsPage({
         const reviews = await createRequestCustomerReview();
         if (reviews) {
           result = await reviews.listAdministrator({
-            beforeAt: completeCursor ? (query.beforeAt as string) : null,
-            beforeId: completeCursor ? (query.beforeId as string) : null,
+            beforeAt: hasCursor ? text("beforeAt") : null,
+            beforeId: hasCursor ? text("beforeId") : null,
             limit: 20,
-            state: null,
-            from: null,
-            through: null,
+            // The reader refuses a state it does not know with `invalid`.
+            state: (filters.state ||
+              null) as AdministratorCustomerReviewListInput["state"],
+            from: filters.from || null,
+            through: filters.through || null,
           });
         }
       } catch (error) {
@@ -60,6 +79,11 @@ export default async function AdministratorCustomerReviewsPage({
       }
     }
   }
-  if (result.status === "invalid") result = { status: "unavailable" };
-  return <CustomerReviewModeration locale={locale} result={result} />;
+  return (
+    <CustomerReviewModeration
+      locale={locale}
+      filters={filters}
+      result={result}
+    />
+  );
 }
