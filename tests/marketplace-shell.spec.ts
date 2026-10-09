@@ -565,21 +565,21 @@ test("the open account menu stays inside a 390 pixel screen for every role and l
     .filter({ visible: true })
     .tap();
   await header.locator("#site-header-account-menu a").first().focus();
-  await page.setViewportSize({ width: 844, height: 390 });
+  await page.setViewportSize({ width: 1280, height: 390 });
   await page.keyboard.press("Escape");
   const accountToggle = header.locator(".account-menu-toggle");
   await expect(accountToggle).toHaveAttribute("aria-expanded", "false");
   await expect(accountToggle).toBeFocused();
 });
 
-test("site header pills and language links are at least 44 pixels tall above the phone breakpoint for every account state and language", async ({
+test("site header pills and language links are at least 44 pixels tall above the header breakpoint for every account state and language", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await mountSiteHeader(page, testInfo);
 
-  const measure = (sameRowAsBrand: boolean) =>
-    page.evaluate((checkRow) => {
+  const measure = () =>
+    page.evaluate(() => {
       const root = document.documentElement;
       const isVisible = (element: Element) => {
         const box = element.getBoundingClientRect();
@@ -627,14 +627,12 @@ test("site header pills and language links are at least 44 pixels tall above the
           .filter((link) => link.getBoundingClientRect().height < 44)
           .map(name),
         clipped: [...pills, ...languageLinks].filter(clipped).map(name),
-        offBrandRow: checkRow
-          ? [language, ...pills].filter(offBrandRow).map(name)
-          : [],
+        offBrandRow: [language, ...pills].filter(offBrandRow).map(name),
         sidewaysScroll: root.scrollWidth - root.clientWidth,
       };
-    }, sameRowAsBrand);
+    });
 
-  for (const width of [1440, 641]) {
+  for (const width of [1440, 1025]) {
     await page.setViewportSize({ width, height: 1000 });
     await expect
       .poll(() => page.evaluate(() => window.innerWidth), {
@@ -644,6 +642,7 @@ test("site header pills and language links are at least 44 pixels tall above the
     for (const locale of ["en", "ar", "ckb"] as const) {
       for (const account of [
         { status: "signed_out" },
+        { status: "unavailable" },
         { status: "authenticated", context: { role: "customer" } },
         {
           status: "authenticated",
@@ -654,7 +653,7 @@ test("site header pills and language links are at least 44 pixels tall above the
           context: { role: "platform_administrator" },
         },
       ] as const) {
-        const label = `${width} ${locale} ${account.status === "signed_out" ? "signed_out" : account.context.role}`;
+        const label = `${width} ${locale} ${account.status === "authenticated" ? account.context.role : account.status}`;
         await page.evaluate((input) => window.renderSiteHeader(input), {
           locale,
           account,
@@ -668,17 +667,219 @@ test("site header pills and language links are at least 44 pixels tall above the
           locale === "en" ? "ltr" : "rtl",
         );
         await page.evaluate(() => document.fonts.ready);
-        await expect
-          .poll(() => measure(width === 1440), { message: label })
-          .toEqual({
-            pillCount: true,
-            languageLinkCount: 3,
-            shortPills: [],
-            shortLanguageLinks: [],
-            clipped: [],
-            offBrandRow: [],
-            sidewaysScroll: 0,
-          });
+        await expect.poll(measure, { message: label }).toEqual({
+          pillCount: true,
+          languageLinkCount: 3,
+          shortPills: [],
+          shortLanguageLinks: [],
+          clipped: [],
+          offBrandRow: [],
+          sidewaysScroll: 0,
+        });
+      }
+    }
+  }
+});
+
+test("the site header keeps one compact row and opens its panels as cards inside the screen from 641 to 1024 pixels for every account state and language", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await mountSiteHeader(page, testInfo);
+
+  const accounts = [
+    { status: "signed_out" },
+    { status: "unavailable" },
+    { status: "authenticated", context: { role: "customer" } },
+    {
+      status: "authenticated",
+      context: { role: "cottage_owner", approvalState: "prospective" },
+    },
+    { status: "authenticated", context: { role: "platform_administrator" } },
+  ] as const;
+  const accountName = (account: (typeof accounts)[number]) =>
+    account.status === "authenticated" ? account.context.role : account.status;
+  const render = async (
+    label: string,
+    locale: "en" | "ar" | "ckb",
+    account: (typeof accounts)[number],
+  ) => {
+    await page.evaluate((input) => window.renderSiteHeader(input), {
+      locale,
+      account,
+    });
+    await expect(page.locator("html"), label).toHaveAttribute("lang", locale);
+    await expect(page.locator("html"), label).toHaveAttribute(
+      "dir",
+      locale === "en" ? "ltr" : "rtl",
+    );
+    await page.evaluate(() => document.fonts.ready);
+  };
+  const measureClosed = () =>
+    page.evaluate(() => {
+      const root = document.documentElement;
+      const isVisible = (element: Element) => {
+        const box = element.getBoundingClientRect();
+        return (
+          box.width > 0 &&
+          box.height > 0 &&
+          getComputedStyle(element).visibility === "visible"
+        );
+      };
+      const brand = document
+        .querySelector(".site-brand")!
+        .getBoundingClientRect();
+      const toggles = [...document.querySelectorAll(".site-header-toggle")]
+        .filter(isVisible)
+        .map((toggle) => toggle.getBoundingClientRect());
+      return {
+        visibleToggles: toggles.length,
+        smallToggles: toggles.filter((box) => box.width < 44 || box.height < 44)
+          .length,
+        togglesOffBrandRow: toggles.filter((box) => {
+          const middle = (box.top + box.bottom) / 2;
+          return middle < brand.top || middle > brand.bottom;
+        }).length,
+        visibleDesktopItems: [
+          ...document.querySelectorAll(
+            "nav.language-links a, .account-menu-toggle, nav.account-navigation > a",
+          ),
+        ].filter(isVisible).length,
+        headerHeight: document.querySelector("header")!.getBoundingClientRect()
+          .height,
+        sidewaysScroll: root.scrollWidth - root.clientWidth,
+      };
+    });
+  const measurePanel = (input: { controls: string; minimumRows: number }) =>
+    page.evaluate(({ controls, minimumRows }) => {
+      const root = document.documentElement;
+      const isVisible = (element: Element) => {
+        const box = element.getBoundingClientRect();
+        return (
+          box.width > 0 &&
+          box.height > 0 &&
+          getComputedStyle(element).visibility === "visible"
+        );
+      };
+      const toggle = [
+        ...document.querySelectorAll(`button[aria-controls="${controls}"]`),
+      ].find(isVisible)!;
+      const panel = document.getElementById(controls)!;
+      const box = panel.getBoundingClientRect();
+      const controlsBox = document
+        .querySelector(".site-header-controls")!
+        .getBoundingClientRect();
+      const rtl = getComputedStyle(root).direction === "rtl";
+      const endGap = rtl
+        ? box.left - controlsBox.left
+        : box.right - controlsBox.right;
+      const rows = [
+        ...panel.querySelectorAll('a, button[type="submit"]'),
+      ].filter(isVisible);
+      const rowBoxes = rows.map((row) => row.getBoundingClientRect());
+      return {
+        visible: isVisible(panel),
+        insideScreen: box.left >= 0 && box.right <= root.clientWidth,
+        narrowerThanScreen: box.width < root.clientWidth,
+        atEndEdge: Math.abs(endGap) <= 1,
+        belowToggle: box.top >= toggle.getBoundingClientRect().bottom,
+        enoughRows: rows.length >= minimumRows,
+        shortRows: rows.filter((row) => row.getBoundingClientRect().height < 44)
+          .length,
+        clippedRows: rows.filter((row) => row.scrollWidth > row.clientWidth)
+          .length,
+        rowsOutsidePanel: rowBoxes.filter(
+          (row) =>
+            row.left < box.left - 1 ||
+            row.right > box.right + 1 ||
+            row.top < box.top - 1 ||
+            row.bottom > box.bottom + 1,
+        ).length,
+        overlappingRows: rowBoxes.reduce(
+          (count, row, index) =>
+            count +
+            rowBoxes
+              .slice(index + 1)
+              .filter(
+                (other) =>
+                  Math.min(row.right, other.right) -
+                    Math.max(row.left, other.left) >
+                    1 &&
+                  Math.min(row.bottom, other.bottom) -
+                    Math.max(row.top, other.top) >
+                    1,
+              ).length,
+          0,
+        ),
+        sidewaysScroll: root.scrollWidth - root.clientWidth,
+      };
+    }, input);
+
+  const desktopHeights = new Map<string, number>();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    for (const account of accounts) {
+      await render(`1440 ${locale} ${accountName(account)}`, locale, account);
+      desktopHeights.set(
+        `${locale} ${accountName(account)}`,
+        (await measureClosed()).headerHeight,
+      );
+    }
+  }
+
+  for (const width of [641, 1024]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect
+      .poll(() => page.evaluate(() => window.innerWidth), {
+        message: `viewport ${width}`,
+      })
+      .toBe(width);
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      for (const account of accounts) {
+        const label = `${width} ${locale} ${accountName(account)}`;
+        await render(label, locale, account);
+        await expect.poll(measureClosed, { message: label }).toEqual({
+          visibleToggles: 2,
+          smallToggles: 0,
+          togglesOffBrandRow: 0,
+          visibleDesktopItems: 0,
+          headerHeight: desktopHeights.get(`${locale} ${accountName(account)}`),
+          sidewaysScroll: 0,
+        });
+        for (const panel of [
+          { controls: "site-header-account", minimumRows: 1 },
+          { controls: "site-header-language", minimumRows: 3 },
+        ]) {
+          const panelLabel = `${label} ${panel.controls}`;
+          const toggle = page
+            .locator(`button[aria-controls="${panel.controls}"]`)
+            .filter({ visible: true });
+          await toggle.click();
+          await expect(toggle, panelLabel).toHaveAttribute(
+            "aria-expanded",
+            "true",
+          );
+          await expect
+            .poll(() => measurePanel(panel), { message: panelLabel })
+            .toEqual({
+              visible: true,
+              insideScreen: true,
+              narrowerThanScreen: true,
+              atEndEdge: true,
+              belowToggle: true,
+              enoughRows: true,
+              shortRows: 0,
+              clippedRows: 0,
+              rowsOutsidePanel: 0,
+              overlappingRows: 0,
+              sidewaysScroll: 0,
+            });
+          await page.keyboard.press("Escape");
+          await expect(toggle, panelLabel).toHaveAttribute(
+            "aria-expanded",
+            "false",
+          );
+        }
       }
     }
   }

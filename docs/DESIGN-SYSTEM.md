@@ -197,18 +197,19 @@ Anything else is a token.
   language selector is `locale-links.tsx`.
 - Site header: `header.site-header` holds the brand link, the language selector and the account navigation
   (`nav.account-navigation`). Its items are the header's own pattern, pills that do not use `ActionButton`,
-  `ActionLink` or `Disclosure`. Above the `phone` breakpoint the language selector and the account links sit in
+  `ActionLink` or `Disclosure`. Above the `header` breakpoint the language selector and the account links sit in
   the row, and a signed-in person's own links open from the Account button (`.account-menu-toggle`) as a menu
-  (`.account-menu-panel`) under that button, aligned to its end edge. At the `phone` breakpoint the row holds
+  (`.account-menu-panel`) under that button, aligned to its end edge. At the `header` breakpoint the row holds
   only the brand and two icon buttons (`.site-header-toggle`), each a pill `2.75rem` wide and tall: the globe
   opens the language selector and the three bars open the account navigation. An open panel
-  (`.site-header-panel`) spans the screen directly under the header on `--surface-raised` at `--layer-menu`, one
-  destination per row, each row at least `2.75rem` tall; it lies over the page and moves nothing. Each of these
-  buttons, the Account button included, reports `aria-expanded` and names its panel with `aria-controls`; an icon
-  button is named by `aria-label` and the Account button by its visible text; at the `phone` breakpoint the
-  stylesheet shows and hides a panel from its button's `aria-expanded`, so the two cannot disagree, and above it
-  the Account menu carries the `hidden` attribute, set from the same state as its button's `aria-expanded`. One
-  panel is open at a time.
+  (`.site-header-panel`) is a card under the buttons, aligned to the header's end edge, on `--surface-raised` at
+  `--layer-menu` with the card radius, one destination per row, each row at least `2.75rem` tall; it lies over
+  the page and moves nothing. At the `phone` breakpoint the same panel spans the screen directly under the
+  header. Each of these buttons, the Account button included, reports `aria-expanded` and names its panel with
+  `aria-controls`; an icon button is named by `aria-label` and the Account button by its visible text; at the
+  `header` breakpoint the stylesheet shows and hides a panel from its button's `aria-expanded`, so the two cannot
+  disagree, and above it the Account menu carries the `hidden` attribute, set from the same state as its button's
+  `aria-expanded`. One panel is open at a time.
   It closes when a destination or Sign out is chosen, on Escape, which returns focus to the button that opened
   it, on a press outside the header and when focus leaves the header. It is a disclosure, not a dialog: focus is
   not trapped and no `menu` role is used.
@@ -319,16 +320,17 @@ its own; the block it sits in sets the space around it.
 
 ## Breakpoints
 
-- A media query that tests width is `max-width` with one of the four values below. Custom properties cannot be
+- A media query that tests width is `max-width` with one of the five values below. Custom properties cannot be
   used in media queries, so the values are literals, written in `rem` so a layout follows the reader's browser
   text size; the pixel figures are those at the browser default.
 
 | Name | `max-width` | Pixels | At or below it |
 |---|---|---|---|
 | compact | `24rem` | 384 | a two-up grid of short values becomes one column |
-| phone | `40rem` | 640 | the phone layout: fields, rows and headers stack, and a form may set its buttons to fill the width; the site header keeps one row and opens its links as panels |
+| phone | `40rem` | 640 | the phone layout: fields, rows and headers stack, and a form may set its buttons to fill the width; the site header's open panel spans the screen |
 | tablet | `47.5rem` | 760 | a main column and its side column stack |
 | wide | `53rem` | 848 | a form and its fixed side panel stack |
+| header | `64rem` | 1024 | the site header shows only the brand and its two icon buttons and opens its links as panels |
 
 - New work reaches for `phone` first and adds no value. [globals.test.ts](../src/app/globals.test.ts) reads the
   `rem` values in this section, so a breakpoint is added or removed here in the same change as its media query.
