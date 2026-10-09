@@ -1157,6 +1157,42 @@ describe("repository verification command", () => {
       [".agents/upstream/mattpocock-skills/LICENSE"],
       "baseline",
     ],
+    [
+      "vendored frontend-design skill prose",
+      [
+        ".agents/upstream/anthropics-claude-plugins-official/frontend-design/SKILL.md",
+      ],
+      "baseline",
+    ],
+    [
+      "vendored frontend-design licence",
+      [
+        ".agents/upstream/anthropics-claude-plugins-official/frontend-design/LICENSE.txt",
+      ],
+      "baseline",
+    ],
+    [
+      "vendored accessibility-review skill prose",
+      [
+        ".agents/upstream/anthropics-knowledge-work-plugins/accessibility-review/SKILL.md",
+      ],
+      "baseline",
+    ],
+    [
+      "vendored knowledge-work licence",
+      [".agents/upstream/anthropics-knowledge-work-plugins/LICENSE"],
+      "baseline",
+    ],
+    [
+      "installed skill licence",
+      [".agents/skills/frontend-design/LICENSE.txt"],
+      "baseline",
+    ],
+    [
+      "copied skill licence",
+      [".claude/skills/frontend-design/LICENSE.txt"],
+      "baseline",
+    ],
     ["copied workflow file", [".claude/skills/example/SKILL.md"], "baseline"],
     [
       "copied workflow file",
