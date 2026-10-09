@@ -66,7 +66,7 @@ export const KNOWN_UNTRACKED = [
 ];
 
 // Exact paths of the optional product gates the shared hooks consult: a
-// repository may have none, yet the shared manual it syncs still names them.
+// repository may have none, yet the shared files it syncs still name them.
 export const OPTIONAL_PRODUCT_GATES = [
   "scripts/gates/stop", // Stop hooks (verify-green.sh)
   "scripts/gates/pre-commit", // .githooks/pre-commit
