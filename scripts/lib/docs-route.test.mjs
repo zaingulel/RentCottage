@@ -12,8 +12,8 @@
 // The two fake-git tests run the gate outside any repository, because the failure each one needs
 // cannot be staged through a real git.
 //
-// Recurring cost, on every run of the script suite: five scratch repositories, two hooked pushes of
-// which one runs the scratch suite, and seven direct gate runs.
+// Recurring cost, on every run of the script suite: seven scratch repositories, two hooked pushes of
+// which one runs the scratch suite, and nine direct gate runs.
 // Removal condition: remove with scripts/gates/pre-push-main.
 
 import { test } from "node:test";
@@ -232,7 +232,7 @@ const HEADER = "| Document | Kind | What it is |";
 const SEPARATOR = "|---|---|---|";
 // The one row form the index uses: a link or a backticked directory, one of four kinds, a description.
 const ROW =
-  /^\| (?<document>\[[^\]]+\]\((?<link>[^\s<>)#]+)\)|`(?<directory>[^`\s]+\/)`) \| (?<kind>explanation|instruction|record|reference) \| \S.* \|$/;
+  /^\| (?<document>\[[^\]]+\]\((?<link>[^\s<>)#:/][^\s<>)#:]*)\)|`(?<directory>[^`\s]+\/)`) \| (?<kind>explanation|instruction|record|reference) \| \S.* \|$/;
 
 // The instruction rows of an index whose target sits in a direct-route location, and how many
 // instruction rows the index has. The header must be present with the separator under it; each line
@@ -295,6 +295,8 @@ test("the index observer refuses any row not written in the index's exact form",
     `| ${link} | guideline | x |`,
     `${link} | instruction | x`,
     `${link} | instruction | x |`,
+    "| [shortcuts.md](https://github.com/zaingulel/rentcottage/blob/main/docs/engineering/shortcuts.md) | instruction | x |",
+    "| [shortcuts.md](//github.com/zaingulel/rentcottage/blob/main/docs/engineering/shortcuts.md) | instruction | x |",
   ];
   for (const row of refused)
     assert.throws(() => directRouteInstructions(table(row)), Error, row);
@@ -429,7 +431,7 @@ function withScratchRemote(fn) {
 
 // The real gate over a fake git, outside any repository. The fake answers the fast-forward check with
 // success and the path listing with one qualifying path and the given exit status; anything else fails.
-function gateOverFakeGit({ diffStatus, manifest }) {
+function gateOverFakeGit({ listingStatus, manifest }) {
   assert.ok(SHELL, NO_SHELL);
   const root = mkdtempSync(join(realpathSync(tmpdir()), "docs-route-"));
   try {
@@ -439,7 +441,7 @@ function gateOverFakeGit({ diffStatus, manifest }) {
       'for arg in "$@"; do',
       "  case $arg in",
       "    (merge-base) exit 0 ;;",
-      `    (diff) echo docs/research/note.md; exit ${diffStatus} ;;`,
+      `    (log) echo docs/research/note.md; exit ${listingStatus} ;;`,
       "  esac",
       "done",
       "exit 2",
@@ -460,7 +462,7 @@ function gateOverFakeGit({ diffStatus, manifest }) {
 
 test("the gate refuses when listing the changed paths fails", () => {
   const run = gateOverFakeGit({
-    diffStatus: 1,
+    listingStatus: 1,
     manifest: JSON.stringify({ entries: [] }),
   });
   assert.notEqual(run.status, 0);
@@ -470,7 +472,10 @@ test("the gate refuses when listing the changed paths fails", () => {
 test("the gate refuses when the manifest cannot be read", () => {
   // The one listed path qualifies, so a classifier that read a malformed manifest as an empty list would
   // admit it and the gate would refuse only later, with a different message.
-  const run = gateOverFakeGit({ diffStatus: 0, manifest: '{"entries":[{}]}' });
+  const run = gateOverFakeGit({
+    listingStatus: 0,
+    manifest: '{"entries":[{}]}',
+  });
   assert.notEqual(run.status, 0);
   assert.match(run.stderr, /\.agents\/factory-manifest\.json/);
   assert.match(run.stderr, /pull request route/);
@@ -521,6 +526,38 @@ test("a file moved into a documentation location is refused for the path it left
     git(repo, "mv", "src/x.js", "docs/research/x.md");
     git(repo, "commit", "-q", "-m", "move");
     const run = gate(before, git(repo, "rev-parse", "HEAD"));
+    assert.notEqual(run.status, 0);
+    assert.match(run.stderr, /src\/x\.js/);
+  });
+});
+
+test("a push whose earlier commit changed code is refused even when a later commit restores it", () => {
+  withScratchRemote(({ commit, gate, remoteMain, repo }) => {
+    const seed = remoteMain();
+    commit(["src/x.js"]);
+    // The next commit deletes the code again, so the end-to-end difference is documentation only.
+    rmSync(join(repo, "src/x.js"));
+    const head = commit(["docs/research/note.md"]);
+    const run = gate(seed, head);
+    assert.notEqual(run.status, 0);
+    assert.match(run.stderr, /src\/x\.js/);
+  });
+});
+
+test("a merge commit that changes code of its own is refused", () => {
+  withScratchRemote(({ commit, gate, git, remoteMain, repo }) => {
+    const seed = remoteMain();
+    git(repo, "checkout", "-q", "-b", "side");
+    commit(["docs/research/side.md"]);
+    git(repo, "checkout", "-q", "main");
+    commit(["docs/research/main.md"]);
+    // The merge itself adds the code, so it differs from both of its parents; no other commit lists it.
+    git(repo, "merge", "-q", "--no-commit", "--no-ff", "side");
+    mkdirSync(join(repo, "src"));
+    writeFileSync(join(repo, "src/x.js"), "src/x.js\n");
+    git(repo, "add", "src/x.js");
+    git(repo, "commit", "-q", "-m", "merge");
+    const run = gate(seed, git(repo, "rev-parse", "HEAD"));
     assert.notEqual(run.status, 0);
     assert.match(run.stderr, /src\/x\.js/);
   });

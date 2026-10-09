@@ -13,7 +13,7 @@ Worker boundary. [GLOSSARY.md](../GLOSSARY.md) owns product meaning and canonica
 The optional gates under `scripts/gates/` are a seam a repository may fill. This repository fills one,
 `scripts/gates/pre-push-main` with `scripts/lib/docs-route.mjs`, both outside the manifest; it has no turn-end gate
 and no commit gate. The gate gives a documentation-only change the direct route to `main`. It admits a fast-forward
-whose every changed path is `docs/README.md` or sits under `docs/commercial/`, `docs/design/`, `docs/discovery/`,
+in which every path changed by every added commit is `docs/README.md` or sits under `docs/commercial/`, `docs/design/`, `docs/discovery/`,
 `docs/engineering/` or `docs/research/`, is a Markdown, Word or image file (`md`, `docx`, `png`, `jpg`, `jpeg`, `gif`,
 `svg` or `webp`), and is not a shared file the manifest lists. Every other path takes the pull request route: the
 instruction documents, `docs/adr/` and `docs/product/`, each file the `wide reach` row of the Surfaces table names, and

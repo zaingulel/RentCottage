@@ -1,8 +1,8 @@
 #!/bin/sh
 # RentCottage's gate for a push to main, run by .githooks/pre-push from the repository root as
-# `pre-push-main <remote sha> <local sha>`. It admits only a fast-forward whose every changed path is
-# qualifying documentation or media, which scripts/lib/docs-route.mjs judges by path; everything else
-# goes through a pull request. The pushed commit must also be the checked-out content with no
+# `pre-push-main <remote sha> <local sha>`. It admits only a fast-forward in which every path changed by
+# every added commit is qualifying documentation or media, which scripts/lib/docs-route.mjs judges by
+# path; everything else goes through a pull request. The pushed commit must also be the checked-out content with no
 # uncommitted tracked change, because the hook's script suite judges the working tree. Exit 0 admits
 # the push, exit 1 refuses it with the reason on stderr.
 set -e
@@ -21,11 +21,14 @@ git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null \
   || refuse "the push is not a fast-forward of main"
 command -v node >/dev/null 2>&1 || refuse "node is not on PATH, so the changed paths cannot be checked"
 
-# Captured before node sees it: POSIX sh has no pipefail, so a piped diff that failed after printing
-# some paths would hand node a partial list. An empty list reaches node, which refuses it. --no-renames
-# keeps a moved file's old path in the list: a detected rename would list only its destination.
-changed=$(git -c core.quotePath=false diff --name-only --no-renames "$remote_sha" "$local_sha") \
-  || refuse "listing the changed paths failed"
+# Every path changed by every commit the push adds, each against its parent or, for a merge, against
+# each parent: a commit that changes code and a later one that restores it are both judged, because
+# both enter main's history. Captured before node sees it: POSIX sh has no pipefail, so a piped listing
+# that failed after printing some paths would hand node a partial list. An empty list reaches node,
+# which refuses it; the blank lines the empty format leaves are dropped there. --no-renames keeps a
+# moved file's old path in the list: a detected rename would list only its destination.
+changed=$(git -c core.quotePath=false log --format= --name-only --no-renames --diff-merges=on \
+  "$remote_sha..$local_sha") || refuse "listing the changed paths failed"
 printf '%s\n' "$changed" | node scripts/lib/docs-route.mjs || exit 1
 
 pushed_tree=$(git rev-parse "$local_sha^{tree}" 2>/dev/null) \
