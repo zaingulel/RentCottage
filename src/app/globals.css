@@ -1252,8 +1252,7 @@ html[lang="ckb"] .page-title {
   color: var(--ink);
 }
 
-.profile-page,
-.request-page {
+.profile-page {
   min-height: 100vh;
   padding-block-end: var(--space-7);
   background: var(--background);
@@ -1288,8 +1287,7 @@ html[lang="ckb"] .page-title {
   min-height: 28rem;
 }
 
-.profile-gallery img,
-.request-cottage img {
+.profile-gallery img {
   object-fit: cover;
 }
 
@@ -1307,8 +1305,7 @@ html[lang="ckb"] .page-title {
 }
 
 .profile-heading p,
-.profile-section p,
-.request-cottage span {
+.profile-section p {
   color: var(--muted);
 }
 
@@ -1343,8 +1340,7 @@ html[lang="ckb"] .page-title {
   border-block-start: 1px solid var(--line);
 }
 
-.profile-section h2,
-.request-cottage h2 {
+.profile-section h2 {
   color: var(--green);
   font-family: var(--display);
   font-size: var(--font-size-5);
@@ -1354,8 +1350,7 @@ html[lang="ckb"] .page-title {
   margin-block: var(--space-2);
 }
 
-.booking-summary,
-.request-cottage {
+.booking-summary {
   position: sticky;
   inset-block-start: var(--space-5);
   padding: var(--space-5);
@@ -1367,12 +1362,6 @@ html[lang="ckb"] .page-title {
 .booking-summary > p {
   margin: 0 0 var(--space-4);
   color: var(--muted);
-}
-
-.request-cottage > strong,
-.request-cottage > span,
-.request-cottage > small {
-  display: block;
 }
 
 .booking-summary h2,
@@ -1417,10 +1406,6 @@ html[lang="ckb"] .booking-summary h2 {
   line-height: 1.4;
 }
 
-.request-cottage > small {
-  color: var(--muted);
-}
-
 .booking-summary > .action-link,
 .booking-summary > .action {
   margin-block-start: var(--space-5);
@@ -1434,24 +1419,8 @@ html[lang="ckb"] .booking-summary h2 {
   margin-block-start: var(--space-2);
 }
 
-.request-notice {
-  margin: 0;
-  padding: var(--space-3);
-  border-radius: var(--radius-card);
-  background: var(--gold-tint);
-  color: var(--muted);
-  font-size: var(--font-size-1);
-  line-height: 1.6;
-}
-
 .request-layout {
   grid-template-columns: minmax(0, 1fr) 22rem;
-}
-
-.request-eyebrow {
-  margin: 0;
-  color: var(--ink-accent);
-  font-weight: 700;
 }
 
 .request-success {
@@ -1462,23 +1431,6 @@ html[lang="ckb"] .booking-summary h2 {
   border-radius: var(--radius-card);
   background: var(--green-tint);
   color: var(--green);
-  font-weight: 700;
-}
-
-.request-cottage > div {
-  position: relative;
-  min-height: 13rem;
-  overflow: hidden;
-  border-radius: var(--radius-card);
-}
-
-.request-cottage h2 {
-  margin-block-end: var(--space-3);
-}
-
-.request-cottage p {
-  color: var(--green);
-  font-size: var(--font-size-4);
   font-weight: 700;
 }
 
@@ -1682,32 +1634,18 @@ html[lang="ckb"] .booking-summary h2 {
   text-align: center;
 }
 
-.section-heading {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin-block-end: var(--space-5);
-}
-
-.section-heading p,
 .trusted-copy > p:first-child {
   margin: 0;
-  color: var(--ink-accent);
+  color: var(--ink-on-dark-accent);
   font-size: var(--font-size-1);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
-.trusted-copy > p:first-child {
-  color: var(--ink-on-dark-accent);
-}
-
-.section-heading h2,
 .trusted-copy h2 {
   margin: var(--space-1) 0 0;
-  color: var(--green);
+  color: var(--ink-on-dark);
   font-family: var(--display);
   font-size: clamp(2rem, 4vw, 3rem);
   line-height: 1.2;
@@ -1733,10 +1671,6 @@ html[lang="ckb"] .booking-summary h2 {
 
 .trusted-copy {
   padding: clamp(var(--space-6), 5vw, var(--space-7));
-}
-
-.trusted-copy h2 {
-  color: var(--ink-on-dark);
 }
 
 .trusted-copy > p:nth-child(3) {
@@ -1805,8 +1739,7 @@ a:focus-visible {
     min-height: 19rem;
   }
 
-  .booking-summary,
-  .request-cottage {
+  .booking-summary {
     position: static;
   }
 
