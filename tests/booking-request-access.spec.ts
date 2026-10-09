@@ -631,6 +631,8 @@ test("a verified Customer double-submit creates one Pending request and one mini
         // can terminate Wrangler's local forwarding proxy.
         const customerView = await page.context().newPage();
         const ownerView = await ownerContext.newPage();
+        await customerView.setViewportSize({ width: 390, height: 844 });
+        await ownerView.setViewportSize({ width: 390, height: 844 });
         await customerView.goto(
           `/${copy.locale}/booking-requests/${reference}`,
         );
