@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openHeaderPanel } from "./fixtures/site-header";
 
 const ownerSignIn = {
   en: {
@@ -42,6 +43,7 @@ test("preserves the selected Retreat shell around live discovery", async ({
   await expect(
     page.getByRole("img", { name: "A rural house at sunset in Iraq" }),
   ).toHaveAttribute("src", "/uploads/hero-retreat.png");
+  await openHeaderPanel(page, "language");
   await expect(
     page.getByRole("navigation", { name: "Language" }),
   ).toBeVisible();
@@ -87,9 +89,11 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
       exact: true,
     });
 
+    await openHeaderPanel(page, "menu");
     await expect(ownerLink).toHaveAttribute("href", copy.href);
     await expect(page.locator("html")).toHaveAttribute("lang", locale);
     await expect(page.locator("html")).toHaveAttribute("dir", copy.dir);
+    await openHeaderPanel(page, "language");
     if (locale === "ar") {
       await expect(
         page.getByRole("navigation", { name: "اللغة" }),
@@ -157,11 +161,13 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
         document: document.documentElement.scrollWidth,
       }));
       expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
+      await openHeaderPanel(page, "menu");
       await expect(
         page
           .getByRole("banner")
           .getByRole("link", { name: copy.label, exact: true }),
       ).toBeVisible();
+      await openHeaderPanel(page, "language");
       for (const language of languageNames) {
         await expect(
           page
@@ -227,6 +233,7 @@ test("pre-live support stays honest, private and keyboard-accessible in every la
       name: labels.support,
       exact: true,
     });
+    await openHeaderPanel(page, "menu");
     await expect(support).toHaveAttribute("href", `/${locale}/support`);
     for (let index = 0; index < 7; index += 1) {
       await page.keyboard.press("Tab");
@@ -250,6 +257,7 @@ test("pre-live support stays honest, private and keyboard-accessible in every la
     await expect(page.getByRole("main").getByRole("button")).toHaveCount(0);
     const language = page.getByRole("navigation", { name: labels.language });
     const nextLocale = locale === "en" ? "ar" : locale === "ar" ? "ckb" : "en";
+    await openHeaderPanel(page, "language");
     await language
       .getByRole("link", {
         name: { en: "English", ar: "العربية", ckb: "کوردی" }[nextLocale],
@@ -320,6 +328,7 @@ test("sign-in preserves the permitted search selection in every language", async
       .getByRole("banner")
       .getByRole("link", { name, exact: true });
     const href = `/${locale}/access?returnTo=${encodeURIComponent(destination)}`;
+    await openHeaderPanel(page, "menu");
     await expect(signIn).toHaveAttribute("href", href);
     await signIn.click();
     await expect(page).toHaveURL(new URL(href, page.url()).href);

@@ -2,6 +2,7 @@ import { expect, type Locator, test } from "@playwright/test";
 import { build } from "esbuild";
 
 import { readApplicationStylesheet } from "./fixtures/application-stylesheet";
+import { openHeaderPanel } from "./fixtures/site-header";
 
 const localeFixtures = [
   {
@@ -32,6 +33,7 @@ test("locale actions expose native semantics and visible interaction states", as
   const arabic = page
     .getByRole("banner")
     .getByRole("link", { name: "العربية" });
+  await openHeaderPanel(page, "language");
   await expect(arabic).not.toHaveAttribute("aria-current", "page");
   await arabic.focus();
   const focused = arabic;
@@ -42,6 +44,7 @@ test("locale actions expose native semantics and visible interaction states", as
 
   await arabic.click();
   await expect(page).toHaveURL(/\/ar$/);
+  await openHeaderPanel(page, "language");
   await expect(
     page.getByRole("banner").getByRole("link", { name: "العربية" }),
   ).toHaveAttribute("aria-current", "page");
@@ -90,6 +93,7 @@ for (const fixture of localeFixtures) {
       fixture.direction,
     );
 
+    await openHeaderPanel(page, "language");
     await expect(
       page.getByRole("navigation", { name: fixture.language }),
     ).toBeVisible();

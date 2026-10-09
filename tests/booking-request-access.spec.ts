@@ -1,4 +1,5 @@
 import { triggerScheduled } from "./fixtures/trigger-scheduled";
+import { openHeaderPanel } from "./fixtures/site-header";
 
 // SQL arrangement mirrors admission, isolated effect, and explicit recording.
 const paymentEvidenceSql =
@@ -199,16 +200,18 @@ test("a verified Customer double-submit creates one Pending request and one mini
   // settle on the request page before switching language.
   await expect(
     page.getByRole("banner").getByText("Account", { exact: true }),
-  ).toBeVisible();
+  ).toBeAttached();
   const arabic = page
     .getByRole("banner")
     .getByRole("link", { name: "العربية" });
+  await openHeaderPanel(page, "language");
   await expect(arabic).toHaveAttribute("href", /^\/ar\/request\//);
   await arabic.click();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(
     page.getByRole("heading", { name: "أرسل طلب الحجز" }),
   ).toBeVisible();
+  await openHeaderPanel(page, "language");
   await page.getByRole("banner").getByRole("link", { name: "English" }).click();
   await expect(
     page.getByRole("heading", { name: "Send your Booking Request" }),
@@ -304,6 +307,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await expect(ownerNotice).not.toContainText(/terms version|policy version/i);
   await expect(ownerNotice).toContainText("(Cottage Shift)");
 
+  await openHeaderPanel(page, "menu");
   await page.getByRole("banner").getByRole("link", { name: "Support" }).click();
   await expect(page.getByRole("status")).toContainText(
     "support is not operating",
@@ -317,6 +321,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
   ).toBeVisible();
   await page.goto(`/en/booking-requests/${requestReference}`);
 
+  await openHeaderPanel(ownerPage, "menu");
   await ownerPage
     .getByRole("banner")
     .getByRole("link", { name: "Support" })

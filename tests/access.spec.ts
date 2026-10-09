@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { openHeaderPanel } from "./fixtures/site-header";
 import { createHmac } from "node:crypto";
 import { createRequire } from "node:module";
 import { crc32 } from "node:zlib";
@@ -663,6 +664,7 @@ test("the fictional booking-request back door is unavailable", async ({
 registerOwnedJourney("signin", async ({ page }, testInfo) => {
   const fixture = await prepareOwnedAccessJourney("signin", testInfo);
   await page.goto("/ckb");
+  await openHeaderPanel(page, "menu");
   await page
     .getByRole("banner")
     .getByRole("link", { name: "کۆتێجەکەت تۆمار بکە", exact: true })
@@ -2782,6 +2784,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   const signIn = page
     .getByRole("banner")
     .getByRole("link", { name: "Sign in", exact: true });
+  await openHeaderPanel(page, "menu");
   await expect(signIn).toHaveAttribute(
     "href",
     /^\/en\/access\?returnTo=%2Fen%2Frequest%2F/,
@@ -2793,6 +2796,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   const soraniAccess = page
     .getByRole("banner")
     .getByRole("link", { name: "کوردی" });
+  await openHeaderPanel(page, "language");
   await expect(soraniAccess).toHaveAttribute(
     "href",
     /^\/ckb\/access\?returnTo=%2Fckb%2Frequest%2F/,
@@ -2814,6 +2818,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   const englishLink = page
     .getByRole("banner")
     .getByRole("link", { name: "English" });
+  await openHeaderPanel(page, "language");
   await expect(englishLink).toHaveAttribute("href", /^\/en\/request\//);
   await englishLink.click();
   await expect(page).toHaveURL(
@@ -2842,6 +2847,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   const soraniLink = page
     .getByRole("banner")
     .getByRole("link", { name: "کوردی" });
+  await openHeaderPanel(page, "language");
   await expect(soraniLink).toHaveAttribute("href", /^\/ckb\/request\//);
   await soraniLink.click();
   await expect(page.locator("html")).toHaveAttribute("lang", "ckb");
@@ -2857,6 +2863,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   ).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/Morning|Evening/);
   await expectPrivateValuesAbsent();
+  await openHeaderPanel(page, "language");
   await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "ar");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -2933,6 +2940,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expectPrivateValuesAbsent();
 
   await page.goto(english.toString());
+  await openHeaderPanel(page, "language");
   await page.getByRole("banner").getByRole("link", { name: "کوردی" }).click();
   await expect(page).toHaveURL(
     new RegExp(`${english.pathname.replace(/^\/en/, "/ckb")}\\?`),
@@ -2976,6 +2984,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
       path: test.info().outputPath("day-first-picker-selected-ckb-mobile.png"),
     });
   }
+  await openHeaderPanel(page, "language");
   await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page).toHaveURL(
     new RegExp(`${english.pathname.replace(/^\/en/, "/ar")}\\?`),
@@ -3125,7 +3134,7 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
     role: "customer",
     owner_approval_state: null,
   });
-  await page.getByText("Account", { exact: true }).click();
+  await openHeaderPanel(page, "menu");
   await page
     .getByRole("banner")
     .getByRole("link", { name: "List your cottage" })
@@ -3161,9 +3170,10 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
     await expect(
       secondPage.getByRole("heading", { name: "My bookings", exact: true }),
     ).toBeVisible();
-    await page.getByText("Account", { exact: true }).click();
+    await openHeaderPanel(page, "menu");
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
     await expect(page).toHaveURL(/\/en$/);
+    await openHeaderPanel(page, "menu");
     await expect(
       page
         .getByRole("banner")
