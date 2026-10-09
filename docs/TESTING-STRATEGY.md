@@ -179,8 +179,10 @@ run nothing. For the `resume` skill's deliver step, the hosted `test` check ther
 instructions, every database and browser check, which is at least the groups a local run selects from the same
 changed paths, on a rebased head as on any other. For a change touching only documentation or workflow instructions
 both run the baseline alone. No hosted job runs `npm run verify -- --full` as one command or `npm run lint:docs`;
-each reruns locally on a new head. The hosted preview is smoked with
-`npm run verify:preview -- <https-preview-url>` as a separate owner-approved operation.
+each reruns locally on a new head. This strategy marks no check for receipt reuse across a documentation-only
+difference: that exception of the deliver step needs an executable `scripts/gates/pre-push-main`, which this
+repository does not have, so a documentation-only difference alone never carries a receipt to a new head. The hosted
+preview is smoked with `npm run verify:preview -- <https-preview-url>` as a separate owner-approved operation.
 
 The authoritative desktop exclusion list is in [playwright.config.ts](../playwright.config.ts). These eleven
 journeys run on mobile and Worker (1280×720) only. All remaining Node.js journeys run on both mobile and desktop,
