@@ -157,7 +157,7 @@ function inventoryFrom(
   value: unknown,
   query: CottageDiscoveryQuery,
 ): PublicCottageInventoryUnit[] | undefined {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 1600)
+  if (!Array.isArray(value) || value.length === 0 || value.length > 124)
     return undefined;
   const byDay = new Map<string, PublicCottageInventoryUnit[]>();
   let previousKey = "";

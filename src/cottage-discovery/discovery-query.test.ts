@@ -48,6 +48,33 @@ describe("Cottage discovery query", () => {
     );
   });
 
+  it("accepts 31 Service Days with three shifts each and refuses 32", () => {
+    const shiftSelections = (days: number) =>
+      Array.from({ length: days }, (_, index) =>
+        [1, 2, 3].map(
+          (position) =>
+            `2099-01-${String(index + 1).padStart(2, "0")}:shift:${position}`,
+        ),
+      ).flat();
+    const accepted = parseCottageDiscoveryQuery({
+      from: "2099-01-01",
+      to: "2099-01-31",
+      selection: shiftSelections(31),
+      guests: "4",
+    });
+    expect(accepted.status).toBe("loaded");
+    if (accepted.status !== "loaded") throw new Error("expected loaded query");
+    expect(accepted.query.selections).toHaveLength(93);
+    expect(
+      parseCottageDiscoveryQuery({
+        from: "2099-01-01",
+        to: "2099-02-01",
+        selection: shiftSelections(31),
+        guests: "4",
+      }),
+    ).toEqual({ status: "invalid" });
+  });
+
   it("accepts empty and partial discovery selections while requiring complete booking selections", () => {
     const base = { from: "2030-01-12", to: "2030-01-13", guests: "4" };
     for (const selection of [undefined, [], ["2030-01-12:shift:1"]]) {

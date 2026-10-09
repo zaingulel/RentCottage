@@ -448,30 +448,32 @@ describe("Supabase Cottage discovery", () => {
         ).search("en", rangedQuery, null),
       ).resolves.toEqual({ status: "unavailable" });
     }
-    const maximumInventory = Array.from({ length: 400 }, (_, index) => {
-      const day = new Date("2030-01-12T00:00:00Z");
-      day.setUTCDate(day.getUTCDate() + index);
-      return [
-        {
-          ...validSummary.inventory[0],
-          serviceDay: day.toISOString().slice(0, 10),
-        },
-        {
-          ...validSummary.inventory[1],
-          serviceDay: day.toISOString().slice(0, 10),
-        },
-        {
-          ...validSummary.inventory[1],
-          position: 3,
-          serviceDay: day.toISOString().slice(0, 10),
-        },
-        {
-          ...validSummary.inventory[2],
-          serviceDay: day.toISOString().slice(0, 10),
-        },
-      ];
-    }).flat();
-    expect(maximumInventory).toHaveLength(1600);
+    const inventoryForDays = (dayCount: number) =>
+      Array.from({ length: dayCount }, (_, index) => {
+        const day = new Date("2030-01-12T00:00:00Z");
+        day.setUTCDate(day.getUTCDate() + index);
+        return [
+          {
+            ...validSummary.inventory[0],
+            serviceDay: day.toISOString().slice(0, 10),
+          },
+          {
+            ...validSummary.inventory[1],
+            serviceDay: day.toISOString().slice(0, 10),
+          },
+          {
+            ...validSummary.inventory[1],
+            position: 3,
+            serviceDay: day.toISOString().slice(0, 10),
+          },
+          {
+            ...validSummary.inventory[2],
+            serviceDay: day.toISOString().slice(0, 10),
+          },
+        ];
+      }).flat();
+    const maximumInventory = inventoryForDays(31);
+    expect(maximumInventory).toHaveLength(124);
     await expect(
       new SupabaseCottageDiscovery(
         clientReturning(
@@ -479,7 +481,7 @@ describe("Supabase Cottage discovery", () => {
         ),
       ).search(
         "en",
-        { ...query, from: "2030-01-12", to: "2031-02-15", selections: [] },
+        { ...query, from: "2030-01-12", to: "2030-02-11", selections: [] },
         null,
       ),
     ).resolves.toEqual({
@@ -487,6 +489,19 @@ describe("Supabase Cottage discovery", () => {
       cottages: [expect.objectContaining({ inventory: maximumInventory })],
       nextAfter: null,
     });
+    const oversizedInventory = inventoryForDays(32);
+    expect(oversizedInventory).toHaveLength(128);
+    await expect(
+      new SupabaseCottageDiscovery(
+        clientReturning(
+          pageOf([{ ...validSummary, inventory: oversizedInventory }]),
+        ),
+      ).search(
+        "en",
+        { ...query, from: "2030-01-12", to: "2030-02-12", selections: [] },
+        null,
+      ),
+    ).resolves.toEqual({ status: "unavailable" });
     expect(diagnostic).toHaveBeenCalledWith(
       "Public Cottage discovery unavailable",
       {

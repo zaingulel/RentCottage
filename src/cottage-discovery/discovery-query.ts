@@ -43,7 +43,7 @@ const acceptedKeys = new Set([
   "area",
   "amenity",
 ]);
-const maximumDefensiveServiceDays = 400;
+const maximumDefensiveServiceDays = 31;
 const maximumDefensiveSelections = maximumDefensiveServiceDays * 3;
 
 function scalar(value: string | string[] | undefined): string | undefined {
