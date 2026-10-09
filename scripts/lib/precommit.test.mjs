@@ -11,6 +11,7 @@
 //   8. pre-merge-commit with a clean staged agent pair passes, with a divergent pair → hook BLOCKS
 //   9. a product gate at scripts/gates/pre-commit: passing, absent, failing, unavailable, and
 //      non-executable, each with only an unrelated staged change → the gate alone decides
+//  10. a commit staging only the repository profile or a vendored upstream skill → the doc-lint advisory RUNS, never blocks
 // The product's own gate is tested with the product.
 //
 // Run: node --test scripts/lib/   (or `npm run test:scripts`)
@@ -90,6 +91,25 @@ test('pre-commit: a staged scripts change with a red scripts-lib test is not blo
     const r = runHook(repo);
     assert.equal(r.status, 0, 'pre-commit must not run the scripts/lib suite; pre-push is its sole local gate');
   });
+});
+
+// A stub stands in for the real lint: the claim is the hook's trigger, and the real lint is tested in its own suite.
+test('pre-commit: a commit staging only the repository profile or a vendored upstream skill runs the doc-lint advisory and is not blocked', () => {
+  for (const path of ['.agents/REPOSITORY.md', '.agents/upstream/source/skill/SKILL.md']) {
+    withScratchRoot((root) => {
+      const repo = initBaseRepo(root);
+      mkdirSync(join(repo, 'scripts'), { recursive: true });
+      writeFileSync(join(repo, 'scripts', 'doc-lint.mjs'), 'console.error("STUB-DOC-LINT-RAN");\nprocess.exit(1);\n');
+      git(repo, ['add', '-A']);
+      git(repo, ['-c', 'user.email=test@test.dev', '-c', 'user.name=Test', 'commit', '-q', '-m', 'arm doc-lint stub']);
+      mkdirSync(dirname(join(repo, path)), { recursive: true });
+      writeFileSync(join(repo, path), '# Staged document\n');
+      git(repo, ['add', path]);
+      const r = runHook(repo);
+      assert.match(r.stderr, /STUB-DOC-LINT-RAN/, `staging only ${path} must run the doc-lint advisory`);
+      assert.equal(r.status, 0, `a failing doc-lint advisory must not block a commit staging only ${path}`);
+    });
+  }
 });
 
 test('pre-commit: a staged agent definition that would be silently dropped blocks with a named cause', () => {

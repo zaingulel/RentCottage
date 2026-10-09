@@ -29,8 +29,8 @@ verified.
 
 Fetch `origin/main` with `git fetch --no-prune origin main` and record the fetched commit. If fetching fails,
 report freshness unavailable and do not select work from stale board evidence. Load `AGENTS.md`, this skill, and
-[Update local main](../closeout/SKILL.md#update-local-main) from that commit under `AGENTS.md`'s Instruction reuse
-rule, then apply that fetched procedure to the actual `main` checkout. The coordinating resume session may update
+[Update local main](../closeout/SKILL.md#update-local-main) from that commit under the Instruction reuse rule
+below, then apply that fetched procedure to the actual `main` checkout. The coordinating resume session may update
 it when no other task owns it. After a successful update, verify the recorded target and cleanliness before using
 verifier code. If the checkout is retained, report its path, branch and reason;
 continue from fetched instructions read-only and choose verifier code at the recorded target: use a usable existing
@@ -38,6 +38,15 @@ isolated checkout first, otherwise create a fresh verifier-only worktree without
 worktree this run created is removed at the end of the same run, after board operations, with
 `git worktree remove <path>`; a reused existing checkout is left alone. If no current verifier checkout is
 available, report board freshness unavailable rather than presenting stale local code as current evidence.
+
+**Instruction reuse.** Record the fetched target commit and required instruction paths. Reuse previously read text only
+when its full content remains in active context and its exact read Git revision is known: both
+`git rev-parse <read-revision>:<path>` and `git rev-parse <target>:<path>` must succeed and return identical blob IDs.
+Otherwise read the required content from the recorded target with `git show <target>:<path>`. Missing objects, failed
+commands, or failed or truncated content reads are unavailable evidence, never permission to reuse. Autoloaded text
+without verified read provenance, summaries and dirty disk content establish no identity. Retain provenance only in this
+session, with no cache or tracked state; apply the rule whenever the target changes, including the post-selection fetch.
+Instruction identity does not waive verifier target, cleanliness or ownership checks.
 
 ## 1. Find where things stand
 
@@ -63,12 +72,13 @@ available, report board freshness unavailable rather than presenting stale local
 - Run `node scripts/factory-sync.mjs --check` in the same refreshed checkout and report its result at work-pick in
   one advisory line: exit 0 is in sync; exit 1 is lag, naming the paths it lists, reported as information: an
   ordinary shared change opens no sync card, and a sync card is opened only on the owner's decision, when one sync
-  job clears every listed path at once (`AGENTS.md`, Shared workflow adoption); exit 2 is lag unknown with its
-  stated cause, never reported as in sync. The result never blocks work-pick.
+  job clears every listed path at once (`AGENTS.md`, Shared workflow adoption, and the
+  [`sync-job`](../sync-job/SKILL.md) skill); exit 2 is lag unknown with its stated cause, never reported as in sync. The
+  result never blocks work-pick.
 - Report in one advisory line, with no threshold, the size of the workflow tooling (scripts, tools and hooks, their
   tests counted apart) and its time-limit declarations, each a test or suite setting its own time limit on one line,
   at the recorded `origin/main` commit and at the newest `main` commit at least 30 days old,
-  `git rev-list -1 --before=30.days.ago origin/main` (`AGENTS.md`, Publication and machinery). For each of the two
+  `git rev-list -1 --before=30.days.ago origin/main` (the machinery rule under "4. Plan"). For each of the two
   commits `<rev>`, size prints tooling files, tooling lines, test files and test lines:
   `git grep -c -e '^' <rev> -- scripts tools .claude/hooks .codex/hooks .githooks | awk -F: '{ if ($(NF-1) ~ /\.test\./) { tf++; tl+=$NF } else { f++; l+=$NF } } END { print f+0, l+0, tf+0, tl+0 }'`
   and the declaration count is
@@ -84,7 +94,7 @@ available, report board freshness unavailable rather than presenting stale local
   session's job, since a job branch stays local until push: never return it to `Ready` on the session's own
   judgment and never offer it as a candidate row. Show it to the owner at work-pick with its latest comment
   starting `Claim:`, or say it has none, and return it to `Ready` only on the owner's say.
-- If the Conventions table in `AGENTS.md` marks the documentation routines active, intake sweep-triage cards
+- If the Conventions table in `.agents/REPOSITORY.md` marks the documentation routines active, intake sweep-triage cards
   as `docs/SWEEP-TRIAGE.md` describes: the day-after triage routine files issues it cannot card. Before
   work-pick, list them with
   `gh issue list --state open --author @me --limit 100 --json number,body --jq '[.[] | select(.body | contains("Sweep triage: source #"))]'`
@@ -140,7 +150,7 @@ disjoint.
 ## 3. Start the job
 
 - After selection, fetch `origin/main` again with `git fetch --no-prune origin main` and record the new target;
-  load its required instructions under `AGENTS.md`'s Instruction reuse rule before proceeding.
+  load its required instructions under the Instruction reuse rule in "Before intake" before proceeding.
 - On Claude Code, the coordinating session is started at the root checkout, never with the desktop app's worktree
   option: auto-archive removes that worktree at merge, before closeout can leave it. Confirm with `pwd` that the
   shell is in the root checkout, because `EnterWorktree` records the shell's current folder as the one
@@ -151,15 +161,12 @@ disjoint.
   `.claude/worktrees/`. `EnterWorktree` isolates the session, so the runtime refuses what it cannot verify stays
   inside this worktree: a git command redirected by `git -C`, `--git-dir` or a leading `cd`, for example, or one
   whose shape is too complex for it to judge. Plain, separate git commands run from the worktree are the working
-  form.
+  form. The same check can take the letters `git` inside a longer word or a file path for a git command and refuse
+  a command that runs none. Such a refusal is that check, not a git problem: the file is never renamed or left out
+  of a run, and the command is rerun in the form the repository's `docs/TESTING-STRATEGY.md` names for a focused
+  run in a job worktree.
 - On Codex: a Codex-managed worktree per chat, or
   `git worktree add ../jobs/<issue> -b job/<issue> <recorded-origin-main>`.
-- On Herdr: `herdr worktree create --branch job/<issue> --cwd "$PWD" --path ".claude/worktrees/job-<issue>"`
-  opens the job as a worktree workspace at that same location. The Workspace Manager plugin then runs `npm ci`
-  in that workspace and starts a Claude in it, so the job needs no install step or launch by hand; the
-  Worktrunk plugin's picker (prefix, then shift+g) does the same for a start by hand. Herdr's agent manual
-  forbids creating a worktree unless the user asked for that topology; this line is that request, so no
-  further confirmation is needed.
 - Before edits in any newly created runtime worktree, require `git rev-parse HEAD` to equal that newly recorded
   commit. Preserve and report a mismatch before edits.
 - Keep scratch files, plans, and local draft or review prompts inside the job worktree where possible;
@@ -175,7 +182,7 @@ disjoint.
 - Move the card to `In progress`: `node scripts/board-move.mjs <issue> "In progress"`, and claim it with
   `gh issue edit <issue> --add-assignee @me` — active work with no assignee is reported as drift. Then post the
   claim where every machine can see it, with `gh issue comment <issue> --body "Claim: <machine>, <runtime>, <time>"`:
-  the machine is what `hostname` prints, the runtime is Claude Code, Codex or Herdr, and the time is what
+  the machine is what `hostname` prints, the runtime is Claude Code or Codex, and the time is what
   `date -u +%Y-%m-%dT%H:%MZ` prints, each read first and typed in as a literal. Run `npm ci`
   in a fresh checkout, then confirm `git config --get core.hooksPath` prints `.githooks`; when it does not, run
   `git config core.hooksPath .githooks` and report it.
@@ -199,7 +206,9 @@ disjoint.
 - Every plan, the architect's and the session's own short plan alike, first considers doing less or a native feature,
   then weighs a mechanism's recurring run time and upkeep against the failure it prevents, states that cost for any
   new or extended test or tooling, and names existing machinery the change makes unnecessary. The build-seat choice
-  keeps its own rule: cost and latency break only equal-reliability ties.
+  keeps its own rule: cost and latency break only equal-reliability ties. Use `builder` for bounded substantive
+  implementation, `builder-max` from the outset when uncertainty or failure consequence warrants deeper reasoning, and
+  `builder-lite` only for mechanical edits with strong verification and no remaining judgment.
 - Before dispatching an `architect`, the coordinating session runs `explorer` first when discovery exceeds a
   couple of files. Each explorer writes its completed findings with `file:line` references and explicit
   unresolved gaps to its own distinct named findings file, such as `.claude/worklog/<branch>-discovery-<name>.md`;
@@ -216,6 +225,16 @@ disjoint.
   again on a session's own judgment; only the owner starts another split. A parser, state machine, or general
   framework the outcome did not name is a scope change and goes back to the owner before it is built.
 - Every coherent claim gets one construction mode from `docs/TESTING-STRATEGY.md`.
+- **Machinery rule.** New executable machinery in the workflow itself, including test scripts, harnesses, runners, and
+  test-only tools (product code and ordinary tests added to existing suites are exempt), needs one of: a control failure
+  a sentence in `AGENTS.md` or in a skill could not prevent twice, the same measurable friction across three independent
+  jobs, a required new runtime or provider integration, or externally imposed security or platform drift. The friction
+  route admits machinery only after the card's What to build names the friction and what doing less was tried first:
+  fewer checks, deleted work, or a native feature. A store, cache, capture, retry, route, tracked input or repeated run
+  added to existing machinery meets the same bar as new machinery. This rule is the one home for how machinery leaves: a
+  job that removes a friction another way deletes the machinery that friction admitted, and a card that rewrites a
+  testing strategy, a coding standard or the workflow text of `AGENTS.md` lists the machinery it keeps and settles keep,
+  shrink or delete for each.
 
 ## 5. Build
 
@@ -236,41 +255,90 @@ disjoint.
   still does not converge. Findings are never ignored.
 - Regenerate any artifact the Conventions table's `generated artifacts` row names and commit it with its source;
   the Stop and pre-commit hooks enforce it.
+- **Waiting.** A Codex session waiting on a helper calls `wait_agent` with `timeout_ms: 3600000`, the maximum: the call
+  returns the moment a helper finishes, so a shorter timeout only adds wake-ups, and the session never sleeps and checks
+  in a loop. A command that runs for minutes on Codex runs in one `exec` cell whose first line is
+  `// @exec: {"yield_time_ms": 3600000}`; inside it `tools.exec_command` yields after at most 30 seconds, so the cell
+  polls the returned `session_id` with `tools.write_stdin({ session_id, chars: "", yield_time_ms: 300000 })` until
+  `exit_code` is set and returns once, and if the cell yields early the session calls `wait` on its cell ID with the
+  same `yield_time_ms`. On Claude Code the same command runs through `Bash` with `run_in_background: true`, which
+  re-invokes the session when it exits.
 
 ## 6. Verify and review
 
 - Drive visual work as the Conventions table's `visual verification` row says, and display the screenshot inline
-  in chat. No push authorisation is requested without it.
+  in chat. No push authorisation is requested without it. Use representative views to demonstrate the changed
+  interaction and its relevant visual risks, with at most ten screenshots total per pull request and fewer when
+  sufficient. Reuse captures from required verification; do not rerun tests solely to collect screenshots. Visual
+  verification coverage does not require an image for every screen, state, language or viewport.
 - Run every check the Surfaces table's rows name for a surface the diff touches.
 - Before dispatching the review, find in the worklog the failing run each `strict-tdd` claim logged before its fix.
   A claim with none goes to the owner, before the review runs, as a decision on accepting it without that red run;
   the mutation's red run, logged after the fix, never stands in for it.
-- One fresh review of the final tree, by tier. **Documents** (`docs/`, the root readme, `GLOSSARY.md`) and a
-  **setting-only seat change**: the session itself, recorded at tier `document`. A seat change is setting-only when each
-  changed seat file differs only in model, effort or turn-limit lines of its settings block (`model`, `effort` or
-  `maxTurns` in a Claude seat's frontmatter, changed, added or removed; `model` or `model_reasoning_effort` above a
-  Codex seat's `developer_instructions`, changed in value only), and the manifest differs only in the hash recorded
-  for each such file. **Code and agent instruction**, everything else, the manual, `CLAUDE.md`, the rules, skills and every other seat-file change
-  (instructions, tools, permissions, or any other line) included: the `reviewer` charter run by the model family that
-  did not write the diff, through `cross-review`; an instruction that misreads a gate has cost more than most code. When
-  the other family's seat cannot be reached, its provider out of usage, unauthenticated or failing, the branch does not
-  wait: run the same `reviewer` charter on this family's own seat, and record in the pull request body which family
-  reviewed, which was unavailable and how that was established, and that the cross-family gate was therefore not met.
-  That recording is the whole of the exception: a substitution the body does not declare is a skip, and a skip is
-  neither unavailability nor a clean review. **Sign-off**: sign-off surfaces are the Surfaces table's `sign-off` row;
-  this tier covers them and any diff where material uncertainty remains after that pass: the same cross-family pass, its
-  unavailability route included, then Greptile on the draft in section 8. A sign-off diff whose other family is
-  unavailable and whose Greptile attempt settles as `UNAVAILABLE` by either of the routes section 8 establishes proceeds
-  on the substituted pass plus that record, both declared in the pull request body, because there is no further reviewer
-  to wait for. Risk and uncertainty override category and line count, and a mixed diff is assessed whole, so a one-line
-  change to a sign-off surface is sign-off tier. `security-reviewer` only when a change widens a surface in the Surfaces
-  table's `security review` row. The pull request body names the tier and one sentence why; a Greptile review not
-  requested on tier grounds is neither `UNAVAILABLE` nor a clean review. Fix each true finding by the cheapest valid fix
-  it names. A true finding whose every fix costs more than it is worth goes to the owner as a plain-language decision,
-  and the owner may set it aside as deferred; a finding is dismissed, with a reason, only when it is false. Then one
-  pass scoped to the repaired hunks and what they can break, by the same reviewer with its context intact or by the
-  session. No further pass when a repair adds no factual claim. Record the review in the pull request body's review
-  line, in the format [the workflow manual](../../../docs/AI-WORKFLOW.md#the-review-line) specifies.
+- One fresh review of the final tree, at the tier two questions choose. Both are asked of every change: can it be
+  undone, and how far does the damage reach if it is wrong. Each repository says what the two questions mean for it in
+  the `hard to undo` and `wide reach` rows of its Surfaces table.
+  - **Hard to undo** is judged looking forward: once the change is published or adopted, could it be put right by a
+    known correction under the repository's own control? A change that could not is hard to undo, and the
+    `hard to undo` row names what could not, which in one repository or another is a release, a GitHub setting or
+    ruleset, a data migration, a leaked secret, or anything an adopter would have to repair itself. That git can
+    revert the commit never makes a change easy to undo. That an adopter has already copied it never makes one hard
+    to undo, because at review time none has.
+  - **Wide reach** is a shared file, which is a file the manifest lists, or a file that directs every later session in
+    the repository, which the `wide reach` row names.
+  - An answer the two rows do not settle is taken as hard to undo, or as wide in reach. A mixed diff is assessed whole
+    and takes the heaviest tier any part of it takes, and line count never lowers a tier.
+- The two answers choose one of three tiers, each recorded in the review line under its name.
+  - **`document`: the session reviews its own work.** The lightest tier is anchored, never judged: it is exactly the
+    change the repository's gate for the direct route admits whole. On the committed final tree, record
+    `git merge-base origin/main HEAD` as `<base>` and `git rev-parse HEAD` as `<head>`, check the gate with
+    `test -x scripts/gates/pre-push-main`, then run `scripts/gates/pre-push-main <base> <head>`. Exit 0 is this tier.
+    Any other exit is not, and neither is a gate that is missing or not executable, so a repository without the gate
+    has no such tier. The guard rule below wins over the gate's exit: a change that touches the gate, its classifier
+    or anything else the guard rule names is never this tier. A refusal from the gate at deliver withdraws this tier:
+    the change returns to this section at the `code` tier before the pull request opens. Where the gate judges
+    changed lines it admits a **setting-only seat change**, the one change to a shared file that stays at this tier. A
+    seat change is setting-only when each changed seat file differs only in model, effort or turn-limit lines of its
+    settings block (`model`, `effort` or `maxTurns` in a Claude seat's frontmatter, changed, added or removed; `model`
+    or `model_reasoning_effort` above a Codex seat's `developer_instructions`, changed in value only), and the manifest
+    differs only in the hash recorded for each such file.
+  - **`code`: cross-family review.** Every other change below the `sign-off` tier: one easy to undo but wide in reach,
+    one hard to undo but narrow in reach, and one easy to undo and narrow in reach that the gate does not admit, so a
+    small test in a file only one repository has is reviewed here. `AGENTS.md`, `CLAUDE.md`, `.agents/REPOSITORY.md`,
+    the rules, skills and every other seat-file change (instructions, tools, permissions, or any other line) are
+    included. The `reviewer` charter is run by the model family that did not write the diff, through `cross-review`;
+    an instruction that misreads a gate has cost more than most code. When the other family's seat cannot be reached,
+    its provider out of usage, unauthenticated or failing, the branch does not wait: run the same `reviewer` charter
+    on this family's own seat, and record in the pull request body which family reviewed, which was unavailable and
+    how that was established, and that the cross-family gate was therefore not met. That recording is the whole of
+    the exception: a substitution the body does not declare is a skip, and a skip is neither unavailability nor a
+    clean review.
+  - **`sign-off`: cross-family review, then Greptile.** A change that is both hard to undo and wide in reach: the same
+    cross-family pass, its unavailability route included, then Greptile on the draft in section 8. A `sign-off` tier
+    diff whose other family is unavailable and whose Greptile attempt settles as `UNAVAILABLE` by either of the routes
+    section 8 step 2 points to proceeds on the substituted pass plus that record, both declared in the pull request
+    body, because there is no further reviewer to wait for.
+- A guard keeps the heaviest tier in both directions. The rule covers a guard, which is a hook, a permission rule or a
+  ruleset that refuses an action, a gate a guard runs, and its classifier, with every surface in the Surfaces table's
+  `sign-off` row: a change to any of them is `sign-off` tier whether it loosens or tightens and whatever the two
+  answers or the gate's exit give, so a one-line change there is `sign-off` tier. The manifest is in this rule by
+  what an entry names: adding or removing the entry of a guard, a gate, a classifier or a hook configuration is a
+  change to that guard, while a hash line `node scripts/factory-sync.mjs --write` re-records for a file the same
+  change edits takes that file's tier. A guard that has no file, a ruleset or other GitHub setting, is changed only
+  with its read-back: before the change the owner signs off the planned state; after it, the commit that records the
+  applied state in the repository's record carries the setting read through `gh api`, bypass list included, and that
+  commit is the diff the `sign-off` tier reviews, whatever the gate says of its paths.
+- `security-reviewer` only when a change widens a surface in the Surfaces table's `security review` row.
+- Under the review line, the pull request body records both answers and why: a line beginning `Undo:` that reads
+  `easy` or `hard` with one sentence of reason, a line beginning `Reach:` that reads `narrow` or `wide` with one
+  sentence of reason, and one sentence more where the gate's exit or the guard rule set the tier. A Greptile review
+  not requested on tier grounds is neither `UNAVAILABLE` nor a clean review.
+- Fix each true finding by the cheapest valid fix it names. A true finding whose every fix costs more than it is worth
+  goes to the owner as a plain-language decision, and the owner may set it aside as deferred; a finding is dismissed,
+  with a reason, only when it is false. Then one pass scoped to the repaired hunks and what they can break, by the
+  same reviewer with its context intact or by the session. No further pass when a repair adds no factual claim. Record
+  the review in the pull request body's review line, in the format
+  [the workflow manual](../../../docs/AI-WORKFLOW.md#the-review-line) specifies.
 
 ## 7. Push authorisation (owner gate two)
 
@@ -294,9 +362,9 @@ as `<origin-main>` and `git rev-parse HEAD` as `<head>`, then check the gate wit
 scripts/gates/pre-push-main`. A repository where that gate is missing or not executable has no direct route: the gate
 is not run and the job takes the pull request route below. Otherwise run `scripts/gates/pre-push-main <origin-main>
 <head>`; exit 0 means the whole change qualifies for the direct route, any other exit means the pull request route
-below.
+below. A change section 6 places above the `document` tier takes the pull request route whatever the gate's exit.
 On the direct route: settle the convergence checks exactly as step 1 names on `<head>`, so their receipts carry
-`head=<head>` except a browser receipt reused under step 1, and those receipts replace any the approved body quoted
+`head=<head>` except a marked check's receipt reused under step 1, and those receipts replace any the approved body quoted
 for an earlier head; disclose any reused receipt's head and documentation-only difference in that body, and nothing
 else in that body changes. Then squash the job with `git reset --soft <origin-main>` and `git commit` into one commit whose
 message is the pull-request title, a blank line, the same filled body shown to the owner with its review line and
@@ -312,15 +380,17 @@ request route, never a workaround.
    `git rev-parse HEAD`, its `tree=` is `clean`, and `git status --porcelain --untracked-files=normal` still prints
    nothing; otherwise run the check again. A no-op rebase leaves `HEAD` unchanged and keeps the evidence; a rebase
    onto a moved `main` changes `HEAD` and normally needs the rerun, as does a dirty tree or a missing, failed or `unknown`
-   receipt. Exception: the full browser suite (`npm test`) may reuse its latest same-command receipt from a different
+   receipt. Exception: a convergence check the repository's testing strategy marks for receipt reuse across a
+   documentation-only difference may reuse its latest same-command receipt from a different
    known head only when it reads `exit 0` and `tree=clean`, the current worktree is still clean, the repository has an
    executable `scripts/gates/pre-push-main`, and a successful complete
    `git diff --name-only --no-renames <receipt-head> <current-head>` lists only documentation paths under that gate's
    existing path definition, excluding its setting-only seat and manifest exceptions; missing commits, unavailable
-   classification, or any other changed path require the full rerun, the fast checks still require the current head,
-   and the pull request body names the reused receipt's head and the documentation-only difference. Second exception,
+   classification, or any other changed path require the full rerun, a check the strategy does not so mark (every
+   check where it marks none) still requires the current head, and the pull request body names the reused receipt's
+   head and the documentation-only difference. Second exception,
    on the pull request route only, because the direct route has no hosted check: after a rebase onto a moved `main`,
-   any convergence check, fast or slow, may reuse its latest same-command receipt from a different known head when all
+   any convergence check, marked or not, may reuse its latest same-command receipt from a different known head when all
    of these hold. The receipt reads `exit 0` and `tree=clean`, and the current worktree is still clean. The
    repository's testing strategy records that the hosted required check runs that check; a check it does not so record
    still reruns on the current head. No commit of the job changed: with `<old-base>` as
@@ -336,55 +406,20 @@ request route, never a workaround.
    receipt's head, the current head and both comparisons. The pre-push hook still runs its own gates on every push. Then push;
    `gh pr create --draft --body-file <body>` with `Closes #<issue>` in the body. Greptile is requested only for the
    sign-off tier in section 6; the other tiers go straight to step 3. Move the card to `In review`.
-2. Read the current allowance in the signed-in built-in browser at
-   https://app.greptile.com/flowgauge/-/settings/billing. The page states the allowance for the plan in force as an
-   amount used out of a limit, in whatever unit that plan meters: `2 of 50 free credits this period` on the free
-   plan, a `$N of $M` usage limit on a paid one. Record that figure in the page's own words, the plan the page
-   names, the period it names, the observation source and time in the pull request body. The allowance is exhausted
-   only when the figure read from the page shows the amount used has reached its limit. A login or join redirect
-   from any other address means the address is wrong, not that the owner is signed out or the allowance is
-   exhausted; a command-line fetch is never signed in. If the signed-in built-in browser is unavailable, this exact
-   page cannot be read, or it shows no allowance figure, ask the owner for the figure and its period; never infer
-   sign-out or exhaustion from a failed read. Greptile is metered from one pool shared by every adopter. Confirmed
-   exhaustion is the `UNAVAILABLE` evidence below and skips the request. Then read the open draft's `headRefOid`
-   and request the final review once for that commit: `gh pr comment <pr> --body "@greptileai review this draft"`.
-   Record the request URL, time and exact head. `.greptile/config.json` disables automatic reviews; labels are
-   metadata. `COMPLETE` requires Greptile's completed review for that exact head, its summary, and disposition of
-   every finding. Read its check status, the summary's last-reviewed commit, pull-request reviews and inline
-   threads: a summary can precede findings. Greptile's summary is a `greptile-apps[bot]` comment whose footer names
-   the exact requested head as `Last reviewed commit`, and the `Greptile Review` check turning green is a second
-   signal; its heading is an image, so a watcher keys on that footer, never on heading text. Fix true findings,
-   complete focused tests and the applicable scoped local repair review before pushing, reply with the fix commit,
-   resolve the thread, take a true finding whose every fix costs more than it is worth to the owner as section 6
-   says, and dismiss false findings with evidence. Update the review line's Greptile fields after each Greptile
-   review; a pull request Greptile never reviewed, because its tier requests no Greptile review or
-   every attempt was `UNAVAILABLE`, records `greptile_rounds=0`. For the new head, request
-   `@greptileai review this draft again: <what changed> in <commit>`. A re-review can edit the existing summary and
-   raise its `Reviews (N)` footer; check the reviewed commit, not just the count or a new comment. `UNAVAILABLE`
-   requires, reported in the pull-request body, either the allowance observation above showing exhaustion, with the
-   head it would have covered, or the explicit request URL, head, observation time and provider-failure evidence.
-   This best-effort exception permits CI after all mandatory local evidence and finding dispositions pass. A
-   filtered skip, missing response, or queued/running review is unresolved: retain draft and report it for owner
-   direction rather than declaring unavailability.
+2. For the sign-off tier, read the [`greptile`](../greptile/SKILL.md) skill and follow it on the open draft; it owns how
+   the review attempt is made and settled.
 3. Re-read the open draft and require current local evidence, every finding/thread resolved, and a review line
    that matches the rounds actually run and the findings actually raised and settled. For the sign-off tier, also
    require the same reviewed head and a settled `COMPLETE` or `UNAVAILABLE` attempt. If a rebase is needed, do it
    while draft, reverify under the step 1 reuse rule and push. Repeat step 2 only when the change requires
-   Greptile and `git range-diff <old-base>..<reviewed-head> <new-base>..<new-head>` shows any `!`, `<` or `>` row,
-   where the bases are the `main` commits the reviewed head and the new head sit on. A `!` from context drift
-   alone still counts; it costs one review attempt and never skips one. When every job commit lines up as `=`,
-   the recorded `COMPLETE` attempt stands and only CI reruns. Then `gh pr ready <pr>` starts CI, and
+   Greptile and the skill it points to says the rebased head needs a new attempt. Then `gh pr ready <pr>` starts CI, and
    `gh pr merge --auto --squash --delete-branch <pr>` queues the merge for GitHub once `test` passes.
    Never any other merge form; the hook refuses it. If CI needs a repair, use `gh pr ready <pr> --undo` before
    pushing, complete local repair evidence, and reassess the full pull-request diff against the section 6 tiers;
    repeat step 2 only when Greptile is required. An unchanged-head CI retry needs no new review.
-4. Watch it land with one waiting command. On Codex the whole watch runs in one `exec` cell whose first line is
-   `// @exec: {"yield_time_ms": 3600000}`: the cell starts the command with `tools.exec_command`, which yields after
-   at most 30 seconds, polls the returned `session_id` with
-   `tools.write_stdin({ session_id, chars: "", yield_time_ms: 300000 })` until `exit_code` is set, and returns once;
-   if the cell yields early, the session calls `wait` on its cell ID with the same `yield_time_ms`, and never polls
-   by hand. On Claude Code it runs through `Bash` with `run_in_background: true`, which re-invokes the session
-   when it exits. `<pr>` is the pull request number, typed as a literal. The command only reads GitHub, exits 0
+4. Watch it land with one waiting command, run as the Waiting rule under "5. Build" says for a command that runs for
+   minutes, and the session never polls by hand.
+   `<pr>` is the pull request number, typed as a literal. The command only reads GitHub, exits 0
    only when the pull request has merged, and otherwise exits 1 with its reason as the last line of output: closed,
    a failed required check, blocked or behind, an unknown required set, or a `gh` failure. Once the pull request state
    is `MERGED` or `CLOSED`, the watch ends before reading check statuses; only an `OPEN` pull request needs that read.
@@ -395,17 +430,6 @@ request route, never a workaround.
 
    Merged: run `closeout` in the same session; the owner's yes already covers it. Failed, blocked or closed:
    report the printed reason and repair per step 3.
-
-Greptile is metered from one pool shared by the canonical repository and every adopter the manifest lists: one
-organisation, one developer seat, the credits its plan includes per billing period plus any overage a paid plan
-allows. There is no per-repository split; the tiers ration the pool,
-every adopter spends from it, and once it is exhausted every adopter records `UNAVAILABLE` until the period resets.
-So the shape of the rule is one shared policy, and a change to it lands in every adopter: risk and
-uncertainty override category and line count, a skip is neither `UNAVAILABLE` nor a clean review, the allowance
-is read before a request, reviews are requested by hand, and the sequence is draft → Greptile → ready → CI. Each
-repository sends only its own Surfaces `sign-off` row. CI enforces draft
-versus ready, not the earlier review; the session verifies that evidence before marking ready. Provider references: [manual-only configuration](https://www.greptile.com/docs/code-review/greptile-json-reference)
-and [draft requests](https://www.greptile.com/docs/code-review/tips-recipes).
 
 ## Parking
 

@@ -111,6 +111,7 @@ const accessCommandContracts = {
 const baselineOnlyPaths = new Set([
   ".github/pull_request_template.md",
   "AGENTS.md",
+  ".agents/REPOSITORY.md",
   "CLAUDE.md",
   "GLOSSARY.md",
   "scripts/run-log.mjs",

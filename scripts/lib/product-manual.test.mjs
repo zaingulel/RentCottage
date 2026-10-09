@@ -1,8 +1,9 @@
 // product-manual.test.mjs — RentCottage's own contracts in the product region of AGENTS.md.
 //
 // The shared workflow region is pinned by workflow-contract.test.mjs; the text after
-// <!-- factory-shared:end --> is product-owned, so its security, preview, visual and sign-off
-// contracts are pinned here and a sync or edit cannot drop or weaken them silently.
+// <!-- factory-shared:end --> is product-owned, so its security, preview and sign-off contracts
+// are pinned here and a sync or edit cannot drop or weaken them silently. The visual verification
+// contract lives in .agents/REPOSITORY.md and is pinned here too.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -16,6 +17,10 @@ const manual = readFileSync(resolve(ROOT, "AGENTS.md"), "utf8");
 const productLines = manual
   .slice(manual.indexOf(SHARED_END) + SHARED_END.length)
   .split("\n");
+const profileLines = readFileSync(
+  resolve(ROOT, ".agents/REPOSITORY.md"),
+  "utf8",
+).split("\n");
 
 const normalise = (text) => text.trim().replace(/\s+/g, " ");
 // A Markdown table row's cells, so spacing around the delimiters does not count.
@@ -25,24 +30,26 @@ const isRow = (line) => line.trim().startsWith("|");
 const isBlockStart = (line) =>
   line.trim() === "" || /^(#|\||\d+\. |- )/.test(line.trimStart());
 
-// The one product-region unit keyed by `key` must equal `expected`, ignoring whitespace-only
+// The one unit of `lines` keyed by `key` must equal `expected`, ignoring whitespace-only
 // formatting, so an appended exception or a deletion both fail. A table row is keyed by its first
 // cell and compared cell by cell; any other line is keyed by its leading text.
-function assertProductLine(key, expected) {
-  assert.ok(manual.includes(SHARED_END), `${SHARED_END} marker`);
+function assertLine(lines, key, expected) {
   if (isRow(expected)) {
     assert.deepEqual(
-      productLines
-        .filter((line) => isRow(line) && cells(line)[0] === key)
-        .map(cells),
+      lines.filter((line) => isRow(line) && cells(line)[0] === key).map(cells),
       [cells(expected)],
     );
   } else {
     assert.deepEqual(
-      productLines.map(normalise).filter((line) => line.startsWith(key)),
+      lines.map(normalise).filter((line) => line.startsWith(key)),
       [expected],
     );
   }
+}
+
+function assertProductLine(key, expected) {
+  assert.ok(manual.includes(SHARED_END), `${SHARED_END} marker`);
+  assertLine(productLines, key, expected);
 }
 
 // The paragraph from the line starting `prefix` to the next blank line or Markdown block,
@@ -86,8 +93,9 @@ test("product region keeps preview deployment outside push-to-merge authority", 
   );
 });
 
-test("product region keeps the visual verification surfaces", () => {
-  assertProductLine(
+test("repository profile keeps the visual verification surfaces", () => {
+  assertLine(
+    profileLines,
     "visual verification",
     "| visual verification | The applicable Next.js or Worker surface across desktop, mobile, right-to-left and accessibility states. |",
   );
@@ -104,5 +112,19 @@ test("product region keeps the shared-workflow sync security-review trigger", ()
   assertProductLine(
     "security review",
     "| security review | Authentication, authorization, payment or personal-data access, credential custody, provider-webhook trust, Row Level Security, public/private data exposure, an injection boundary, or a shared-workflow sync that changes agent permissions, hook registrations or hook scripts; privacy: [docs/product/rentcottage-mvp-prd.md](docs/product/rentcottage-mvp-prd.md#6-privacy-safety-and-moderation) |",
+  );
+});
+
+test("product region keeps the hard-to-undo review boundary", () => {
+  assertProductLine(
+    "hard to undo",
+    "| hard to undo | What a later commit, migration or deployment cannot put right: existing rows, stored files or audit records that a migration, function, scheduled task or script has moved, rewritten or deleted once it has run; money moved at the Licensed Payment Provider (an authorization placed or released, a capture, a refund or a payout), which a later change can only follow with another movement; a notification once delivered to a customer or cottage owner; private or personal data once it has crossed a public or pre-confirmation boundary; a secret once it has reached a commit, a pull request, a log or a URL; and a GitHub, Supabase, Cloudflare or payment-provider setting, which no commit records or restores. A wrong page, service, Worker, skill, seat, document or additive schema change is not hard to undo: a later commit, migration or deployment corrects it, and a deployment is rolled back to its previous version. That the data is mock before launch changes no answer |",
+  );
+});
+
+test("product region keeps the wide-reach review boundary", () => {
+  assertProductLine(
+    "wide reach",
+    "| wide reach | Beyond the shared files: this file outside its shared region, this table included; `.agents/REPOSITORY.md`; `GLOSSARY.md`, which every seat takes its terms from; and the instruction documents a session or seat reads before it plans, builds or reviews: `docs/CODING-STANDARDS.md`, `docs/TESTING-STRATEGY.md`, `docs/DESIGN-SYSTEM.md` and `docs/ISSUE-TRACKER.md`. Product code, the schema, Row Level Security policies and the Worker are narrow here however far their effect reaches: the `sign-off` row and the guard rule carry that weight |",
   );
 });

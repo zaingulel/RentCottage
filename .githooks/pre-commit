@@ -20,7 +20,7 @@ repo_root=$(git rev-parse --show-toplevel)
 # Prose is advisory. A staged document, skill, or agent definition is still linted for dangling
 # path references, dead links, and phantom manual citations, so the writer hears about rot at
 # commit time — but the answer is printed, not enforced. Existence-guarded like the guards below.
-if echo "$staged" | grep -qE '^(docs/.*\.md|CLAUDE\.md|README\.md|AGENTS\.md|\.claude/(rules|agents)/.*\.md|\.agents/skills/.*\.md|\.codex/agents/[^/]+\.toml)$'; then
+if echo "$staged" | grep -qE '^(docs/.*\.md|CLAUDE\.md|README\.md|AGENTS\.md|\.claude/(rules|agents)/.*\.md|\.agents/skills/.*\.md|\.agents/REPOSITORY\.md|\.agents/upstream/[^/]+/[^/]+/SKILL\.md|\.codex/agents/[^/]+\.toml)$'; then
   if [ -f "$repo_root/scripts/doc-lint.mjs" ]; then
     node "$repo_root/scripts/doc-lint.mjs" --staged || echo "⚠ pre-commit: doc-lint found prose rot (advisory, not blocking); fix it when you touch the file next." >&2
   fi

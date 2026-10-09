@@ -28,14 +28,15 @@ sentence had failed to prevent it or because the bad state would be silent or ha
 ## How it works
 
 Everything else, including which reviewer runs, when to stop and replan, and what the pull request body must say, is a
-sentence in `AGENTS.md` or a skill. The bar for executable machinery is stated in [`AGENTS.md`](../AGENTS.md) under
-"Publication and machinery", the one home for how machinery enters, grows and leaves.
+sentence in `AGENTS.md` or a skill. The bar for executable machinery is named in [`AGENTS.md`](../AGENTS.md) under
+"Publication and machinery" and stated in full as the machinery rule in the `resume` skill under "4. Plan", the one
+home for how machinery enters, grows and leaves.
 
 ### Keeping it small
 
 The factory once carried its own ledger of workflow state, and maintaining that ledger consumed more effort
 than the product it was built to deliver. The rule that came out of that: when a real failure exposes a
-weakness, preserve the lesson at the cheapest layer that would have caught it. A sentence in the manual
+weakness, preserve the lesson at the cheapest layer that would have caught it. A sentence in `AGENTS.md` or a skill
 first; evidence when behaviour can demonstrate the failure; a deterministic guard only when the failure recurs
 despite the sentence, or immediately when the bad state is silent, misleading, security-sensitive, or hard to
 reverse. Every new guard names its non-destructive recovery route in the same change. New controls replace
@@ -43,8 +44,8 @@ stale guidance rather than adding a second authority.
 
 ## Where the rules live
 
-- [`AGENTS.md`](../AGENTS.md) under "Publication and machinery": the bar new machinery must clear, and how machinery
-  leaves.
+- [The `resume` skill](../.agents/skills/resume/SKILL.md) under "4. Plan", as the machinery rule: the bar new
+  machinery must clear, and how machinery leaves.
 - The Surfaces table in [`AGENTS.md`](../AGENTS.md): the repository's own highest-consequence surfaces.
 - [The head of `scripts/lib/unsafe-git.mjs`](../scripts/lib/unsafe-git.mjs): every command form the git guard
   refuses, and what it does not model.

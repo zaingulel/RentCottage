@@ -797,7 +797,7 @@ test('a target with no committed manifest needs --canonical, and syncs with it',
 for (const [name, manual] of [
   ['missing markers', '# Adopter manual\n'],
   ['duplicated markers', `${START}\n${START}\nx\n${END}\n`],
-  ['no manual at all', null],
+  ['no file at all', null],
 ]) {
   test(`a target AGENTS.md with ${name} is refused as malformed region markers`, (t) => {
     const fixture = syncFixture(t);
@@ -808,7 +808,7 @@ for (const [name, manual] of [
   });
 }
 
-test('a target AGENTS.md that is a symlink is refused, even to a manual with well-formed markers', NEEDS_FILE_SYMLINK, (t) => {
+test('a target AGENTS.md that is a symlink is refused, even to a file with well-formed markers', NEEDS_FILE_SYMLINK, (t) => {
   const fixture = syncFixture(t);
   put(fixture.outside, 'manual.md', `# Outside manual\n${START}\nshared v1\n${END}\n`);
   rmSync(join(fixture.target, 'AGENTS.md'));

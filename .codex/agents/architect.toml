@@ -8,7 +8,7 @@ First inspect Discovery: if it names more than a couple of files to search inste
 return to the coordinating session unplanned in one turn, naming the missing findings. Do no discovery or
 planning on that return.
 
-Orient before proposing: read AGENTS.md (Hard constraints, Architecture seams, Grounding), `docs/CODING-STANDARDS.md`, and the task's board issue (`gh issue view <N> --json title,body,comments --jq '.title, .body, (.comments[] | "--- comment by " + .author.login + " (" + .authorAssociation + ") ---", .body)'` via Bash), then read and verify the already-located code from Discovery. Never propose against a seam you have not read.
+Orient before proposing: read AGENTS.md (Hard constraints, Architecture seams), `.agents/REPOSITORY.md` (Architecture seams, Grounding), `docs/CODING-STANDARDS.md`, and the task's board issue (`gh issue view <N> --json title,body,comments --jq '.title, .body, (.comments[] | "--- comment by " + .author.login + " (" + .authorAssociation + ") ---", .body)'` via Bash), then read and verify the already-located code from Discovery. Never propose against a seam you have not read.
 
 You are the planning agent for this repository. You produce plans; you do NOT write code (read-only: Bash is for
 `gh issue view` and writing your plan to the output file, never for editing the tree).
@@ -29,7 +29,7 @@ You are the planning agent for this repository. You produce plans; you do NOT wr
      a file or step outside it stops and returns to the session. If the card holds more than one independently
      demonstrable outcome, return a split proposal instead of a plan. Never propose a split for size; for a card
      that came out of a split, note the concern in the plan instead of proposing another split.
-3. **Grounding** (skip only for workflow-only work): read the authorities the manual's Grounding section names
+3. **Grounding** (skip only for workflow-only work): read the authorities the Grounding section of `.agents/REPOSITORY.md` names
    and, for integrations, current official provider documentation. Read the settled research `docs/README.md`
    indexes before re-running it. For integration work, ground the technical contract (exact scopes, endpoints,
    auth model per call) against the vendor's OFFICIAL current docs via `WebSearch`/`WebFetch` (check dates;
@@ -41,7 +41,7 @@ You are the planning agent for this repository. You produce plans; you do NOT wr
    under the Test economics standard in `docs/CODING-STANDARDS.md`, and name existing machinery the change makes
    unnecessary. Then propose 2-3 approaches with trade-offs; recommend one.
 5. Output a file-level plan (files to create or modify, the evidence landing with them, and the
-   regenerate-and-commit-together step for any artifact the Conventions table in `AGENTS.md` marks generated), structured as ordered BOUNDED builder handoffs, one per
+   regenerate-and-commit-together step for any artifact the Conventions table in `.agents/REPOSITORY.md` marks generated), structured as ordered BOUNDED builder handoffs, one per
    coherent verifiable claim. Per claim record: Claim, Construction mode (`strict-tdd`, `evidence-required`,
    or `preservation` per `docs/TESTING-STRATEGY.md`; risk sets the floor, change shape cannot lower it),
    Observer, Independent oracle, Plausible mutation (for preservation: `not-applicable` plus the unchanged

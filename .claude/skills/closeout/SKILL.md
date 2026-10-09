@@ -16,12 +16,13 @@ process list; nothing is inferred from chat.
    took the direct route there is no pull request: confirm instead with `git fetch origin main` and
    `git merge-base --is-ancestor <pushed sha> origin/main`, check the review line in the pushed commit's
    message with `git log -1 --format=%B <pushed sha>`, never in chat, and confirm `git rev-parse <pushed
-   sha>^{tree}` equals the tree of the `head=` its message's current-head convergence receipts name; an older browser
-   receipt qualifies only with the head and documentation-only difference disclosed under `resume` section 8 step 1.
-   A mismatch is a workflow failure named in the report.
+   sha>^{tree}` equals the tree of the `head=` its message's current-head convergence receipts name; an older receipt
+   qualifies only for a check the testing strategy marks for receipt reuse and only with the head and documentation-only
+   difference disclosed under `resume` section 8 step 1. A mismatch is a workflow failure named in the report.
 2. **Issues.** `Closes #` in the body closed them at merge; confirm with `gh issue view <n> --json state`. An
    issue the pull request resolved but did not name is reported to the owner, never closed unasked: only the
-   issues the approved body names are within this run's authorisation.
+   issues the approved body names are within this run's authorisation. After a sync job, close each covered card the
+   body lists as the [`sync-job`](../sync-job/SKILL.md) skill says.
 3. **Main.** Run [Update local main](#update-local-main). A session inside the job worktree is retained until
    its runtime can leave it; on Claude Code, `ExitWorktree` with `action: "keep"` returns the session to the folder
    the shell was in when `EnterWorktree` ran and removes nothing, so step 5 finishes in the same run. If that
@@ -42,17 +43,22 @@ process list; nothing is inferred from chat.
    candidate's working directory is the job worktree with `lsof -a -p <pid> -d cwd`, and stop only that one; leave
    alone a server whose working directory is not this job's worktree. Skip Docker cleanup only if the Docker CLI
    is not installed. Otherwise list all container IDs, including stopped ones, with `docker container ls -aq`;
-   inspect each ID with `docker inspect --type container <id>`. Read `.Mounts` and the recorded bind declarations
-   in `.HostConfig.Binds` and `.HostConfig.Mounts`; a declaration may retain the host path when the displayed mount
-   source is translated. Compare normalized absolute host paths by component: canonicalize the job worktree and
-   each recorded host bind source's longest existing prefix, then append any missing suffix. Only a source equal
-   to or below the job worktree matches. If a symlink or another filesystem namespace prevents comparison even
-   after checking the declarations, retain the worktree and report the unresolved container ID. Stop each
-   matching running container by ID, then remove each matching container by ID; never select by name or text
-   prefix. Any Docker command or API failure, including an unreachable daemon, also retains the worktree. On
-   either uncertainty or failure, stop before branch deletion and continue to step 6 and the final report. Keep
-   images and volumes. In the final report, name any other container or image confirmed as job-created by recorded
-   build output or Docker metadata, and leave its cleanup to the owner; do not infer ownership from a name.
+   then print each container's whole record, one line of JSON per container, in one command with the IDs typed
+   as literals:
+   `docker inspect --type container --format '{{json .}}' <id> <id>`.
+   Read `.Mounts` and the recorded bind declarations in `.HostConfig.Binds` and `.HostConfig.Mounts` from that
+   record; a declaration may retain the host path when the displayed mount source is translated. Never select
+   those fields in the template: Docker omits a `HostConfig` key a container never set, and the dotted form
+   `.HostConfig.Mounts` then fails with `map has no entry for key`. Compare normalized absolute host paths by
+   component: canonicalize the job worktree and each recorded host bind source's longest existing prefix, then
+   append any missing suffix. Only a source equal to or below the job worktree matches. If a symlink or another
+   filesystem namespace prevents comparison even after checking the declarations, retain the worktree and report
+   the unresolved container ID. Stop each matching running container by ID, then remove each matching container
+   by ID; never select by name or text prefix. Any Docker command or API failure, including an unreachable
+   daemon, also retains the worktree. On either uncertainty or failure, stop before branch deletion and continue
+   to step 6 and the final report. Keep images and volumes. In the final report, name any other container or
+   image confirmed as job-created by recorded build output or Docker metadata, and leave its cleanup to the
+   owner; do not infer ownership from a name.
    **Scratch files and folders.** Apply `AGENTS.md`'s Disposable job cleanup authority to job scratch,
    including local prompts, drafts and disposable verification reports once no longer needed, inside or outside
    the worktree and not just verifier-reported paths. Inspect each exact target and its contents against actual
@@ -69,12 +75,16 @@ process list; nothing is inferred from chat.
    Check inactive use for both inside and outside scratch with native process inspection such as `lsof` and
    `ps`, following the exact target and its contents, recorded job/helper processes and retained process groups,
    and processes identified by target references. Examine relevant working directories, open files and command
-   arguments; do not require every system process's details. Denied access to an unrelated protected process
-   alone neither blocks cleanup nor requires elevation. An unreadable relevant process, unavailable meaningful
-   target-use check or unresolved target relationship retains the affected targets; silence from an incomplete
-   lookup of the target or a relevant process is never proof of inactivity. Stop only processes confirmed as
-   this session's own, then verify they stopped and the target is unused; unconfirmed termination or uncertain
-   ownership retains the target.
+   arguments; do not require every system process's details. `lsof +D <directory>` exits 1 whenever it warns
+   that it cannot read a filesystem, whether or not it lists an open file, so read its listing and never its
+   exit status: a row naming the target or a path below it is use. A warning about a filesystem that does not
+   hold the target is the denied access the next sentence covers; one about a filesystem that holds the target
+   is an incomplete lookup. Denied access to an unrelated protected process alone neither blocks cleanup nor
+   requires elevation. An unreadable relevant process, unavailable meaningful target-use check or unresolved
+   target relationship retains the affected targets; silence from an incomplete lookup of the target or a
+   relevant process is never proof of inactivity. Stop only processes confirmed as this session's own, then
+   verify they stopped and the target is unused; unconfirmed termination or uncertain ownership retains the
+   target.
    For verifier-reported artifacts, also require that this session started the reporting run, that it has
    stopped, and that its output reports neither a retained process group nor unconfirmed termination. Either
    report retains the artifact even if other checks pass; verifier output never replaces independent path,
@@ -91,11 +101,11 @@ process list; nothing is inferred from chat.
    paragraph below. On any other uncertainty or failure, preserve the target and report it; do not force
    cleanup. Report each exact removed or retained path and the reason for retention directly in the session,
    without creating approval-only files. Continue independent cleanup when another target is retained.
-   **Leftovers.** Apply `AGENTS.md`'s Disposable job cleanup rule for leftovers to every file, folder, worktree
-   or branch this run finds that is not this job's verified scratch, worktree or branch. Investigate each one
-   before reporting it. For a file or folder, first confirm it sits where `AGENTS.md` says the workflow writes job
-   artifacts; a runtime's memory, settings or configuration is left alone. Then read its contents, timestamps and
-   owner, and find the card, pull request or branch it belongs to from the worktree it sits in or the branch its
+   **Leftovers.** Apply the [Leftover rule](#leftover-rule) below to every file, folder, worktree or branch this
+   run finds that is not this job's verified scratch, worktree or branch. Investigate each one before reporting
+   it. For a file or folder, first confirm it sits where that rule says the workflow writes job artifacts; a
+   runtime's memory, settings or configuration is left alone. Then read its contents, timestamps and owner, and
+   find the card, pull request or branch it belongs to from the worktree it sits in or the branch its
    file name carries. A card its contents name is only a lead: the tie holds when that card, its pull request or
    its branch also accounts for the file, and otherwise the leftover is unsettled. Search open cards and pull
    requests for its file name with
@@ -133,7 +143,7 @@ process list; nothing is inferred from chat.
    path, then run ordinary `git branch -d job/<issue>`; report a refusal and never force deletion. The remote
    branch is deleted by the merge setting or `git push origin --delete <branch>`. Finish with `git worktree prune`.
 6. **Rulings.** Anything the owner settled this session that should outlive it goes where it belongs: a comment
-   on the issue, or the manual or rule that owns the topic. Never as a new document.
+   on the issue, or the document or rule that owns the topic. Never as a new document.
 
 Report what was confirmed, what was moved, and anything left for the owner.
 
@@ -146,8 +156,8 @@ independent cleanup or work selection.
 
 1. Use the caller's just-fetched recorded `origin/main` target when available; otherwise fetch with
    `git fetch --no-prune origin main` and record the fetched commit. Load this procedure, `AGENTS.md`, and `resume`
-   from that commit under `AGENTS.md`'s Instruction reuse rule before applying it. A failed fetch leaves
-   freshness unavailable: preserve local state and stop before board operations.
+   from that commit under the Instruction reuse rule in the `resume` skill's "Before intake" before applying it.
+   A failed fetch leaves freshness unavailable: preserve local state and stop before board operations.
 2. Record `refs/heads/main`, inspect `git worktree list --porcelain` and runtime ownership, and require
    `git merge-base --is-ancestor <recorded-local-main> <recorded-origin-main>`. If local `main` is missing, ahead
    or divergent, retain it and report why. A clean checkout is eligible only when it is also idle, available, has
@@ -174,3 +184,31 @@ independent cleanup or work selection.
    job cleanup has finished, then removed in the same run with `git worktree remove <path>`. A reused existing
    checkout is left alone. Report the old and new commits, or the precise preserved path, branch and reason. Leave
    conflicts or refusals untouched.
+
+## Leftover rule
+
+`AGENTS.md`'s Disposable job cleanup rule grants the authority to delete a leftover and sets its limits; step 5's
+**Leftovers** paragraph holds the commands for each check named here.
+
+A leftover is a file, folder, worktree or branch the workflow made that a session finds, in any session, job or
+not, and that `AGENTS.md`'s Disposable job cleanup paragraph does not settle: another job's or session's artifact,
+or one of its own job's that it cannot prove it created. What makes something a leftover is where it sits and what
+made it, never what its text mentions: a job worktree, a job or slice branch, or a file or folder in a place the
+workflow writes job artifacts, which are a job worktree, a worklog folder and a session's scratch folder. A
+runtime's memory, settings or configuration is never a leftover, wherever it sits and whichever card it names. The
+session investigates each leftover to a conclusion before it reports it, and tells the owner the outcome in every
+case. It reads the content, timestamps and owner and checks whether anything uses it; for a worktree or branch it
+also reads the card's state and latest `Claim:`, the pull request's state, and whether any work is unmerged. Work
+is unmerged when a commit is neither an ancestor of `origin/main` nor contained in the head of a merged pull
+request, or when a change is uncommitted or untracked.
+
+- Dead: the work it belongs to is merged or closed, nothing is unmerged, nothing uses it, and no open card or open
+  pull request names it. The session deletes it without further approval and reports the exact path and the
+  evidence in one line.
+- Live: an open card with a recent claim, unmerged work, or in use. The session leaves it and reports what it is.
+- Unsettled: the investigation cannot show it dead or live, cannot show the workflow made it, or cannot tie it to a
+  card, pull request or branch. The session leaves it and asks the owner about that exact path, giving its findings
+  and a recommendation.
+
+"Not in use right now" alone is never proof that a leftover is dead, and neither is a name pattern, memory or
+summary. An owner file or a tracked deliverable is never a leftover.

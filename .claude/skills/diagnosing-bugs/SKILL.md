@@ -29,7 +29,7 @@ Ways to construct one, roughly in order:
 
 1. **Failing test** at the evidence route `docs/TESTING-STRATEGY.md` names for this claim, interaction-based for
    a UI bug.
-2. **Fixture swap** per the `fixtures` row of the Conventions table in `AGENTS.md`: real fixtures for real
+2. **Fixture swap** per the `fixtures` row of the Conventions table in `.agents/REPOSITORY.md`: real fixtures for real
    behaviour, synthetic ones only for unit-shape tests. Never validate real behaviour against a synthetic fixture.
 3. **Console/network capture in the headless run** (`page.on('console')` / `page.on('pageerror')`); redact
    captured headers and cookies before quoting.

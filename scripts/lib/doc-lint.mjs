@@ -177,7 +177,9 @@ export function classifyDocLintPath(rel, vendoredNames = new Set()) {
   const skillSurface =
     skillBody || /^\.agents\/skills\/[^/]+\/references\/[^/]+\.md$/.test(rel);
   const codexSurface =
-    rel === "AGENTS.md" || /^\.codex\/agents\/[^/]+\.toml$/.test(rel);
+    rel === "AGENTS.md" ||
+    rel === ".agents/REPOSITORY.md" ||
+    /^\.codex\/agents\/[^/]+\.toml$/.test(rel);
   const dateStamps = claudeProseSurface || skillSurface || codexSurface;
   return {
     pathRefs:

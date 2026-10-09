@@ -31,7 +31,7 @@ flowchart TD
     RV --> PA[Push authorisation: card to Awaiting push, owner reads the PR body and screenshot]
     PA --> DR[Draft pull request, card to In review]
     PA -->|every changed path qualifies| FF[Fast-forward push to main, no pull request or CI]
-    DR -->|documents, code, agent instruction: no Greptile| RD[Marked ready: CI runs on the merge result]
+    DR -->|document and code tiers: no Greptile| RD[Marked ready: CI runs on the merge result]
     DR -->|sign-off tier: explicit Greptile request| GR[Review attempt settled, findings resolved]
     GR --> RD
     RD -->|required checks green| MG[GitHub auto-merge, squash, branch deleted]
@@ -47,15 +47,14 @@ is planned by an architect or by the session, with a plan review where the card 
 [the `resume` skill](../.agents/skills/resume/SKILL.md) owns that rule under "4. Plan". It is then built in
 bounded slices with recorded evidence, verified, and given a fresh review of the final tree with repairs. At push
 authorisation the card moves to Awaiting push and the owner reads the pull request body. On the owner's yes a
-draft pull request opens and the card moves to In review; a sign-off change first settles an external review, and
-every draft is then marked ready so the checks run on the merge result. Once the required checks are green the
-platform merges, and closeout confirms the issue closed, moves the card to Done and removes the worktree. A
-change whose every path qualifies skips the pull request, is pushed straight to `main`, and is closed out the
-same way.
+draft pull request opens and the card moves to In review; a change at the sign-off tier first settles an external
+review, and every draft is then marked ready so the checks run on the merge result. Once the required checks are green
+the platform merges, and closeout confirms the issue closed, moves the card to Done and removes the worktree. A change
+whose every path qualifies skips the pull request, is pushed straight to `main`, and is closed out the same way.
 
 ### Stage by stage
 
-- **Intake.** Fetching main and safely selecting current verifier code come first. The manual's instruction-reuse
+- **Intake.** Fetching main and safely selecting current verifier code come first. The `resume` skill's instruction-reuse
   rule avoids rereading content whose Git identity and full active context are verified. Independent board, local,
   pull-request, sync and tooling reads then overlap; their results and failures are collected before reconciliation.
   Pull-request summaries identify which continuation bodies matter, and issue details serve selection and planning
@@ -67,7 +66,7 @@ same way.
   share a working file. A runtime's own subagent worktree is not that worktree: it branches from `main` rather
   than from the job branch, so builders never run in one. Two slices of one issue with disjoint files can run at
   once, the second in its own worktree cut from the job branch and merged back into it. A generated artifact the
-  `generated artifacts` row of the Conventions table in `AGENTS.md` names is never hand-merged, and the hooks keep
+  `generated artifacts` row of the Conventions table in `.agents/REPOSITORY.md` names is never hand-merged, and the hooks keep
   it from landing stale. When a session starts a card it posts a claim comment on the issue, because a job branch
   stays local until push and the comment is what another machine can see. Where the worktree lives on each
   runtime, the commands that create it, the slice branch name, the claim format and what happens to an In
@@ -80,11 +79,14 @@ same way.
 - **Verification before review.** Visual work is driven as the Conventions table's `visual verification` row says
   and a current screenshot is shown in chat; any further gate the Surfaces table names runs here.
 - **Review in two layers.** One fresh review of the final tree comes before push authorisation, and its depth
-  follows the kind of change: the session itself, the model family that did not write the diff, because a writer's own
-  family shares its blind spots, or that pass and an external review on the finished draft.
-  [The `resume` skill](../.agents/skills/resume/SKILL.md) owns the tiers, which change gets which, how each is run,
-  what happens when a reviewer cannot be reached, and how repairs are reviewed again, under "5. Build",
-  "6. Verify and review" and "8. Deliver".
+  follows two questions asked of the change, whether it can be undone and how far the damage reaches if it is wrong,
+  which each repository answers in its Surfaces table: the session itself, the model family that did not write the
+  diff, because a writer's own family shares its blind spots, or that pass and an external review on the finished
+  draft.
+  [The `resume` skill](../.agents/skills/resume/SKILL.md) owns the two questions, the tiers they choose between,
+  how each is run, what happens when a reviewer cannot be reached, and how repairs are reviewed again, under "5. Build",
+  "6. Verify and review" and "8. Deliver"; [the `greptile` skill](../.agents/skills/greptile/SKILL.md) owns how the
+  external review is requested and settled, and when an attempt counts as unavailable.
 - **Delivery by GitHub.** On the pull request route, marking the pull request ready, after any required review
   attempt has settled, starts continuous integration, and the merge is always queued as a GitHub auto-merge, which
   GitHub completes only when the checks the repository's branch rules require are green; no agent merges a job's
@@ -92,31 +94,38 @@ same way.
   request's state, and closeout follows a merge. A change `scripts/gates/pre-push-main` admits whole skips the
   pull request and is pushed straight to `main` on the same push authorisation.
   [The `resume` skill](../.agents/skills/resume/SKILL.md) owns the sequence, the waiting command and the direct
-  route under "8. Deliver"; [Enforced or instructed](AI-WORKFLOW-enforcement.md) names the checks the branch
-  rules require; [`AGENTS.md`](../AGENTS.md) owns how a session waits on a long command under "Runtime notes" and
-  what the direct route admits under "Publication and machinery"; the documentation routines' own merge exception
-  is in [`docs/DOC-SWEEP.md`](DOC-SWEEP.md) and [`docs/SWEEP-TRIAGE.md`](SWEEP-TRIAGE.md).
+  route under "8. Deliver", and how a session waits on a long command under "5. Build";
+  [Enforced or instructed](AI-WORKFLOW-enforcement.md) names the checks the branch rules require;
+  [`AGENTS.md`](../AGENTS.md) owns what the direct route admits under "Publication and machinery"; the documentation
+  routines' own merge exception is in [`docs/DOC-SWEEP.md`](DOC-SWEEP.md) and
+  [`docs/SWEEP-TRIAGE.md`](SWEEP-TRIAGE.md).
 - **Closeout.** The moment the merge lands, the same session confirms it, moves the card, updates local `main`, and
   removes the branch and worktree. Local `main` advances only by a provably safe fast-forward, and a checkout that is
   dirty, active or uncertain is preserved. Servers and containers bound to the worktree are stopped, and the job's own
   disposable scratch is removed; when removal cannot be proven safe the worktree is kept and the reason reported. A
   leftover the session finds, another job's artifact or one it cannot prove it created, is investigated to a
-  conclusion and the owner is told the outcome. `AGENTS.md` owns that rule under "Owner gates", and the `closeout`
-  skill owns the steps. Rulings the owner made during the session go to the issue or the manual that owns the topic,
-  never to a new document.
+  conclusion and the owner is told the outcome. `AGENTS.md` owns the authority to delete one, and its limits, under
+  "Owner gates"; the `closeout` skill owns what a leftover is and what each outcome allows under "Leftover rule", and
+  the steps. Rulings the owner made during the session go to the issue or the document that owns the topic, never to a
+  new document.
 
 ## Where the rules live
 
 - [The `resume` skill](../.agents/skills/resume/SKILL.md): every step from intake to the queued merge, in the order a
-  session runs them, the review tiers and the external review included.
-- [The `closeout` skill](../.agents/skills/closeout/SKILL.md): every step after the merge.
+  session runs them, the review tiers and when the external review runs included.
+- [The `greptile` skill](../.agents/skills/greptile/SKILL.md): how the external review is run: the shared pool it is
+  metered from, the allowance read before a request, the request, how each finding is settled, whether a settled review
+  still stands after a rebase, and when an attempt counts as unavailable.
+- [The `closeout` skill](../.agents/skills/closeout/SKILL.md): every step after the merge, and under "Leftover rule"
+  what a leftover is and what each outcome of investigating one allows.
 - [`AGENTS.md`](../AGENTS.md) under "Owner gates": what work-pick and push authorisation approve, and the cleanup
   rule.
 - [`AGENTS.md`](../AGENTS.md) under "Review and visual verification": the one fresh review before the pull request
   opens, and the visual check.
 - [`AGENTS.md`](../AGENTS.md) under "Publication and machinery": the pull request route and the direct route.
-- The Surfaces and Conventions tables in [`AGENTS.md`](../AGENTS.md): the repository's own gates, generated
-  artifacts and visual verification.
+- The Surfaces table in [`AGENTS.md`](../AGENTS.md) and the Conventions table in
+  [`.agents/REPOSITORY.md`](../.agents/REPOSITORY.md): the repository's own gates, its answers to the two review
+  questions, generated artifacts and visual verification.
 - [The head of `scripts/lib/unsafe-git.mjs`](../scripts/lib/unsafe-git.mjs): the exact command forms the git guard
   refuses at each stage.
 
@@ -138,6 +147,7 @@ same way.
 ## Key files
 
 - `.agents/skills/resume/SKILL.md` and `.agents/skills/closeout/SKILL.md`: the steps.
+- `.agents/skills/greptile/SKILL.md`: the external review's procedure.
 - `.github/pull_request_template.md`: the pull request body the owner reads.
 - `scripts/run-log.mjs`: the logger every check runs through.
 - `scripts/merge-watch.mjs`: the one waiting command after the merge is queued.

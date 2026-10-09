@@ -1,7 +1,7 @@
-// doc-lint-citations.mjs — pure detection logic for operating-manual section
+// doc-lint-citations.mjs — pure detection logic for AGENTS.md and CLAUDE.md section
 // citations.
 //
-// Commands and skills route rules by quoting a manual section by name
+// Commands and skills route rules by quoting an AGENTS.md or CLAUDE.md section by name
 // (`per CLAUDE.md's "Coding standards and the executed test bar"`). A renamed or invented
 // heading turns that into a phantom citation: prose that reads authoritative
 // and points nowhere. This converts that by-hand vigilance into a
@@ -25,10 +25,10 @@ export function extractManualHeadings(markdownText) {
 // Matched on the WHOLE text, never per line: a quoted heading legitimately
 // wraps across a line break in reflowed prose (`CLAUDE.md's "Autonomy and\n
 // owner gates"`), and the negated-quote class crosses newlines by
-// construction. A leading `per ` needs no handling — the manual name is the
+// construction. A leading `per ` needs no handling — the file name is the
 // anchor. Quoted citations inside fenced code blocks ARE scanned, same
 // rationale as the sibling path-ref scan: a fenced citation is load-bearing
-// prose and its rot is exactly what this catches. The manual name may be
+// prose and its rot is exactly what this catches. The file name may be
 // written as inline code (`` `CLAUDE.md`'s "Architecture seams" ``) and the
 // possessive is optional (`CLAUDE.md "Reference map"`); both shapes are in
 // live use, so neither may be silently skipped.
@@ -56,7 +56,7 @@ function normalizeHeading(raw) {
 }
 
 // citations, {CLAUDE.md, AGENTS.md} → Set<heading> (Map or plain object) →
-// the citations whose own manual has no such heading.
+// the citations whose own file has no such heading.
 export function checkHeadingCitations(citations, headingsByManual) {
   const headingsFor = (manual) => (headingsByManual instanceof Map
     ? headingsByManual.get(manual)

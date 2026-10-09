@@ -22,6 +22,9 @@ Closes #
 
 <!-- The review line comes first, in the format docs/AI-WORKFLOW.md specifies under "The review line", for example `Review: tier=sign-off rounds=7 raised=16 fixed=13 dismissed=2 deferred=1 greptile_rounds=2 greptile_raised=1 greptile_true=1` -->
 Review: tier= rounds= raised= fixed= dismissed= deferred= greptile_rounds= greptile_raised= greptile_true=
+<!-- Then the two answers the tier was chosen from, each with one sentence of reason, and one sentence more where the gate or the guard rule set the tier, as the resume skill specifies under "6. Verify and review". -->
+Undo:
+Reach:
 
 <!-- The fresh reviewer's verdict and every finding with its disposition (fixed, dismissed with reason, or deferred as docs/AI-WORKFLOW.md defines it). Greptile threads are resolved on the pull request itself. -->
 

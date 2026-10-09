@@ -3,10 +3,10 @@
 #
 #   * the product gate — a push to main runs `scripts/gates/pre-push-main <remote sha> <local sha>`
 #     first; a missing, non-executable, or refusing gate blocks it. Other branches never consult it.
-#   * eslint (~1s, no browser) — undefined reference, typo'd name, duplicate key.
-#   * the scripts/lib node:test suite — the guard scripts, board scripts, build identity,
-#     and the pre-commit hook. Runs unconditionally: editing .claude/agents/ or AGENTS.md alone
-#     trips no staged-path trigger, and a fleet retune once sailed past every local gate.
+#   * eslint — undefined reference, typo'd name, duplicate key.
+#   * the scripts/lib node:test suite — the guard scripts, board scripts and the pre-commit
+#     hook. Runs unconditionally: editing .claude/agents/ or AGENTS.md alone trips no
+#     staged-path trigger that runs it.
 #
 # The two gates fail differently ON PURPOSE. Lint is skipped with a warning when npm or
 # the eslint binary is missing, because a fresh or partial clone must not be hard-blocked
@@ -15,7 +15,7 @@
 # missing node: every gate this repo has is a node program, so no-node is a broken
 # checkout, not a contributor to wave through.
 #
-# The full Playwright suite (~12 min) is NOT forced on every push. Opt in with RUN_TESTS=1:
+# The repository's `npm test` is NOT forced on every push. Opt in with RUN_TESTS=1:
 #     RUN_TESTS=1 git push
 #
 # Escape hatch: `git push --no-verify` bypasses entirely.
