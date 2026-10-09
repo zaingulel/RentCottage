@@ -341,3 +341,99 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
     });
   }
 });
+
+test("the choose-file button and the search form's Booking Period toggles are at least 44 pixels tall", async ({
+  page,
+}, testInfo) => {
+  const bundlePath = testInfo.outputPath("control-heights.js");
+  const stubs: Record<string, string> = {
+    "next/navigation": "export const useRouter = () => ({ push: () => {} });",
+  };
+  await build({
+    entryPoints: ["tests/fixtures/control-heights.browser.tsx"],
+    outfile: bundlePath,
+    bundle: true,
+    format: "iife",
+    platform: "browser",
+    target: "es2022",
+    jsx: "automatic",
+    define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
+    plugins: [
+      {
+        name: "control-heights-stubs",
+        setup(pluginBuild) {
+          pluginBuild.onResolve({ filter: /^next\/navigation$/ }, (args) => ({
+            path: args.path,
+            namespace: "fixture",
+          }));
+          pluginBuild.onLoad(
+            { filter: /.*/, namespace: "fixture" },
+            (args) => ({
+              contents: stubs[args.path],
+              loader: "js",
+              resolveDir: process.cwd(),
+            }),
+          );
+        },
+      },
+    ],
+  });
+  if (testInfo.project.name === "mobile") {
+    await page.setViewportSize({ width: 390, height: 844 });
+  }
+  await page.goto("/api/health");
+  await page.setContent(
+    '<meta name="viewport" content="width=device-width, initial-scale=1"><main id="fixture-root"></main>',
+  );
+  await page.addStyleTag({ content: await readApplicationStylesheet() });
+  await page.addScriptTag({ path: bundlePath });
+  await page.evaluate(() => document.fonts.ready);
+
+  const softly = expect.configure({ soft: true });
+  const shortest = (toggles: Locator) =>
+    toggles.evaluateAll((elements) =>
+      elements.length === 0
+        ? 0
+        : Math.min(
+            ...elements.map(
+              (element) => element.getBoundingClientRect().height,
+            ),
+          ),
+    );
+
+  const fileInput = page.getByLabel("Evidence document");
+  await expect(fileInput).toBeVisible();
+  await softly
+    .poll(
+      () =>
+        fileInput.evaluate((element) =>
+          Number.parseFloat(
+            getComputedStyle(element, "::file-selector-button").height,
+          ),
+        ),
+      { message: "choose-file button height in pixels" },
+    )
+    .toBeGreaterThanOrEqual(44);
+
+  await page.getByText("Booking Period filters (optional)").click();
+  const filters = page.getByRole("group", {
+    name: "Booking Period for each Service Day",
+  });
+  await expect(filters).toBeVisible();
+  const toggles = filters.getByRole("button").filter({ visible: true });
+  await softly
+    .poll(() => shortest(toggles), {
+      message: "shortest Booking Period toggle before dates are chosen",
+    })
+    .toBeGreaterThanOrEqual(44);
+
+  await page.getByLabel("From Service Day", { exact: true }).fill("2101-01-01");
+  await page.getByLabel("To Service Day", { exact: true }).fill("2101-01-02");
+  const dayGroups = filters.getByRole("group");
+  await expect(dayGroups.first()).toBeVisible();
+  await softly
+    .poll(() => shortest(toggles), {
+      message: "shortest Booking Period toggle after dates are chosen",
+    })
+    .toBeGreaterThanOrEqual(44);
+});
