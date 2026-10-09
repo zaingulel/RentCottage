@@ -11,6 +11,22 @@ import {
 } from "./verify-access-command-doubles.mjs";
 
 describe("local Supabase concurrency harness", () => {
+  function childProcess() {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stdout.setEncoding = vi.fn();
+    child.stderr.setEncoding = vi.fn();
+    child.stdin = {
+      write: vi.fn(),
+      end: vi.fn(),
+      destroyed: false,
+      writableEnded: false,
+    };
+    child.kill = vi.fn();
+    return child;
+  }
+
   it("accumulates repeated concurrency phases without inventing absent cleanup", () => {
     let tick = 100;
     const stdout = vi.fn();
@@ -149,21 +165,6 @@ describe("local Supabase concurrency harness", () => {
 
   it("acknowledges SQL setup before sending the body on the same owned session", async () => {
     vi.useFakeTimers();
-    function childProcess() {
-      const child = new EventEmitter();
-      child.stdout = new EventEmitter();
-      child.stderr = new EventEmitter();
-      child.stdout.setEncoding = vi.fn();
-      child.stderr.setEncoding = vi.fn();
-      child.stdin = {
-        write: vi.fn(),
-        end: vi.fn(),
-        destroyed: false,
-        writableEnded: false,
-      };
-      child.kill = vi.fn();
-      return child;
-    }
     try {
       let tick = 100;
       const stdout = vi.fn();
@@ -359,6 +360,33 @@ describe("local Supabase concurrency harness", () => {
         failed.finishTiming({ outcome: "failed", cleanupDisposition: "local" });
         expect(lines.at(-1)).toMatchObject({ outcome: "failed", cleanupMs: 0 });
       }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("runs a statement list in one owned session after setup", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = childProcess();
+      const spawnProcess = vi.fn(() => child);
+      const harness = createLocalSupabaseConcurrencyHarness({ spawnProcess });
+      const running = harness.runStatementsAfterSetup("select 'setup';", [
+        "select 1",
+        "select 2 -- note",
+        "commit;",
+      ]);
+      child.stdout.emit("data", "RC330_SQL_SETUP_READY\n");
+      await vi.advanceTimersByTimeAsync(20);
+      expect(spawnProcess).toHaveBeenCalledTimes(1);
+      expect(child.stdin.end).toHaveBeenCalledExactlyOnceWith(
+        "select 1\n;\nselect 2 -- note\n;\ncommit;\n;\n",
+      );
+      child.emit("close", 0, null);
+      await running;
+
+      await harness.runStatementsAfterSetup("select 'setup';", []);
+      expect(spawnProcess).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }

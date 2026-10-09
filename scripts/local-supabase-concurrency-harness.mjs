@@ -308,6 +308,15 @@ export function createLocalSupabaseConcurrencyHarness({
     }
   }
 
+  // One session for the whole list. Each statement gets its own terminator on a new line, so a trailing line comment cannot swallow it.
+  async function runStatementsAfterSetup(setupSql, statements) {
+    if (!statements.length) return;
+    await runSqlAfterSetup(
+      setupSql,
+      statements.map((statement) => `${statement}\n;`).join("\n"),
+    );
+  }
+
   async function waitForLock(applicationName, session) {
     const started = Date.now();
     while (true) {
@@ -370,6 +379,7 @@ export function createLocalSupabaseConcurrencyHarness({
     runDocker,
     runSql,
     runSqlAfterSetup,
+    runStatementsAfterSetup,
     startSession,
     startSessionAfterSetup,
     waitForLock,
