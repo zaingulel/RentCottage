@@ -44,6 +44,17 @@ const messages = {
     failed: "The request could not be updated safely. Try again.",
     notification: "Status notification",
     paymentDeadline: "Payment deadline",
+    statusSentence: {
+      pending:
+        "Waiting for the Cottage Owner to accept or decline this request. The booking is not confirmed yet.",
+      accepted:
+        "The Cottage Owner accepted the request. The booking is not confirmed yet.",
+      declined:
+        "The Cottage Owner declined this request. The booking is not confirmed.",
+      withdrawn: "You withdrew this request. The booking is not confirmed.",
+      expired:
+        "The Cottage Owner did not respond before the response deadline. The booking is not confirmed.",
+    },
   },
   ar: {
     title: "حالة طلب الحجز",
@@ -61,6 +72,14 @@ const messages = {
     failed: "تعذر تحديث الطلب بأمان. حاول مرة أخرى.",
     notification: "إشعار الحالة",
     paymentDeadline: "موعد الدفع",
+    statusSentence: {
+      pending:
+        "بانتظار قبول مالك البيت لهذا الطلب أو رفضه. الحجز غير مؤكد بعد.",
+      accepted: "وافق مالك البيت على الطلب. الحجز غير مؤكد بعد.",
+      declined: "رفض مالك البيت هذا الطلب. الحجز غير مؤكد.",
+      withdrawn: "سحبت هذا الطلب. الحجز غير مؤكد.",
+      expired: "لم يرد مالك البيت قبل موعد الرد. الحجز غير مؤكد.",
+    },
   },
   ckb: {
     title: "دۆخی داواکاری حجز",
@@ -79,6 +98,17 @@ const messages = {
     failed: "داواکارییەکە بە سەلامەتی نوێ نەکرایەوە. دووبارە هەوڵ بدە.",
     notification: "ئاگادارکردنەوەی دۆخ",
     paymentDeadline: "کاتی کۆتایی پارەدان",
+    statusSentence: {
+      pending:
+        "چاوەڕێی خاوەنی کۆتێجین کە ئەم داواکارییە قبوڵ بکات یان ڕەتی بکاتەوە. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
+      accepted:
+        "خاوەنی کۆتێج داواکارییەکەی قبوڵ کرد. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
+      declined:
+        "خاوەنی کۆتێج ئەم داواکارییەی ڕەت کردەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
+      withdrawn: "ئەم داواکارییەت کشاندەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
+      expired:
+        "خاوەنی کۆتێج پێش کاتی کۆتایی وەڵام وەڵامی نەدایەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
+    },
   },
 } as const;
 
@@ -180,7 +210,12 @@ function CustomerBookingRequestStatusView({
           paymentRequiredPhase={request.paymentRequiredWindow?.phase}
           paymentRequiredExpiry={request.paymentRequiredExpiry}
         />
-        {status === "processing" ? <span>{copy.processing}</span> : null}
+        {status === "processing" ? (
+          <span>{copy.processing}</span>
+        ) : !isPaymentDisplayStatus(status) &&
+          request.paymentRequiredExpiry === null ? (
+          <span>{copy.statusSentence[status]}</span>
+        ) : null}
       </p>
       <BookingRequestProgress
         locale={locale}

@@ -280,6 +280,119 @@ describe("Customer Booking Request status", () => {
   it.each([
     [
       "en",
+      "pending",
+      "Pending",
+      "Waiting for the Cottage Owner to accept or decline this request. The booking is not confirmed yet.",
+    ],
+    [
+      "en",
+      "accepted",
+      "Accepted",
+      "The Cottage Owner accepted the request. The booking is not confirmed yet.",
+    ],
+    [
+      "en",
+      "declined",
+      "Declined",
+      "The Cottage Owner declined this request. The booking is not confirmed.",
+    ],
+    [
+      "en",
+      "withdrawn",
+      "Withdrawn",
+      "You withdrew this request. The booking is not confirmed.",
+    ],
+    [
+      "en",
+      "expired",
+      "Expired",
+      "The Cottage Owner did not respond before the response deadline. The booking is not confirmed.",
+    ],
+    [
+      "ar",
+      "pending",
+      "قيد الانتظار",
+      "بانتظار قبول مالك البيت لهذا الطلب أو رفضه. الحجز غير مؤكد بعد.",
+    ],
+    [
+      "ar",
+      "accepted",
+      "مقبول",
+      "وافق مالك البيت على الطلب. الحجز غير مؤكد بعد.",
+    ],
+    ["ar", "declined", "مرفوض", "رفض مالك البيت هذا الطلب. الحجز غير مؤكد."],
+    ["ar", "withdrawn", "مسحوب", "سحبت هذا الطلب. الحجز غير مؤكد."],
+    [
+      "ar",
+      "expired",
+      "منتهٍ",
+      "لم يرد مالك البيت قبل موعد الرد. الحجز غير مؤكد.",
+    ],
+    [
+      "ckb",
+      "pending",
+      "چاوەڕێ",
+      "چاوەڕێی خاوەنی کۆتێجین کە ئەم داواکارییە قبوڵ بکات یان ڕەتی بکاتەوە. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
+    ],
+    [
+      "ckb",
+      "accepted",
+      "قبوڵکراو",
+      "خاوەنی کۆتێج داواکارییەکەی قبوڵ کرد. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
+    ],
+    [
+      "ckb",
+      "declined",
+      "ڕەتکراوە",
+      "خاوەنی کۆتێج ئەم داواکارییەی ڕەت کردەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
+    ],
+    [
+      "ckb",
+      "withdrawn",
+      "کشێنراوەتەوە",
+      "ئەم داواکارییەت کشاندەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
+    ],
+    [
+      "ckb",
+      "expired",
+      "بەسەرچووە",
+      "خاوەنی کۆتێج پێش کاتی کۆتایی وەڵام وەڵامی نەدایەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
+    ],
+  ] as const)(
+    "states in %s what %s means in one sentence beside its label",
+    (locale, status, label, sentence) => {
+      render(
+        <CustomerBookingRequestStatus
+          locale={locale}
+          request={{ ...request, status }}
+        />,
+      );
+      expect(screen.getByRole("status")).toHaveTextContent(label);
+      expect(screen.getByRole("status")).toHaveTextContent(sentence);
+    },
+  );
+  it("keeps the unanswered-request sentence out of an expired request that carries a payment expiry", () => {
+    render(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={customerDisplayFixtures["payment-expiry-expired"]}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Expired unpaid");
+    for (const sentence of [
+      "Waiting for the Cottage Owner to accept or decline this request. The booking is not confirmed yet.",
+      "The Cottage Owner accepted the request. The booking is not confirmed yet.",
+      "The Cottage Owner declined this request. The booking is not confirmed.",
+      "You withdrew this request. The booking is not confirmed.",
+      "The Cottage Owner did not respond before the response deadline. The booking is not confirmed.",
+    ]) {
+      expect(screen.getByRole("status")).not.toHaveTextContent(sentence);
+    }
+  });
+
+  it.each([
+    [
+      "en",
       "Payment confirmation pending",
       "Booking confirmed",
       "The Cottage Owner accepted the request. Payment confirmation is pending. The booking is not confirmed yet.",
