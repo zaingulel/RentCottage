@@ -21,6 +21,7 @@ vi.mock("next/navigation", () => ({
   unstable_rethrow: unstableRethrow,
 }));
 
+import { loadBookingFinancialView } from "@/booking-request/request-booking-financial-view";
 import AdministratorPaymentHistoryPage from "./page";
 
 const params = Promise.resolve({
@@ -66,4 +67,13 @@ it("shows the Platform administration navigation on a payment history with its s
   expect(
     screen.queryByRole("link", { name: "New lookup" }),
   ).not.toBeInTheDocument();
+});
+
+it("says the financial details are unavailable when the financial view resolves to nothing", async () => {
+  vi.mocked(loadBookingFinancialView).mockResolvedValueOnce(null);
+  load.mockResolvedValue({ status: "ready", history: {} });
+  render(await AdministratorPaymentHistoryPage({ params }));
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "Cancellation and refund details are temporarily unavailable.",
+  );
 });
