@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test, type TestInfo } from "@playwright/test";
 import { build } from "esbuild";
 import { readApplicationStylesheet } from "./fixtures/application-stylesheet";
 import { openHeaderPanel } from "./fixtures/site-header";
@@ -424,11 +424,7 @@ test("keeps the hero subtitle clear of the headline's lowest letters in every la
   }
 });
 
-test("the open account menu stays inside a 390 pixel screen for every role and language", async ({
-  page,
-}, testInfo) => {
-  test.skip(testInfo.project.name !== "mobile");
-  await page.setViewportSize({ width: 390, height: 844 });
+async function mountSiteHeader(page: Page, testInfo: TestInfo) {
   const bundlePath = testInfo.outputPath("site-header.js");
   const stubs: Record<string, string> = {
     "next/link":
@@ -472,6 +468,14 @@ test("the open account menu stays inside a 390 pixel screen for every role and l
   );
   await page.addStyleTag({ content: await readApplicationStylesheet() });
   await page.addScriptTag({ path: bundlePath });
+}
+
+test("the open account menu stays inside a 390 pixel screen for every role and language", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mountSiteHeader(page, testInfo);
   expect(await page.evaluate(() => window.innerWidth)).toBe(390);
 
   const measure = () =>
@@ -566,4 +570,116 @@ test("the open account menu stays inside a 390 pixel screen for every role and l
   const accountToggle = header.locator(".account-menu-toggle");
   await expect(accountToggle).toHaveAttribute("aria-expanded", "false");
   await expect(accountToggle).toBeFocused();
+});
+
+test("site header pills and language links are at least 44 pixels tall above the phone breakpoint for every account state and language", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await mountSiteHeader(page, testInfo);
+
+  const measure = (sameRowAsBrand: boolean) =>
+    page.evaluate((checkRow) => {
+      const root = document.documentElement;
+      const isVisible = (element: Element) => {
+        const box = element.getBoundingClientRect();
+        return (
+          box.width > 0 &&
+          box.height > 0 &&
+          getComputedStyle(element).visibility === "visible"
+        );
+      };
+      const pills = [
+        ...document.querySelectorAll(
+          "nav.account-navigation > a, .account-menu-toggle",
+        ),
+      ].filter(isVisible);
+      const languageLinks = [
+        ...document.querySelectorAll("nav.language-links a"),
+      ].filter(isVisible);
+      const name = (element: Element) =>
+        `${element.textContent?.trim()} ${element.getBoundingClientRect().height}px`;
+      const brand = document
+        .querySelector(".site-brand")!
+        .getBoundingClientRect();
+      const offBrandRow = (element: Element) => {
+        const box = element.getBoundingClientRect();
+        const middle = (box.top + box.bottom) / 2;
+        return middle < brand.top || middle > brand.bottom;
+      };
+      const clipped = (element: Element) => {
+        const box = element.getBoundingClientRect();
+        return (
+          box.width === 0 ||
+          box.left < 0 ||
+          box.right > root.clientWidth ||
+          element.scrollWidth > element.clientWidth
+        );
+      };
+      const language = document.querySelector("nav.language-links")!;
+      return {
+        pillCount: pills.length > 0,
+        languageLinkCount: languageLinks.length,
+        shortPills: pills
+          .filter((pill) => pill.getBoundingClientRect().height < 44)
+          .map(name),
+        shortLanguageLinks: languageLinks
+          .filter((link) => link.getBoundingClientRect().height < 44)
+          .map(name),
+        clipped: [...pills, ...languageLinks].filter(clipped).map(name),
+        offBrandRow: checkRow
+          ? [language, ...pills].filter(offBrandRow).map(name)
+          : [],
+        sidewaysScroll: root.scrollWidth - root.clientWidth,
+      };
+    }, sameRowAsBrand);
+
+  for (const width of [1440, 641]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect
+      .poll(() => page.evaluate(() => window.innerWidth), {
+        message: `viewport ${width}`,
+      })
+      .toBe(width);
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      for (const account of [
+        { status: "signed_out" },
+        { status: "authenticated", context: { role: "customer" } },
+        {
+          status: "authenticated",
+          context: { role: "cottage_owner", approvalState: "prospective" },
+        },
+        {
+          status: "authenticated",
+          context: { role: "platform_administrator" },
+        },
+      ] as const) {
+        const label = `${width} ${locale} ${account.status === "signed_out" ? "signed_out" : account.context.role}`;
+        await page.evaluate((input) => window.renderSiteHeader(input), {
+          locale,
+          account,
+        });
+        await expect(page.locator("html"), label).toHaveAttribute(
+          "lang",
+          locale,
+        );
+        await expect(page.locator("html"), label).toHaveAttribute(
+          "dir",
+          locale === "en" ? "ltr" : "rtl",
+        );
+        await page.evaluate(() => document.fonts.ready);
+        await expect
+          .poll(() => measure(width === 1440), { message: label })
+          .toEqual({
+            pillCount: true,
+            languageLinkCount: 3,
+            shortPills: [],
+            shortLanguageLinks: [],
+            clipped: [],
+            offBrandRow: [],
+            sidewaysScroll: 0,
+          });
+      }
+    }
+  }
 });

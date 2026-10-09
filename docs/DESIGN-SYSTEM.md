@@ -309,11 +309,10 @@ its own; the block it sits in sets the space around it.
 - The `prefers-reduced-motion: reduce` rule turns off transitions and smooth scrolling.
 - `.action`, `.action-link`, `.action-regular`, `.form-control`, `.choice-control` and the `.disclosure` summary
   are at least `2.75rem` tall; of the shared controls only `.action-compact` (`2.25rem`) and the inline
-  `.action-text` link are smaller. Three controls outside those classes are smaller as well: above the `phone`
-  breakpoint the site header's account and support pills are `2.5rem` tall and its language links `2rem`, and the
-  choose-file button inside a file field is `2.25rem`. The search form's Booking Period filters are
-  `.action-compact` toggles; before dates are chosen, `.booking-period-defaults .action-toggle` sets them to
-  `2.4rem`.
+  `.action-text` link are smaller. Outside those classes, the site header's account and support pills, its language
+  links and the choose-file button inside a file field are at least `2.75rem` tall as well. The search form's
+  Booking Period filters are `.action-compact` toggles, which `.booking-period-filter .action-toggle` raises to
+  `2.75rem`.
 - Status and errors are announced through `ActionFeedback`, which renders `role="status"` for success and
   `role="alert"` for errors.
 - No new interaction ships without a visible focus state.
