@@ -142,6 +142,9 @@ describe("owner earnings history", () => {
     const summary = screen.getByRole("region", { name: "پوختەی داهات" });
     expect(summary).toHaveTextContent("IQD ٠");
     expect(screen.getByText("هێشتا هیچ داواکارییەکی حجز نییە.")).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "بەڕێوەبردنی کۆتێجەکانم" }),
+    ).toHaveAttribute("href", "/ckb/owner/cottages");
   });
 
   it("suppresses partial totals when one owner record is unavailable", async () => {
@@ -187,6 +190,22 @@ describe("owner earnings history", () => {
     );
     expect(loadHistory).not.toHaveBeenCalled();
   });
+});
+
+it("shows a Customer with no bookings the empty state and one next action", async () => {
+  loadHistory.mockResolvedValue([]);
+  const { container } = render(
+    await BookingHistoryPage({
+      params: Promise.resolve({ locale: "en" }),
+      searchParams: Promise.resolve({}),
+    }),
+  );
+  expect(container.querySelector(".empty-state")).toHaveTextContent(
+    "No booking requests yet.",
+  );
+  expect(
+    screen.getByRole("link", { name: "Search available cottages" }),
+  ).toHaveAttribute("href", "/en");
 });
 
 it("labels retained cancelled bookings and links to their safe detail", async () => {

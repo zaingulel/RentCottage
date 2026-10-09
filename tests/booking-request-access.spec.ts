@@ -379,11 +379,12 @@ test("a verified Customer double-submit creates one Pending request and one mini
     const secondReference = await submitAnotherRequest("ckb");
     await page.goto(`/ckb/booking-requests/${secondReference}`);
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-    await expect(page.getByText("چاوەڕێ", { exact: true })).toBeVisible();
+    // The sentence starts with the label's letters, so the label is asserted together with the sentence's first word.
+    await expect(page.locator(".status-banner")).toContainText("چاوەڕێچاوەڕێی");
     await page
       .getByRole("button", { name: "کشاندنەوەی داواکاری چاوەڕێ" })
       .click();
-    await expect(page.getByText("کشێنراوەتەوە", { exact: true })).toBeVisible();
+    await expect(page.locator(".status-banner")).toContainText("کشێنراوەتەوە");
     await page.reload();
     await expect(
       page.getByText("ئاگادارکردنەوەی دۆخ", { exact: true }),
@@ -426,11 +427,11 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await page
       .getByRole("button", { name: "Withdraw pending request" })
       .click();
-    await expect(page.getByText("Processing", { exact: true })).toBeVisible();
-    await expect(page.getByText("Withdrawn", { exact: true })).toBeVisible();
+    await expect(page.locator(".status-banner")).toContainText("Processing");
+    await expect(page.locator(".status-banner")).toContainText("Withdrawn");
     const resubmittedReference = await submitAnotherRequest("en");
     await page.goto(`/en/booking-requests/${resubmittedReference}`);
-    await expect(page.getByText("Pending", { exact: true })).toBeVisible();
+    await expect(page.locator(".status-banner")).toContainText("Pending");
   } else if (testInfo.project.name === "worker") {
     await page.goto(`/en/booking-requests/${requestReference}`);
     await expect(
@@ -929,9 +930,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
     const customerHistoryLink = page.locator(
       `a[href="/en/booking-requests/${requestReference}"]`,
     );
-    await expect(customerHistoryLink).toContainText(
-      identityBeforeRetry.bookingReference,
-    );
+    await expect(
+      page.locator(".list-rows > li").filter({ has: customerHistoryLink }),
+    ).toContainText(identityBeforeRetry.bookingReference);
     await customerHistoryLink.click();
     await expect(
       page.getByRole("region", { name: "Confirmed booking" }),
@@ -948,9 +949,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
     const ownerHistoryLink = ownerPage.locator(
       `a[href="/en/owner/booking-requests/${requestReference}"]`,
     );
-    await expect(ownerHistoryLink).toContainText(
-      identityBeforeRetry.bookingReference,
-    );
+    await expect(
+      ownerPage.locator(".list-rows > li").filter({ has: ownerHistoryLink }),
+    ).toContainText(identityBeforeRetry.bookingReference);
     await ownerHistoryLink.click();
     await expect(ownerPage.getByText(exactAddress)).toBeVisible();
 

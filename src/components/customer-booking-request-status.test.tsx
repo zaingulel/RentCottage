@@ -93,6 +93,12 @@ describe("Customer Booking Request status", () => {
     expect(vi.getTimerCount()).toBe(1);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
+  it("shows the request details as a fact list with each label directly before its value", () => {
+    render(<CustomerBookingRequestStatus locale="en" request={request} />);
+    const label = screen.getByText("Cottage");
+    expect(label.closest("dl")).toHaveClass("fact-list");
+    expect(label.nextSibling).toHaveTextContent("Quiet Garden");
+  });
   it("shows the four progress steps with the current step and each state in text", () => {
     const steps = (name: string) =>
       within(screen.getByRole("list", { name })).getAllByRole("listitem");
@@ -218,7 +224,9 @@ describe("Customer Booking Request status", () => {
     );
     expect(screen.getByText("Processing", { exact: true })).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Processing");
-    expect(screen.getByText(/being released/)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveClass("status-banner");
+    expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByRole("status")).toHaveTextContent("being released");
     finish({
       status: "withdrawn",
       bookingRequestReference: request.bookingRequestReference,
@@ -229,6 +237,7 @@ describe("Customer Booking Request status", () => {
       ).toBeInTheDocument(),
     );
     expect(screen.getByRole("status")).toHaveTextContent("Withdrawn");
+    expect(screen.getByRole("status")).not.toHaveTextContent("being released");
     expect(
       screen.queryByText("pending", { exact: true }),
     ).not.toBeInTheDocument();
@@ -266,6 +275,139 @@ describe("Customer Booking Request status", () => {
       ).toBeInTheDocument(),
     );
     expect(actOnBookingRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the status sentence off a status the withdraw action returned before the request reloads", async () => {
+    actOnBookingRequest.mockResolvedValue({
+      status: "accepted",
+      bookingRequestReference: request.bookingRequestReference,
+    });
+    render(<CustomerBookingRequestStatus locale="en" request={request} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Withdraw pending request" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Accepted"),
+    );
+    expect(screen.getByRole("status")).not.toHaveTextContent(
+      "The booking is not confirmed yet.",
+    );
+    expect(screen.getByRole("status")).not.toHaveTextContent(
+      "The Cottage Owner accepted the request. The booking is not confirmed yet.",
+    );
+  });
+
+  it.each([
+    [
+      "en",
+      "pending",
+      "Pending",
+      "Waiting for the Cottage Owner to accept or decline this request. The booking is not confirmed yet.",
+    ],
+    [
+      "en",
+      "accepted",
+      "Accepted",
+      "The Cottage Owner accepted the request. The booking is not confirmed yet.",
+    ],
+    [
+      "en",
+      "declined",
+      "Declined",
+      "The Cottage Owner declined this request. The booking is not confirmed.",
+    ],
+    [
+      "en",
+      "withdrawn",
+      "Withdrawn",
+      "You withdrew this request. The booking is not confirmed.",
+    ],
+    [
+      "en",
+      "expired",
+      "Expired",
+      "The Cottage Owner did not respond before the response deadline. The booking is not confirmed.",
+    ],
+    [
+      "ar",
+      "pending",
+      "قيد الانتظار",
+      "بانتظار قبول مالك البيت لهذا الطلب أو رفضه. الحجز غير مؤكد بعد.",
+    ],
+    [
+      "ar",
+      "accepted",
+      "مقبول",
+      "وافق مالك البيت على الطلب. الحجز غير مؤكد بعد.",
+    ],
+    ["ar", "declined", "مرفوض", "رفض مالك البيت هذا الطلب. الحجز غير مؤكد."],
+    ["ar", "withdrawn", "مسحوب", "سحبت هذا الطلب. الحجز غير مؤكد."],
+    [
+      "ar",
+      "expired",
+      "منتهٍ",
+      "لم يرد مالك البيت قبل موعد الرد. الحجز غير مؤكد.",
+    ],
+    [
+      "ckb",
+      "pending",
+      "چاوەڕێ",
+      "چاوەڕێی خاوەنی کۆتێجین کە ئەم داواکارییە قبوڵ بکات یان ڕەتی بکاتەوە. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
+    ],
+    [
+      "ckb",
+      "accepted",
+      "قبوڵکراو",
+      "خاوەنی کۆتێج داواکارییەکەی قبوڵ کرد. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
+    ],
+    [
+      "ckb",
+      "declined",
+      "ڕەتکراوە",
+      "خاوەنی کۆتێج ئەم داواکارییەی ڕەت کردەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
+    ],
+    [
+      "ckb",
+      "withdrawn",
+      "کشێنراوەتەوە",
+      "ئەم داواکارییەت کشاندەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
+    ],
+    [
+      "ckb",
+      "expired",
+      "بەسەرچووە",
+      "خاوەنی کۆتێج پێش کاتی کۆتایی وەڵام وەڵامی نەدایەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
+    ],
+  ] as const)(
+    "states in %s what %s means in one sentence beside its label",
+    (locale, status, label, sentence) => {
+      render(
+        <CustomerBookingRequestStatus
+          locale={locale}
+          request={{ ...request, status }}
+        />,
+      );
+      expect(screen.getByRole("status")).toHaveTextContent(label);
+      expect(screen.getByRole("status")).toHaveTextContent(sentence);
+    },
+  );
+  it("keeps the unanswered-request sentence out of an expired request that carries a payment expiry", () => {
+    render(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={customerDisplayFixtures["payment-expiry-expired"]}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Expired unpaid");
+    for (const sentence of [
+      "Waiting for the Cottage Owner to accept or decline this request. The booking is not confirmed yet.",
+      "The Cottage Owner accepted the request. The booking is not confirmed yet.",
+      "The Cottage Owner declined this request. The booking is not confirmed.",
+      "You withdrew this request. The booking is not confirmed.",
+      "The Cottage Owner did not respond before the response deadline. The booking is not confirmed.",
+    ]) {
+      expect(screen.getByRole("status")).not.toHaveTextContent(sentence);
+    }
   });
 
   it.each([

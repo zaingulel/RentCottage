@@ -1365,7 +1365,7 @@ html[lang="ckb"] .page-title {
 }
 
 .booking-summary h2,
-.request-follow-up > h2 {
+.section-title {
   margin: 0 0 var(--space-4);
   color: var(--green);
   font-family: var(--display);
@@ -2773,27 +2773,80 @@ a:focus-visible {
   gap: var(--space-2);
 }
 
-.booking-history ul {
+.booking-history > .list-rows,
+.booking-history > .empty-state {
+  margin-block-start: var(--space-4);
+}
+
+.list-rows {
   display: grid;
   gap: var(--space-3);
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.booking-history li > a {
+.list-rows > li {
   display: grid;
   gap: var(--space-1);
+  padding-block: var(--space-2) var(--space-4);
+  padding-inline: var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  padding: var(--space-4);
+}
+
+.list-row-title {
+  display: flex;
+  align-items: center;
+  min-height: 2.75rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.list-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-size-2);
+}
+
+.status-badge {
+  border-radius: 999px;
+  padding: var(--space-1) var(--space-3);
+  background: var(--status-neutral-bg);
+  color: var(--ink);
+  font-size: var(--font-size-1);
+  font-weight: 700;
+}
+
+.empty-state {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.empty-state > p {
+  margin: 0;
 }
 
 .booking-request-decision-controls,
 .booking-request-decision-controls form,
-.customer-booking-request-status,
-.customer-booking-request-status dl {
+.customer-booking-request-status {
   display: grid;
   gap: var(--space-4);
+}
+
+.fact-list {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
 }
 
 .booking-request-decision-controls form label {
@@ -2855,21 +2908,22 @@ section.request-follow-up {
   color: var(--muted);
 }
 
-.customer-booking-request-status dl > div {
+.fact-list > div {
   display: grid;
   grid-template-columns: minmax(8rem, 0.4fr) 1fr;
   gap: var(--space-3);
 }
 
-.customer-booking-request-status dt {
+.fact-list dt {
   color: var(--muted);
 }
 
-.customer-booking-request-status dd {
+.fact-list dd {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
-.customer-booking-request-status dd > span {
+.fact-list dd > span {
   display: block;
 }
 
@@ -2958,20 +3012,20 @@ section.request-follow-up {
   color: var(--muted);
 }
 
-.booking-request-status-badge {
-  width: fit-content;
-  padding: var(--space-1) var(--space-3);
-  border-radius: 999px;
-  background: var(--status-approved-bg);
-  color: var(--status-approved-text);
+.status-banner {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--status-neutral-bg);
+  color: var(--green);
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .owner-booking-request-card > header.booking-request-payment-header {
   display: grid;
 }
 
-.booking-request-status-badge.booking-request-payment-status,
 .owner-booking-request-card > header > .booking-request-payment-status {
   border-radius: var(--radius-card);
   padding: var(--space-3) var(--space-4);
@@ -2981,11 +3035,14 @@ section.request-follow-up {
 }
 
 .booking-request-payment-status > strong,
-.booking-request-payment-status > span {
+.booking-request-payment-status > span,
+.status-banner > strong,
+.status-banner > span {
   display: block;
 }
 
-.booking-request-payment-status > span {
+.booking-request-payment-status > span,
+.status-banner > span {
   margin-block-start: var(--space-1);
   color: var(--ink);
   font-weight: 400;
@@ -2993,7 +3050,7 @@ section.request-follow-up {
 }
 
 @media (max-width: 40rem) {
-  .customer-booking-request-status dl > div,
+  .fact-list > div,
   .confirmed-booking-details dl > div {
     grid-template-columns: 1fr;
     gap: var(--space-1);

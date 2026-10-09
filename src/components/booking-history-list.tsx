@@ -15,7 +15,7 @@ export function BookingHistoryList({
   readonly locale: Locale;
 }) {
   return (
-    <ul>
+    <ul className="list-rows">
       {items.map((item) => {
         const earnings =
           item.actorRole === "cottage_owner"
@@ -26,19 +26,18 @@ export function BookingHistoryList({
         return (
           <li key={`${item.actorRole}:${item.bookingRequestId}`}>
             <Link
+              className="list-row-title"
               href={
                 item.actorRole === "customer"
                   ? `/${locale}/booking-requests/${item.bookingRequestReference}`
                   : `/${locale}/owner/booking-requests/${item.bookingRequestReference}`
               }
             >
-              <strong>{item.cottageName}</strong>
-              <span>
-                <bdi>
-                  {item.bookingReference ?? item.bookingRequestReference}
-                </bdi>
-              </span>
-              <span>
+              {item.cottageName}
+            </Link>
+            <p className="list-row-meta">
+              <bdi>{item.bookingReference ?? item.bookingRequestReference}</bdi>
+              <span className="status-badge">
                 {item.status in bookingLifecycleMessages[locale]
                   ? bookingLifecycleMessages[locale][
                       item.status as keyof (typeof bookingLifecycleMessages)[typeof locale]
@@ -50,7 +49,7 @@ export function BookingHistoryList({
               <time dateTime={item.firstStartsAt}>
                 {formatIraqDateTime(item.firstStartsAt, locale)}
               </time>
-            </Link>
+            </p>
             {earnings ? (
               <OwnerBookingEarningsDetails
                 locale={locale}
