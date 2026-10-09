@@ -28,9 +28,9 @@ the code keeps them.
   - `--error` is the one error red: the border of an invalid field, mark or option, the bar beside a list of
     missing items, and the text of an error message. `--error-ring` is its translucent ring.
   - A status label takes a background and text pair chosen together. `--status-approved-bg` and
-    `--status-approved-text` are the pair for a good outcome: an approved application, the Customer's Booking
-    Request status label, and paid or eligible earnings. `--status-neutral-bg` is the background of a label that
-    is neither good nor bad.
+    `--status-approved-text` are the pair for a good outcome: an approved application and paid or eligible
+    earnings. `--status-neutral-bg` is the background of a label that is neither good nor bad, and of the status
+    badge and the status banner, which state a status in words and take no colour from it.
   - `--status-rejected-text` stays separate from `--error`, and `--success-text` from `--status-approved-text`: a
     label's text is chosen with its tint, and a message's text sits on whatever surface its form is on.
   - `--surface-policy` and `--surface-message-customer` stay separate: the policy box is chosen with
@@ -227,6 +227,38 @@ Anything else is a token.
   above the Confirmed Booking details. States are derived by `customerBookingRequestProgress` and never stored.
 - A new button, link-styled action, form field, checkbox, radio button, option group, disclosure or submit
   feedback reuses these. A pattern they lack is added there, not built inside a feature component.
+
+## Content patterns
+
+Six global classes in `src/app/globals.css` present facts, lists of records, statuses, section titles and empty
+lists. Each sits on a semantic element and uses tokens only. Apart from the section heading none has a margin of
+its own; the block it sits in sets the space around it.
+
+- Fact list: `dl.fact-list`, with one `div` per fact holding a `dt` and its `dd`, shows the labelled details of one
+  record. The label is in `--muted` and sits in a column beside its value, with `--space-3` between them and
+  `--space-4` between facts; at the `phone` breakpoint the label stacks above its value. A value with several
+  lines puts each in a `span`. A fact list never carries the record's status.
+- List row: `ul.list-rows` shows a list of a person's records, one `li` per record. Each is a bordered row, with a
+  `1px` `--line` border, `--radius-card` corners and `--space-3` between rows. A row has exactly one link,
+  `a.list-row-title`, which holds only the record's name in bold, spans the row's width and is at least `2.75rem`
+  tall. Everything else is plain supporting text outside the link: `p.list-row-meta`, in `--muted` at
+  `--font-size-2`, holds plain text, a reference in `bdi` and a date in `time`, and wraps. Further blocks of the
+  same record follow inside the `li`.
+- Status badge: `span.status-badge` is the compact status of one item in a list row or card. Its text is the
+  translated status label, so the status never depends on colour. It is a pill on `--status-neutral-bg` with bold
+  `--ink` text at `--font-size-1`. It is never the page-level status.
+- Status banner: `p.status-banner` is the page-level status of a record page. It sits directly under the page
+  title, at most one per page, and keeps `role="status"` and `aria-live="polite"`. It is a block on
+  `--status-neutral-bg` with `--radius-card` corners, holding the status label in bold `--green`, followed by one
+  plain-language sentence in `--ink`, in a `span`, where the status has one.
+- Section heading: `h2.section-title` titles a section below the page title; the `h1` takes `page-title`. It is
+  `--display` in `--green` at `--font-size-4` with line height `1.25`, and has `--space-4` below it.
+- Empty state: `div.empty-state` fills a list or record area that has nothing to show. It is a `--card` block with
+  a `1px` `--line` border, `--radius-card` corners and `--space-5` padding, holding one `p` with a single sentence
+  saying what is absent and, `--space-3` below it, one next action as a secondary content-width `ActionLink`. It
+  is not an error; a failure uses `role="alert"`.
+- New work that shows facts, a list of records, a status, a section title or an empty list reuses these. A screen
+  with its own rules for one of them keeps those rules until it is moved onto the pattern.
 
 ## Direction and language
 
