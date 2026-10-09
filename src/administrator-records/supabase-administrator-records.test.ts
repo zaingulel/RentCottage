@@ -182,7 +182,9 @@ describe("administrator records request session", () => {
         },
       ],
       total: 1,
-      stateCounts: Object.fromEntries(requestStates.map((s) => [s, 0])),
+      stateCounts: Object.fromEntries(
+        requestStates.map((s) => [s, s === "pending" ? 1 : 0]),
+      ),
       nextCursor: null,
       ...overrides,
     });

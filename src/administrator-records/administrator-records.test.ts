@@ -333,8 +333,8 @@ describe("administrator booking queue validation", () => {
     refunds: ["requested", "processing", "succeeded", "failed", "unknown"],
     incidents: ["incident_pending", "completed", "no_show", "cancelled"],
   };
-  const countsFor = (keys: string[]) =>
-    Object.fromEntries(keys.map((key) => [key, 1]));
+  const countsFor = (keys: string[], state: string) =>
+    Object.fromEntries(keys.map((key) => [key, key === state ? 1 : 0]));
   const reply = (
     queue: string,
     keys: string[],
@@ -343,7 +343,7 @@ describe("administrator booking queue validation", () => {
     queue,
     rows: [{ id: rowId, at: microsecondAt, reference, ...row }],
     total: 1,
-    stateCounts: countsFor(keys),
+    stateCounts: countsFor(keys, String(row.state)),
     nextCursor: null,
   });
   const requestRow = { state: "pending", source: null, category: null };
@@ -422,6 +422,8 @@ describe("administrator booking queue validation", () => {
       { from: "2026-02-30" },
       { through: "2026-13-01" },
       { from: "2026-09-02", through: "2026-09-01" },
+      { from: "0000-01-01" },
+      { through: "0000-12-31" },
       { afterAt: microsecondAt },
       { afterId: rowId },
       { afterAt: "2026-09-01", afterId: rowId },
@@ -435,6 +437,7 @@ describe("administrator booking queue validation", () => {
       parseAdministratorQueueResult(
         requestReply({ nextCursor: { at: microsecondAt, id: rowId } }),
         "requests",
+        null,
       ),
     ).toEqual({
       queue: "requests",
@@ -449,7 +452,7 @@ describe("administrator booking queue validation", () => {
         },
       ],
       total: 1,
-      stateCounts: countsFor(stateKeys.requests),
+      stateCounts: countsFor(stateKeys.requests, "pending"),
       nextCursor: { at: microsecondAt, id: rowId },
     });
     expect(
@@ -460,6 +463,7 @@ describe("administrator booking queue validation", () => {
           category: null,
         }),
         "refunds",
+        null,
       ).rows[0],
     ).toMatchObject({ source: "dispute", category: null });
     expect(
@@ -470,6 +474,7 @@ describe("administrator booking queue validation", () => {
           category: null,
         }),
         "incidents",
+        null,
       ).rows[0],
     ).toMatchObject({ source: "cancellation", category: null });
     expect(
@@ -480,6 +485,7 @@ describe("administrator booking queue validation", () => {
           category: "property_damage",
         }),
         "incidents",
+        null,
       ).rows[0],
     ).toMatchObject({ source: "lifecycle", category: "property_damage" });
   });
@@ -511,17 +517,27 @@ describe("administrator booking queue validation", () => {
       requestReply({ total: 0 }),
       requestReply({ total: -1 }),
       requestReply({ total: 1.5 }),
-      requestReply({ stateCounts: countsFor(stateKeys.requests.slice(1)) }),
       requestReply({
-        stateCounts: { ...countsFor(stateKeys.requests), unknown: 0 },
+        stateCounts: countsFor(stateKeys.requests.slice(1), "pending"),
       }),
       requestReply({
-        stateCounts: { ...countsFor(stateKeys.requests), pending: -1 },
+        stateCounts: {
+          ...countsFor(stateKeys.requests, "pending"),
+          unknown: 0,
+        },
+      }),
+      requestReply({
+        stateCounts: {
+          ...countsFor(stateKeys.requests, "pending"),
+          pending: -1,
+        },
       }),
       requestReply({ nextCursor: { at: microsecondAt } }),
       requestReply({ nextCursor: { at: microsecondAt, id: rowId, extra: 1 } }),
     ])
-      expect(() => parseAdministratorQueueResult(value, "requests")).toThrow();
+      expect(() =>
+        parseAdministratorQueueResult(value, "requests", null),
+      ).toThrow();
   });
 
   it("refuses a corrupt refund or incident reply", () => {
@@ -544,7 +560,9 @@ describe("administrator booking queue validation", () => {
       refunds({ source: null }),
       refunds({ source: "lifecycle" }),
     ])
-      expect(() => parseAdministratorQueueResult(value, "refunds")).toThrow();
+      expect(() =>
+        parseAdministratorQueueResult(value, "refunds", null),
+      ).toThrow();
     for (const value of [
       incidents({ category: null }),
       incidents({ category: "fraud" }),
@@ -552,6 +570,74 @@ describe("administrator booking queue validation", () => {
       incidents({ source: "refund" }),
       incidents({ state: "confirmed" }),
     ])
-      expect(() => parseAdministratorQueueResult(value, "incidents")).toThrow();
+      expect(() =>
+        parseAdministratorQueueResult(value, "incidents", null),
+      ).toThrow();
+  });
+
+  it("refuses a reply whose total contradicts its state counts", () => {
+    const noCounts = countsFor(stateKeys.requests, "none");
+    expect(() =>
+      parseAdministratorQueueResult(
+        requestReply({ stateCounts: noCounts }),
+        "requests",
+        null,
+      ),
+    ).toThrow();
+    expect(() =>
+      parseAdministratorQueueResult(
+        requestReply({
+          total: 2,
+          stateCounts: countsFor(stateKeys.requests, "pending"),
+        }),
+        "requests",
+        "pending",
+      ),
+    ).toThrow();
+  });
+
+  it("refuses a filtered reply holding a row of another state", () => {
+    expect(() =>
+      parseAdministratorQueueResult(
+        requestReplyWithRow({ state: "processing" }),
+        "requests",
+        "pending",
+      ),
+    ).toThrow();
+  });
+
+  it("refuses a reply that repeats a row", () => {
+    const [row] = requestReply().rows;
+    expect(() =>
+      parseAdministratorQueueResult(
+        requestReply({
+          rows: [row, row],
+          total: 2,
+          stateCounts: {
+            ...countsFor(stateKeys.requests, "none"),
+            pending: 2,
+          },
+        }),
+        "requests",
+        null,
+      ),
+    ).toThrow();
+  });
+
+  it("accepts a filtered reply whose total is that state's count", () => {
+    expect(
+      parseAdministratorQueueResult(
+        requestReply({
+          total: 1,
+          stateCounts: {
+            ...countsFor(stateKeys.requests, "none"),
+            pending: 1,
+            expired: 4,
+          },
+        }),
+        "requests",
+        "pending",
+      ).total,
+    ).toBe(1);
   });
 });

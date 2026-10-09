@@ -255,6 +255,7 @@ function isCalendarDate(value: unknown): value is string {
   }
   const [year, month, day] = value.split("-").map(Number);
   return (
+    year >= 1 &&
     month >= 1 &&
     month <= 12 &&
     day >= 1 &&

@@ -524,7 +524,7 @@ describe("Supabase Customer review repository", () => {
       status: "success",
       items: [item, repliedItem],
       nextCursor: null,
-      total: 7,
+      total: 5,
       stateCounts: { unhidden: 4, hidden: 5 },
     });
     const repository = new SupabaseCustomerReviewRepository(client as never);
@@ -568,7 +568,7 @@ describe("Supabase Customer review repository", () => {
         },
       ],
       nextCursor: null,
-      total: 7,
+      total: 5,
       stateCounts: { unhidden: 4, hidden: 5 },
     });
     expect(client.rpc).toHaveBeenCalledWith(
@@ -632,7 +632,7 @@ describe("Supabase Customer review repository", () => {
       status: "success",
       items: [],
       nextCursor: null,
-      total: 0,
+      total: 3,
       stateCounts: { unhidden: 2, hidden: 1 },
     };
     const client = clientWith(reply);
@@ -676,6 +676,8 @@ describe("Supabase Customer review repository", () => {
         stateCounts: reply.stateCounts,
       },
       { ...reply, matched: 0 },
+      { ...reply, total: 0 },
+      { ...reply, total: 4 },
       { ...reply, total: -1 },
       { ...reply, total: 1.5 },
       { ...reply, total: "0" },
@@ -695,6 +697,16 @@ describe("Supabase Customer review repository", () => {
         ).listAdministrator(unfilteredFirstPage),
       ).resolves.toEqual({ status: "unavailable" });
     }
+    await expect(
+      new SupabaseCustomerReviewRepository(
+        clientWith({ ...reply, total: 3 }) as never,
+      ).listAdministrator({ ...unfilteredFirstPage, state: "hidden" }),
+    ).resolves.toEqual({ status: "unavailable" });
+    await expect(
+      new SupabaseCustomerReviewRepository(
+        clientWith({ ...reply, total: 1 }) as never,
+      ).listAdministrator({ ...unfilteredFirstPage, state: "hidden" }),
+    ).resolves.toMatchObject({ status: "success", total: 1 });
   });
 
   it("validates database review bodies by Unicode code point across every response parser", async () => {

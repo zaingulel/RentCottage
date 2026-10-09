@@ -176,6 +176,7 @@ function date(value: unknown): string {
     throw new Error("Invalid date");
   const [year, month, day] = value.split("-").map(Number);
   if (
+    year < 1 ||
     month < 1 ||
     month > 12 ||
     day < 1 ||
@@ -512,6 +513,7 @@ function queueRow(
 export function parseAdministratorQueueResult(
   value: unknown,
   queue: AdministratorQueue,
+  requestedState: string | null,
 ): AdministratorQueuePage {
   const raw = object(value);
   exactKeys(raw, ["queue", "rows", "total", "stateCounts", "nextCursor"]);
@@ -529,6 +531,17 @@ export function parseAdministratorQueueResult(
       count(counts[state]),
     ]),
   );
+  const expectedTotal =
+    requestedState === null
+      ? Object.values(stateCounts).reduce((sum, value) => sum + value, 0)
+      : stateCounts[requestedState];
+  if (
+    total !== expectedTotal ||
+    (requestedState !== null &&
+      rows.some((row) => row.state !== requestedState)) ||
+    new Set(rows.map((row) => row.id)).size < rows.length
+  )
+    throw new Error("Inconsistent queue page");
   let nextCursor: AdministratorQueuePage["nextCursor"] = null;
   if (raw.nextCursor !== null) {
     const cursor = object(raw.nextCursor);

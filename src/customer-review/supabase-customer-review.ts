@@ -470,6 +470,7 @@ function isCount(value: unknown): value is number {
 
 function parseAdministratorListResult(
   value: unknown,
+  requestedState: "unhidden" | "hidden" | null,
 ): AdministratorCustomerReviewListResult {
   if (
     !isRecord(value) ||
@@ -487,7 +488,11 @@ function parseAdministratorListResult(
     !isRecord(value.stateCounts) ||
     !hasExactKeys(value.stateCounts, ["unhidden", "hidden"]) ||
     !isCount(value.stateCounts.unhidden) ||
-    !isCount(value.stateCounts.hidden)
+    !isCount(value.stateCounts.hidden) ||
+    value.total !==
+      (requestedState === null
+        ? value.stateCounts.unhidden + value.stateCounts.hidden
+        : value.stateCounts[requestedState])
   ) {
     return { status: "unavailable" };
   }
@@ -700,7 +705,7 @@ export class SupabaseCustomerReviewRepository {
     if (error !== null) {
       return { status: "unavailable" };
     }
-    return parseAdministratorListResult(data);
+    return parseAdministratorListResult(data, input.state);
   }
 
   async hide(

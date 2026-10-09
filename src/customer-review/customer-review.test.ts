@@ -119,6 +119,8 @@ describe("administrator review list input validation", () => {
       { ...firstPage, from: "2026-9-21" },
       { ...firstPage, from: "2026-13-01" },
       { ...firstPage, from: "2026-02-29" },
+      { ...firstPage, from: "0000-01-01" },
+      { ...firstPage, through: "0000-12-31" },
       { ...firstPage, through: "2026-09-31" },
       { ...firstPage, through: "2026-09-21T00:00:00Z" },
       { ...firstPage, through: 20260921 },

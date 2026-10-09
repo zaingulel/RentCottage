@@ -117,7 +117,11 @@ export async function loadAdministratorQueue(
     if (result.error) return unavailable("queue_read");
     return {
       status: "ready",
-      page: parseAdministratorQueueResult(result.data, search.queue),
+      page: parseAdministratorQueueResult(
+        result.data,
+        search.queue,
+        search.state,
+      ),
     };
   } catch {
     return unavailable("queue_read");
