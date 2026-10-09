@@ -183,7 +183,111 @@ test("a verified Customer double-submit creates one Pending request and one mini
     guests: "4",
     selection: `${requestedDay}:shift:${shift.position}`,
   });
-  await page.goto(`/en/request/${slug}?${query.toString()}`);
+  const discoveryCopy = {
+    en: {
+      from: "From Service Day",
+      to: "To Service Day",
+      guests: "Guests",
+      search: "Search available cottages",
+      view: "View cottage",
+      quote: "Get exact quote",
+      title: "Your exact Booking Quote",
+    },
+    ar: {
+      from: "من تاريخ",
+      to: "إلى تاريخ",
+      guests: "عدد الضيوف",
+      search: "ابحث عن البيوت المتاحة",
+      view: "اعرض البيت",
+      quote: "عرض السعر الدقيق",
+      title: "عرض سعر الحجز الدقيق",
+    },
+    ckb: {
+      from: "لە بەرواری",
+      to: "تا بەرواری",
+      guests: "ژمارەی میوان",
+      search: "گەڕان بۆ کۆتێجی بەردەست",
+      view: "کۆتێجەکە ببینە",
+      quote: "پێشنیاری نرخی ورد",
+      title: "پێشنیاری نرخی وردی حجزکردن",
+    },
+  };
+  // The visitor's own click path, so the quote page is the one discovery leads to.
+  const reachQuoteFromDiscovery = async (locale: "en" | "ar" | "ckb") => {
+    const copy = discoveryCopy[locale];
+    const { data: publicProfile, error: publicProfileError } =
+      await fixtureOwner.rpc("get_public_cottage_profile", {
+        target_locale: locale,
+        target_slug: slug,
+        requested_search: {
+          from: requestedDay,
+          to: requestedDay,
+          guests: 4,
+          selections: [],
+          amenities: [],
+        },
+      });
+    if (publicProfileError) throw publicProfileError;
+    const unit = (
+      publicProfile.inventory as {
+        serviceDay: string;
+        kind: string;
+        position?: number;
+        name: string;
+        available: boolean;
+      }[]
+    ).find(
+      (item) =>
+        item.serviceDay === requestedDay &&
+        item.kind === "shift" &&
+        item.position === shift.position,
+    );
+    if (!unit) throw new Error("Published shift is missing from the cottage");
+    expect(unit.available).toBe(true);
+
+    await page.goto(`/${locale}`);
+    await page.getByLabel(copy.from, { exact: true }).fill(requestedDay);
+    await page.getByLabel(copy.to, { exact: true }).fill(requestedDay);
+    await page.getByLabel(copy.guests, { exact: true }).fill("4");
+    await page.getByRole("button", { name: copy.search }).click();
+    await expect(page).toHaveURL(
+      (url) => url.pathname === `/${locale}/results` && url.search !== "",
+    );
+    const card = page.locator("article").filter({
+      has: page.locator(`a[href^="/${locale}/cottages/${slug}?"]`),
+    });
+    await expect(card).toHaveCount(1);
+    await card.getByRole("link", { name: copy.view }).click();
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === `/${locale}/cottages/${slug}` && url.search !== "",
+    );
+    await page
+      .getByRole("complementary")
+      .getByRole("button", { name: unit.name, exact: true })
+      .click();
+    await page.getByRole("link", { name: copy.quote }).click();
+    await expect(page).toHaveURL(
+      (url) => url.pathname === `/${locale}/request/${slug}`,
+    );
+    const quoteUrl = new URL(page.url());
+    for (const key of ["from", "to", "guests"]) {
+      expect(quoteUrl.searchParams.get(key)).toBe(query.get(key));
+    }
+    expect(quoteUrl.searchParams.getAll("selection")).toEqual(
+      query.getAll("selection"),
+    );
+    await expect(page.locator("html")).toHaveAttribute(
+      "dir",
+      locale === "en" ? "ltr" : "rtl",
+    );
+    await expect(page.getByRole("heading", { name: copy.title })).toBeVisible();
+  };
+  for (const locale of testInfo.project.name === "mobile"
+    ? (["ar", "ckb", "en"] as const)
+    : (["en"] as const)) {
+    await reachQuoteFromDiscovery(locale);
+  }
   await expect(
     page.getByRole("heading", { name: "Verify your phone to continue" }),
   ).toBeVisible();
