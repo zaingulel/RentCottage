@@ -213,10 +213,13 @@ try {
   'physical',(select sum((select effect.physical_execution_count from public.simulated_payment_effects effect where effect.operation_id=payment_provider_operations.id)) from public.payment_provider_operations where recovery_attempt_id in (select id from public.booking_request_payment_recovery_attempts where booking_request_id='${requestId}')));`,
       ),
     );
+  const clockSql = (expression) =>
+    `update public.recovery_test_clock set instant=${expression};`;
   const clock = async (expression) =>
-    await harness.runSqlAfterSetup(
-      paymentEvidenceSql,
-      `update public.recovery_test_clock set instant=${expression};`,
+    await harness.runSqlAfterSetup(paymentEvidenceSql, clockSql(expression));
+  const swapped = () =>
+    definitions.map((definition) =>
+      definition.replaceAll("clock_timestamp()", "public.recovery_test_now()"),
     );
   const deadline = async () =>
     await harness.runSqlAfterSetup(
@@ -228,26 +231,17 @@ try {
   async function resetFixture() {
     harness.markTimingPhase("setup");
     try {
-      if (seeded) await harness.runSqlAfterSetup(paymentEvidenceSql, cleanup);
-      // Seed under the real source clock before restoring a controlled recovery clock.
-      for (const definition of definitions)
-        await harness.runSqlAfterSetup(paymentEvidenceSql, definition);
-      await harness.runSqlAfterSetup(
-        paymentEvidenceSql,
-        `begin;${fixture}commit;`,
-      );
+      const cleaned = seeded ? [cleanup] : [];
       seeded = true;
-      if (definitions.length) {
-        await clock("clock_timestamp()");
-        for (const definition of definitions)
-          await harness.runSqlAfterSetup(
-            paymentEvidenceSql,
-            definition.replaceAll(
-              "clock_timestamp()",
-              "public.recovery_test_now()",
-            ),
-          );
-      }
+      // Seed under the real source clock before restoring a controlled recovery clock.
+      await harness.runStatementsAfterSetup(paymentEvidenceSql, [
+        ...cleaned,
+        ...definitions,
+        `begin;${fixture}commit;`,
+        ...(definitions.length
+          ? [clockSql("clock_timestamp()"), ...swapped()]
+          : []),
+      ]);
     } finally {
       harness.markTimingPhase("execution");
     }
@@ -318,25 +312,18 @@ try {
 
     await resetFixture();
     harness.markTimingPhase("setup");
-    for (const signature of clockSignatures)
-      definitions.push(
+    definitions.push(
+      ...JSON.parse(
         await harness.runSqlAfterSetup(
           paymentEvidenceSql,
-          `select pg_get_functiondef('public.${signature}'::regprocedure);`,
+          `select jsonb_build_array(${clockSignatures.map((signature) => `pg_get_functiondef('public.${signature}'::regprocedure)`).join(",")});`,
         ),
-      );
-    await harness.runSqlAfterSetup(
-      paymentEvidenceSql,
-      "create table public.recovery_test_clock(instant timestamptz not null);insert into public.recovery_test_clock values(clock_timestamp());create function public.recovery_test_now() returns timestamptz language plpgsql volatile as $$ begin return (select instant from public.recovery_test_clock); end; $$;",
+      ),
     );
-    for (const definition of definitions)
-      await harness.runSqlAfterSetup(
-        paymentEvidenceSql,
-        definition.replaceAll(
-          "clock_timestamp()",
-          "public.recovery_test_now()",
-        ),
-      );
+    await harness.runStatementsAfterSetup(paymentEvidenceSql, [
+      "create table public.recovery_test_clock(instant timestamptz not null);insert into public.recovery_test_clock values(clock_timestamp());create function public.recovery_test_now() returns timestamptz language plpgsql volatile as $$ begin return (select instant from public.recovery_test_clock); end; $$;",
+      ...swapped(),
+    ]);
     await atDeadline("- interval '1 second'");
     harness.markTimingPhase("execution");
     const deadlineHolder = await start(
@@ -425,13 +412,11 @@ try {
         session.child.stdin.end("rollback;\n");
       await session.exited;
     }
-    for (const definition of definitions)
-      await harness.runSqlAfterSetup(paymentEvidenceSql, definition);
     if (definitions.length)
-      await harness.runSqlAfterSetup(
-        paymentEvidenceSql,
+      await harness.runStatementsAfterSetup(paymentEvidenceSql, [
+        ...definitions,
         "drop function public.recovery_test_now();drop table public.recovery_test_clock;",
-      );
+      ]);
     if (seeded) await harness.runSqlAfterSetup(paymentEvidenceSql, cleanup);
   }
   timingOutcome = "passed";
