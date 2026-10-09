@@ -212,7 +212,8 @@ function CustomerBookingRequestStatusView({
         />
         {status === "processing" ? (
           <span>{copy.processing}</span>
-        ) : !isPaymentDisplayStatus(status) &&
+        ) : status === request.status &&
+          !isPaymentDisplayStatus(status) &&
           request.paymentRequiredExpiry === null ? (
           <span>{copy.statusSentence[status]}</span>
         ) : null}

@@ -277,6 +277,26 @@ describe("Customer Booking Request status", () => {
     expect(actOnBookingRequest).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps the status sentence off a status the withdraw action returned before the request reloads", async () => {
+    actOnBookingRequest.mockResolvedValue({
+      status: "accepted",
+      bookingRequestReference: request.bookingRequestReference,
+    });
+    render(<CustomerBookingRequestStatus locale="en" request={request} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Withdraw pending request" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Accepted"),
+    );
+    expect(screen.getByRole("status")).not.toHaveTextContent(
+      "The booking is not confirmed yet.",
+    );
+    expect(screen.getByRole("status")).not.toHaveTextContent(
+      "The Cottage Owner accepted the request. The booking is not confirmed yet.",
+    );
+  });
+
   it.each([
     [
       "en",
