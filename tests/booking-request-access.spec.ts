@@ -339,7 +339,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await expect(
     page.getByRole("heading", { name: "Booking Request pending" }),
   ).toBeVisible();
-  await expect(page.getByText("IQD 185,000", { exact: true })).toBeVisible();
   await expect(page.getByText(/does not reserve/)).toHaveCount(0);
   await expect(page.getByText("Owner response deadline")).toBeVisible();
   expect(await page.locator("body").innerText()).not.toContain(exactAddress);
@@ -357,6 +356,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
   expect(unpaidResponseBody).not.toContain(ownerPhone);
   const progress = page.getByRole("list", { name: "Booking Request progress" });
   await expect(progress).toBeVisible();
+  await expect(page.getByText("IQD 185,000", { exact: true })).toBeVisible();
   await expect(progress.getByRole("listitem")).toHaveCount(4);
   await expect(
     progress.getByRole("listitem").filter({ hasText: "Owner decision" }),
