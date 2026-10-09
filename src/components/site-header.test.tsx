@@ -251,8 +251,70 @@ describe("shared site header", () => {
     );
     const support = screen.getByRole("link", { name: "Support" });
     expect(support).toHaveAttribute("href", "/en/support");
-    expect(support.closest("details")).toBeNull();
+    const account = screen.getByRole("button", { name: "Account" });
+    const menu = document.getElementById(
+      account.getAttribute("aria-controls") ?? "",
+    );
+    expect(menu).not.toBeNull();
+    expect(menu).not.toContainElement(support);
   });
+  it.each([
+    ["en", "Language", "Menu", "Account and support"],
+    ["ar", "اللغة", "القائمة", "الحساب والدعم"],
+    ["ckb", "زمان", "پێڕست", "هەژمار و پشتیوانی"],
+  ] as const)(
+    "names the %s phone header buttons and ties each to its panel",
+    (locale, language, menu, account) => {
+      location.pathname = `/${locale}`;
+      render(<SiteHeader locale={locale} account={{ status: "signed_out" }} />);
+      for (const [name, panel] of [
+        [language, language],
+        [menu, account],
+      ]) {
+        const button = screen.getByRole("button", { name });
+        expect(button).toHaveAttribute("aria-expanded", "false");
+        expect(
+          document.getElementById(button.getAttribute("aria-controls") ?? ""),
+        ).toBe(screen.getByRole("navigation", { name: panel }));
+      }
+    },
+  );
+  it("opens one header panel at a time", () => {
+    render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
+    const language = screen.getByRole("button", { name: "Language" });
+    const menu = screen.getByRole("button", { name: "Menu" });
+    fireEvent.click(language);
+    expect(language).toHaveAttribute("aria-expanded", "true");
+    expect(menu).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(menu);
+    expect(language).toHaveAttribute("aria-expanded", "false");
+    expect(menu).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(menu);
+    expect(language).toHaveAttribute("aria-expanded", "false");
+    expect(menu).toHaveAttribute("aria-expanded", "false");
+  });
+  it("closes the open panel on Escape and returns focus to the button that opened it", () => {
+    render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
+    const menu = screen.getByRole("button", { name: "Menu" });
+    fireEvent.click(menu);
+    const link = screen.getByRole("link", { name: "Sign in" });
+    act(() => link.focus());
+    fireEvent.keyDown(link, { key: "Escape" });
+    expect(menu).toHaveAttribute("aria-expanded", "false");
+    expect(menu).toHaveFocus();
+  });
+  it.each(["pointerDown", "focusIn"] as const)(
+    "closes the open panel on %s outside the header",
+    (event) => {
+      render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
+      const menu = screen.getByRole("button", { name: "Menu" });
+      fireEvent.click(menu);
+      fireEvent[event](menu);
+      expect(menu).toHaveAttribute("aria-expanded", "true");
+      fireEvent[event](document.body);
+      expect(menu).toHaveAttribute("aria-expanded", "false");
+    },
+  );
   it.each(["prospective", "approved", "expired", "suspended"] as const)(
     "keeps customer booking access for %s owners",
     (approvalState) => {
@@ -265,7 +327,7 @@ describe("shared site header", () => {
           }}
         />,
       );
-      screen.getByText("Account", { exact: true }).click();
+      fireEvent.click(screen.getByRole("button", { name: "Account" }));
       expect(screen.getByRole("link", { name: "My bookings" })).toHaveAttribute(
         "href",
         "/en/bookings",
@@ -294,18 +356,22 @@ describe("shared site header", () => {
       );
     },
   );
-  it("closes the disclosure when choosing a destination", () => {
+  it("closes the open panel when a destination or Sign out is chosen", () => {
     render(
       <SiteHeader
         locale="en"
         account={{ status: "authenticated", context: { role: "customer" } }}
       />,
     );
-    const summary = screen.getByText("Account", { exact: true });
-    summary.click();
-    expect(summary.parentElement).toHaveAttribute("open");
+    const account = screen.getByRole("button", { name: "Account" });
+    fireEvent.click(account);
+    expect(account).toHaveAttribute("aria-expanded", "true");
     fireEvent.click(screen.getByRole("link", { name: "List your cottage" }));
-    expect(summary.parentElement).not.toHaveAttribute("open");
+    expect(account).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(account);
+    expect(account).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(account).toHaveAttribute("aria-expanded", "false");
   });
   it("keeps administrator access separate", () => {
     render(
@@ -317,7 +383,7 @@ describe("shared site header", () => {
         }}
       />,
     );
-    screen.getByText("Account", { exact: true }).click();
+    fireEvent.click(screen.getByRole("button", { name: "Account" }));
     expect(
       screen.getByRole("link", { name: "Platform Administrator access" }),
     ).toBeVisible();

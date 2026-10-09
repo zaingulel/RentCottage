@@ -11,6 +11,7 @@ describe("LocaleLinks", () => {
   ] as const)("uses the localized navigation name for %s", (locale, label) => {
     render(
       <LocaleLinks
+        id="site-header-language"
         locale={locale}
         hrefFor={(target) => `/${target}/results`}
       />,
@@ -23,6 +24,7 @@ describe("LocaleLinks", () => {
     (locale) => {
       render(
         <LocaleLinks
+          id="site-header-language"
           locale={locale}
           hrefFor={(target) => `/${target}/results`}
         />,

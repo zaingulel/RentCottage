@@ -1,7 +1,13 @@
 "use client";
 import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { signOutAccount } from "@/access/actions";
 import type { AccountContext } from "@/access/account-access";
 import {
@@ -36,6 +42,44 @@ export type NavigationAccount =
 
 const condenseAfterScroll = 140;
 
+type HeaderPanel = "language" | "menu";
+
+function PanelToggle({
+  label,
+  controls,
+  open,
+  onToggle,
+  children,
+}: {
+  label: string;
+  controls: string;
+  open: boolean;
+  onToggle: (event: MouseEvent<HTMLButtonElement>) => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="site-header-toggle"
+      aria-label={label}
+      aria-expanded={open}
+      aria-controls={controls}
+      onClick={onToggle}
+    >
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      >
+        {children}
+      </svg>
+    </button>
+  );
+}
+
 export function SiteHeader({
   locale: initialLocale,
   account,
@@ -63,6 +107,40 @@ export function SiteHeader({
     window.addEventListener("scroll", update, { passive: true });
     return () => window.removeEventListener("scroll", update);
   }, [landing]);
+  const [openPanel, setOpenPanel] = useState<HeaderPanel | null>(null);
+  const header = useRef<HTMLElement>(null);
+  const opener = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (openPanel === null) return;
+    const closeOutside = (event: Event) => {
+      if (
+        event.target instanceof Node &&
+        !header.current?.contains(event.target)
+      )
+        setOpenPanel(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpenPanel(null);
+      opener.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("focusin", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("focusin", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [openPanel]);
+  const toggle = (panel: HeaderPanel, event: MouseEvent<HTMLButtonElement>) => {
+    opener.current = event.currentTarget;
+    setOpenPanel((current) => (current === panel ? null : panel));
+  };
+  const closeOnChoice = (event: MouseEvent<HTMLElement>) => {
+    if (event.target instanceof Element && event.target.closest("a, form"))
+      setOpenPanel(null);
+  };
   const copy = accessMessages[locale];
   const returnTo =
     landing && !query
@@ -74,6 +152,8 @@ export function SiteHeader({
       className={`site-header${landing ? " site-header-landing" : ""}${
         !landing || condensed ? " site-header-solid" : ""
       }`}
+      ref={header}
+      onClick={closeOnChoice}
     >
       <div className="site-header-row">
         <Link className="site-brand" href={`/${locale}`}>
@@ -81,7 +161,18 @@ export function SiteHeader({
           <span>{messages[locale].tagline}</span>
         </Link>
         <div className="site-header-controls">
+          <PanelToggle
+            label={messages[locale].languageLabel}
+            controls="site-header-language"
+            open={openPanel === "language"}
+            onToggle={(event) => toggle("language", event)}
+          >
+            <circle cx="12" cy="12" r="9" />
+            <ellipse cx="12" cy="12" rx="4" ry="9" />
+            <path d="M3 12h18" />
+          </PanelToggle>
           <LocaleLinks
+            id="site-header-language"
             locale={locale}
             hrefFor={(target) =>
               accessPage
@@ -98,9 +189,18 @@ export function SiteHeader({
             }
           />
           <span className="site-header-rule" aria-hidden="true" />
+          <PanelToggle
+            label={copy.menu}
+            controls="site-header-account"
+            open={openPanel === "menu"}
+            onToggle={(event) => toggle("menu", event)}
+          >
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </PanelToggle>
           <nav
+            id="site-header-account"
             aria-label={copy.accountNavigation}
-            className="account-navigation"
+            className="account-navigation site-header-panel"
           >
             {account.status === "unavailable" ? (
               <span role="status">{copy.sessionUnavailable}</span>
@@ -112,17 +212,21 @@ export function SiteHeader({
                 <Link href={enrollHref}>{copy.listCottage}</Link>
               </>
             ) : (
-              <details
-                onClick={(event) => {
-                  if (
-                    event.target instanceof Element &&
-                    event.target.closest("a")
-                  )
-                    event.currentTarget.open = false;
-                }}
-              >
-                <summary>{copy.account}</summary>
-                <div>
+              <div className="account-menu">
+                <button
+                  type="button"
+                  className="account-menu-toggle"
+                  aria-expanded={openPanel === "menu"}
+                  aria-controls="site-header-account-menu"
+                  onClick={(event) => toggle("menu", event)}
+                >
+                  {copy.account}
+                </button>
+                <div
+                  id="site-header-account-menu"
+                  className="account-menu-panel"
+                  hidden={openPanel !== "menu"}
+                >
                   {account.context?.role === "platform_administrator" ? (
                     <>
                       <Link href={`/${locale}/administrator/access`}>
@@ -158,7 +262,7 @@ export function SiteHeader({
                     <button type="submit">{copy.signOut}</button>
                   </form>
                 </div>
-              </details>
+              </div>
             )}
             <Link href={`/${locale}/support`}>
               {supportMessages[locale].title}

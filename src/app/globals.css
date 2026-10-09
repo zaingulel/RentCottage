@@ -3180,6 +3180,10 @@ section.request-follow-up {
   gap: var(--space-3);
 }
 
+.site-header-toggle {
+  display: none;
+}
+
 .site-header:not(.site-header-solid) .language-links {
   border-color: var(--line-on-dark);
   background: var(--shade-menu);
@@ -3209,7 +3213,7 @@ section.request-follow-up {
 }
 
 .account-navigation > a,
-.account-navigation summary {
+.account-menu-toggle {
   min-height: 2.5rem;
   display: inline-flex;
   align-items: center;
@@ -3222,25 +3226,21 @@ section.request-follow-up {
 }
 
 .site-header-solid .account-navigation > a,
-.site-header-solid .account-navigation summary {
+.site-header-solid .account-menu-toggle {
   border-color: var(--line-menu);
   color: var(--green);
 }
 
-.account-navigation details {
+.account-menu {
   position: relative;
 }
 
-.account-navigation summary {
-  cursor: pointer;
-  list-style: none;
+.account-menu-toggle {
+  padding-block: 0;
+  background: transparent;
 }
 
-.account-navigation summary::-webkit-details-marker {
-  display: none;
-}
-
-.account-navigation details > div {
+.account-menu-panel {
   position: absolute;
   z-index: var(--layer-menu);
   inset-inline-end: 0;
@@ -3253,8 +3253,8 @@ section.request-follow-up {
   color: var(--ink);
 }
 
-.account-navigation details a,
-.account-navigation details button {
+.account-menu-panel a,
+.account-menu-panel button {
   min-height: 2.75rem;
   display: flex;
   align-items: center;
