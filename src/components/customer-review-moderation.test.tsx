@@ -105,7 +105,7 @@ describe("CustomerReviewModeration", () => {
         reason: "Contains a prohibited contact detail",
       }),
     );
-    expect(within(card).getByRole("status")).toHaveTextContent(
+    expect(await within(card).findByRole("status")).toHaveTextContent(
       "The review was hidden.",
     );
     expect(card).toHaveTextContent("Contains a prohibited contact detail");
@@ -172,7 +172,7 @@ describe("CustomerReviewModeration", () => {
         reason: "Reply names a competitor",
       }),
     );
-    expect(within(section).getByRole("status")).toHaveTextContent(
+    expect(await within(section).findByRole("status")).toHaveTextContent(
       "The reply was hidden.",
     );
     expect(section).toHaveTextContent("Reply names a competitor");
@@ -208,7 +208,7 @@ describe("CustomerReviewModeration", () => {
       ),
     );
     expect(
-      within(section).getByRole("button", { name: "Hide reply" }),
+      await within(section).findByRole("button", { name: "Hide reply" }),
     ).toBeEnabled();
     expect(section).not.toHaveTextContent("Reply names a competitor");
   });
