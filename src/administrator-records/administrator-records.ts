@@ -539,7 +539,7 @@ export function parseAdministratorQueueResult(
     total !== expectedTotal ||
     (requestedState !== null &&
       rows.some((row) => row.state !== requestedState)) ||
-    new Set(rows.map((row) => row.id)).size < rows.length
+    new Set(rows.map((row) => row.id.toLowerCase())).size < rows.length
   )
     throw new Error("Inconsistent queue page");
   let nextCursor: AdministratorQueuePage["nextCursor"] = null;

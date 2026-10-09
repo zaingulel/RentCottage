@@ -622,6 +622,23 @@ describe("administrator booking queue validation", () => {
         null,
       ),
     ).toThrow();
+    expect(() =>
+      parseAdministratorQueueResult(
+        requestReply({
+          rows: [
+            { ...row, id: "25000000-0000-4000-8000-abcdefabcdef" },
+            { ...row, id: "25000000-0000-4000-8000-ABCDEFABCDEF" },
+          ],
+          total: 2,
+          stateCounts: {
+            ...countsFor(stateKeys.requests, "none"),
+            pending: 2,
+          },
+        }),
+        "requests",
+        null,
+      ),
+    ).toThrow();
   });
 
   it("accepts a filtered reply whose total is that state's count", () => {
