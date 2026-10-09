@@ -22,7 +22,8 @@ git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null \
 command -v node >/dev/null 2>&1 || refuse "node is not on PATH, so the changed paths cannot be checked"
 
 # Captured before node sees it: POSIX sh has no pipefail, so a piped diff that failed after printing
-# some paths would hand node a partial list. An empty list reaches node, which refuses it.
+# some paths would hand node a partial list. An empty list reaches node, which refuses it. --no-renames
+# keeps a moved file's old path in the list: a detected rename would list only its destination.
 changed=$(git -c core.quotePath=false diff --name-only --no-renames "$remote_sha" "$local_sha") \
   || refuse "listing the changed paths failed"
 printf '%s\n' "$changed" | node scripts/lib/docs-route.mjs || exit 1

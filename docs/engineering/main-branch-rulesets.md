@@ -64,14 +64,14 @@ The administrator role is held by one account. The repository has no deploy key.
 
 ## What the bypass leaves unguarded
 
-After the change GitHub itself does not stop the owner's account from pushing any commit to `main`, documentation or not. The only check left on a direct push is the local hook with this gate, and a push made with the `--no-verify` flag, or from a clone whose hooks are not switched on, skips it. The owner can also merge a pull request whose `test` check has not passed. A deploy key with write access, if one were ever added, would get the same bypass. Force-push and deletion stay refused for everyone.
+After the change GitHub itself does not stop the owner's account from pushing any commit to `main`, documentation or not. The only check left on a direct push is the local hook with this gate, and a push made with the `--no-verify` flag, or from a clone whose hooks are not switched on, skips it. The hook, the gate and the path definition are all read from the checkout being pushed, so a commit that changes them is judged by its own version of them; for an agent session the owner's permission prompt on `git push` is the last check that does not depend on the pushed content. The owner can also merge a pull request whose `test` check has not passed. A deploy key with write access, if one were ever added, would get the same bypass. Force-push and deletion stay refused for everyone.
 
 ## Restoring the earlier setting
 
-Three commands put the existing ruleset back to an empty bypass list and delete the new one:
+Three chained commands put the existing ruleset back to an empty bypass list and delete the new one; each runs only if the one before succeeded, so the new ruleset is deleted only once the bypass is gone:
 
 ```text
-gh api repos/zaingulel/RentCottage/rulesets/20966482 --jq '{name, target, enforcement, conditions, rules, bypass_actors: []}' > rollback.json
-gh api -X PUT repos/zaingulel/RentCottage/rulesets/20966482 --input rollback.json
+gh api repos/zaingulel/RentCottage/rulesets/20966482 --jq '{name, target, enforcement, conditions, rules, bypass_actors: []}' > rollback.json &&
+gh api -X PUT repos/zaingulel/RentCottage/rulesets/20966482 --input rollback.json &&
 gh api -X DELETE repos/zaingulel/RentCottage/rulesets/24795701
 ```

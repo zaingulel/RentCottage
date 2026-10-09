@@ -12,8 +12,8 @@
 // The two fake-git tests run the gate outside any repository, because the failure each one needs
 // cannot be staged through a real git.
 //
-// Recurring cost, on every run of the script suite: four scratch repositories, two hooked pushes of
-// which one runs the scratch suite, and six direct gate runs.
+// Recurring cost, on every run of the script suite: five scratch repositories, two hooked pushes of
+// which one runs the scratch suite, and seven direct gate runs.
 // Removal condition: remove with scripts/gates/pre-push-main.
 
 import { test } from "node:test";
@@ -29,7 +29,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { docsRouteRefusals } from "./docs-route.mjs";
 import { fixtureShell } from "./posix-shell.mjs";
@@ -219,6 +219,40 @@ test("every refused path in a mixed list is named", () => {
   assert.deepEqual(refused, ["src/x.js", "docs/research/shared-guide.md"]);
 });
 
+// The directories that take the direct route, hand-written here and not read from the classifier.
+const DIRECT_ROUTE_DIRECTORIES = [
+  "docs/commercial/",
+  "docs/design/",
+  "docs/discovery/",
+  "docs/engineering/",
+  "docs/research/",
+];
+
+test("the index marks no document in a direct-route location as an instruction", () => {
+  const index = readFileSync(
+    new URL("../../docs/README.md", import.meta.url),
+    "utf8",
+  );
+  const instructions = index
+    .split("\n")
+    .filter((line) => line.startsWith("|"))
+    .map((line) => line.split("|").map((cell) => cell.trim()))
+    .filter((cells) => cells[2] === "instruction");
+  assert.ok(instructions.length > 0, "the index has no instruction rows");
+  for (const [, document] of instructions) {
+    // A link is relative to docs/, and a `../` target leaves it; a backticked directory is under docs/.
+    const target =
+      document.match(/\]\(([^)#]+)/)?.[1] ?? document.match(/`([^`]+)`/)?.[1];
+    assert.ok(target, `no target found in the row for ${document}`);
+    const path = posix.normalize(posix.join("docs", target));
+    for (const directory of DIRECT_ROUTE_DIRECTORIES)
+      assert.ok(
+        !path.startsWith(directory),
+        `the index marks ${document} as an instruction inside ${directory}`,
+      );
+  }
+});
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const SHELL = fixtureShell();
 const NO_SHELL = "a POSIX shell is required";
@@ -326,6 +360,7 @@ function withScratchRemote(fn) {
           encoding: "utf8",
         }),
       remoteMain: () => git(remote, "rev-parse", "refs/heads/main"),
+      git,
       repo,
       reset: (ref) => git(repo, "reset", "-q", "--hard", ref),
     });
@@ -411,6 +446,25 @@ test("a push to main the gate refuses is blocked by the pre-push hook", () => {
     assert.doesNotMatch(run.stderr, /docs\/research\/note\.md/);
     assert.match(run.stderr, /pull request route/);
     assert.equal(remoteMain(), seed);
+  });
+});
+
+test("a file moved into a documentation location is refused for the path it left", () => {
+  withScratchRemote(({ gate, git, repo }) => {
+    // Identical, several lines, and moved in one commit: git detects it as a rename, which would list
+    // only the destination if the gate did not turn rename detection off.
+    const lines = Array.from({ length: 10 }, (_, i) => `line ${i}\n`).join("");
+    mkdirSync(join(repo, "src"));
+    writeFileSync(join(repo, "src/x.js"), lines);
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "-m", "add");
+    const before = git(repo, "rev-parse", "HEAD");
+    mkdirSync(join(repo, "docs/research"), { recursive: true });
+    git(repo, "mv", "src/x.js", "docs/research/x.md");
+    git(repo, "commit", "-q", "-m", "move");
+    const run = gate(before, git(repo, "rev-parse", "HEAD"));
+    assert.notEqual(run.status, 0);
+    assert.match(run.stderr, /src\/x\.js/);
   });
 });
 
