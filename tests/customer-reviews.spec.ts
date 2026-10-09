@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Response } from "@playwright/test";
+import { openHeaderPanel } from "./fixtures/site-header";
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
@@ -1336,6 +1337,7 @@ test.describe("administrator review return", () => {
           const languageLink = page
             .getByRole("banner")
             .getByRole("link", { name: copy.languageName, exact: true });
+          await openHeaderPanel(page, "language");
           await expect(languageLink).toHaveAttribute("href", accessPath);
           await languageLink.click();
           await expect(page).toHaveURL(accessPath);

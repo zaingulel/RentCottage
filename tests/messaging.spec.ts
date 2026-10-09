@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openHeaderPanel } from "./fixtures/site-header";
 import { createRequire } from "node:module";
 import { createClient } from "@supabase/supabase-js";
 
@@ -128,6 +129,7 @@ test("booking customer keeps the original while using fictional translations acr
     "Translation reported.",
   );
 
+  await openHeaderPanel(page, "language");
   await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   expect(new URL(page.url()).searchParams.get("selection")).toBe(
@@ -140,6 +142,7 @@ test("booking customer keeps the original while using fictional translations acr
   await expect(arabicMessage.locator("p[dir=rtl]")).toHaveText(
     "هل يمكننا استخدام الحديقة؟",
   );
+  await openHeaderPanel(page, "language");
   await page.getByRole("banner").getByRole("link", { name: "English" }).focus();
   await page.keyboard.press("Tab");
   const focusedLanguage = page

@@ -1,10 +1,15 @@
 import { expect, test } from "@playwright/test";
+import { build } from "esbuild";
+import { readApplicationStylesheet } from "./fixtures/application-stylesheet";
+import { openHeaderPanel } from "./fixtures/site-header";
 
 const ownerSignIn = {
   en: {
     brand: "RentCottage",
     label: "List your cottage",
     history: "Sign in",
+    language: "Language",
+    menu: "Menu",
     href: "/en/access?returnTo=%2Fen%2Fowner%2Fapplication",
     heading: "Sign in or create an account",
     dir: "ltr",
@@ -13,6 +18,8 @@ const ownerSignIn = {
     brand: "ريف كوتج",
     label: "أدرج كوخك",
     history: "تسجيل الدخول",
+    language: "اللغة",
+    menu: "القائمة",
     href: "/ar/access?returnTo=%2Far%2Fowner%2Fapplication",
     heading: "سجّل الدخول أو أنشئ حسابًا",
     dir: "rtl",
@@ -21,6 +28,8 @@ const ownerSignIn = {
     brand: "ڕێنت کۆتاج",
     label: "کۆتێجەکەت تۆمار بکە",
     history: "چوونەژوورەوە",
+    language: "زمان",
+    menu: "پێڕست",
     href: "/ckb/access?returnTo=%2Fckb%2Fowner%2Fapplication",
     heading: "بچۆ ژوورەوە یان هەژمارێک دروست بکە",
     dir: "rtl",
@@ -42,6 +51,7 @@ test("preserves the selected Retreat shell around live discovery", async ({
   await expect(
     page.getByRole("img", { name: "A rural house at sunset in Iraq" }),
   ).toHaveAttribute("src", "/uploads/hero-retreat.png");
+  await openHeaderPanel(page, "language");
   await expect(
     page.getByRole("navigation", { name: "Language" }),
   ).toBeVisible();
@@ -87,9 +97,11 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
       exact: true,
     });
 
+    await openHeaderPanel(page, "menu");
     await expect(ownerLink).toHaveAttribute("href", copy.href);
     await expect(page.locator("html")).toHaveAttribute("lang", locale);
     await expect(page.locator("html")).toHaveAttribute("dir", copy.dir);
+    await openHeaderPanel(page, "language");
     if (locale === "ar") {
       await expect(
         page.getByRole("navigation", { name: "اللغة" }),
@@ -101,7 +113,7 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
     );
 
     const languageNavigation = header.getByRole("navigation", {
-      name: locale === "en" ? "Language" : locale === "ar" ? "اللغة" : "زمان",
+      name: copy.language,
     });
     const languageBoxes = [];
     for (const language of languageNames) {
@@ -116,11 +128,20 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
           .getByRole("link", { name: language, exact: true }),
       ).toHaveCount(0);
     }
-    expect(languageBoxes[0]!.x).toBeLessThan(languageBoxes[1]!.x);
-    expect(languageBoxes[1]!.x).toBeLessThan(languageBoxes[2]!.x);
+    const axis = testInfo.project.name === "mobile" ? "y" : "x";
+    expect(languageBoxes[0]![axis]).toBeLessThan(languageBoxes[1]![axis]);
+    expect(languageBoxes[1]![axis]).toBeLessThan(languageBoxes[2]![axis]);
 
-    await page.keyboard.press("Tab");
-    await expect(header.getByRole("link", { name: copy.brand })).toBeFocused();
+    if (testInfo.project.name === "mobile") {
+      await expect(
+        header.getByRole("button", { name: copy.language, exact: true }),
+      ).toBeFocused();
+    } else {
+      await page.keyboard.press("Tab");
+      await expect(
+        header.getByRole("link", { name: copy.brand }),
+      ).toBeFocused();
+    }
     for (const language of languageNames) {
       await page.keyboard.press("Tab");
       await expect(
@@ -128,6 +149,17 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
       ).toBeFocused();
     }
     await page.keyboard.press("Tab");
+    if (testInfo.project.name === "mobile") {
+      const menuButton = header.getByRole("button", {
+        name: copy.menu,
+        exact: true,
+      });
+      await expect(menuButton).toBeFocused();
+      await expect(menuButton).toHaveCSS("outline-style", "solid");
+      await page.keyboard.press("Enter");
+      await expect(menuButton).toHaveAttribute("aria-expanded", "true");
+      await page.keyboard.press("Tab");
+    }
     const historyLink = header.getByRole("link", {
       name: copy.history,
       exact: true,
@@ -157,11 +189,22 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
         document: document.documentElement.scrollWidth,
       }));
       expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
+      await openHeaderPanel(page, "menu");
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              document.documentElement.scrollWidth -
+              document.documentElement.clientWidth,
+          ),
+        )
+        .toBeLessThanOrEqual(0);
       await expect(
         page
           .getByRole("banner")
           .getByRole("link", { name: copy.label, exact: true }),
       ).toBeVisible();
+      await openHeaderPanel(page, "language");
       for (const language of languageNames) {
         await expect(
           page
@@ -227,8 +270,10 @@ test("pre-live support stays honest, private and keyboard-accessible in every la
       name: labels.support,
       exact: true,
     });
+    await openHeaderPanel(page, "menu");
     await expect(support).toHaveAttribute("href", `/${locale}/support`);
-    for (let index = 0; index < 7; index += 1) {
+    const tabs = testInfo.project.name === "mobile" ? 3 : 7;
+    for (let index = 0; index < tabs; index += 1) {
       await page.keyboard.press("Tab");
     }
     await expect(support).toBeFocused();
@@ -250,6 +295,7 @@ test("pre-live support stays honest, private and keyboard-accessible in every la
     await expect(page.getByRole("main").getByRole("button")).toHaveCount(0);
     const language = page.getByRole("navigation", { name: labels.language });
     const nextLocale = locale === "en" ? "ar" : locale === "ar" ? "ckb" : "en";
+    await openHeaderPanel(page, "language");
     await language
       .getByRole("link", {
         name: { en: "English", ar: "العربية", ckb: "کوردی" }[nextLocale],
@@ -320,6 +366,7 @@ test("sign-in preserves the permitted search selection in every language", async
       .getByRole("banner")
       .getByRole("link", { name, exact: true });
     const href = `/${locale}/access?returnTo=${encodeURIComponent(destination)}`;
+    await openHeaderPanel(page, "menu");
     await expect(signIn).toHaveAttribute("href", href);
     await signIn.click();
     await expect(page).toHaveURL(new URL(href, page.url()).href);
@@ -375,4 +422,148 @@ test("keeps the hero subtitle clear of the headline's lowest letters in every la
     });
     expect(clearance, locale).toBeGreaterThanOrEqual(subtitleFontSize / 2);
   }
+});
+
+test("the open account menu stays inside a 390 pixel screen for every role and language", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const bundlePath = testInfo.outputPath("site-header.js");
+  const stubs: Record<string, string> = {
+    "next/link":
+      "import React from 'react'; export default function Link(props) { return React.createElement('a', props); }",
+    "next/navigation":
+      "export const usePathname = () => '/fixture'; export const useSearchParams = () => new URLSearchParams();",
+    "@/access/actions": "export const signOutAccount = () => {};",
+  };
+  await build({
+    entryPoints: ["tests/fixtures/site-header.browser.tsx"],
+    outfile: bundlePath,
+    bundle: true,
+    format: "iife",
+    platform: "browser",
+    target: "es2022",
+    jsx: "automatic",
+    define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
+    plugins: [
+      {
+        name: "site-header-stubs",
+        setup(pluginBuild) {
+          pluginBuild.onResolve(
+            { filter: /^(next\/link|next\/navigation|@\/access\/actions)$/ },
+            (args) => ({ path: args.path, namespace: "fixture" }),
+          );
+          pluginBuild.onLoad(
+            { filter: /.*/, namespace: "fixture" },
+            (args) => ({
+              contents: stubs[args.path],
+              loader: "js",
+              resolveDir: process.cwd(),
+            }),
+          );
+        },
+      },
+    ],
+  });
+  await page.goto("/api/health");
+  await page.setContent(
+    '<meta name="viewport" content="width=device-width, initial-scale=1"><div id="fixture-root"></div>',
+  );
+  await page.addStyleTag({ content: await readApplicationStylesheet() });
+  await page.addScriptTag({ path: bundlePath });
+  expect(await page.evaluate(() => window.innerWidth)).toBe(390);
+
+  const measure = () =>
+    page.evaluate(() => {
+      const root = document.documentElement;
+      const menu = document
+        .getElementById("site-header-account-menu")!
+        .getBoundingClientRect();
+      const rows = [
+        ...document.querySelectorAll(
+          '#site-header-account a, #site-header-account button[type="submit"]',
+        ),
+      ];
+      return {
+        menuInsideScreen:
+          menu.width > 0 &&
+          menu.left >= 0 &&
+          menu.right <= root.clientWidth &&
+          menu.top >= 0 &&
+          menu.bottom <= window.innerHeight,
+        rows: rows.length > 0,
+        clippedRows: rows.filter((row) => {
+          const box = row.getBoundingClientRect();
+          return (
+            box.width === 0 ||
+            box.left < 0 ||
+            box.top < 0 ||
+            box.bottom > window.innerHeight ||
+            box.right > root.clientWidth ||
+            row.scrollWidth > row.clientWidth
+          );
+        }).length,
+        sidewaysScroll: root.scrollWidth - root.clientWidth,
+      };
+    });
+
+  const signOut = { en: "Sign out", ar: "تسجيل الخروج", ckb: "چوونەدەرەوە" };
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    for (const context of [
+      { role: "customer" },
+      { role: "cottage_owner", approvalState: "prospective" },
+      { role: "platform_administrator" },
+    ] as const) {
+      const label = `${locale} ${context.role}`;
+      await page.evaluate((input) => window.renderSiteHeader(input), {
+        locale,
+        account: { status: "authenticated" as const, context },
+      });
+      await expect(page.locator("html"), label).toHaveAttribute("lang", locale);
+      await expect(page.locator("html"), label).toHaveAttribute(
+        "dir",
+        locale === "en" ? "ltr" : "rtl",
+      );
+      const header = page.getByRole("banner");
+      const opener = header
+        .locator('button[aria-controls^="site-header-account"]')
+        .filter({ visible: true });
+      const signOutButton = header.getByRole("button", {
+        name: signOut[locale],
+      });
+      await expect(signOutButton, label).toBeHidden();
+      await expect(opener, label).toHaveAttribute("aria-expanded", "false");
+      await opener.tap();
+      await expect(signOutButton, label).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+      await expect.poll(measure, { message: label }).toEqual({
+        menuInsideScreen: true,
+        rows: true,
+        clippedRows: 0,
+        sidewaysScroll: 0,
+      });
+      await opener.tap();
+      await expect(opener, label).toHaveAttribute("aria-expanded", "false");
+    }
+  }
+
+  await page.evaluate((input) => window.renderSiteHeader(input), {
+    locale: "en" as const,
+    account: {
+      status: "authenticated" as const,
+      context: { role: "customer" as const },
+    },
+  });
+  const header = page.getByRole("banner");
+  await header
+    .locator('button[aria-controls^="site-header-account"]')
+    .filter({ visible: true })
+    .tap();
+  await header.locator("#site-header-account-menu a").first().focus();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.keyboard.press("Escape");
+  const accountToggle = header.locator(".account-menu-toggle");
+  await expect(accountToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(accountToggle).toBeFocused();
 });
