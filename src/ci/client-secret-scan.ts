@@ -10,12 +10,17 @@ function filesWithin(path: string): string[] {
 
 export function assertNoClientSecret(secret: string, roots: string[]) {
   if (!secret) throw new Error("Server credential is required");
+  if (roots.length === 0) throw new Error("Client asset directory is required");
 
   for (const root of roots) {
     if (!existsSync(root))
       throw new Error(`Client asset directory missing: ${root}`);
 
-    for (const file of filesWithin(root)) {
+    const files = filesWithin(root);
+    if (files.length === 0)
+      throw new Error(`Client asset directory is empty: ${root}`);
+
+    for (const file of files) {
       if (readFileSync(file).includes(Buffer.from(secret))) {
         throw new Error(`Server credential found in client asset: ${file}`);
       }

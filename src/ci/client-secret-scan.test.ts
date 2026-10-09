@@ -30,6 +30,24 @@ describe("client secret scan", () => {
     );
   });
 
+  it("refuses to scan when given no client asset directory or an empty one", () => {
+    const empty = mkdtempSync(join(tmpdir(), "rentcottage-secret-scan-"));
+    temporaryDirectories.push(empty);
+    const hollow = mkdtempSync(join(tmpdir(), "rentcottage-secret-scan-"));
+    temporaryDirectories.push(hollow);
+    mkdirSync(join(hollow, "chunks"));
+
+    expect(() => assertNoClientSecret("some-secret", [])).toThrow(
+      "Client asset directory is required",
+    );
+    expect(() => assertNoClientSecret("some-secret", [empty])).toThrow(
+      `Client asset directory is empty: ${empty}`,
+    );
+    expect(() => assertNoClientSecret("some-secret", [hollow])).toThrow(
+      `Client asset directory is empty: ${hollow}`,
+    );
+  });
+
   it("fails the executable scan when OPENAI_API_KEY reaches a client asset", () => {
     const root = mkdtempSync(join(tmpdir(), "rentcottage-openai-scan-"));
     temporaryDirectories.push(root);
