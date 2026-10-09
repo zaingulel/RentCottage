@@ -4,6 +4,10 @@ import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import * as OTPAuth from "otpauth";
+import { administratorQueuesMessages } from "../src/i18n/administrator-queues-messages";
+import { administratorRecordsMessages } from "../src/i18n/administrator-records-messages";
+import { customerReviewMessages } from "../src/i18n/customer-review-messages";
+import type { Locale } from "../src/i18n/routing";
 
 type ReviewFixture = {
   sql: string;
@@ -411,7 +415,11 @@ async function expectOwnerReviewDenied(
   expect(reply.error?.code).toBe("42501");
 }
 
-async function openAdministratorReview(page: Page, bookingReference: string) {
+async function openAdministratorReview(
+  page: Page,
+  bookingReference: string,
+  locale: Locale = "en",
+) {
   const visitedAdministratorPages = new Set<string>();
   let targetAdministratorPage: string | undefined;
   while (true) {
@@ -425,7 +433,9 @@ async function openAdministratorReview(page: Page, bookingReference: string) {
     ) {
       targetAdministratorPage = page.url();
     }
-    const next = page.getByRole("link", { name: "Next reviews" });
+    const next = page.getByRole("link", {
+      name: customerReviewMessages[locale].next,
+    });
     if ((await next.count()) === 0) break;
     const nextHref = await next.getAttribute("href");
     if (!nextHref)
@@ -437,6 +447,47 @@ async function openAdministratorReview(page: Page, bookingReference: string) {
   expect(targetAdministratorPage).toBeDefined();
   await page.goto(targetAdministratorPage!);
   return page.getByRole("article").filter({ hasText: bookingReference });
+}
+
+// WCAG 2.2 Success Criterion 2.5.8 sets the 24 by 24 CSS pixel minimum.
+async function captureReviewFilters(page: Page, locale: Locale) {
+  const records = administratorRecordsMessages[locale];
+  const controls = [
+    page.getByLabel(records.status),
+    page.getByLabel(records.from),
+    page.getByLabel(records.through),
+    page.getByRole("button", {
+      name: administratorQueuesMessages[locale].apply,
+      exact: true,
+    }),
+    page.getByRole("link", { name: records.reset, exact: true }),
+  ];
+  const original = page.viewportSize();
+  for (const [viewport, size] of [
+    ["desktop", { width: 1440, height: 1000 }],
+    ["mobile", { width: 393, height: 851 }],
+  ] as const) {
+    await page.setViewportSize(size);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      )
+      .toBe(true);
+    for (const control of controls) {
+      await expect(control).toBeVisible();
+      const box = await control.boundingBox();
+      expect(box!.width).toBeGreaterThanOrEqual(24);
+      expect(box!.height).toBeGreaterThanOrEqual(24);
+    }
+    await page.screenshot({
+      path: test
+        .info()
+        .outputPath(`reviews-filtered-${locale}-${viewport}.png`),
+    });
+  }
+  await page.setViewportSize(original!);
 }
 
 function anchoredServiceDay(anchor: string, offset: number) {
@@ -969,6 +1020,28 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   );
   await expect(hiddenReview.getByText(reason)).toBeVisible();
   await expect(page.getByText("Matching reviews")).toBeVisible();
+  await captureReviewFilters(page, "en");
+  for (const locale of ["ar", "ckb"] as const) {
+    await page.goto(`/${locale}/administrator/reviews`);
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await page
+      .getByLabel(administratorRecordsMessages[locale].status)
+      .selectOption("hidden");
+    await page
+      .getByRole("button", {
+        name: administratorQueuesMessages[locale].apply,
+        exact: true,
+      })
+      .click();
+    await expect(page).toHaveURL(/state=hidden/);
+    const localizedHiddenReview = await openAdministratorReview(
+      page,
+      primary.ids.bookingReference,
+      locale,
+    );
+    await expect(localizedHiddenReview.getByText(reason)).toBeVisible();
+    await captureReviewFilters(page, locale);
+  }
 
   const hiddenAuthorContext = await browser.newContext({
     baseURL: new URL(page.url()).origin,

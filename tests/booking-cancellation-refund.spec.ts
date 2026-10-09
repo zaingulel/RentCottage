@@ -24,6 +24,7 @@ import { bookingManagementMessages as messages } from "../src/i18n/booking-manag
 import { bookingLifecycleMessages } from "../src/i18n/booking-lifecycle-messages";
 import { ownerBookingEarningsMessages as earningsMessages } from "../src/i18n/owner-booking-earnings-messages";
 import { ownerBookingEarnings } from "../src/booking-request/owner-booking-earnings";
+import type { Locale } from "../src/i18n/routing";
 const { createLocalSupabaseConcurrencyHarness } = createRequire(
   import.meta.url,
 )("../scripts/local-supabase-concurrency-harness.mjs") as {
@@ -276,10 +277,10 @@ async function assertResponsiveDetails(
   }
 }
 // The database is shared across specs, so the reference may sit on a later page.
-async function findQueueRow(page: Page) {
+async function findQueueRow(page: Page, locale: Locale = "en") {
   const row = page.getByRole("link", { name: reference, exact: true });
   const next = page.getByRole("link", {
-    name: administratorRecordsMessages.en.next,
+    name: administratorRecordsMessages[locale].next,
   });
   while (!(await row.count())) {
     await expect(next).toHaveCount(1);
@@ -289,6 +290,53 @@ async function findQueueRow(page: Page) {
 }
 const baghdadDate = (at: number) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Baghdad" }).format(at);
+// WCAG 2.2 Success Criterion 2.5.8 sets the 24 by 24 CSS pixel minimum.
+async function captureQueueFilters(
+  page: Page,
+  locale: Locale,
+  screenshotPrefix: string,
+) {
+  const copy = administratorQueuesMessages[locale];
+  const records = administratorRecordsMessages[locale];
+  const controls = [
+    ...(await page
+      .getByRole("group", { name: copy.queuesLabel })
+      .getByRole("button")
+      .all()),
+    page.getByLabel(records.status),
+    page.getByLabel(records.from),
+    page.getByLabel(records.through),
+    page.getByRole("button", { name: copy.apply, exact: true }),
+    page.getByRole("link", { name: records.reset, exact: true }),
+  ];
+  expect(controls).toHaveLength(9);
+  const original = page.viewportSize();
+  for (const [viewport, size] of [
+    ["desktop", { width: 1440, height: 1000 }],
+    ["mobile", { width: 393, height: 851 }],
+  ] as const) {
+    await page.setViewportSize(size);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      )
+      .toBe(true);
+    for (const control of controls) {
+      await expect(control).toBeVisible();
+      const box = await control.boundingBox();
+      expect(box!.width).toBeGreaterThanOrEqual(24);
+      expect(box!.height).toBeGreaterThanOrEqual(24);
+    }
+    await page.screenshot({
+      path: test
+        .info()
+        .outputPath(`${screenshotPrefix}-${locale}-${viewport}.png`),
+    });
+  }
+  await page.setViewportSize(original!);
+}
 test.describe("retained cancellation and refund controls", () => {
   test.use({ actionTimeout: 10000 });
   test.beforeEach(async () => {
@@ -718,11 +766,11 @@ test.describe("retained cancellation and refund controls", () => {
         ownerPage.getByText("Private address", { exact: true }),
       ).toHaveCount(0);
       const queues = administratorQueuesMessages.en;
-      const expectRow = async (label: string) =>
+      const expectRow = async (label: string, locale: Locale = "en") =>
         expect(
           page
             .getByRole("listitem")
-            .filter({ has: await findQueueRow(page) })
+            .filter({ has: await findQueueRow(page, locale) })
             .filter({ hasText: label })
             .first(),
         ).toBeVisible();
@@ -743,6 +791,7 @@ test.describe("retained cancellation and refund controls", () => {
       await expect(page).toHaveURL(/from=\d{4}-\d{2}-\d{2}/);
       await expect(page).toHaveURL(/through=\d{4}-\d{2}-\d{2}/);
       await expectRow(bookingLifecycleMessages.en.cancelled);
+      await captureQueueFilters(page, "en", "queues-bookings-filtered");
       await page.goto("/en/administrator/queues?queue=refunds");
       await expectRow(messages.en.approved);
       await expect(page.locator("body")).not.toContainText("PRIVATE");
@@ -750,7 +799,7 @@ test.describe("retained cancellation and refund controls", () => {
       await expectRow(bookingLifecycleMessages.en.cancellationSource);
       await expect(page.locator("body")).not.toContainText("PRIVATE");
       for (const locale of ["ar", "ckb"] as const) {
-        await page.goto(`/${locale}/administrator/queues`);
+        await page.goto(`/${locale}/administrator/queues?queue=bookings`);
         await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
         await expect(
           page.getByRole("heading", {
@@ -758,6 +807,18 @@ test.describe("retained cancellation and refund controls", () => {
             level: 1,
           }),
         ).toBeVisible();
+        await page
+          .getByLabel(administratorRecordsMessages[locale].status)
+          .selectOption("cancelled");
+        await page
+          .getByRole("button", {
+            name: administratorQueuesMessages[locale].apply,
+            exact: true,
+          })
+          .click();
+        await expect(page).toHaveURL(/state=cancelled/);
+        await expectRow(bookingLifecycleMessages[locale].cancelled, locale);
+        await captureQueueFilters(page, locale, "queues-bookings-filtered");
       }
       await page.goto("/en/administrator/queues?queue=incidents");
       await (await findQueueRow(page)).click();
