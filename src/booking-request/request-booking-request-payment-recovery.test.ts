@@ -16,7 +16,7 @@ vi.mock("@/config/server-runtime", () => ({
     name: "test",
     supabase: {
       projectRef: "local-test",
-      url: "http://127.0.0.1:55331",
+      url: "http://127.0.0.1:15331",
       secretKey: "test-secret",
     },
   }),

@@ -36,13 +36,13 @@ const HOSTED = {
   project: "rentcottage-verification",
   tempPrefix: "rentcottage-docker-config-",
   ports: {
-    api: 55331,
-    database: 55332,
+    api: 15331,
+    database: 15332,
     shadowDatabase: 15330,
-    pooler: 55339,
-    studio: 55333,
-    mail: 55334,
-    analytics: 55337,
+    pooler: 15339,
+    studio: 15333,
+    mail: 15334,
+    analytics: 15337,
     edgeInspector: 8183,
     next: 3000,
   },
@@ -103,7 +103,7 @@ function bindDouble(held = new Set()) {
   };
 }
 
-test("gives each place its own project, folder prefix and ports below every automatic port range, and keeps the hosted check's fixed values", () => {
+test("gives each place and the hosted check its own project, folder prefix and ports below every automatic port range", () => {
   assert.equal(LOCAL_CHECK_LIMIT, 2);
   assert.deepEqual(localCheckSettings(undefined), HOSTED);
   assert.deepEqual(localCheckSettings(1), PLACE_1);
@@ -114,13 +114,13 @@ test("gives each place its own project, folder prefix and ports below every auto
     return [...Object.values(ports), ...Object.values(locks)];
   });
   assert.equal(placePorts.length, 24);
-  for (const port of placePorts)
-    assert.ok(port < 32768, `${port} is inside an automatic port range`);
 
   const everyPort = [
     ...placePorts,
     ...Object.values(localCheckSettings(undefined).ports),
   ];
+  for (const port of everyPort)
+    assert.ok(port < 32768, `${port} is inside an automatic port range`);
   assert.equal(new Set(everyPort).size, everyPort.length);
   for (const port of DEMO_PORTS)
     assert.ok(!everyPort.includes(port), `${port} is a demo port`);

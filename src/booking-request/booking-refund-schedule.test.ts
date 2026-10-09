@@ -11,7 +11,7 @@ beforeEach(() => {
 const environment = {
   APP_ENVIRONMENT: "test",
   SUPABASE_PROJECT_REF: "local-test",
-  SUPABASE_URL: "http://127.0.0.1:55331",
+  SUPABASE_URL: "http://127.0.0.1:15331",
   SUPABASE_PUBLISHABLE_KEY: "local-publishable",
   SUPABASE_SECRET_KEY: "local-secret",
 };

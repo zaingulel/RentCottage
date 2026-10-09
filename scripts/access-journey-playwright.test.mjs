@@ -45,7 +45,7 @@ it("owned Playwright collection preserves forward and reverse order for both Nex
     ...process.env,
     PLAYWRIGHT_SERVER: "next",
     PLAYWRIGHT_WORKER_PORT: "8788",
-    SUPABASE_URL: "http://127.0.0.1:55331",
+    SUPABASE_URL: "http://127.0.0.1:15331",
     SUPABASE_SECRET_KEY: "synthetic-collection-secret",
   };
   delete environment.PLAYWRIGHT_JSON_OUTPUT_FILE;
@@ -181,7 +181,7 @@ it("owned Playwright adapter maps native attempt coordinates and rejects duplica
   ).toThrow("Unknown access journey");
 
   vi.stubEnv("ACCESS_JOURNEY_PHASE", "forward");
-  vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:55331");
+  vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:15331");
   vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "synthetic-publishable");
   vi.stubEnv("SUPABASE_SECRET_KEY", "synthetic-secret");
   const privilegedClient = { synthetic: "privileged client" };
@@ -237,7 +237,7 @@ it("owned Playwright adapter maps native attempt coordinates and rejects duplica
     privilegedClient,
     publishableKey: "synthetic-publishable",
     selectedTitle: info.title,
-    url: "http://127.0.0.1:55331",
+    url: "http://127.0.0.1:15331",
   });
   expect(doubles.validate).not.toHaveBeenCalled();
   expect(consumed).toBe(false);
@@ -251,7 +251,7 @@ it("owned Playwright adapter maps native attempt coordinates and rejects duplica
     fixture,
     privilegedClient,
     publishableKey: "synthetic-publishable",
-    url: "http://127.0.0.1:55331",
+    url: "http://127.0.0.1:15331",
   });
   expect(info.outputPath).not.toHaveBeenCalled();
   expect(doubles.writeFile).not.toHaveBeenCalled();

@@ -262,13 +262,13 @@ describe("access verification command", () => {
         'project_id = "rentcottage-issue-32-constructor"',
       );
       for (const value of [
-        "port = 55331",
-        "port = 55332",
-        "port = 55339",
-        "port = 55333",
-        "port = 55334",
+        "port = 15331",
+        "port = 15332",
+        "port = 15339",
+        "port = 15333",
+        "port = 15334",
         "inspector_port = 8183",
-        "port = 55337",
+        "port = 15337",
       ]) {
         expect(generatedConfig).toContain(value);
       }
@@ -487,8 +487,8 @@ describe("access verification command", () => {
         expect(activeLines).toContain(line);
       }
       for (const defaultValue of [
-        "55331",
-        "55332",
+        "15331",
+        "15332",
         "15330",
         "127.0.0.1:3000",
       ]) {
@@ -936,7 +936,7 @@ describe("access verification command", () => {
       expect(place.prepareProject).toHaveBeenCalledWith(
         expect.objectContaining({
           localProject: project,
-          ports: expect.objectContaining({ api: 55331, next: 3000 }),
+          ports: expect.objectContaining({ api: 15331, next: 3000 }),
         }),
       );
       const start = place.run.mock.calls.find(
