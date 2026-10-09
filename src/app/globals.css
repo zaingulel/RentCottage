@@ -1645,7 +1645,7 @@ html[lang="ckb"] .booking-summary h2 {
 
 .trusted-copy h2 {
   margin: var(--space-1) 0 0;
-  color: var(--green);
+  color: var(--ink-on-dark);
   font-family: var(--display);
   font-size: clamp(2rem, 4vw, 3rem);
   line-height: 1.2;
@@ -1671,10 +1671,6 @@ html[lang="ckb"] .booking-summary h2 {
 
 .trusted-copy {
   padding: clamp(var(--space-6), 5vw, var(--space-7));
-}
-
-.trusted-copy h2 {
-  color: var(--ink-on-dark);
 }
 
 .trusted-copy > p:nth-child(3) {
