@@ -28,6 +28,13 @@ export const workerPreviewServer = {
   timeout: 180_000,
 };
 
+export const nextServer = {
+  command: `npm run start -- -p ${nextPort}`,
+  url: `${nextOrigin}/ar`,
+  reuseExistingServer: false,
+  timeout: 120_000,
+};
+
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
@@ -44,10 +51,8 @@ export default defineConfig({
         command: `npm run build:worker && ${workerPreviewServer.command}`,
       }
     : {
-        command: `npm run build && npm run start -- -p ${nextPort}`,
-        url: `${nextOrigin}/ar`,
-        reuseExistingServer: false,
-        timeout: 120_000,
+        ...nextServer,
+        command: `npm run build && ${nextServer.command}`,
       },
   projects: [
     {

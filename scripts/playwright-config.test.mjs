@@ -123,6 +123,33 @@ describe("Playwright build freshness", () => {
       ).rejects.toThrow("Prebuilt preview requires PLAYWRIGHT_SERVER=worker");
     },
   );
+
+  it("reuses only Next.js compilation while keeping the server settings", async () => {
+    const standard = await loadNextConfig("3107");
+    const prebuilt = (await import("../playwright.next-prebuilt.config.ts"))
+      .default;
+    expect(prebuilt).toEqual({
+      ...standard,
+      webServer: {
+        ...standard.webServer,
+        command: "npm run start -- -p 3107",
+      },
+    });
+    expect(prebuilt.webServer.command).not.toContain("build");
+  });
+
+  it.each([undefined, "worker", "invalid"])(
+    "rejects prebuilt Next.js startup outside Next mode: %s",
+    async (server) => {
+      if (server === undefined) delete process.env.PLAYWRIGHT_SERVER;
+      else process.env.PLAYWRIGHT_SERVER = server;
+      await expect(
+        import("../playwright.next-prebuilt.config.ts"),
+      ).rejects.toThrow(
+        "Prebuilt Next.js start requires PLAYWRIGHT_SERVER=next",
+      );
+    },
+  );
 });
 
 describe("Playwright reporters", () => {
