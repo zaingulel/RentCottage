@@ -254,7 +254,12 @@ function ReviewFilterForm({
   const count = (state: "unhidden" | "hidden") =>
     stateCounts ? ` (${number.format(stateCounts[state])})` : "";
   return (
-    <form action={base} method="get" className={recordStyles.filters}>
+    <form
+      key={`${filters.state}|${filters.from}|${filters.through}`}
+      action={base}
+      method="get"
+      className={recordStyles.filters}
+    >
       <label>
         <span>{records.status}</span>
         <FormControl kind="select" name="state" defaultValue={filters.state}>

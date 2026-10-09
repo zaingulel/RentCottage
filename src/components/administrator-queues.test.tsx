@@ -345,6 +345,40 @@ describe("AdministratorQueues", () => {
     );
   });
 
+  it("clears the filter controls when the applied filters are reset", () => {
+    const outcome = {
+      status: "ready" as const,
+      page: page("requests", [row({ state: "cancelled" })]),
+    };
+    const { rerender } = render(
+      <AdministratorQueues
+        locale="en"
+        filters={{
+          queue: "requests",
+          state: "cancelled",
+          from: "2026-09-20",
+          through: "2026-09-21",
+        }}
+        outcome={outcome}
+      />,
+    );
+    expect(screen.getByRole("combobox", { name: "Status" })).toHaveValue(
+      "cancelled",
+    );
+
+    rerender(
+      <AdministratorQueues
+        locale="en"
+        filters={{ queue: "requests", ...noFilters }}
+        outcome={outcome}
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Status" })).toHaveValue("");
+    expect(screen.getByLabelText("From date (Baghdad)")).toHaveValue("");
+    expect(screen.getByLabelText("Through date (Baghdad)")).toHaveValue("");
+  });
+
   it("writes counts with the locale's number format", () => {
     render(
       <AdministratorQueues

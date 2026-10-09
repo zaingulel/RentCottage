@@ -503,6 +503,29 @@ describe("CustomerReviewModeration", () => {
       }
     });
 
+    it("clears the filter controls when the applied filters are reset", () => {
+      const { rerender } = render(
+        <CustomerReviewModeration
+          locale="en"
+          filters={filters}
+          result={empty}
+        />,
+      );
+      expect(screen.getByLabelText("Status")).toHaveValue("hidden");
+
+      rerender(
+        <CustomerReviewModeration
+          locale="en"
+          filters={noFilters}
+          result={empty}
+        />,
+      );
+
+      expect(screen.getByLabelText("Status")).toHaveValue("");
+      expect(screen.getByLabelText("From date (Baghdad)")).toHaveValue("");
+      expect(screen.getByLabelText("Through date (Baghdad)")).toHaveValue("");
+    });
+
     it("keeps the set filters on the next link and adds none when none are set", () => {
       const nextCursor = {
         submittedAt: "2026-09-21T12:00:00.000Z",

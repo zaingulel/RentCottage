@@ -134,7 +134,12 @@ export function AdministratorQueues({
           <input type="hidden" name="through" value={filters.through} />
         ) : null}
       </form>
-      <form action={base} method="get" className={styles.filters}>
+      <form
+        key={`${filters.queue}|${filters.state}|${filters.from}|${filters.through}`}
+        action={base}
+        method="get"
+        className={styles.filters}
+      >
         <input type="hidden" name="queue" value={filters.queue} />
         <label>
           <span>{records.status}</span>
