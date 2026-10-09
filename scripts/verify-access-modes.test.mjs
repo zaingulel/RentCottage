@@ -75,7 +75,7 @@ function ownedJourneyCommands(phase) {
 }
 
 describe("access verification command", () => {
-  it("skips reset only for a proven fresh GitHub-hosted start", async () => {
+  it("skips reset without a claimed place only for a proven fresh GitHub-hosted start", async () => {
     const hosted = {
       GITHUB_ACTIONS: "true",
       RUNNER_ENVIRONMENT: "github-hosted",

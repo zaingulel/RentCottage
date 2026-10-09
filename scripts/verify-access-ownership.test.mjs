@@ -86,6 +86,29 @@ const placeStartCommand = [
     "/tmp/place-state/project",
   ],
 ];
+const placeInventoryCommands = [
+  [
+    "docker",
+    [
+      "container",
+      "ls",
+      "--all",
+      "--quiet",
+      "--filter",
+      "name=supabase_db_rentcottage-verification-1",
+    ],
+  ],
+  [
+    "docker",
+    [
+      "volume",
+      "ls",
+      "--quiet",
+      "--filter",
+      "name=supabase_db_rentcottage-verification-1",
+    ],
+  ],
+];
 const leftoverDatabaseListing =
   '["supabase_db_rentcottage-verification-1","rentcottage-verification-1","/tmp/rentcottage-docker-config-1-Ab3dE9/project"]\n';
 
@@ -833,8 +856,23 @@ describe("access verification command", () => {
         PLAYWRIGHT_NEXT_PORT: String(expected.next),
         PLAYWRIGHT_WORKER_PORT: String(expected.worker),
       };
-      const [listing, start] = place.run.mock.calls;
+      const [listing, containers, volumes, start] = place.run.mock.calls;
       expect(listing[1].slice(0, 2)).toEqual(["ps", "--all"]);
+      expect(containers[1]).toEqual([
+        "container",
+        "ls",
+        "--all",
+        "--quiet",
+        "--filter",
+        `name=${expected.container}`,
+      ]);
+      expect(volumes[1]).toEqual([
+        "volume",
+        "ls",
+        "--quiet",
+        "--filter",
+        `name=${expected.container}`,
+      ]);
       expect(start[1].slice(0, 2)).toEqual(["supabase", "start"]);
       expect(start[2].env).toMatchObject(addresses);
       expect(commands(place.run)).toContainEqual([
@@ -918,10 +956,11 @@ describe("access verification command", () => {
     });
 
     expect(place.status).toBe(0);
-    expect(place.events.slice(0, 4)).toEqual([
+    expect(place.events.slice(0, 6)).toEqual([
       placeListingCommand,
       placeStopCommand,
       ["removeStaleFolders", [1, "/tmp/place-state"]],
+      ...placeInventoryCommands,
       placeStartCommand,
     ]);
     for (const [, , options] of place.run.mock.calls.slice(0, 2)) {
@@ -958,14 +997,96 @@ describe("access verification command", () => {
     });
 
     expect(place.status).toBe(0);
-    expect(place.events.slice(0, 3)).toEqual([
+    expect(place.events.slice(0, 5)).toEqual([
       placeListingCommand,
       ["removeStaleFolders", [1, "/tmp/place-state"]],
+      ...placeInventoryCommands,
       placeStartCommand,
     ]);
     expect(place.stdout).toHaveBeenCalledWith(
       "Place 1: removed what an earlier check left behind: /tmp/rentcottage-docker-config-1-Zz9yX8, /tmp/rentcottage-docker-config-1-Qq7wE6.",
     );
+  });
+
+  it("skips the reset in a claimed place only when Docker shows no database container or volume of that place", async () => {
+    const isInventory = ([command, args]) =>
+      command === "docker" && args[1] === "ls";
+    const resetsOf = (run) =>
+      run.mock.calls.filter(
+        ([command, args]) =>
+          command === "npx" && args[1] === "db" && args[2] === "reset",
+      );
+    const runWithInventory = (answer, options = {}) => {
+      const rest = successfulRun({ project: "rentcottage-verification-1" });
+      return runWithPlaceDoubles({
+        claimed: 1,
+        ...options,
+        run: vi.fn((command, args, runOptions) =>
+          isInventory([command, args])
+            ? answer(args[0])
+            : rest(command, args, runOptions),
+        ),
+      });
+    };
+
+    for (const { name, containers, volumes, resets } of [
+      { name: "both empty", containers: "", volumes: "", resets: 0 },
+      { name: "whitespace only", containers: " \n", volumes: "\n", resets: 0 },
+      {
+        name: "container listed",
+        containers: "stopped-container-id\n",
+        volumes: "",
+        resets: 1,
+      },
+      {
+        name: "volume listed",
+        containers: "",
+        volumes: "supabase_db_rentcottage-verification-1\n",
+        resets: 1,
+      },
+    ]) {
+      const place = await runWithInventory((resource) => ({
+        status: 0,
+        stdout: resource === "container" ? containers : volumes,
+      }));
+
+      expect(place.status, name).toBe(0);
+      const issued = commands(place.run);
+      const first = issued.findIndex(isInventory);
+      expect(issued.slice(0, first), name).toContainEqual(placeListingCommand);
+      expect(issued.slice(first, first + 3), name).toEqual([
+        ...placeInventoryCommands,
+        placeStartCommand,
+      ]);
+      for (const [, , options] of place.run.mock.calls.filter(isInventory))
+        expect(options).toMatchObject({ encoding: "utf8", stdio: "pipe" });
+      expect(resetsOf(place.run), name).toHaveLength(resets);
+      expect(place.stderr).not.toHaveBeenCalled();
+    }
+
+    for (const failed of ["container", "volume"]) {
+      for (const failure of [{ status: 7, stdout: "" }, { status: 0 }]) {
+        const place = await runWithInventory((resource) =>
+          resource === failed ? failure : { status: 0, stdout: "" },
+        );
+
+        expect(place.status).toBe(failure.status || 1);
+        expect(place.stderr).toHaveBeenCalledWith(
+          `Unable to verify Docker ${failed} inventory. Check Docker daemon access before retrying local verification.`,
+        );
+        expect(commands(place.run)).not.toContainEqual(placeStartCommand);
+      }
+    }
+
+    const named = await runWithPlaceDoubles({
+      claimed: 1,
+      environment: { SUPABASE_LOCAL_PROJECT: "rentcottage-issue-32-v3" },
+      run: successfulRun({ project: "rentcottage-issue-32-v3" }),
+    });
+
+    expect(named.status).toBe(0);
+    expect(commands(named.run).filter(isInventory)).toEqual([]);
+    expect(resetsOf(named.run)).toHaveLength(1);
   });
 
   it("deletes nothing when the database in its place cannot be shown to be this check's own", async () => {
@@ -1022,6 +1143,7 @@ describe("access verification command", () => {
     expect(place.status).toBe(1);
     expect(commands(place.run)).toEqual([
       placeListingCommand,
+      ...placeInventoryCommands,
       placeStartCommand,
       [
         "docker",

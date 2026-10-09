@@ -982,21 +982,28 @@ export async function main(
       }
       if (clearingStatus !== 0) return clearingStatus;
     }
-    if (disposableCi) {
+    if (disposableCi || slot !== undefined) {
       freshStart = true;
+      const inventoryScope = disposableCi
+        ? []
+        : [
+            "--filter",
+            `name=${databaseConcurrencyEnvironment.SUPABASE_DB_CONTAINER}`,
+          ];
       // Empty inventory means start builds a new database with migrations and seed; any retained resource requires reset.
       for (const inventoryArgs of [
         ["container", "ls", "--all", "--quiet"],
         ["volume", "ls", "--quiet"],
       ]) {
-        const inventory = await execute("docker", inventoryArgs, {
-          encoding: "utf8",
-          stdio: "pipe",
-        });
+        const inventory = await execute(
+          "docker",
+          [...inventoryArgs, ...inventoryScope],
+          { encoding: "utf8", stdio: "pipe" },
+        );
         if (inventory.status !== 0 || typeof inventory.stdout !== "string") {
           if (!interruptedSignal)
             stderr(
-              `Unable to verify Docker ${inventoryArgs[0]} inventory. Check Docker daemon access before retrying hosted verification.`,
+              `Unable to verify Docker ${inventoryArgs[0]} inventory. Check Docker daemon access before retrying ${disposableCi ? "hosted" : "local"} verification.`,
             );
           return inventory.status || 1;
         }
