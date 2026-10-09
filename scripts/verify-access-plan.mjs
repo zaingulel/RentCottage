@@ -199,6 +199,13 @@ function databaseChecks(mode, partition) {
 
 function browserJourneys({ ownedJourneys, phase, partition, shard }) {
   const steps = [];
+  const builtOnce = !partition && !ownedJourneys;
+  const workerBuild = {
+    group: "browser",
+    command: "npm",
+    args: ["run", "build:worker"],
+    environment: "worker",
+  };
   if (!partition || partition === "next") {
     for (const action of ["create", "validate"]) {
       steps.push({
@@ -233,6 +240,7 @@ function browserJourneys({ ownedJourneys, phase, partition, shard }) {
           "tests/customer-reviews.spec.ts",
           "--project=mobile",
           "--project=desktop",
+          ...(builtOnce ? ["--config=playwright.next-prebuilt.config.ts"] : []),
           "--workers=1",
           "--output=playwright-report/access-next",
         ];
@@ -252,6 +260,14 @@ function browserJourneys({ ownedJourneys, phase, partition, shard }) {
         },
       );
       return steps;
+    }
+    if (builtOnce) {
+      steps.push(workerBuild, {
+        group: "browser",
+        command: "npm",
+        args: ["run", "scan:client-secrets"],
+        environment: "worker",
+      });
     }
     steps.push({
       group: "browser",
@@ -274,13 +290,8 @@ function browserJourneys({ ownedJourneys, phase, partition, shard }) {
       args: ["scripts/prepare-access-test.mjs", "validate", "worker"],
       environment: "access",
     },
-    {
-      group: "browser",
-      command: "npm",
-      args: ["run", "build:worker"],
-      environment: "worker",
-    },
   );
+  if (!builtOnce) steps.push(workerBuild);
 
   if (partition !== "scheduled") {
     let workerArgs;

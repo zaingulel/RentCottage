@@ -29,6 +29,27 @@ export const requiredBaselineSteps = [
 
 export const requiredExpensiveSteps = [
   ["npm", ["run", "verify:access"]],
+  [
+    "npm",
+    [
+      "run",
+      "test:browser",
+      "--",
+      "--config=playwright.next-prebuilt.config.ts",
+    ],
+  ],
+  [
+    "npm",
+    [
+      "run",
+      "smoke:preview",
+      "--",
+      "--config=playwright.worker-prebuilt.config.ts",
+    ],
+  ],
+];
+
+export const requiredShellSmokeSteps = [
   ["npm", ["run", "build:worker"]],
   ["npm", ["run", "scan:client-secrets"]],
   ["npm", ["run", "test:browser"]],
@@ -53,7 +74,24 @@ export const requiredLightDatabaseSteps = [
 
 export const requiredBrowserSteps = [
   ["npm", ["run", "verify:access:browser"]],
-  ...requiredExpensiveSteps.slice(1),
+  [
+    "npm",
+    [
+      "run",
+      "test:browser",
+      "--",
+      "--config=playwright.next-prebuilt.config.ts",
+    ],
+  ],
+  [
+    "npm",
+    [
+      "run",
+      "smoke:preview",
+      "--",
+      "--config=playwright.worker-prebuilt.config.ts",
+    ],
+  ],
 ];
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");

@@ -144,10 +144,34 @@ export const nextJourneyCommand = [
     "--output=playwright-report/access-next",
   ],
 ];
-export const workerPreparationCommands = [
+export const prebuiltNextJourneyCommand = [
+  "npx",
+  [
+    "playwright",
+    "test",
+    "tests/access.spec.ts",
+    "tests/booking-request-access.spec.ts",
+    "tests/administrator-payment-history.spec.ts",
+    "tests/administrator-records.spec.ts",
+    "tests/booking-history.spec.ts",
+    "tests/messaging.spec.ts",
+    "tests/customer-reviews.spec.ts",
+    "--project=mobile",
+    "--project=desktop",
+    "--config=playwright.next-prebuilt.config.ts",
+    "--workers=1",
+    "--output=playwright-report/access-next",
+  ],
+];
+export const workerBuildCommand = ["npm", ["run", "build:worker"]];
+export const clientSecretScanCommand = ["npm", ["run", "scan:client-secrets"]];
+export const workerFixtureCommands = [
   ["node", ["scripts/prepare-access-test.mjs", "create", "worker"]],
   ["node", ["scripts/prepare-access-test.mjs", "validate", "worker"]],
-  ["npm", ["run", "build:worker"]],
+];
+export const workerPreparationCommands = [
+  ...workerFixtureCommands,
+  workerBuildCommand,
 ];
 export const workerJourneyCommand = [
   "npx",
@@ -190,8 +214,10 @@ export const scheduledExpiryVerifyCommand = [
 ];
 export const browserCommands = [
   ...nextFixtureCommands,
-  nextJourneyCommand,
-  ...workerPreparationCommands,
+  workerBuildCommand,
+  clientSecretScanCommand,
+  prebuiltNextJourneyCommand,
+  ...workerFixtureCommands,
   workerJourneyCommand,
   scheduledJourneyCommand,
   scheduledExpiryVerifyCommand,

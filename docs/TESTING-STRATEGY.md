@@ -27,7 +27,7 @@ change takes every row it touches.
 | Authentication, authorization, Row Level Security, private or personal data | The domain's `*_rls` or `*_security` SQL test asserting the allowed and the denied outcome for each role the change touches; for a changed user-visible boundary, the existing access journey in `tests/` | SQL test | `npm run verify -- --full` |
 | Payments and provider events | Vitest contract tests for signature, replay, duplicate and out-of-order events and the money-changing command; SQL tests for the authoritative facts | Vitest | `npm run verify -- --full` |
 | Worker behaviour (server code, bindings, scheduled handlers, headers) | The existing `tests/worker-*.spec.ts` journey for the changed behaviour, in the Workers runtime. Worker compatibility and the client-secret scan are independent evidence classes that a Node.js test does not replace | The Worker journey | The browser group; `npm run verify -- --full` when the change touches provider or Worker trust |
-| Credential custody and log content | A new or moved server secret extends `src/ci/client-secret-scan.ts` and the server-environment guard test; a changed log line has a Vitest assertion that it carries no secret or personal data | Vitest | The browser group, which runs the client-secret scan |
+| Credential custody and log content | A new or moved server secret extends `src/ci/client-secret-scan.ts` and the server-environment guard test; a changed log line has a Vitest assertion that it carries no secret or personal data | Vitest | The browser group. A local run scans inside the access run, directly after its one build and with the secrets that build was given; the hosted shell smoke portion scans its own build |
 | Untrusted content entering markup, SQL, a header or a provider request | Vitest, or the SQL test for SQL, asserting a hostile fixture is escaped, rejected or quoted | Vitest | `npm run verify -- --full` |
 | Scripts and workflow tooling under `scripts/` | The `node --test` suite under `scripts/lib/`, updated in the same change when a command contract changes | `npm run test:scripts` | `npm test` |
 | Documentation and agent instruction | `npm run lint:docs` and any contract test that pins the text; the fresh review of the final tree replaces the executed mutation | `npm run lint:docs` | The baseline route |
@@ -107,7 +107,10 @@ downgrade it. An asserted-but-unexecuted mutation is a review finding.
   concurrency program or Playwright specification that reuses fixed identifiers also clears its own rows before and
   after a run, so it can run again in the same project; a new check that reuses fixed identifiers does the same. A
   failed attempt can leave rows behind until the next run of that check or that teardown clears them, and synthetic
-  identities carry no credentials or sessions.
+  identities carry no credentials or sessions. A run in a place resets its database only when it was not freshly
+  created: before starting it asks Docker for a database container or database volume of that place and skips the
+  reset when it finds neither, since the start then builds the database from the migrations and seed. A run under an
+  explicitly named project always resets. The GitHub-hosted check applies the same test to its whole runner.
 - A run killed outright leaves its database and folder behind. The next run to take that place looks before it
   deletes: it stops a leftover database only when its labels show a local check made it in that place, stops it
   before removing that place's leftover folders, and removes nothing and stops with a plain message when it cannot
@@ -163,6 +166,12 @@ Focused checks run while building and between review rounds, each through
 The full local check runs once before push: `node scripts/run-log.mjs convergence -- npm run verify`, which selects
 its route from the changed paths (`npm run verify -- --plan` prints that route without running it) and runs every
 selected group; `npm run verify -- --full` runs every group regardless of the changed paths.
+A local baseline runs both dependency audits, then format checking, lint, type checking and the unit tests
+together, each reported under its own name with its output printed when it ends, then type generation and its diff
+check; when one of the four fails the others still finish and the run stops before type generation. The
+GitHub-hosted baseline runs the same steps one at a time. A local run that includes the browser group builds once,
+inside the access run after the Next.js fixtures; the Next.js journeys, the Worker journeys and the shell checks all
+serve that build. Each hosted browser portion builds what it serves.
 A TypeScript product change selects the baseline route; a database object the database group; a booking or payment
 Integrity Core object or concurrency program adds the booking and payment concurrency programs; presentation,
 Worker and Playwright paths the browser group; an unlisted path stops the run until it is listed in
