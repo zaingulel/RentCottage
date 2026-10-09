@@ -21,7 +21,11 @@ import {
   STATUS_OPTIONS,
 } from './board-config.mjs';
 import {
+  DETAIL_BATCH_SIZE,
+  cardDetailsQuery,
   fetchBoard,
+  fetchCardDetails,
+  intakeDocument,
   boardQuery,
   parseBoardArgs,
   parseBoardPage,
@@ -65,10 +69,11 @@ test('PICKABLE_STATUSES is exactly the two draw columns', () => {
 });
 
 test('parseBoardArgs: the default read, each selection, and --closeout', () => {
-  assert.deepEqual(parseBoardArgs([]), { all: false, status: null, json: false, closeout: false });
-  assert.deepEqual(parseBoardArgs(['--all', '--json']), { all: true, status: null, json: true, closeout: false });
-  assert.deepEqual(parseBoardArgs(['--status=Ready']), { all: false, status: 'Ready', json: false, closeout: false });
-  assert.deepEqual(parseBoardArgs(['--closeout']), { all: false, status: null, json: false, closeout: true });
+  assert.deepEqual(parseBoardArgs([]), { all: false, status: null, json: false, closeout: false, intake: false });
+  assert.deepEqual(parseBoardArgs(['--all', '--json']), { all: true, status: null, json: true, closeout: false, intake: false });
+  assert.deepEqual(parseBoardArgs(['--status=Ready']), { all: false, status: 'Ready', json: false, closeout: false, intake: false });
+  assert.deepEqual(parseBoardArgs(['--closeout']), { all: false, status: null, json: false, closeout: true, intake: false });
+  assert.deepEqual(parseBoardArgs(['--intake']), { all: false, status: null, json: false, closeout: false, intake: true });
 });
 
 // #598's defect class: this command's exit code is a proof contract, so a typo must never
@@ -101,6 +106,16 @@ test('parseBoardArgs: --closeout is exclusive, --all and --status= are exclusive
   );
 });
 
+test('parseBoardArgs: --intake takes no other argument', () => {
+  // --intake prints one fixed document, so every companion flag would promise output it
+  // never emits. Every pairing, in both orders.
+  for (const other of ['--all', '--status=Ready', '--json', '--closeout']) {
+    assert.throws(() => parseBoardArgs(['--intake', other]), /--intake takes no other argument/, other);
+    assert.throws(() => parseBoardArgs([other, '--intake']), /--intake takes no other argument/, other);
+  }
+  assert.equal(parseBoardArgs(['--intake']).intake, true);
+});
+
 // STATUS_OPTIONS is the board's whole column vocabulary, so a value outside it selects
 // nothing — and the command would spend a metered read to report `Rady: 0 of 171
 // item(s)`, an answer to a question nobody asked (the same #598 defect class the
@@ -118,7 +133,7 @@ test('parseBoardArgs: rejects a --status= value that is not a board column, and 
   for (const column of STATUS_OPTIONS) {
     assert.deepEqual(
       parseBoardArgs([`--status=${column}`]),
-      { all: false, status: column, json: false, closeout: false },
+      { all: false, status: column, json: false, closeout: false, intake: false },
       column,
     );
   }
@@ -672,6 +687,17 @@ test('parseBoardPage throws on a malformed numbered Issue card', () => {
   );
 });
 
+// Guard 10b. An assignee the read cannot name would count as an assignment in the
+// drift scan and print as an account on the intake document, so the read stops on it.
+test('ANTI-REGRESSION: parseBoardPage throws on an assignee without a usable login', () => {
+  for (const assignee of [{}, null, { login: '' }, { login: '  ' }, { login: 7 }]) {
+    assert.throws(
+      () => parseNodes(guardNode({ assignees: { totalCount: 1, nodes: [assignee] } })),
+      /board card #9 carried an assignee without a usable login.*rerun the board read/s,
+    );
+  }
+});
+
 // Guard 11. One issue, one card. Two cards for the same number make every count and
 // every per-card verdict ambiguous, and one of them is stale by definition.
 test('parseBoardPage and fetchBoard throw when the same issue number appears on two cards', () => {
@@ -896,4 +922,386 @@ test('formatGrouped warns when an unrecognised routing value is rendered without
   assert.match(literalUnfielded, /── Unfielded \(1\) ──/);
   assert.equal(literalUnfielded.split('#706').length - 1, 1);
   assert.match(literalUnfielded, /WARNING: unrecognised Workstream value: Unfielded/);
+});
+
+const commentPage = (bodies, { totalCount = bodies.length, hasPreviousPage = false, startCursor = null } = {}) => ({
+  totalCount,
+  pageInfo: { hasPreviousPage, startCursor },
+  nodes: bodies.map((body) => ({ body })),
+});
+const detailIssue = (number, overrides = {}) => ({
+  number, body: `body of ${number}`, parent: null, comments: commentPage([]), ...overrides,
+});
+const detailBatch = (aliases, errors) =>
+  JSON.stringify({ data: { repository: aliases }, ...(errors ? { errors } : {}) });
+const olderCommentPage = (number, comments) =>
+  JSON.stringify({ data: { repository: { issue: { number, comments } } } });
+
+test('ANTI-REGRESSION: a card detail that failed or came back malformed is unavailable, never empty', () => {
+  // Every unavailable entry is compared whole, so a `body`, `comments` or `commentCount`
+  // riding along beside the reason, which a caller could print as empty, fails the case.
+  const unavailable = (number, reason) => ({ number, unavailable: reason });
+
+  const numbers = Array.from({ length: DETAIL_BATCH_SIZE + 1 }, (_, index) => index + 1);
+  const last = DETAIL_BATCH_SIZE + 1;
+  const split = fetchCardDetails((args) => {
+    if (/\bi1:/.test(args.at(-1))) {
+      throw Object.assign(new Error('Command failed'), { stderr: '\ngh: timed out\nsecond line' });
+    }
+    return detailBatch({ [`i${last}`]: detailIssue(last) });
+  }, numbers);
+  assert.deepEqual([...split], [
+    ...numbers.slice(0, DETAIL_BATCH_SIZE).map((number) => [number, unavailable(number, 'gh: timed out')]),
+    [last, { number: last, body: `body of ${last}`, parent: null, comments: [], commentCount: 0, commentsUnavailable: null }],
+  ]);
+
+  const one = (response) => fetchCardDetails(() => response, [7]).get(7);
+  assert.deepEqual(
+    one(detailBatch({ i7: detailIssue(7) }, [{ message: 'Could not resolve' }, { message: 'later error' }])),
+    unavailable(7, 'GraphQL errors: Could not resolve'),
+  );
+  assert.deepEqual(one(detailBatch({ i7: null })), unavailable(7, 'GitHub returned no issue for this card'));
+  assert.deepEqual(one(detailBatch({ i7: detailIssue(8) })), unavailable(7, 'GitHub returned issue #8 for this card'));
+  assert.deepEqual(one(detailBatch({ i7: detailIssue(7, { body: null }) })), unavailable(7, 'malformed detail: body'));
+  assert.deepEqual(
+    one(detailBatch({ i7: detailIssue(7, { comments: commentPage(['only'], { totalCount: '1' }) }) })),
+    unavailable(7, 'malformed detail: comments'),
+  );
+  assert.deepEqual(
+    one(detailBatch({ i7: detailIssue(7, { comments: commentPage(['only'], { totalCount: 3 }) }) })),
+    unavailable(7, 'malformed detail: comments'),
+  );
+
+  const newest = commentPage(['fourth', 'fifth'], { totalCount: 5, hasPreviousPage: true, startCursor: 'cursor-a' });
+  const paged = (continuation) => fetchCardDetails(
+    (args) => (args.includes('before=cursor-a') ? continuation() : detailBatch({ i7: detailIssue(7, { comments: newest }) })),
+    [7],
+  ).get(7);
+  const partial = (comments, reason) => ({
+    number: 7, body: 'body of 7', parent: null, comments, commentCount: 5, commentsUnavailable: reason,
+  });
+  assert.deepEqual(paged(() => { throw new Error('offline'); }), partial(['fourth', 'fifth'], 'offline'));
+  assert.deepEqual(
+    paged(() => olderCommentPage(7, commentPage([], { totalCount: 5 }))),
+    partial(['fourth', 'fifth'], 'malformed comment page'),
+  );
+  assert.deepEqual(
+    paged(() => olderCommentPage(7, commentPage(['second', 'third'], { totalCount: 5 }))),
+    partial(['second', 'third', 'fourth', 'fifth'], 'GitHub reported 5 comment(s) but 4 were read'),
+  );
+  // The continuation holds exactly the three unread comments, so only its count says the
+  // list changed between the two pages.
+  assert.deepEqual(
+    paged(() => olderCommentPage(7, commentPage(['first', 'second', 'third'], { totalCount: 6 }))),
+    partial(['fourth', 'fifth'], 'comment count changed while reading'),
+  );
+
+  // A value that cannot be turned into text must not throw out of the read, which would
+  // lose the valid card beside it.
+  const untextable = { toString: null };
+  assert.deepEqual(
+    [...fetchCardDetails(() => detailBatch({ i7: detailIssue(7, { number: untextable }), i8: detailIssue(8) }), [7, 8])],
+    [
+      [7, unavailable(7, 'GitHub returned a different issue for this card')],
+      [8, { number: 8, body: 'body of 8', parent: null, comments: [], commentCount: 0, commentsUnavailable: null }],
+    ],
+  );
+  assert.deepEqual(
+    one(detailBatch({ i7: detailIssue(7) }, [{ message: untextable }])),
+    unavailable(7, 'malformed detail response'),
+  );
+});
+
+test('fetchCardDetails: reads body, parent and every comment page, oldest comment first', () => {
+  // The shape a live backward read returns: every page reports the whole count, and the
+  // final page is short, has no previous page and still carries a cursor.
+  const whole = { totalCount: 5 };
+  const newest = commentPage(['fourth', 'fifth'], { ...whole, hasPreviousPage: true, startCursor: 'cursor-a' });
+  const olderPages = {
+    'before=cursor-a': commentPage(['second', 'third'], { ...whole, hasPreviousPage: true, startCursor: 'cursor-b' }),
+    'before=cursor-b': commentPage(['first'], { ...whole, startCursor: 'cursor-c' }),
+  };
+  const calls = [];
+  const details = fetchCardDetails((args) => {
+    const before = args.find((arg) => arg.startsWith('before='));
+    calls.push(before);
+    if (before === undefined && calls.length === 1) {
+      return detailBatch({ i7: detailIssue(7, { parent: { number: 3 }, comments: newest }) });
+    }
+    if (!Object.hasOwn(olderPages, before)) assert.fail(`unexpected call: ${args.join(' ')}`);
+    return olderCommentPage(7, olderPages[before]);
+  }, [7]);
+
+  assert.deepEqual([...details], [[7, {
+    number: 7,
+    body: 'body of 7',
+    parent: 3,
+    comments: ['first', 'second', 'third', 'fourth', 'fifth'],
+    commentCount: 5,
+    commentsUnavailable: null,
+  }]]);
+  // The read turns a throwing call into a reason, so the call list is what refuses a stray call.
+  assert.deepEqual(calls, [undefined, 'before=cursor-a', 'before=cursor-b']);
+});
+
+test('cardDetailsQuery asks for body, parent and the newest comment page with its backward cursor, one alias per card', () => {
+  const query = cardDetailsQuery([7, 12]);
+  assert.deepEqual(
+    [...query.matchAll(/(\w+): issue\(number:(\d+)\) \{ \.\.\.CardDetails \}/g)].map(([, alias, number]) => [alias, number]),
+    [['i7', '7'], ['i12', '12']],
+  );
+  assert.equal(query.split('issue(').length - 1, 2);
+  assert.ok(query.includes(`repository(owner:"${BOARD_OWNER}" name:"${BOARD_REPOSITORY}")`));
+  assert.ok(query.endsWith(
+    'fragment CardDetails on Issue { number body parent { number } '
+    + 'comments(last:100) { totalCount pageInfo { hasPreviousPage startCursor } nodes { body } } }',
+  ));
+  // gh --paginate needs $endCursor and only walks forward; comments page backward.
+  assert.doesNotMatch(query, /\$endCursor/);
+
+  for (const numbers of [[], [7, 1.5], ['7']]) {
+    assert.throws(() => cardDetailsQuery(numbers), /at least one card number, each an integer/);
+  }
+});
+
+// Every expected line below is written by hand from the document format, never produced
+// by the function under test.
+const intakeCard = (number, status, title, { routing = 'Product', openBlockers = [], assignees = [] } = {}) => ({
+  number, status, title, routing, openBlockers, assignees,
+});
+const LISTING = 'LISTING HEADER\n\nLISTING BODY';
+const [BACKLOG, READY] = PICKABLE_STATUSES;
+const routingLine = (value) => (ROUTING_FIELD ? [`${ROUTING_FIELD}: ${value}`] : []);
+
+// One card's section: its header up to the blank line that ends it. A blank line inside
+// card text prints as a bare `|`, so the first blank line is always the end.
+function sectionOf(lines, number) {
+  const start = lines.findIndex((line) => line.startsWith(`=== #${number} `));
+  return lines.slice(start, start + lines.slice(start).indexOf(''));
+}
+
+test('ANTI-REGRESSION: an unavailable card prints no body, claim or comment count, and unread older comments never read as no claim', () => {
+  const details = new Map([
+    [5, { number: 5, unavailable: 'gh: timed out' }],
+    [6, {
+      number: 6, body: 'six body', parent: null, comments: ['hello', 'plain'], commentCount: 5, commentsUnavailable: 'offline',
+    }],
+    [7, {
+      number: 7, body: '', parent: 2, comments: ['older', '  Claim: m1, codex, t1'], commentCount: 4, commentsUnavailable: 'offline',
+    }],
+  ]);
+
+  const lines = intakeDocument({
+    listing: LISTING,
+    candidates: [
+      intakeCard(5, BACKLOG, 'Unread card', { assignees: ['dev-one'] }),
+      intakeCard(6, READY, 'Partly read', { openBlockers: [3, 4] }),
+    ],
+    claims: [intakeCard(7, 'In progress', 'Claimed card', { routing: null, assignees: ['dev-one', 'dev-two'] })],
+    numberless: 0,
+    details,
+  });
+
+  assert.deepEqual(sectionOf(lines, 5), [
+    '=== #5 [Backlog] Unread card ===',
+    ...routingLine('Product'),
+    'open blockers: none',
+    'assignees: @dev-one',
+    'details: UNAVAILABLE — gh: timed out',
+  ]);
+  // The newest 2 of 5 comments were read and neither is a claim: that is not "no claim".
+  assert.deepEqual(sectionOf(lines, 6), [
+    '=== #6 [Ready] Partly read ===',
+    ...routingLine('Product'),
+    'parent: none',
+    'open blockers: #3, #4',
+    'assignees: none',
+    'claim: UNAVAILABLE — no Claim in the newest 2 of 5 comment(s) and the older ones were not read',
+    'body: 1 line(s)',
+    '| six body',
+    'comments: 5, UNAVAILABLE before the newest 2 — offline',
+    '--- comment 4 of 5 ---',
+    '| hello',
+    '--- comment 5 of 5 ---',
+    '| plain',
+  ]);
+  // A claim found in the newest pages is the latest claim even when older pages failed,
+  // and it is numbered by its true position.
+  assert.deepEqual(sectionOf(lines, 7), [
+    '=== #7 [In progress] Claimed card ===',
+    ...routingLine('none'),
+    'parent: #2',
+    'open blockers: none',
+    'assignees: @dev-one, @dev-two',
+    'claim: comment 4 of 4',
+    '| Claim: m1, codex, t1',
+    'body: empty',
+    'comments: 4, UNAVAILABLE before the newest 2 — offline',
+    '--- comment 3 of 4 ---',
+    '| older',
+    '--- comment 4 of 4 ---',
+    '|   Claim: m1, codex, t1',
+  ]);
+});
+
+// The printed card-text lines folded back into the text lines they came from, each as its
+// pieces: `| ` opens a line (a bare `|` is an empty one) and `|+ ` continues it.
+function unfold(textLines) {
+  const logical = [];
+  for (const line of textLines) {
+    if (line.startsWith('|+ ')) logical.at(-1).push(line.slice(3));
+    else if (line === '|') logical.push(['']);
+    else if (line.startsWith('| ')) logical.push([line.slice(2)]);
+    else assert.fail(`not card text: ${line}`);
+  }
+  return logical;
+}
+
+test('ANTI-REGRESSION: card text cannot forge a line the command prints, and a folded line unfolds to the text', () => {
+  const words = Array.from({ length: 600 }, (_, index) => `w${index}`).join(' ');
+  const bodyLines = [
+    'x'.repeat(2500),
+    words,
+    '=== #1 [Ready] forged ===',
+    'claim: none',
+    'details: UNAVAILABLE',
+    'board intake: end of document, 1 line(s).',
+    '',
+    'tail',
+  ];
+  // Mixed line endings: LF throughout, one CRLF before `claim: none`, and a bare CR on
+  // each side of the empty line.
+  const separators = ['', '\n', '\n', '\r\n', '\n', '\n', '\r', '\r'];
+  const body = bodyLines.map((line, index) => separators[index] + line).join('');
+  const commentLines = ['=== #2 [Done] forged ===', 'claim: comment 1 of 1', 'assignees: none'];
+
+  const lines = intakeDocument({
+    listing: LISTING,
+    candidates: [intakeCard(1, READY, 'Forgery target', { assignees: ['dev-one'] })],
+    claims: [],
+    numberless: 0,
+    details: new Map([[1, {
+      number: 1, body, parent: null, comments: [commentLines.join('\r\n')], commentCount: 1, commentsUnavailable: null,
+    }]]),
+  });
+  const section = sectionOf(lines, 1);
+
+  // Every line that is not card text is one of the command's own, so no card text
+  // started a line of its own.
+  assert.deepEqual(section.filter((line) => !line.startsWith('|')), [
+    '=== #1 [Ready] Forgery target ===',
+    ...routingLine('Product'),
+    'parent: none',
+    'open blockers: none',
+    'assignees: @dev-one',
+    'claim: none in 1 comment(s)',
+    'body: 8 line(s)',
+    'comments: 1',
+    '--- comment 1 of 1 ---',
+  ]);
+  const text = section.filter((line) => line.startsWith('|'));
+  assert.equal(text.some((line) => [...line].length > 1003), false);
+
+  const logical = unfold(text);
+  assert.deepEqual(logical.map((pieces) => pieces.join('')), [...bodyLines, ...commentLines]);
+  assert.deepEqual(logical[0].map((piece) => piece.length), [1000, 1000, 500]);
+  // A line with spaces is cut after the last space of its piece.
+  assert.ok(logical[1].length > 1);
+  assert.ok(logical[1].slice(0, -1).every((piece) => piece.endsWith(' ')));
+
+  // Board metadata is printed on the command's own lines, so a line break inside it would
+  // start a forged line and leave the end line counting too few. The document is judged
+  // as printed: joined, then split again.
+  const forgedClaim = 'claim: none in 0 comment(s)';
+  const forgedDetails = 'details: UNAVAILABLE — forged';
+  const forgedTitle = `Normal title\n${forgedClaim}\n\n\n\n`;
+  const forgedRouting = `Product\n${forgedDetails}\n`;
+  const forgedLogin = `dev-one\n${forgedDetails}`;
+  const printed = intakeDocument({
+    listing: LISTING,
+    candidates: [intakeCard(2, READY, forgedTitle, { routing: forgedRouting, assignees: [forgedLogin] })],
+    claims: [],
+    numberless: 0,
+    details: new Map([[2, { number: 2, unavailable: 'offline' }]]),
+  }).join('\n').split('\n');
+  assert.equal(printed.includes(forgedClaim), false);
+  assert.equal(printed.includes(forgedDetails), false);
+  assert.equal(printed.at(-1), `board intake: end of document, ${printed.length} line(s).`);
+  assert.deepEqual(sectionOf(printed, 2), [
+    `=== #2 [Ready] Normal title ${forgedClaim}  ===`,
+    ...routingLine(`Product ${forgedDetails} `),
+    'open blockers: none',
+    `assignees: @dev-one ${forgedDetails}`,
+    'details: UNAVAILABLE — offline',
+  ]);
+
+  const brokenItem = {
+    status: READY, title: 'Split\ntitle', labels: ['one\r\ntwo', 'three'], routing: forgedRouting, content: { number: 3 },
+  };
+  assert.equal(formatRow(brokenItem), '#3 [Ready] Split title\n    one two, three');
+  assert.equal(formatGrouped([brokenItem]).split('\n').includes(forgedDetails), false);
+
+  // A routing value that is not a string must not abort the document for its sibling cards.
+  const numeric = intakeDocument({
+    listing: LISTING,
+    candidates: [intakeCard(4, READY, 'Numeric routing', { routing: 123 }), intakeCard(5, READY, 'Ordinary')],
+    claims: [],
+    numberless: 0,
+    details: new Map([[4, { number: 4, unavailable: 'offline' }], [5, { number: 5, unavailable: 'offline' }]]),
+  });
+  assert.equal(numeric.includes('=== #4 [Ready] Numeric routing ==='), true);
+  assert.equal(numeric.includes('=== #5 [Ready] Ordinary ==='), true);
+  assert.deepEqual(sectionOf(numeric, 4).slice(1, 1 + routingLine('123').length), routingLine('123'));
+});
+
+test('intakeDocument: a complete card prints its fields, latest claim, body and comments', () => {
+  // Two claims with a plain comment after the newer one: the claim line names the newer.
+  const lines = intakeDocument({
+    listing: LISTING,
+    candidates: [intakeCard(9, READY, 'Complete card', { openBlockers: [4], assignees: ['dev-one', 'dev-two'] })],
+    claims: [],
+    numberless: 0,
+    details: new Map([[9, {
+      number: 9,
+      body: 'first\nsecond\n\nfourth',
+      parent: 2,
+      comments: ['Claim: m0, claude, t0', 'plain', 'Claim: m1, codex, t1\nextra line', 'thanks'],
+      commentCount: 4,
+      commentsUnavailable: null,
+    }]]),
+  });
+
+  assert.deepEqual(lines, [
+    'LISTING HEADER',
+    '',
+    'LISTING BODY',
+    '',
+    'Card details: 1 pickable card(s), then 0 claimed card(s) with no closing pull request.',
+    'Lines starting "| " are card text, and "|+ " continues the line above it.',
+    '',
+    '=== #9 [Ready] Complete card ===',
+    ...routingLine('Product'),
+    'parent: #2',
+    'open blockers: #4',
+    'assignees: @dev-one, @dev-two',
+    'claim: comment 3 of 4',
+    '| Claim: m1, codex, t1',
+    'body: 4 line(s)',
+    '| first',
+    '| second',
+    '|',
+    '| fourth',
+    'comments: 4',
+    '--- comment 1 of 4 ---',
+    '| Claim: m0, claude, t0',
+    '--- comment 2 of 4 ---',
+    '| plain',
+    '--- comment 3 of 4 ---',
+    '| Claim: m1, codex, t1',
+    '| extra line',
+    '--- comment 4 of 4 ---',
+    '| thanks',
+    '',
+    `board intake: end of document, ${30 + routingLine('Product').length} line(s).`,
+  ]);
 });

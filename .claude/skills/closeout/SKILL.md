@@ -16,9 +16,12 @@ process list; nothing is inferred from chat.
    took the direct route there is no pull request: confirm instead with `git fetch origin main` and
    `git merge-base --is-ancestor <pushed sha> origin/main`, check the review line in the pushed commit's
    message with `git log -1 --format=%B <pushed sha>`, never in chat, and confirm `git rev-parse <pushed
-   sha>^{tree}` equals the tree of the `head=` its message's current-head convergence receipts name; an older receipt
-   qualifies only for a check the testing strategy marks for receipt reuse and only with the head and documentation-only
-   difference disclosed under `resume` section 8 step 1. A mismatch is a workflow failure named in the report.
+   sha>^{tree}` equals the tree of the head its message's convergence receipts were settled on: the `head=` of each
+   receipt that ran on it, and the last head each `Carried from:` line names, never a head named before it. A receipt
+   that reads an older `head=` qualifies only when a `Carried from:` line names that head first, as the one it ran
+   on, and the `Changed paths:` and `Carried receipts:` lines are filled as the Receipt reuse rule in `resume`
+   section 8 says; on this route that line names no rebased head between the two. A mismatch is a workflow failure
+   named in the report.
 2. **Issues.** `Closes #` in the body closed them at merge; confirm with `gh issue view <n> --json state`. An
    issue the pull request resolved but did not name is reported to the owner, never closed unasked: only the
    issues the approved body names are within this run's authorisation. After a sync job, close each covered card the

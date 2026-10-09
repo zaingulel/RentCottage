@@ -130,7 +130,7 @@ a claim that work is next is checked against the board.
 | How planned work is tracked, and how the board toolkit serves another board | [The board](AI-WORKFLOW-board.md) |
 | What stops an agent from skipping a check, and what is only a sentence | [Enforced or instructed](AI-WORKFLOW-enforcement.md) |
 | What counts as proof that a change works | [The evidence bar](AI-WORKFLOW-evidence.md) |
-| What a pull request's review line means | [The review line](#the-review-line) below |
+| What a pull request description holds, and what its review line means | [The review line](#the-review-line) below |
 | How the workflow reaches another repository | [`AGENTS.md`](../AGENTS.md) under "Shared workflow adoption", then the [`sync-job`](../.agents/skills/sync-job/SKILL.md) skill |
 | What is true of one repository alone: its product, own facts, grounding authorities and conventions | [`.agents/REPOSITORY.md`](../.agents/REPOSITORY.md) |
 | What happens to a file, worktree or branch another job left behind | [Leftover rule](../.agents/skills/closeout/SKILL.md#leftover-rule) in the `closeout` skill; [`AGENTS.md`](../AGENTS.md) under "Owner gates" for the authority to delete one |
@@ -150,7 +150,7 @@ Review: tier=sign-off rounds=7 raised=16 fixed=13 dismissed=2 deferred=1 greptil
 
 | Field | Value |
 |---|---|
-| `tier` | `document`, `code` or `sign-off`: the review tier the `resume` skill chose from the two questions: the session's own review, the cross-family review, or the cross-family review followed by Greptile. A pass run on the writing family's seat because the other family was unavailable keeps its tier; the pull request body declares the substitution |
+| `tier` | `document`, `code` or `sign-off`: the review tier the `resume` skill chose from the two questions: the session's own review, the cross-family review, or the cross-family review followed by Greptile. A change whose parts answer the two questions differently carries the tier of its heaviest part, and the one review covers the whole change at that tier. A pass run on the writing family's seat because the other family was unavailable keeps its tier; the pull request body declares the substitution |
 | `rounds` | Reviewer passes over the tree, at least 1: the fresh review, each pass scoped to a repair, each `security-reviewer` pass, and each Greptile review of a commit count one each; a pass counts once it records its verdict, zero findings included |
 | `raised` | Findings reported across every round, Greptile's included, a finding reported more than once counted once; in a self-review, the findings the session records in the Review section. A candidate the reviewer discarded itself is not one |
 | `fixed` | Raised findings repaired in this pull request |
@@ -172,6 +172,14 @@ Greptile review or every attempt was `UNAVAILABLE`, carries `greptile_rounds=0` 
 that reads as Greptile did not look, never as a clean Greptile review. Lines inside fenced code blocks or HTML
 comments are not review lines, and a body carrying more than one valid line is invalid.
 
-Below the line, the Review section carries the two answers the tier was chosen from, each with its reason, then the
-fresh reviewer's verdict, every finding with its disposition, and one usage line for each reviewer pass the Usage
-view cannot show, as the `cross-review` skill specifies; raw usage blocks stay out of the body.
+The line sits in the Review section of a body with five sections, which the session writes with the vendored `pr`
+skill. Summary shows the change as a few plain sentences beside a small picture: a diagram, a tree or a diff
+sketch. Evidence shows a before and an after, then the receipts a script wrote. Merge Danger carries the two
+answers the tier was chosen from, each with its reason; for a change whose parts answer the two questions
+differently they are the answers of the part that set the tier, named in each reason, with one sentence on what
+the other parts take. Review carries the line, then the fresh reviewer's verdict, every finding with its
+disposition, and one usage line for each reviewer pass the Usage view cannot show, as the `cross-review` skill
+specifies; raw usage blocks stay out of the body. Not done names anything skipped, deferred or uncertain. The
+skill carries a template of its own, and where it differs from `.github/pull_request_template.md` the
+repository's template wins; [the `resume` skill](../.agents/skills/resume/SKILL.md) owns that rule under
+"7. Push authorisation".

@@ -22,6 +22,9 @@ const UNQUALIFIED_CLEAN = 'board: no drift found.';
 
 // Only the one call the command makes on these fixtures is answered — the
 // single-process board walk, and only when it carries `--paginate --slurp` (#1155).
+// The --intake mode's card-detail reads are `api graphql` without `--paginate`, answered
+// from FAKE_DETAILS when a test sets it; unset, the call is unexpected, which is how a
+// test makes the detail read fail.
 // Anything else fails the fake loud (exit 2) rather than being swallowed, so an
 // unanticipated read surfaces here as a failed run instead of a quietly broadened fake.
 // Every invocation is logged so a caller can assert that GitHub was never reached.
@@ -31,6 +34,8 @@ const args = process.argv.slice(2);
 appendFileSync(process.env.FAKE_GH_CALLS, args.join(' ') + '\\n');
 if (args[0] === 'api' && args[1] === 'graphql' && args.includes('--paginate') && args.includes('--slurp')) {
   process.stdout.write(process.env.FAKE_BOARD);
+} else if (args[0] === 'api' && args[1] === 'graphql' && !args.includes('--paginate') && process.env.FAKE_DETAILS) {
+  process.stdout.write(process.env.FAKE_DETAILS);
 } else {
   process.stderr.write('unexpected gh invocation: ' + args.join(' '));
   process.exitCode = 2;
@@ -41,14 +46,15 @@ after(() => fakeGh.cleanup());
 // Returns the run plus every `gh` invocation the fake logged, so a caller can assert how
 // many calls the command made, not only what it printed. A fresh calls file per run, so
 // one run's log can never satisfy another's "no external call happened" assertion.
-function runBoard(args, page) {
+// `extraEnv` adds to the environment, for the answer to a detail read.
+function runBoard(args, page, extraEnv = {}) {
   const callsFile = fakeGh.newCallsFile();
   writeFileSync(callsFile, '');
   const run = spawnSync(process.execPath, [SCRIPT, ...args], {
     encoding: 'utf8',
     timeout: 30_000,
     // One slurped page: the array shape `--slurp` returns.
-    env: fakeGh.env({ FAKE_BOARD: JSON.stringify([page]), FAKE_GH_CALLS: callsFile }),
+    env: fakeGh.env({ FAKE_BOARD: JSON.stringify([page]), FAKE_GH_CALLS: callsFile, ...extraEnv }),
   });
   return { ...run, calls: readFileSync(callsFile, 'utf8').split('\n').filter(Boolean) };
 }
@@ -165,4 +171,81 @@ test('board CLI: --json puts the selection on stdout and the scan on stderr, and
   assert.equal(run.stdout.includes('BOARD DRIFT'), false, run.stdout);
   assert.match(run.stderr, /⚠ BOARD DRIFT/);
   assert.match(run.stderr, /^#272 \[Backlog\] CVE sweep — issue closed but card still in "Backlog" \(not Done\)$/m);
+});
+
+// One open, fielded Backlog card: it fires no drift rule and is the one card the intake
+// document details.
+const PICKABLE_PAGE = leanBoardPage([
+  leanNode({
+    id: 'PVTI_pickable_e2e',
+    content: { __typename: 'Issue', number: 20, title: 'Pickable card', assignees: ['dev-one'] },
+    status: 'Backlog',
+    routing: 'Product',
+  }),
+]);
+
+// What the single detail read answers for one card with one comment.
+const detailsFor = (number, body, comment) => JSON.stringify({
+  data: {
+    repository: {
+      [`i${number}`]: {
+        number,
+        body,
+        parent: null,
+        comments: { totalCount: 1, pageInfo: { hasPreviousPage: false, startCursor: null }, nodes: [{ body: comment }] },
+      },
+    },
+  },
+});
+
+const linesOf = (stream) => stream.slice(0, -1).split('\n');
+
+test('ANTI-REGRESSION: board CLI --intake puts only the document on stdout with its true line count, and the scan and outcome on stderr', () => {
+  const run = runBoard(['--intake'], PICKABLE_PAGE, { FAKE_DETAILS: detailsFor(20, 'Outcome line\nsecond line', 'Claim: m, codex, t') });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout.endsWith('\n'), true);
+  const document = linesOf(run.stdout);
+  assert.match(
+    document[0],
+    new RegExp(`^Board ${BOARD_OWNER}/${BOARD_REPOSITORY} project ${BOARD_PROJECT_NUMBER} — Backlog/Ready: 1 of 1 item\\(s\\)$`),
+  );
+  assert.ok(document.includes('=== #20 [Backlog] Pickable card ==='), run.stdout);
+  assert.ok(document.includes('assignees: @dev-one'), run.stdout);
+  assert.ok(document.includes('| Outcome line'), run.stdout);
+  // The end line counts every line of stdout, itself included, and so does stderr's.
+  assert.equal(document.at(-1), `board intake: end of document, ${document.length} line(s).`);
+  assert.equal(run.stdout.includes(UNQUALIFIED_CLEAN), false, run.stdout);
+  assert.deepEqual(linesOf(run.stderr), [
+    UNQUALIFIED_CLEAN,
+    'board intake: details complete for 1 card(s).',
+    `board intake: ${document.length} line(s) on stdout.`,
+  ]);
+  // The board read, then one detail read: nothing else reached GitHub.
+  assert.equal(run.calls.length, 2, run.calls.join('\n'));
+});
+
+test('ANTI-REGRESSION: an intake board read that failed, drift and an unavailable card detail exit 2, 3 and 4', () => {
+  const failed = runBoard(['--intake'], cleanPage(2));
+
+  assert.equal(failed.status, 2, failed.stderr);
+  assert.equal(failed.stdout, '');
+  assert.match(failed.stderr, /board: failed to read the GitHub Projects board — incomplete board items read:/);
+  assert.match(failed.stderr, /GitHub reported 2 board items but 1 were fetched/);
+
+  const drifted = runBoard(['--intake'], DRIFTED_PAGE, { FAKE_DETAILS: detailsFor(272, 'CVE body', 'a comment') });
+
+  assert.equal(drifted.status, 3, drifted.stderr);
+  assert.ok(linesOf(drifted.stdout).includes('=== #272 [Backlog] CVE sweep ==='), drifted.stdout);
+  assert.match(drifted.stderr, /⚠ BOARD DRIFT/);
+  assert.match(drifted.stderr, /^board intake: details complete for 1 card\(s\)\.$/m);
+
+  // No FAKE_DETAILS: the fake refuses the detail read, so the card's details are unread.
+  const unread = runBoard(['--intake'], PICKABLE_PAGE);
+
+  assert.equal(unread.status, 4, unread.stderr);
+  const document = linesOf(unread.stdout);
+  assert.ok(document.some((line) => line.startsWith('details: UNAVAILABLE — ')), unread.stdout);
+  assert.equal(document.some((line) => line.startsWith('body:')), false, unread.stdout);
+  assert.match(unread.stderr, /^board intake: details UNAVAILABLE in whole or part for 1 of 1 card\(s\): #20\.$/m);
 });

@@ -27,9 +27,11 @@ happened: a card there has legitimately produced no pull request yet.
 ### Reading and moving cards
 
 [`scripts/board.mjs`](../scripts/board.mjs) lists the board and, from the same read, reports a card whose column
-disagrees with its issue; closeout runs it in its strict mode. [`scripts/board-move.mjs`](../scripts/board-move.mjs)
-moves a card and, on a board with a parked lane, parks a card in that lane or releases it; on a board with no parked
-lane it refuses that request before making any `gh` call. The head of each script owns its modes and argument forms.
+disagrees with its issue; closeout runs it in its strict mode, and resume intake runs it in its intake mode, which
+adds the full details of every pickable card and every claimed card with no closing pull request and marks whatever
+it could not read as unavailable. [`scripts/board-move.mjs`](../scripts/board-move.mjs) moves a card and, on a board
+with a parked lane, parks a card in that lane or releases it; on a board with no parked lane it refuses that request
+before making any `gh` call. The head of each script owns its modes and argument forms.
 
 ### The toolkit in another repository
 

@@ -54,14 +54,18 @@ whose every path qualifies skips the pull request, is pushed straight to `main`,
 
 ### Stage by stage
 
-- **Intake.** Fetching main and safely selecting current verifier code come first. The `resume` skill's instruction-reuse
-  rule avoids rereading content whose Git identity and full active context are verified. Independent board, local,
-  pull-request, sync and tooling reads then overlap; their results and failures are collected before reconciliation.
-  Pull-request summaries identify which continuation bodies matter, and issue details serve selection and planning
-  without duplicate fields. Large output is captured once and read completely in bounded portions. Checkout movement
-  or conflicting facts invalidate affected evidence. These reduce repeated input and serial waits while retaining
-  freshness, complete recommendations, claims, triage authority and both owner gates; they establish no total
-  agent-latency guarantee.
+- **Intake.** The hook check, the fetch and the local inventory are issued together; selecting current verifier
+  code follows. The `resume` skill's instruction-reuse rule avoids rereading content whose Git identity and full
+  active context are verified, and proves every path in one command. One board command then reads the board once
+  and prints the pick listing, the drift scan and the full details of every card a session may offer or must
+  show, its latest claim included, while the pull-request, sync and tooling reads overlap it; results and
+  failures are collected before reconciliation. Its exit status separates a failed board read, drift and a card
+  whose details could not be read, and such a card is never offered as startable. Pull-request summaries
+  identify which continuation bodies matter, and the captured details serve selection and planning. Once every
+  read has returned the session rechecks the verifier checkout: movement or conflicting facts invalidate
+  affected evidence. These reduce hand-composed commands and serial waits while retaining freshness, complete
+  recommendations, claims, triage authority and both owner gates; they establish no total agent-latency
+  guarantee.
 - **Isolation.** Every issue gets its own git worktree on its own branch, so two issues in two terminals never
   share a working file. A runtime's own subagent worktree is not that worktree: it branches from `main` rather
   than from the job branch, so builders never run in one. Two slices of one issue with disjoint files can run at

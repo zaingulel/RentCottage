@@ -36,7 +36,7 @@ import { rejectUnknownArgs } from './cli-flags.mjs';
 // operator never asked — and --closeout's exit code is a proof contract, so an
 // unrecognised argument stops the command here rather than certifying a board nobody
 // asked about (the #598 silent-substitution defect class).
-export const BOARD_USAGE = 'usage: node scripts/board.mjs [--all | --status=<Column>] [--json] [--closeout]';
+export const BOARD_USAGE = 'usage: node scripts/board.mjs [--all | --status=<Column>] [--json] | --closeout | --intake';
 
 export function parseBoardArgs(argv) {
   // Checked before rejectUnknownArgs, which knows `--status=` as ONE positional and would
@@ -47,7 +47,7 @@ export function parseBoardArgs(argv) {
     throw new Error(`only one --status= filter is allowed, got ${statusFlags.join(' ')} — ${BOARD_USAGE}`);
   }
   rejectUnknownArgs(argv, {
-    flags: new Map([['--all', 0], ['--json', 0], ['--closeout', 0]]),
+    flags: new Map([['--all', 0], ['--json', 0], ['--closeout', 0], ['--intake', 0]]),
     // An empty `--status=` names no column, so it is rejected here rather than degrading
     // into the default selection.
     positionals: [(arg) => /^--status=.+$/.test(arg)],
@@ -56,6 +56,11 @@ export function parseBoardArgs(argv) {
   // --all with --status= selects by --all but would label the header with the status.
   if (argv.includes('--all') && statusFlags.length > 0) {
     throw new Error(`--all and ${statusFlags[0]} are exclusive — ${BOARD_USAGE}`);
+  }
+  // --intake prints one fixed document, so a selection or format flag would promise a
+  // listing it never prints, and --closeout beside it would promise a gate it never is.
+  if (argv.includes('--intake') && argv.length > 1) {
+    throw new Error(`--intake takes no other argument — ${BOARD_USAGE}`);
   }
   // --closeout is the strict proof gate and prints the scan alone, so any companion flag
   // would promise a listing or a JSON document the gate never emits.
@@ -78,6 +83,7 @@ export function parseBoardArgs(argv) {
     status,
     json: argv.includes('--json'),
     closeout: argv.includes('--closeout'),
+    intake: argv.includes('--intake'),
   };
 }
 
@@ -209,8 +215,9 @@ function parseNode(node) {
 // A numbered Issue card is the shape every board rule judges, so a field that came
 // back malformed stops the read rather than being defaulted: a missing state would
 // silence the epic passes, an unusable summary would forge an undecomposed-epic row,
-// and a closing reference without a number would make an in-flight claim read as
-// stalled.
+// a closing reference without a number would make an in-flight claim read as stalled,
+// and an assignee without a usable login would print as an account on the intake
+// document.
 function assertIssueContent(issue, cardId) {
   const where = `board item ${cardId}`;
   assertWholeConnection(issue.labels, 'labels', where);
@@ -241,6 +248,11 @@ function assertIssueContent(issue, cardId) {
   for (const blocker of issue.blockedBy.nodes) {
     if (!numbered(blocker) || (blocker.state !== 'OPEN' && blocker.state !== 'CLOSED')) {
       throw new Error(`${card} carried a blocker without a number and an OPEN or CLOSED state; ${RERUN}`);
+    }
+  }
+  for (const assignee of issue.assignees.nodes) {
+    if (typeof assignee?.login !== 'string' || assignee.login.trim() === '') {
+      throw new Error(`${card} carried an assignee without a usable login; ${RERUN}`);
     }
   }
 }
@@ -497,6 +509,261 @@ export function fetchBoard(exec) {
   return items;
 }
 
+// How many cards one detail call asks for. A failed call costs every card it named, so
+// the batch is the unit of loss.
+export const DETAIL_BATCH_SIZE = 20;
+
+// The newest 100 comments and the cursor to the ones before them. `totalCount` is the
+// whole connection's count on every page, never the page's own.
+const COMMENT_PAGE_FIELDS = 'totalCount pageInfo { hasPreviousPage startCursor } nodes { body }';
+
+// One aliased issue per card, so one call reads a whole batch. It declares no
+// `$endCursor`: comments page backward, which `gh --paginate` cannot follow.
+export function cardDetailsQuery(numbers) {
+  if (numbers.length === 0 || !numbers.every(Number.isInteger)) {
+    throw new Error('cardDetailsQuery needs at least one card number, each an integer');
+  }
+  const aliases = numbers.map((n) => `i${n}: issue(number:${n}) { ...CardDetails }`).join(' ');
+  return `query { repository(owner:"${BOARD_OWNER}" name:"${BOARD_REPOSITORY}") { ${aliases} } } fragment CardDetails on Issue { number body parent { number } comments(last:100) { ${COMMENT_PAGE_FIELDS} } }`;
+}
+
+export function commentPageQuery() {
+  return `query($number: Int!, $before: String!) { repository(owner:"${BOARD_OWNER}" name:"${BOARD_REPOSITORY}") { issue(number:$number) { number comments(last:100, before:$before) { ${COMMENT_PAGE_FIELDS} } } } }`;
+}
+
+const firstLine = (text) => (text.split(/\r\n|\n|\r/).find((line) => line.trim() !== '') ?? '').slice(0, 300);
+
+const thrownReason = (err) =>
+  firstLine(typeof err?.stderr === 'string' && err.stderr !== '' ? err.stderr : String(err?.message ?? err));
+
+const isObject = (value) => value !== null && typeof value === 'object';
+
+// One detail call → `{ repository }` or `{ reason }`, where `malformed` is the reason for
+// a response that is not the shape asked for. gh prints partial data beside GraphQL
+// errors, so no part of a response that carries errors is used. No value from the response
+// is put into a reason before its type is checked: one that cannot be turned into text
+// would throw out of the read and lose every card beside it.
+function readDetailCall(exec, args, malformed) {
+  let out;
+  try {
+    out = exec(args);
+  } catch (err) {
+    return { reason: thrownReason(err) };
+  }
+  let response;
+  try {
+    response = JSON.parse(out);
+  } catch {
+    return { reason: malformed };
+  }
+  const errors = response?.errors ?? [];
+  if (!Array.isArray(errors)) return { reason: malformed };
+  if (errors.length > 0) {
+    const message = errors[0]?.message;
+    return { reason: typeof message === 'string' ? `GraphQL errors: ${firstLine(message)}` : malformed };
+  }
+  const repository = response?.data?.repository;
+  return isObject(repository) ? { repository } : { reason: malformed };
+}
+
+function isCommentPage(page) {
+  return Number.isInteger(page?.totalCount)
+    && Array.isArray(page.nodes)
+    && page.nodes.every((node) => typeof node?.body === 'string')
+    && page.nodes.length <= page.totalCount
+    && typeof page.pageInfo?.hasPreviousPage === 'boolean'
+    && (!page.pageInfo.hasPreviousPage
+      || (typeof page.pageInfo.startCursor === 'string' && page.pageInfo.startCursor !== ''));
+}
+
+// Walks one issue's comments backward from its newest page. Completeness is judged
+// against the FIRST page's totalCount, and only once no previous page remains: a short
+// final page is valid, so no continuation is judged short on its own. A continuation
+// reporting another totalCount is a list that changed between pages: it is not
+// accumulated, and the comments already read are returned as an incomplete read.
+function readOlderComments(exec, number, firstPage) {
+  const commentCount = firstPage.totalCount;
+  let comments = firstPage.nodes.map((node) => node.body);
+  let { hasPreviousPage, startCursor } = firstPage.pageInfo;
+  const usedCursors = new Set();
+  while (hasPreviousPage) {
+    usedCursors.add(startCursor);
+    // The cursor travels as -f, a raw string: -F would read one starting `@` as a file name.
+    const { repository, reason } = readDetailCall(
+      exec,
+      ['api', 'graphql', '-F', `number=${number}`, '-f', `before=${startCursor}`, '-f', `query=${commentPageQuery()}`],
+      'malformed comment page',
+    );
+    if (!repository) return { comments, commentCount, commentsUnavailable: reason };
+    const page = repository.issue?.comments;
+    if (
+      repository.issue?.number !== number
+      || !isCommentPage(page)
+      || page.nodes.length === 0
+      || page.nodes.length > commentCount - comments.length
+      || (page.pageInfo.hasPreviousPage && usedCursors.has(page.pageInfo.startCursor))
+    ) {
+      return { comments, commentCount, commentsUnavailable: 'malformed comment page' };
+    }
+    if (page.totalCount !== commentCount) {
+      return { comments, commentCount, commentsUnavailable: 'comment count changed while reading' };
+    }
+    comments = [...page.nodes.map((node) => node.body), ...comments];
+    ({ hasPreviousPage, startCursor } = page.pageInfo);
+  }
+  const commentsUnavailable = comments.length < commentCount
+    ? `GitHub reported ${commentCount} comment(s) but ${comments.length} were read`
+    : null;
+  return { comments, commentCount, commentsUnavailable };
+}
+
+function cardDetail(exec, number, issue) {
+  const unavailable = (reason) => ({ number, unavailable: reason });
+  if (!isObject(issue)) return unavailable('GitHub returned no issue for this card');
+  if (issue.number !== number) {
+    return unavailable(Number.isInteger(issue.number)
+      ? `GitHub returned issue #${issue.number} for this card`
+      : 'GitHub returned a different issue for this card');
+  }
+  if (typeof issue.body !== 'string') return unavailable('malformed detail: body');
+  const { parent, comments: firstPage } = issue;
+  if (parent !== null && !Number.isInteger(parent?.number)) return unavailable('malformed detail: parent');
+  if (
+    !isCommentPage(firstPage)
+    || (!firstPage.pageInfo.hasPreviousPage && firstPage.nodes.length < firstPage.totalCount)
+  ) {
+    return unavailable('malformed detail: comments');
+  }
+  return { number, body: issue.body, parent: parent?.number ?? null, ...readOlderComments(exec, number, firstPage) };
+}
+
+// Every requested card gets exactly one entry: its details, or the reason they are
+// unavailable. A detail that was not read is never an empty body or zero comments, and
+// nothing is retried. Each call goes through the injected executor, so the transport
+// stays at the CLI edge.
+export function fetchCardDetails(exec, numbers) {
+  const details = new Map();
+  for (let start = 0; start < numbers.length; start += DETAIL_BATCH_SIZE) {
+    const batch = numbers.slice(start, start + DETAIL_BATCH_SIZE);
+    const { repository, reason } = readDetailCall(
+      exec,
+      ['api', 'graphql', '-f', `query=${cardDetailsQuery(batch)}`],
+      'malformed detail response',
+    );
+    for (const number of batch) {
+      details.set(number, repository
+        ? cardDetail(exec, number, repository[`i${number}`])
+        : { number, unavailable: reason });
+    }
+  }
+  return details;
+}
+
+// The exit status of `--intake` alone; every other mode keeps scanOutcome's. 1 stays the
+// rejected argument, so no outcome of a read reuses it.
+export const INTAKE_EXIT = Object.freeze({ complete: 0, readFailed: 2, drift: 3, incomplete: 4, driftAndIncomplete: 5 });
+
+const LINE_BREAK = /\r\n|\n|\r/;
+
+// Board metadata is printed on the command's own lines, so each run of line breaks in it
+// becomes one space: a title or an option name can never start a line of its own.
+const LINE_BREAK_RUNS = new RegExp(`(?:${LINE_BREAK.source})+`, 'g');
+const oneLine = (text) => text.replace(LINE_BREAK_RUNS, ' ');
+
+// The longest run of a card-text line one printed line carries, in code points, so that
+// no printed card-text line exceeds 1,003 characters with its `|+ ` prefix.
+const CARD_TEXT_PIECE = 1000;
+
+// One card-text line → the lines printed for it. Card text always starts `| ` (`|` for
+// an empty line), so it can never begin a line the command prints itself, and a line
+// longer than one piece continues on `|+ ` lines: dropping the prefixes and joining the
+// pieces gives the line back exactly. A cut falls after the last space of its piece when
+// the piece has one.
+function foldCardTextLine(line) {
+  if (line === '') return ['|'];
+  const pieces = [];
+  let rest = [...line];
+  while (rest.length > CARD_TEXT_PIECE) {
+    const cut = rest.slice(0, CARD_TEXT_PIECE).lastIndexOf(' ') + 1 || CARD_TEXT_PIECE;
+    pieces.push(rest.slice(0, cut).join(''));
+    rest = rest.slice(cut);
+  }
+  pieces.push(rest.join(''));
+  return pieces.map((piece, index) => `${index === 0 ? '|' : '|+'} ${piece}`);
+}
+
+const cardText = (text) => text.split(LINE_BREAK).flatMap(foldCardTextLine);
+
+const isClaim = (comment) => comment.trimStart().startsWith('Claim:');
+
+// The newest Claim comment among those read, which is the latest claim even when older
+// pages failed. With none found, only a complete read may say there is none.
+function claimLines({ comments, commentCount, commentsUnavailable }) {
+  const index = comments.findLastIndex(isClaim);
+  if (index >= 0) {
+    const position = commentCount - comments.length + index + 1;
+    return [`claim: comment ${position} of ${commentCount}`, ...foldCardTextLine(comments[index].trimStart().split(LINE_BREAK)[0])];
+  }
+  if (commentsUnavailable !== null) {
+    return [`claim: UNAVAILABLE — no Claim in the newest ${comments.length} of ${commentCount} comment(s) and the older ones were not read`];
+  }
+  return [`claim: none in ${commentCount} comment(s)`];
+}
+
+function commentLines({ comments, commentCount, commentsUnavailable }) {
+  const heading = commentsUnavailable === null
+    ? `comments: ${commentCount}`
+    : `comments: ${commentCount}, UNAVAILABLE before the newest ${comments.length} — ${commentsUnavailable}`;
+  return [
+    heading,
+    ...comments.flatMap((comment, index) => [
+      `--- comment ${commentCount - comments.length + index + 1} of ${commentCount} ---`,
+      ...cardText(comment),
+    ]),
+  ];
+}
+
+function bodyLines(body) {
+  if (body.trim() === '') return ['body: empty'];
+  return [`body: ${body.split(LINE_BREAK).length} line(s)`, ...cardText(body)];
+}
+
+// One card's section. A card whose details were not read prints its board lines and the
+// reason and nothing else, so a missing detail never reads as present or empty.
+function cardSection(card, detail) {
+  const heading = [
+    oneLine(`=== #${card.number} [${card.status}] ${card.title} ===`),
+    ...(ROUTING_FIELD ? [oneLine(`${ROUTING_FIELD}: ${card.routing || 'none'}`)] : []),
+  ];
+  const blockers = `open blockers: ${card.openBlockers.length > 0 ? card.openBlockers.map((n) => `#${n}`).join(', ') : 'none'}`;
+  const assignees = oneLine(`assignees: ${card.assignees.length > 0 ? card.assignees.map((login) => `@${login}`).join(', ') : 'none'}`);
+  if (detail.unavailable !== undefined) return [...heading, blockers, assignees, `details: UNAVAILABLE — ${detail.unavailable}`];
+  return [
+    ...heading,
+    `parent: ${detail.parent === null ? 'none' : `#${detail.parent}`}`,
+    blockers,
+    assignees,
+    ...claimLines(detail),
+    ...bodyLines(detail.body),
+    ...commentLines(detail),
+  ];
+}
+
+// Every line of the `--intake` stdout: the pick listing, then one section per card with
+// its details, then the end line that counts every line including itself.
+export function intakeDocument({ listing, candidates, claims, numberless, details }) {
+  const noNumber = numberless > 0 ? ` ${numberless} card(s) with no issue number have no details.` : '';
+  const lines = [
+    ...listing.split('\n'),
+    '',
+    `Card details: ${candidates.length} pickable card(s), then ${claims.length} claimed card(s) with no closing pull request.${noNumber}`,
+    'Lines starting "| " are card text, and "|+ " continues the line above it.',
+    ...[...candidates, ...claims].flatMap((card) => ['', ...cardSection(card, details.get(card.number))]),
+    '',
+  ];
+  return [...lines, `board intake: end of document, ${lines.length + 1} line(s).`];
+}
+
 const isParked = (i) => PARKED_LANE != null && i.lane === PARKED_LANE.option;
 
 // The PICKABLE_STATUSES columns only — never an in-flight or terminal one, and never a
@@ -570,7 +837,7 @@ export function formatRow(i) {
   const n = normalizeItem(i);
   const num = n.number == null ? '#?' : `#${n.number}`;
   const labels = n.labels.length ? n.labels.join(', ') : '—';
-  return `${num} [${n.status}] ${n.title}\n    ${labels}`;
+  return `${oneLine(`${num} [${n.status}] ${n.title}`)}\n    ${oneLine(labels)}`;
 }
 
 // A pre-selected list → the sorted, formatted block. Selection (pickable/status)
@@ -633,7 +900,7 @@ export function formatGrouped(items) {
   if (!ROUTING_FIELD) return formatList(items);
   const groups = groupByRouting(items);
   const body = groups
-    .map((g) => `── ${g.routing} (${g.items.length}) ──\n${formatList(g.items)}`)
+    .map((g) => `${oneLine(`── ${g.routing} (${g.items.length}) ──`)}\n${formatList(g.items)}`)
     .join('\n\n');
   const unknown = [...new Set(
     items.map(normalizeItem)
@@ -645,5 +912,5 @@ export function formatGrouped(items) {
   // Keep the repository-owned priority and low-cost read; newly seen values must fail loud.
   const values = unknown.join(', ');
   const label = unknown.length === 1 ? 'value' : 'values';
-  return `${body}\n\nWARNING: unrecognised ${ROUTING_FIELD} ${label}: ${values}; add ${values} to ROUTING_OPTIONS in scripts/lib/board-config.mjs.`;
+  return `${body}\n\n${oneLine(`WARNING: unrecognised ${ROUTING_FIELD} ${label}: ${values}; add ${values} to ROUTING_OPTIONS in scripts/lib/board-config.mjs.`)}`;
 }

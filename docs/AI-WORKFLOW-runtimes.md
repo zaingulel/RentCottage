@@ -20,14 +20,20 @@ what the hooks refuse, and [The seats](AI-WORKFLOW-seats.md) for the agent seats
 The factory runs on Claude Code and on Codex, and switches between them when one runs out of budget. Both read
 the same file: `AGENTS.md` is the contract, `CLAUDE.md` imports it and adds its own Claude-only notes. Skills
 are shared in `.agents/skills/`, which Codex reads directly, and `.claude/skills/` holds a byte-identical
-copy of each for Claude Code; they are real copies rather than symlinks so they survive a Windows checkout. Some
-of those skills are themselves copied whole from `.agents/upstream/mattpocock-skills/`, a verbatim vendored copy
-of an upstream skill set kept with its own licence, so a vendored skill is invoked by the same name and reached
-by the same path as a first-party one. Twelve skills are vendored, copied from mattpocock/skills at commit
-24fe0ef7737efae15c87225755e9f6f5965e4888. [`AGENTS.md`](../AGENTS.md) owns how that copy is refreshed, under
-"Runtime notes". The agent seats under `.claude/agents/` and `.codex/agents/` are maintained counterparts, with shared
-charters kept aligned across the two runtime formats. The safety hooks exist as twins: `.claude/settings.json` wires
-the Claude set, `.codex/hooks.json` the Codex set.
+copy of each for Claude Code; they are real copies rather than symlinks so they survive a Windows checkout. Some of
+those skills are themselves copied whole from `.agents/upstream/`, which holds one folder for each upstream
+repository, a verbatim vendored copy kept with its own licence, so a vendored skill is invoked by the same name and
+reached by the same path as a first-party one. Fifteen skills are vendored: thirteen from mattpocock/skills at commit
+24fe0ef7737efae15c87225755e9f6f5965e4888, in `.agents/upstream/mattpocock-skills/`; `frontend-design` from
+anthropics/claude-plugins-official at commit 44490cccaf6d9f82fdeec9416fbf7c9bd72575dc, where it sits under
+`plugins/frontend-design/skills/frontend-design/`, in `.agents/upstream/anthropics-claude-plugins-official/`; and
+`accessibility-review` from anthropics/knowledge-work-plugins at commit 2d6f7e22dd25593f0f748010430ef86f19659735,
+where it sits under `design/skills/accessibility-review/` and takes its licence from that repository's root
+`LICENSE`, in `.agents/upstream/anthropics-knowledge-work-plugins/`.
+[`AGENTS.md`](../AGENTS.md) owns how each copy is refreshed, under "Runtime notes". The agent seats under
+`.claude/agents/` and `.codex/agents/` are maintained counterparts, with shared charters kept aligned across the two
+runtime formats. The safety hooks exist as twins: `.claude/settings.json` wires the Claude set, `.codex/hooks.json` the
+Codex set.
 
 ### On native Windows
 
@@ -59,8 +65,8 @@ Codex at the repository root on each affected platform.
 
 ## Where the rules live
 
-- [`AGENTS.md`](../AGENTS.md) under "Runtime notes": which file each runtime reads, and how the vendored skill
-  set is refreshed.
+- [`AGENTS.md`](../AGENTS.md) under "Runtime notes": which file each runtime reads, and how the vendored skills
+  are refreshed.
 - [`.claude/settings.json`](../.claude/settings.json) and [`.codex/hooks.json`](../.codex/hooks.json): which hook
   runs on which event, and the Windows form of each Codex hook command.
 - [The head of `scripts/lib/codex-hooks-windows.test.mjs`](../scripts/lib/codex-hooks-windows.test.mjs): how each
@@ -85,7 +91,7 @@ Codex at the repository root on each affected platform.
 
 - `AGENTS.md` and `CLAUDE.md`: the contract, and the Claude Code import of it.
 - `.agents/skills/` and `.claude/skills/`: the skills and their copies.
-- `.agents/upstream/mattpocock-skills/`: the vendored skill set.
+- `.agents/upstream/`: the vendored skills, one folder for each upstream repository.
 - `.claude/agents/` and `.codex/agents/`: the seat files.
 - `.claude/settings.json` and `.codex/hooks.json`: the hook registrations.
 - `.codex/hooks/verify-green.mjs` and `scripts/lib/posix-shell.mjs`: the Windows route to the shell hooks.

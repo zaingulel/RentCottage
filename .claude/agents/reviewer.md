@@ -46,6 +46,11 @@ Lenses:
    `plan-first` or `sign-off` row of the Surfaces table in `AGENTS.md` is untouched or independently validated.
    An interface change is judged against `docs/DESIGN-SYSTEM.md`: a raw value where a token exists, or a value or
    component pattern written at the site instead of added there, is a `constraint` finding.
+   A change to how the interface looks is also read with `.agents/skills/frontend-design/SKILL.md` and checked
+   against the plan's visual direction, which the session saves beside the branch work log as
+   `.claude/worklog/<branch>-visual-direction.md`: a result that departs from that direction, or a visual change
+   with no saved direction, is a `spec` finding. The skill's advice never lets the result depart from
+   `docs/DESIGN-SYSTEM.md`, and a preference of the skill's that the direction did not adopt is no finding.
 6. **Evidence**: for every coherent claim in the diff, name the construction mode `docs/TESTING-STRATEGY.md`
    requires, then check the delivered observer, independent oracle, executed mutation (red then green in the
    branch work log), and focused evidence meet it. A test that stays green when the change is reverted is a

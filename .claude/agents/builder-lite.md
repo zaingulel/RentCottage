@@ -1,8 +1,8 @@
 ---
 name: builder-lite
-description: "Sonnet at medium effort executes a mechanical slice with the identical `builder` charter: a rename, a fixture change, a copy edit, or a slice whose red test already exists, where verification is strong and no judgment remains. Quality-first selection from residual judgment, uncertainty, failure consequence, and verification strength; cost and latency break only equal-reliability ties."
-model: sonnet
-effort: medium
+description: "The light builder executes a mechanical slice with the identical `builder` charter: a rename, a fixture change, a copy edit, or a slice whose red test already exists, where verification is strong and no judgment remains. Quality-first selection from residual judgment, uncertainty, failure consequence, and verification strength; cost and latency break only equal-reliability ties."
+model: haiku
+effort: high
 maxTurns: 150
 tools: Read, Write, Edit, Bash, Glob, Grep
 color: orange
@@ -48,6 +48,17 @@ Rules:
 - Write interface code to `docs/DESIGN-SYSTEM.md`: every value comes from its token blocks and every control reuses
   the component pattern it names; a value or pattern it lacks is added there in the same change, never invented at
   the site.
+- Before building a slice that changes how the interface looks, read `.agents/skills/frontend-design/SKILL.md` and
+  build to the `Visual direction` the handoff carries: that direction is the brief the skill says always wins, so
+  no advice in the skill replaces a choice it makes. If the handoff carries none, or the direction and
+  `docs/DESIGN-SYSTEM.md` cannot both be met, STOP and report instead of choosing.
+- Before building a slice that changes how the interface looks, also read
+  `.agents/skills/accessibility-review/SKILL.md` and build so that the slice introduces no failure of the criteria
+  it lists: the session audits the changed views against them before the push. A failure a view already had is the
+  session's to file, and the slice's to fix only where the handoff's plan names that repair. The skill's target
+  size is the one criterion that does not bind: build to the minimum the `resume` skill sets under
+  "6. Verify and review". If the slice cannot be built without introducing a failure, or a criterion cannot be met
+  together with the handoff's `Visual direction` or `docs/DESIGN-SYSTEM.md`, STOP and report instead of choosing.
 - If the plan proves wrong, under-specified, or harder than anticipated, STOP and report instead of improvising
   — especially on a `plan-first` or `sign-off` seam. A mechanical choice the plan already bounds is yours to make.
 - Raising a time limit, adding a retry, or adding runs or cases the plan does not name is improvising, however green

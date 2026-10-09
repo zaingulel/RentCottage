@@ -11,8 +11,9 @@ Owner-invoked to park unfinished work. Completed work uses `closeout`.
 1. **Commit what exists** on the job branch with a message that says it is work in progress. Regenerate any
    artifact the `generated artifacts` row of the Conventions table in `.agents/REPOSITORY.md` names and commit it with its
    source; the Stop and pre-commit hooks enforce it.
-2. **Prepare the draft pull-request body.** Fill
-   `.github/pull_request_template.md`. Write the **Not done** section for a reader with no memory of this
+2. **Prepare the draft pull-request body.** Write it with the vendored `pr` skill, filling
+   `.github/pull_request_template.md`, as the `resume` skill says under "7. Push authorisation"; its Which
+   template wins rule applies here too. Write the **Not done** section for a reader with no memory of this
    session: what is finished, what is not, the next concrete step, and any decision the owner still owes.
 3. **Get publication authorization.** Show the prepared body to the owner and name the proposed push and draft
    pull-request creation or update. A bare `handoff` or `park` request authorizes only local preparation and the

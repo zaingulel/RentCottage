@@ -144,16 +144,6 @@ test('every worktree status read in closeout also lists ignored files', () => {
   );
 });
 
-test('the resume work-pick query requests parent and up to 50 blockers', () => {
-  const resume = RESUME.replace(/\s+/g, ' ');
-
-  assert.match(
-    resume,
-    /fragment Card on Issue \{[^}]*parent \{ number \} blockedBy\(first:50\) \{ nodes \{ number state \} \}/,
-    'the work-pick Card fragment must read up to GitHub\'s maximum of 50 blockers per card',
-  );
-});
-
 test('every seat that plans, designs, builds or reviews code names the coding standards', () => {
   // The explorer locates code and judges nothing, so it alone need not read the standards.
   const LOCATE_ONLY_SEATS = ['explorer'];
@@ -174,6 +164,27 @@ test('every seat that plans, designs, builds or reviews code names the coding st
   }
   assert.deepEqual(missing, [], `these seat charters must name docs/CODING-STANDARDS.md: ${missing.join(', ')}`);
 });
+
+// Recurring cost: one read of each seat file per skill. Remove a skill's entry when no seat reads it.
+const SKILL_READING_SEATS = {
+  'frontend-design': ['architect', 'builder', 'builder-lite', 'builder-max', 'reviewer'],
+  'accessibility-review': ['builder', 'builder-lite', 'builder-max'],
+};
+
+for (const [skill, readingSeats] of Object.entries(SKILL_READING_SEATS)) {
+  test(`exactly the seats that read the ${skill} skill name it, and the resume skill names it`, () => {
+    const SKILL_PATH = `.agents/skills/${skill}/SKILL.md`;
+    const SKILL_TOKEN = `\`${SKILL_PATH}\``;
+    for (const [dir, extension] of [['.claude/agents', '.md'], ['.codex/agents', '.toml']]) {
+      const naming = readdirSync(resolve(ROOT, dir))
+        .filter((name) => name.endsWith(extension) && readFileSync(resolve(ROOT, dir, name), 'utf8').includes(SKILL_TOKEN))
+        .map((name) => name.slice(0, -extension.length))
+        .sort();
+      assert.deepEqual(naming, readingSeats, `${dir}: the seats whose charter names ${SKILL_PATH}`);
+    }
+    assert.ok(RESUME.includes(SKILL_TOKEN), `the resume skill must name ${SKILL_PATH}`);
+  });
+}
 
 test('the resume deliver step carries exactly the merge-watch command', () => {
   const rawStep = RESUME.match(/^4\. Watch it land[\s\S]*?(?=^## )/m);
@@ -568,6 +579,43 @@ test('the review line has one specified format, and the template and skills poin
   }
 });
 
+// The carried-receipt record: the resume skill's Receipt reuse rule and the pull request template must agree on the
+// three slots, and the rule must carry the two commands that settle a commit added on top. Hand-written from the
+// approved record, never extracted from either file. Recurring cost: one file read.
+test('the carried-receipt record has one slot per fact, and the resume skill names each slot and both commands', () => {
+  const SLOTS = ['Carried from:', 'Changed paths:', 'Carried receipts:'];
+  const COMMANDS = [
+    'git merge-base --is-ancestor <earlier-commit> HEAD',
+    'git -c core.quotePath=false diff --name-only --no-renames --ignore-submodules=none <earlier-commit> HEAD',
+  ];
+  const template = readFileSync(resolve(ROOT, '.github/pull_request_template.md'), 'utf8').split('\n');
+  for (const slot of SLOTS) {
+    assert.equal(
+      template.filter((line) => line.trimEnd() === slot).length,
+      1,
+      `the pull request template's carried-receipt slot "${slot}" is missing, duplicated or reshaped`,
+    );
+  }
+  const spans = new Set(inlineSpans(splitMarkdown(RESUME).prose).map((span) => span.body.replace(/\s+/g, ' ')));
+  for (const literal of [...SLOTS, ...COMMANDS]) {
+    assert.ok(spans.has(literal), `the resume skill's Receipt reuse rule must name \`${literal}\` as one code span`);
+  }
+});
+
+// Recurring cost: one read of a small file.
+test('the pull request template carries its five sections, the closing line and each danger answer once', () => {
+  const SLOTS = ['Closes #', 'Undo:', 'Reach:'];
+  const skeleton = readFileSync(resolve(ROOT, '.github/pull_request_template.md'), 'utf8')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.startsWith('## ') || SLOTS.includes(line));
+  assert.deepEqual(
+    skeleton,
+    ['## Summary', 'Closes #', '## Evidence', '## Merge Danger', 'Undo:', 'Reach:', '## Review', '## Not done'],
+    'the pull request template must carry exactly these sections and slots, each once and in this order',
+  );
+});
+
 test('every manifest entry matches the file on disk', () => {
   const { canonical } = readManifest(ROOT);
   const mismatches = verifyManifest(ROOT);
@@ -627,6 +675,68 @@ test('skill copies are byte-identical to their sources and no skill is a symlink
   }
   assert.deepEqual(problems, [], 'every skill is a tracked real copy, byte-identical to its source');
 });
+
+// Each skill is copied from the upstream repository at the commit docs/AI-WORKFLOW-runtimes.md records. Each hash is
+// the upstream file's at that commit, so an edit in place goes red even after the manifest is re-recorded, and so does
+// a copy or a licence the manifest stops listing. `files` sit in all three roots; `repositoryLicence` is the upstream
+// repository's own licence, kept once beside the skill where the skill's folder carries none. A refresh replaces a
+// skill's hashes with the new commit's. Recurring cost: one manifest read per skill. Remove a skill's entry when it
+// is no longer vendored.
+const UPSTREAM_PINS = {
+  'frontend-design': {
+    roots: [
+      '.agents/skills/frontend-design/',
+      '.agents/upstream/anthropics-claude-plugins-official/frontend-design/',
+      '.claude/skills/frontend-design/',
+    ],
+    files: {
+      'LICENSE.txt': '0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594',
+      'SKILL.md': 'd91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3',
+    },
+    repositoryLicence: {},
+  },
+  'accessibility-review': {
+    roots: [
+      '.agents/skills/accessibility-review/',
+      '.agents/upstream/anthropics-knowledge-work-plugins/accessibility-review/',
+      '.claude/skills/accessibility-review/',
+    ],
+    files: { 'SKILL.md': 'ef42982af0d51238dda2ab16d08626712891bdd41864876c32d1e7b13fb3124f' },
+    repositoryLicence: {
+      '.agents/upstream/anthropics-knowledge-work-plugins/LICENSE':
+        'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30',
+    },
+  },
+  pr: {
+    roots: ['.agents/skills/pr/', '.agents/upstream/mattpocock-skills/pr/', '.claude/skills/pr/'],
+    files: {
+      'CREDITS.md': 'a7a087127665d7298a72280ef6e19c41ad8404523712a788c8dc3ab414bc2497',
+      'SKILL.md': 'ab63f1cf78647389edcd386c9427c5dfca27ed2836930c24773ffee834c19bcd',
+      'agents/openai.yaml': '2295b586624db4ef546f3fd4695492f039d941a46d8a1593a702ce3ca511b8ad',
+    },
+    repositoryLicence: {
+      '.agents/upstream/mattpocock-skills/LICENSE':
+        '0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5',
+    },
+  },
+};
+
+for (const [skill, { roots, files, repositoryLicence }] of Object.entries(UPSTREAM_PINS)) {
+  test(`the ${skill} skill ships unedited, with its licence, to both runtimes`, () => {
+    const expected = [
+      ...roots.flatMap((root) => Object.entries(files).map(([file, sha256]) => ({ path: root + file, sha256 }))),
+      ...Object.entries(repositoryLicence).map(([path, sha256]) => ({ path, sha256 })),
+    ];
+    const byPath = (a, b) => (a.path < b.path ? -1 : 1);
+    assert.deepEqual(
+      readManifest(ROOT).entries
+        .filter(({ path }) => path.includes(`/${skill}/`) || Object.hasOwn(repositoryLicence, path))
+        .sort(byPath),
+      expected.sort(byPath),
+      'the manifest must list exactly the upstream skill in all three places and its licence, at the upstream hashes',
+    );
+  });
+}
 
 // gitattributes(5): an `eol=lf` rule overrides core.autocrlf, so a hook keeps its LF shebang line on Windows.
 const HOOK_DIRECTORIES = ['.githooks', '.claude/hooks', '.codex/hooks'];
