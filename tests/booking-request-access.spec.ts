@@ -183,7 +183,113 @@ test("a verified Customer double-submit creates one Pending request and one mini
     guests: "4",
     selection: `${requestedDay}:shift:${shift.position}`,
   });
-  await page.goto(`/en/request/${slug}?${query.toString()}`);
+  const discoveryCopy = {
+    en: {
+      from: "From Service Day",
+      to: "To Service Day",
+      guests: "Guests",
+      search: "Search available cottages",
+      view: "View cottage",
+      quote: "Get exact quote",
+      title: "Your exact Booking Quote",
+    },
+    ar: {
+      from: "من تاريخ",
+      to: "إلى تاريخ",
+      guests: "عدد الضيوف",
+      search: "ابحث عن البيوت المتاحة",
+      view: "اعرض البيت",
+      quote: "عرض السعر الدقيق",
+      title: "عرض سعر الحجز الدقيق",
+    },
+    ckb: {
+      from: "لە بەرواری",
+      to: "تا بەرواری",
+      guests: "ژمارەی میوان",
+      search: "گەڕان بۆ کۆتێجی بەردەست",
+      view: "کۆتێجەکە ببینە",
+      quote: "پێشنیاری نرخی ورد",
+      title: "پێشنیاری نرخی وردی حجزکردن",
+    },
+  };
+  // The visitor's own click path, so the quote page is the one discovery leads to.
+  const reachQuoteFromDiscovery = async (locale: "en" | "ar" | "ckb") => {
+    const copy = discoveryCopy[locale];
+    const { data: publicProfile, error: publicProfileError } =
+      await fixtureOwner.rpc("get_public_cottage_profile", {
+        target_locale: locale,
+        target_slug: slug,
+        requested_search: {
+          from: requestedDay,
+          to: requestedDay,
+          guests: 4,
+          selections: [],
+          amenities: [],
+        },
+      });
+    if (publicProfileError) throw publicProfileError;
+    const unit = (
+      publicProfile.inventory as {
+        serviceDay: string;
+        kind: string;
+        position?: number;
+        name: string;
+        available: boolean;
+      }[]
+    ).find(
+      (item) =>
+        item.serviceDay === requestedDay &&
+        item.kind === "shift" &&
+        item.position === shift.position,
+    );
+    if (!unit) throw new Error("Published shift is missing from the cottage");
+    expect(unit.available).toBe(true);
+
+    await page.goto(`/${locale}`);
+    await page.getByLabel(copy.from, { exact: true }).fill(requestedDay);
+    await page.getByLabel(copy.to, { exact: true }).fill(requestedDay);
+    await page.getByLabel(copy.guests, { exact: true }).fill("4");
+    await page.getByRole("button", { name: copy.search }).click();
+    await expect(page).toHaveURL(
+      (url) => url.pathname === `/${locale}/results` && url.search !== "",
+    );
+    const card = page.locator("article").filter({
+      has: page.locator(`a[href^="/${locale}/cottages/${slug}?"]`),
+    });
+    await expect(card).toHaveCount(1);
+    await card.getByRole("link", { name: copy.view }).click();
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === `/${locale}/cottages/${slug}` && url.search !== "",
+    );
+    await page
+      .getByRole("complementary")
+      .getByRole("button", { name: unit.name, exact: true })
+      .click();
+    await page.getByRole("link", { name: copy.quote }).click();
+    await expect(page).toHaveURL(
+      (url) => url.pathname === `/${locale}/request/${slug}`,
+    );
+    const quoteUrl = new URL(page.url());
+    for (const key of ["from", "to", "guests"]) {
+      expect(quoteUrl.searchParams.get(key)).toBe(query.get(key));
+    }
+    expect(quoteUrl.searchParams.getAll("selection")).toEqual(
+      query.getAll("selection"),
+    );
+    await expect(page.locator("html")).toHaveAttribute(
+      "dir",
+      locale === "en" ? "ltr" : "rtl",
+    );
+    await expect(page.getByRole("heading", { name: copy.title })).toBeVisible();
+  };
+  for (const locale of testInfo.project.name === "mobile"
+    ? (["ar", "ckb", "en"] as const)
+    : (["en"] as const)) {
+    await reachQuoteFromDiscovery(locale);
+  }
+  await expect(page.getByText("IQD 5,000", { exact: true })).toBeVisible();
+  await expect(page.getByText("IQD 185,000", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Verify your phone to continue" }),
   ).toBeVisible();
@@ -250,6 +356,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
   expect(unpaidResponseBody).not.toContain(ownerPhone);
   const progress = page.getByRole("list", { name: "Booking Request progress" });
   await expect(progress).toBeVisible();
+  await expect(page.getByText("IQD 185,000", { exact: true })).toBeVisible();
   await expect(progress.getByRole("listitem")).toHaveCount(4);
   await expect(
     progress.getByRole("listitem").filter({ hasText: "Owner decision" }),
@@ -524,6 +631,8 @@ test("a verified Customer double-submit creates one Pending request and one mini
         // can terminate Wrangler's local forwarding proxy.
         const customerView = await page.context().newPage();
         const ownerView = await ownerContext.newPage();
+        await customerView.setViewportSize({ width: 390, height: 844 });
+        await ownerView.setViewportSize({ width: 390, height: 844 });
         await customerView.goto(
           `/${copy.locale}/booking-requests/${reference}`,
         );
@@ -885,6 +994,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await expect(
       paidDetails.getByRole("button", { name: "Retry confirmation notice" }),
     ).toHaveCount(0);
+    await expect(
+      paidDetails.getByText("IQD 185,000", { exact: true }),
+    ).toBeVisible();
     expect(paidIdentity()).toEqual(identityBeforeRetry);
     const notificationSourceCount = Number(
       harness.runSql(`select
@@ -1054,6 +1166,19 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await assertPaymentViews("payment-required-open", failureReference);
     expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
     expect(observeFailure()).toEqual(terminal);
+    // Only the current notice reaches the adapter; the ones the request moved past are suppressed.
+    expect(
+      JSON.parse(
+        harness.runSql(
+          `select coalesce(jsonb_agg(jsonb_build_array(e.event_kind,e.recipient_role,w.state,(select count(*) from public.fictional_booking_confirmation_notification_effects f where f.event_id=e.id)) order by e.event_kind,e.recipient_role),'[]') from public.booking_notification_events e join public.booking_requests q on q.id=e.booking_request_id left join public.booking_confirmation_notification_work w on w.event_id=e.id where q.booking_request_reference='${failureReference}' and e.receipt_id is null;`,
+        ),
+      ),
+    ).toEqual([
+      ["request_accepted", "cottage_owner", "suppressed", 0],
+      ["request_accepted", "customer", "suppressed", 0],
+      ["request_new", "cottage_owner", "suppressed", 0],
+      ["request_payment_required", "customer", "delivered", 1],
+    ]);
 
     const windowDefinition = harness.runSql(
       paymentEvidenceSql +
