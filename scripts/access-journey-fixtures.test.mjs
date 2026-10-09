@@ -178,13 +178,13 @@ function preparation() {
       APP_ENVIRONMENT: "test",
       SUPABASE_LOCAL_PROJECT: "rentcottage-verification-353",
       SUPABASE_LOCAL_WORKDIR: "/private/tmp/access-journey-admission",
-      SUPABASE_URL: "http://127.0.0.1:55331",
+      SUPABASE_URL: "http://127.0.0.1:15331",
     },
     guardDatabase: vi.fn(),
     privilegedClient: { auth: { admin: { createUser, listUsers } } },
     publishableKey: "local-publishable",
     selectedTitle: signinTitle,
-    url: "http://127.0.0.1:55331",
+    url: "http://127.0.0.1:15331",
   };
   return { options, results, createUser, listUsers, ownerClient };
 }
@@ -254,7 +254,7 @@ describe("access journey fixture admission", () => {
     expect(options.guardDatabase).not.toHaveBeenCalled();
     expect(listUsers).not.toHaveBeenCalled();
   });
-  it.each(["invalid", "https://127.0.0.1:55331", "http://example.com:55331"])(
+  it.each(["invalid", "https://127.0.0.1:15331", "http://example.com:15331"])(
     "rejects unsafe URL %s",
     async (url) => {
       const { options, listUsers } = preparation();

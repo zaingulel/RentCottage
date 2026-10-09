@@ -43,7 +43,7 @@ afterAll(() => rmSync(directory, { recursive: true, force: true }));
 
 async function invoke(
   url,
-  statusUrl = "http://127.0.0.1:55331",
+  statusUrl = "http://127.0.0.1:15331",
   statusExit = 0,
   mode = "recover",
 ) {
@@ -88,7 +88,7 @@ describe("Capture recovery worker environment boundary", () => {
     async (mode) => {
       const result = await invoke(
         "https://untrusted.example",
-        "http://127.0.0.1:55331",
+        "http://127.0.0.1:15331",
         0,
         mode,
       );
@@ -107,12 +107,12 @@ describe("Capture recovery worker environment boundary", () => {
     },
   );
   it("uses the exact origin reported by the guarded project without changing local recovery", async () => {
-    const result = await invoke("http://127.0.0.1:55331");
+    const result = await invoke("http://127.0.0.1:15331");
     expect(result.code).toBe(0);
     expect(result.messages).toEqual([
       {
         stage: "http",
-        url: "http://127.0.0.1:55331/rest/v1/rpc/claim_due_booking_request_captures",
+        url: "http://127.0.0.1:15331/rest/v1/rpc/claim_due_booking_request_captures",
         apikey: "fixture-service-key",
       },
       { stage: "complete", result: [] },
@@ -129,12 +129,12 @@ describe("Capture recovery worker environment boundary", () => {
     ]);
   });
   it.each([
-    ["http://127.0.0.1:59999", "http://127.0.0.1:55331"],
-    ["http://127.0.0.1:55331/path", "http://127.0.0.1:55331"],
-    ["http://user:password@127.0.0.1:55331", "http://127.0.0.1:55331"],
-    ["http://127.0.0.1:55331?redirect=remote", "http://127.0.0.1:55331"],
+    ["http://127.0.0.1:59999", "http://127.0.0.1:15331"],
+    ["http://127.0.0.1:15331/path", "http://127.0.0.1:15331"],
+    ["http://user:password@127.0.0.1:15331", "http://127.0.0.1:15331"],
+    ["http://127.0.0.1:15331?redirect=remote", "http://127.0.0.1:15331"],
     ["https://untrusted.example", "https://untrusted.example"],
-    ["http://127.0.0.1:55331", "not-a-url"],
+    ["http://127.0.0.1:15331", "not-a-url"],
   ])(
     "rejects mismatched or nonlocal origin %s / %s before HTTP",
     async (url, statusUrl) => {
@@ -152,8 +152,8 @@ describe("Capture recovery worker environment boundary", () => {
   );
   it("rejects unavailable local status even if output contains a plausible API origin", async () => {
     const result = await invoke(
-      "http://127.0.0.1:55331",
-      "http://127.0.0.1:55331",
+      "http://127.0.0.1:15331",
+      "http://127.0.0.1:15331",
       1,
     );
     expect(result.code).toBe(1);

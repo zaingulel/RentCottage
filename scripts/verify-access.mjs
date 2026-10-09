@@ -370,7 +370,6 @@ export function prepareIsolatedSupabaseWorkdir({
     ['project_id = "rentcottage"', `project_id = "${localProject}"`],
     ["port = 54331", `port = ${ports.api}`],
     ["port = 54332", `port = ${ports.database}`],
-    // Stay below Linux's default automatic client-port range.
     ["shadow_port = 54330", `shadow_port = ${ports.shadowDatabase}`],
     ["port = 54339", `port = ${ports.pooler}`],
     ["port = 54333", `port = ${ports.studio}`],

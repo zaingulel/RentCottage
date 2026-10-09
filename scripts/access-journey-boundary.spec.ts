@@ -95,13 +95,13 @@ test("owned access readiness uses production account and application readers", a
       "Access journey fixtures require loopback Supabase.",
     ],
     [
-      { SUPABASE_URL: "https://127.0.0.1:55331" },
-      "https://127.0.0.1:55331",
+      { SUPABASE_URL: "https://127.0.0.1:15331" },
+      "https://127.0.0.1:15331",
       "Access journey fixture environment is not disposable.",
     ],
     [
-      { SUPABASE_URL: "http://example.com:55331" },
-      "http://example.com:55331",
+      { SUPABASE_URL: "http://example.com:15331" },
+      "http://example.com:15331",
       "Access journey fixture environment is not disposable.",
     ],
     [

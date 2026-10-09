@@ -3,8 +3,9 @@
 // A check takes a place by binding a loopback port and holding it until its process exits; the
 // operating system releases the port when the process dies, however it dies. Each place has a run
 // lock, held by the whole run, and a database lock, held by the database step. A place is free only
-// when both are free. Every place port stays below 32768, outside each system's automatic port range.
-// A free lock shows no live check holds the place, not who made what is in it.
+// when both are free. Every port, a place's and the hosted check's, stays below 32768, outside each
+// system's automatic port range. A free lock shows no live check holds the place, not who made what
+// is in it.
 import { readdirSync, rmSync } from "node:fs";
 import { connect, createServer } from "node:net";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
@@ -61,13 +62,13 @@ export function localCheckSettings(slot) {
       project: HOSTED_PROJECT,
       tempPrefix: HOSTED_TEMP_PREFIX,
       ports: {
-        api: 55331,
-        database: 55332,
+        api: 15331,
+        database: 15332,
         shadowDatabase: 15330,
-        pooler: 55339,
-        studio: 55333,
-        mail: 55334,
-        analytics: 55337,
+        pooler: 15339,
+        studio: 15333,
+        mail: 15334,
+        analytics: 15337,
         edgeInspector: 8183,
         next: 3000,
       },
