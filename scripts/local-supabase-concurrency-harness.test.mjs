@@ -879,7 +879,7 @@ describe("local Supabase concurrency harness", () => {
     expect(settled).toBe(true);
   });
 
-  it("installs captured function definitions through one session per list", () => {
+  it("installs setup lists through one session per list", () => {
     for (const name of [
       "verify-booking-request-payment-required-expiry-concurrency",
       "verify-booking-request-payment-recovery-concurrency",
@@ -888,7 +888,7 @@ describe("local Supabase concurrency harness", () => {
       const source = readFileSync(`scripts/${name}.mjs`, "utf8");
       expect(source).toContain("harness.runStatementsAfterSetup(");
       expect(source).not.toMatch(
-        /for \(const \w+ of (?:definitions|signatures|clockSignatures)\b/,
+        /for \(const \w+ of (?:(?:definitions|signatures|clockSignatures|seeded|indexes)\b|swapped\(|frozen\()/,
       );
     }
   });
