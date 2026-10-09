@@ -318,7 +318,10 @@ test("Customer Booking Request status sits in the record page column under the h
       const column = document.querySelector("main.page");
       const card = column?.querySelector(".customer-booking-request-status");
       const followUp = column?.querySelector(".request-follow-up");
-      if (!column || !card || !followUp)
+      const fact = card?.querySelector(".fact-list > div");
+      const label = fact?.querySelector("dt")?.getBoundingClientRect();
+      const value = fact?.querySelector("dd")?.getBoundingClientRect();
+      if (!column || !card || !followUp || !label || !value)
         throw new Error("Booking Request record page column is missing");
       const columnBox = column.getBoundingClientRect();
       column.classList.remove("page-record");
@@ -334,8 +337,16 @@ test("Customer Booking Request status sits in the record page column under the h
         cardTop: card.getBoundingClientRect().top,
         cardWidth: card.getBoundingClientRect().width,
         followUpWidth: followUp.getBoundingClientRect().width,
+        labelTop: label.top,
+        labelBottom: label.bottom,
+        valueTop: value.top,
       };
     });
+    if (testInfo.project.name === "mobile") {
+      expect(measured.valueTop).toBeGreaterThanOrEqual(measured.labelBottom);
+    } else {
+      expect(measured.valueTop).toBeCloseTo(measured.labelTop, 0);
+    }
     const columnWidth = Math.min(measured.available - 36, 760);
     expect(measured.columnWidth).toBeCloseTo(columnWidth, 0);
     expect(measured.defaultWidth).toBeCloseTo(

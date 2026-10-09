@@ -93,6 +93,12 @@ describe("Customer Booking Request status", () => {
     expect(vi.getTimerCount()).toBe(1);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
+  it("shows the request details as a fact list with each label directly before its value", () => {
+    render(<CustomerBookingRequestStatus locale="en" request={request} />);
+    const label = screen.getByText("Cottage");
+    expect(label.closest("dl")).toHaveClass("fact-list");
+    expect(label.nextSibling).toHaveTextContent("Quiet Garden");
+  });
   it("shows the four progress steps with the current step and each state in text", () => {
     const steps = (name: string) =>
       within(screen.getByRole("list", { name })).getAllByRole("listitem");

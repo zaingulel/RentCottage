@@ -2838,10 +2838,15 @@ a:focus-visible {
 
 .booking-request-decision-controls,
 .booking-request-decision-controls form,
-.customer-booking-request-status,
-.customer-booking-request-status dl {
+.customer-booking-request-status {
   display: grid;
   gap: var(--space-4);
+}
+
+.fact-list {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
 }
 
 .booking-request-decision-controls form label {
@@ -2903,21 +2908,22 @@ section.request-follow-up {
   color: var(--muted);
 }
 
-.customer-booking-request-status dl > div {
+.fact-list > div {
   display: grid;
   grid-template-columns: minmax(8rem, 0.4fr) 1fr;
   gap: var(--space-3);
 }
 
-.customer-booking-request-status dt {
+.fact-list dt {
   color: var(--muted);
 }
 
-.customer-booking-request-status dd {
+.fact-list dd {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
-.customer-booking-request-status dd > span {
+.fact-list dd > span {
   display: block;
 }
 
@@ -3041,7 +3047,7 @@ section.request-follow-up {
 }
 
 @media (max-width: 40rem) {
-  .customer-booking-request-status dl > div,
+  .fact-list > div,
   .confirmed-booking-details dl > div {
     grid-template-columns: 1fr;
     gap: var(--space-1);

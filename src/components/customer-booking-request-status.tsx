@@ -190,7 +190,7 @@ function CustomerBookingRequestStatusView({
         progress={customerBookingRequestProgress({ ...request, status })}
       />
       <strong>{request.bookingRequestReference}</strong>
-      <dl>
+      <dl className="fact-list">
         <div>
           <dt>{copy.cottage}</dt>
           <dd>{request.cottageName}</dd>
