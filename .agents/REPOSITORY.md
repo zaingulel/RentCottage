@@ -10,6 +10,19 @@ and seats read the Conventions table below by row name.
 provider, deployment and verification tooling; `custom-worker.ts` and `wrangler.jsonc` define the Cloudflare
 Worker boundary. [GLOSSARY.md](../GLOSSARY.md) owns product meaning and canonical language.
 
+The optional gates under `scripts/gates/` are a seam a repository may fill. This repository fills one,
+`scripts/gates/pre-push-main` with `scripts/lib/docs-route.mjs`, both outside the manifest; it has no turn-end gate
+and no commit gate. The gate gives a documentation-only change the direct route to `main`. It admits a fast-forward
+whose every changed path is `docs/README.md` or sits under `docs/commercial/`, `docs/design/`, `docs/discovery/`,
+`docs/engineering/` or `docs/research/`, is a Markdown, Word or image file (`md`, `docx`, `png`, `jpg`, `jpeg`, `gif`,
+`svg` or `webp`), and is not a shared file the manifest lists. Every other path takes the pull request route: the
+instruction documents, `docs/adr/` and `docs/product/`, each file the `wide reach` row of the Surfaces table names, and
+every guard, hook, permission file, seat file, script, test and product file. A setting-only seat change takes it too,
+because the gate judges paths and never changed lines. A new directory under `docs/` qualifies only once the gate lists
+it. `node scripts/lib/docs-route.mjs`, given newline-separated paths on standard input, is that path definition on its
+own: it exits 0 only when every path qualifies. [The loop](../docs/TESTING-STRATEGY.md#the-loop) in the testing
+strategy says which receipts carry across a documentation-only difference.
+
 ## Architecture seams
 
 The rules for changing a seam are in `AGENTS.md` under Architecture seams.
