@@ -27,6 +27,7 @@ import {
   requiredDatabaseSteps,
   requiredLightDatabaseSteps,
   requiredBrowserSteps,
+  requiredShellSmokeSteps,
   requiredCiSteps,
   git,
   write,
@@ -370,11 +371,13 @@ describe("repository verification command", () => {
     );
   });
 
-  it("does not reuse a placeholder Worker build unless compilation succeeds", async () => {
+  it("does not serve a prebuilt build unless the access run that makes it succeeds", async () => {
     const repository = createRepository();
     const run = vi.fn((command, args) => ({
       status:
-        command === "npm" && args.join(" ") === "run build:worker" ? 8 : 0,
+        command === "npm" && args.join(" ") === "run verify:access:browser"
+          ? 8
+          : 0,
     }));
     expect(
       await main(["--browser", "--full"], {
@@ -387,6 +390,40 @@ describe("repository verification command", () => {
     ).toBe(8);
     expect(run.mock.calls.map(([command, args]) => [command, args])).toEqual([
       ["npm", ["run", "verify:access:browser"]],
+    ]);
+
+    const hosted = createRepository();
+    const hostedBase = git(hosted, ["rev-parse", "HEAD"]);
+    const hostedSource = commit(
+      hosted,
+      "src/booking-request/policy.ts",
+      "export const value = true;\n",
+    );
+    git(hosted, ["switch", "main"]);
+    git(hosted, ["merge", "--no-ff", hostedSource]);
+    const hostedRun = vi.fn((command, args) => ({
+      status:
+        command === "npm" && args.join(" ") === "run build:worker" ? 8 : 0,
+    }));
+    expect(
+      await main(["--browser"], {
+        cwd: hosted,
+        environment: {
+          GITHUB_ACTIONS: "true",
+          VERIFY_CI_PARTITION: "shell-smoke",
+          VERIFY_CI_SHARD: "",
+          VERIFY_BASE_SHA: hostedBase,
+          VERIFY_SOURCE_SHA: hostedSource,
+        },
+        run: hostedRun,
+        stdout: vi.fn(),
+        stderr: vi.fn(),
+      }),
+    ).toBe(8);
+    expect(
+      hostedRun.mock.calls.map(([command, args]) => [command, args]),
+    ).toEqual([
+      ["npx", ["playwright", "install", "chromium"]],
       ["npm", ["run", "build:worker"]],
     ]);
   });
@@ -540,14 +577,11 @@ describe("repository verification command", () => {
           }
           if (
             command === "npm" &&
-            commandArgs.join(" ") === "run build:worker"
+            commandArgs.join(" ") === "run verify:access:browser"
           ) {
             artifactPresent = true;
           }
-          if (
-            command === "npm" &&
-            commandArgs.join(" ") === "run scan:client-secrets"
-          ) {
+          if (command === "npm" && commandArgs[1] === "smoke:preview") {
             return { status: artifactPresent ? 7 : 72 };
           }
           return { status: 0 };
@@ -566,8 +600,13 @@ describe("repository verification command", () => {
         const output = [...stdout.mock.calls, ...stderr.mock.calls]
           .map(([line]) => line)
           .join("\n");
+        // APP_ENVIRONMENT and NEXTJS_ENV are public mode names whose value is the plain
+        // word "test", which the runner's own printed command names such as test:browser
+        // contain, so they cannot tell a leak from a command name.
         for (const value of [
-          ...Object.values(requiredBindings),
+          ...Object.entries(requiredBindings)
+            .filter(([key]) => !["APP_ENVIRONMENT", "NEXTJS_ENV"].includes(key))
+            .map(([, bindingValue]) => bindingValue),
           ...Object.values(environment),
         ]) {
           expect(output).not.toContain(value);
@@ -580,7 +619,9 @@ describe("repository verification command", () => {
       expect(failed.diagnostic.attemptedCommand).toEqual([
         "npm",
         "run",
-        "scan:client-secrets",
+        "smoke:preview",
+        "--",
+        "--config=playwright.worker-prebuilt.config.ts",
       ]);
       expect(failed.diagnostic.reproduceGroup.slice(0, 4)).toEqual([
         "npm",
@@ -596,11 +637,7 @@ describe("repository verification command", () => {
       for (const result of [failed, reproduced]) {
         expect(
           result.run.mock.calls.map(([command, args]) => [command, args]),
-        ).toEqual([
-          ["npm", ["run", "verify:access:browser"]],
-          ["npm", ["run", "build:worker"]],
-          ["npm", ["run", "scan:client-secrets"]],
-        ]);
+        ).toEqual(requiredBrowserSteps);
       }
     }
   });
@@ -1733,7 +1770,7 @@ describe("repository verification command", () => {
           : [
               chromium,
               ...(partition === "shell-smoke"
-                ? requiredExpensiveSteps.slice(1)
+                ? requiredShellSmokeSteps
                 : [requiredBrowserSteps[0]]),
             ];
       for (const [repository, base, source, selected] of [

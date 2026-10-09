@@ -36,8 +36,7 @@ export const baselineVerificationSteps = [
   ],
 ];
 
-export const expensiveVerificationSteps = [
-  ["npm", ["run", "verify:access"]],
+const shellSmokeSteps = [
   ["npm", ["run", "build:worker"]],
   ["npm", ["run", "scan:client-secrets"]],
   ["npm", ["run", "test:browser"]],
@@ -52,12 +51,36 @@ export const expensiveVerificationSteps = [
   ],
 ];
 
+// These serve the build the access run made, so an access step always precedes them.
+const prebuiltShellSteps = [
+  [
+    "npm",
+    [
+      "run",
+      "test:browser",
+      "--",
+      "--config=playwright.next-prebuilt.config.ts",
+    ],
+  ],
+  [
+    "npm",
+    [
+      "run",
+      "smoke:preview",
+      "--",
+      "--config=playwright.worker-prebuilt.config.ts",
+    ],
+  ],
+];
+
+export const expensiveVerificationSteps = [
+  ["npm", ["run", "verify:access"]],
+  ...prebuiltShellSteps,
+];
+
 const groupVerificationSteps = {
   database: [["npm", ["run", "verify:access:database"]]],
-  browser: [
-    ["npm", ["run", "verify:access:browser"]],
-    ...expensiveVerificationSteps.slice(1),
-  ],
+  browser: [["npm", ["run", "verify:access:browser"]], ...prebuiltShellSteps],
 };
 
 function databaseSteps(bookingConcurrency) {
@@ -77,7 +100,7 @@ function serviceVerificationSteps(
     if (database) return groupVerificationSteps.database;
     if (browser)
       return partition === "shell-smoke"
-        ? expensiveVerificationSteps.slice(1)
+        ? shellSmokeSteps
         : [groupVerificationSteps.browser[0]];
     return [];
   }
