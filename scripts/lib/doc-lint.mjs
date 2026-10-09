@@ -26,7 +26,6 @@ const KNOWN_ROOTS = [
 ];
 const KNOWN_ROOT_FILES = new Set([
   "README.md",
-  "LICENSE",
   "CLAUDE.md",
   "AGENTS.md",
   "GLOSSARY.md",
