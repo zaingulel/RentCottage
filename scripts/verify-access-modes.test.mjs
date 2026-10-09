@@ -1,5 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
@@ -8,6 +15,7 @@ import { main } from "./verify-access.mjs";
 import { accessStepPlan } from "./verify-access-plan.mjs";
 import {
   browserCommands,
+  clientSecretScanCommand,
   commands,
   databaseCheckCommands,
   databasePreflightCommands,
@@ -18,10 +26,10 @@ import {
   localCredentials,
   mainWithPreparedProject,
   nextFixtureCommands,
-  nextJourneyCommand,
   ownedRun,
   ownershipCommand,
   plannedCommands,
+  prebuiltNextJourneyCommand,
   resetCommand,
   scheduledExpiryVerifyCommand,
   scheduledJourneyCommand,
@@ -31,6 +39,7 @@ import {
   statusCommand,
   stopCommand,
   successfulRun,
+  workerBuildCommand,
   workerPreparationCommands,
 } from "./verify-access-command-doubles.mjs";
 
@@ -1102,8 +1111,11 @@ describe("access verification command", () => {
         }),
       ).toBe(failure.status ?? 1);
       expect(
-        run.mock.calls.some(([, args]) =>
-          args.includes("--config=playwright.worker-prebuilt.config.ts"),
+        run.mock.calls.some(
+          ([, args]) =>
+            args.includes("--config=playwright.worker-prebuilt.config.ts") ||
+            args.includes("--config=playwright.next-prebuilt.config.ts") ||
+            args.join(" ") === "run scan:client-secrets",
         ),
       ).toBe(false);
       expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
@@ -1116,12 +1128,24 @@ describe("access verification command", () => {
     expect(
       await mainWithPreparedProject(["--browser"], { environment: {}, run }),
     ).toBe(0);
-    const builds = run.mock.calls.filter(([command]) => command === "npm");
+    const builds = run.mock.calls.filter(
+      ([command, args]) =>
+        command === "npm" && args.join(" ") === "run build:worker",
+    );
     const workers = run.mock.calls.filter(([, args]) =>
       args.includes("--project=worker"),
     );
+    const nextJourneys = run.mock.calls.filter(([, args]) =>
+      args.includes("--project=mobile"),
+    );
     expect(builds).toHaveLength(1);
-    expect(builds[0].slice(0, 2)).toEqual(["npm", ["run", "build:worker"]]);
+    expect(nextJourneys).toHaveLength(1);
+    expect(nextJourneys[0][1]).toContain(
+      "--config=playwright.next-prebuilt.config.ts",
+    );
+    expect(run.mock.calls.indexOf(builds[0])).toBeLessThan(
+      run.mock.calls.indexOf(nextJourneys[0]),
+    );
     expect(workers).toHaveLength(2);
     for (const worker of workers) {
       expect(worker[1]).toContain(
@@ -1137,6 +1161,92 @@ describe("access verification command", () => {
       NEXTJS_ENV: "test",
       PLAYWRIGHT_SERVER: "worker",
     });
+  });
+
+  it("scans the build the run uses for the secret that build was given", async () => {
+    const assetRoots = [".next/static", ".open-next/assets"];
+    for (const planted of [...assetRoots, undefined]) {
+      const buildRoot = mkdtempSync(join(tmpdir(), "access-scan-"));
+      try {
+        // A scan that ran before the build would pass on these.
+        for (const root of assetRoots) {
+          mkdirSync(join(buildRoot, root), { recursive: true });
+          writeFileSync(join(buildRoot, root, "stale.js"), "stale");
+        }
+        const baseRun = successfulRun();
+        const run = vi.fn((command, args, options) => {
+          const invocation = [command, ...args].join(" ");
+          if (invocation === "npm run build:worker") {
+            const secret = options.env.SUPABASE_SECRET_KEY;
+            expect(secret).toBe("local-secret");
+            for (const root of assetRoots) {
+              writeFileSync(
+                join(buildRoot, root, "app.js"),
+                root === planted ? `const key = "${secret}";` : "clean",
+              );
+            }
+            return { status: 0 };
+          }
+          if (invocation === "npm run scan:client-secrets") {
+            const [runner, flag, script, ...roots] = JSON.parse(
+              readFileSync("package.json", "utf8"),
+            ).scripts["scan:client-secrets"].split(" ");
+            expect([runner, flag, script]).toEqual([
+              "node",
+              "--experimental-strip-types",
+              "src/ci/client-secret-scan.ts",
+            ]);
+            const scanned = spawnSync(
+              process.execPath,
+              [flag, resolve(process.cwd(), script), ...roots],
+              { cwd: buildRoot, encoding: "utf8", env: options.env },
+            );
+            return { status: scanned.status, stderr: scanned.stderr };
+          }
+          return baseRun(command, args, options);
+        });
+        const removeTemp = vi.fn();
+        const output = [];
+        const status = await mainWithPreparedProject(["--browser"], {
+          environment: {},
+          makeTemp: () => "/tmp/access-docker",
+          removeTemp,
+          run,
+          stderr: (line) => output.push(line),
+          stdout: (line) => output.push(line),
+        });
+
+        const calls = commands(run).map(([command, args]) =>
+          [command, ...args].join(" "),
+        );
+        const build = calls.indexOf("npm run build:worker");
+        const scan = calls.indexOf("npm run scan:client-secrets");
+        const firstJourney = calls.findIndex((call) =>
+          call.startsWith("npx playwright test"),
+        );
+        expect(build, String(planted)).toBeGreaterThan(-1);
+        expect(scan, String(planted)).toBeGreaterThan(build);
+        expect(run.mock.calls[scan][2].env).toEqual(
+          run.mock.calls[build][2].env,
+        );
+        if (planted) {
+          expect(status).toBe(1);
+          expect(firstJourney).toBe(-1);
+          expect(output.join("\n")).toContain(
+            `Server credential found in client asset: ${planted}/app.js`,
+          );
+        } else {
+          expect(status).toBe(0);
+          expect(firstJourney).toBeGreaterThan(scan);
+          expect(calls[firstJourney]).toContain("--project=mobile");
+        }
+        expect(output.join("\n")).not.toContain("local-secret");
+        expect(run.mock.calls.at(-1).slice(0, 2)).toEqual(stopCommand);
+        expect(removeTemp).toHaveBeenCalledWith("/tmp/access-docker");
+      } finally {
+        rmSync(buildRoot, { recursive: true });
+      }
+    }
   });
 
   it("creates the mobile Cottage Owner identity before its concurrency proof", async () => {
@@ -1203,7 +1313,10 @@ describe("access verification command", () => {
       "node",
       "scripts/verify-booking-request-capture-concurrency.mjs",
     ];
-    const nextCommand = [nextJourneyCommand[0], ...nextJourneyCommand[1]];
+    const nextCommand = [
+      prebuiltNextJourneyCommand[0],
+      ...prebuiltNextJourneyCommand[1],
+    ];
     const fixtureCommand = [
       "node",
       "scripts/verify-access-fixture-contract.mjs",
@@ -1239,7 +1352,9 @@ describe("access verification command", () => {
           statusCommand,
           ...databaseCheckCommands,
           ...nextFixtureCommands,
-          nextJourneyCommand,
+          workerBuildCommand,
+          clientSecretScanCommand,
+          prebuiltNextJourneyCommand,
         ],
       },
       {
