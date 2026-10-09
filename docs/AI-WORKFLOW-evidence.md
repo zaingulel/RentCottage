@@ -36,12 +36,24 @@ a first run; a supplied blank reason is a usage error before child launch. The l
 as escaped JSON without inferring retries from history. The [resume skill](../.agents/skills/resume/SKILL.md) owns check
 wrapping and rerun mechanics.
 
+### Receipts after a later commit
+
+A receipt names the commit it ran on, so a commit added afterwards leaves every earlier receipt pointing at an older
+head. The checks do not all run again for that. The session lists the paths the later commit changed, the repository's
+testing strategy says which checks those paths can affect, those run again, and every other check keeps its passed
+receipt. A check that depends on something no path shows runs again too unless the strategy accounts for it, and so
+does one whose earlier run is known to be invalidated. The pull request body lists each receipt kept as carried, with
+the commit it ran on and the paths that changed, so a carried result is never read as a run on the final commit.
+[The `resume` skill](../.agents/skills/resume/SKILL.md) owns the rule under "8. Deliver", and
+[`docs/TESTING-STRATEGY.md`](TESTING-STRATEGY.md) owns which checks a changed path reruns.
+
 ### Hosted checks
 
 CI runs the suites `docs/TESTING-STRATEGY.md` names. CI runs from the merge result, not the branch head, so it tests
-what would land. After a rebase, a passed local receipt can in one bounded case stand for a check the hosted run also
-covers; [the `resume` skill](../.agents/skills/resume/SKILL.md) owns that rule under "8. Deliver", and the pull request
-body says when it was used.
+what would land, and it runs on the final commit whatever receipts were carried. After a rebase onto a moved `main`, a
+passed local receipt can in one bounded case stand for a check the hosted run also covers; that case is part of the
+same rule in [the `resume` skill](../.agents/skills/resume/SKILL.md) under "8. Deliver", and the pull request body
+says when it was used.
 
 A second check, `sweep-scope` in `.github/workflows/sweep-scope.yml`, required where the documentation routines are
 active, exists because the documentation sweep and its day-after triage land their own pull requests and no one reads
@@ -52,12 +64,12 @@ both routines answer to; [the head of `scripts/sweep-scope-check.mjs`](../script
 ## Where the rules live
 
 - [`docs/TESTING-STRATEGY.md`](TESTING-STRATEGY.md): the construction modes, the mutation rule and the claims that take
-  another route, the evidence routes and which suites run where.
+  another route, the evidence routes, which suites run where and which checks a changed path reruns.
 - [`docs/CODING-STANDARDS.md`](CODING-STANDARDS.md): what a test or a tool may cost.
 - [`AGENTS.md`](../AGENTS.md) under "Coding standards and the executed test bar": which document owns which part of the
   bar.
 - [The `resume` skill](../.agents/skills/resume/SKILL.md) under "5. Build" and "8. Deliver": how a check is wrapped,
-  when a rerun needs a reason, and when a receipt may be reused.
+  when a rerun needs a reason, and when a receipt is reused or carried to a later head.
 - [The head of `scripts/run-log.mjs`](../scripts/run-log.mjs): what each line of the run log records.
 - [The head of `scripts/sweep-scope-check.mjs`](../scripts/sweep-scope-check.mjs) and
   [`docs/DOC-SWEEP.md`](DOC-SWEEP.md): what the `sweep-scope` check refuses.
@@ -68,6 +80,8 @@ both routines answer to; [the head of `scripts/sweep-scope-check.mjs`](../script
   focused test must go red.
 - **A focused command matches no test.** Zero matches is a failed verification, never a pass.
 - **A check could not run.** It is reported as unavailable evidence, never converted to a pass or a zero.
+- **A carried result reads as a fresh one.** The pull request body lists every carried receipt with the commit it ran
+  on, so no reader takes it for a run on the final commit.
 
 ## Key files
 

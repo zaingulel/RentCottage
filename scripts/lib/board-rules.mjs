@@ -8,7 +8,7 @@
 // about the card at all, including whether it drifted (#600), so it never carries a
 // repair instruction and never lets the scan claim it covered the board.
 
-import { isContentUnresolved, normalizeItem } from './board.mjs';
+import { INTAKE_EXIT, isContentUnresolved, normalizeItem, pickable, sortForDisplay } from './board.mjs';
 import {
   EPIC_LABELS,
   PICKABLE_STATUSES,
@@ -300,6 +300,25 @@ export function scanBoard(items) {
   return { drifted, unreadable };
 }
 
+// The cards the session must show with their details: every numbered pickable card in
+// pick order, then every numbered claimed card with no closing pull request. Deliberately
+// not stalledClaimDrift's set: its exemptions (a waiting column, an epic, a parked card)
+// are right for a drift row and wrong here, where an exempt claim is still one the owner
+// must see. A card with no number cannot be looked up, so it is counted, never dropped.
+export function intakeCards(items) {
+  const picks = sortForDisplay(pickable(items)).map(normalizeItem);
+  const claimed = items.map(normalizeItem)
+    .filter((card) => isInFlight(card.status) && card.closingPullRequests.length === 0);
+  const numbered = (cards) => cards.filter((card) => card.number != null);
+  const candidates = numbered(picks);
+  const claims = numbered(claimed).sort((a, b) => a.number - b.number);
+  return {
+    candidates,
+    claims,
+    numberless: picks.length + claimed.length - candidates.length - claims.length,
+  };
+}
+
 // The single decider for what a board scan prints and exits with, so the CLI holds no
 // judgment of its own and this whole contract is unit-testable.
 // An unreadable card is FATAL only under --closeout: the closeout gate's whole
@@ -341,4 +360,23 @@ export function scanOutcome({ drifted, unreadable, closeout }) {
     );
   }
   return { lines, exitCode: 0 };
+}
+
+// What `--intake` prints on stderr after its document, and what it exits with. Drift alone
+// is 3 and a read that stopped short alone is 4: a card whose details (or some of its
+// comments) were not read, or a card the board could not read. Only a clean scan with
+// every detail read is 0. The scan lines are the ordinary scan's own, so the wording of
+// a drift row or an unread card has one home.
+export function intakeOutcome({ drifted, unreadable, details }) {
+  const unread = [...details.values()].filter((entry) => entry.unavailable !== undefined || entry.commentsUnavailable !== null);
+  const drift = drifted.length > 0;
+  const incomplete = unread.length > 0 || unreadable.length > 0;
+  let exitCode = INTAKE_EXIT.complete;
+  if (drift && incomplete) exitCode = INTAKE_EXIT.driftAndIncomplete;
+  else if (drift) exitCode = INTAKE_EXIT.drift;
+  else if (incomplete) exitCode = INTAKE_EXIT.incomplete;
+  const summary = unread.length === 0
+    ? `board intake: details complete for ${details.size} card(s).`
+    : `board intake: details UNAVAILABLE in whole or part for ${unread.length} of ${details.size} card(s): ${unread.map((entry) => `#${entry.number}`).join(', ')}.`;
+  return { lines: [...scanOutcome({ drifted, unreadable, closeout: false }).lines, summary], exitCode };
 }

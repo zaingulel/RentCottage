@@ -4,11 +4,15 @@
     "zaingulel/flow-metrics-dashboard",
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "aa3c8c23a6b56cb1b4af00a93c94b5301e44b662",
+  "syncedFrom": "659f5780b2f1e00cfdb0da126b900996d1a653bf",
   "entries": [
     {
+      "path": ".agents/skills/accessibility-review/SKILL.md",
+      "sha256": "ef42982af0d51238dda2ab16d08626712891bdd41864876c32d1e7b13fb3124f"
+    },
+    {
       "path": ".agents/skills/closeout/SKILL.md",
-      "sha256": "b279ddb5375a4535f60c20089f04b88089d80fbfd167e8cadc1cb2224b177574"
+      "sha256": "d00678d8710fe4d6c1dffc2ddebb724309688c8325297c715f1074ef09f965cd"
     },
     {
       "path": ".agents/skills/codebase-design/DEEPENING.md",
@@ -55,6 +59,14 @@
       "sha256": "f6bf2aa996c6e6f53fdd0708e18a0d16a56aed8322cca59fedbe3c0d2c75f06b"
     },
     {
+      "path": ".agents/skills/frontend-design/LICENSE.txt",
+      "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+    },
+    {
+      "path": ".agents/skills/frontend-design/SKILL.md",
+      "sha256": "d91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3"
+    },
+    {
       "path": ".agents/skills/greptile/SKILL.md",
       "sha256": "cf3ca94d51d38ba34f461f1847168c9201b815548287f24878d8def5c9679735"
     },
@@ -84,7 +96,7 @@
     },
     {
       "path": ".agents/skills/handoff/SKILL.md",
-      "sha256": "37f50ed2648c51109379a7fe000d52b99aaa1c463c64b2e3d4d8219cacf50a0f"
+      "sha256": "3dc5adc6fcc262d5582a81fecb0963438ae64804ba7eec34caf053687e645ea0"
     },
     {
       "path": ".agents/skills/improve-codebase-architecture/HTML-REPORT.md",
@@ -97,6 +109,18 @@
     {
       "path": ".agents/skills/improve-codebase-architecture/agents/openai.yaml",
       "sha256": "c8cb20f68ebf0edb4e497bc11ae5fcaa196004e661cd189015b04f4109ced7f1"
+    },
+    {
+      "path": ".agents/skills/pr/CREDITS.md",
+      "sha256": "a7a087127665d7298a72280ef6e19c41ad8404523712a788c8dc3ab414bc2497"
+    },
+    {
+      "path": ".agents/skills/pr/SKILL.md",
+      "sha256": "ab63f1cf78647389edcd386c9427c5dfca27ed2836930c24773ffee834c19bcd"
+    },
+    {
+      "path": ".agents/skills/pr/agents/openai.yaml",
+      "sha256": "2295b586624db4ef546f3fd4695492f039d941a46d8a1593a702ce3ca511b8ad"
     },
     {
       "path": ".agents/skills/prototype/LOGIC.md",
@@ -124,7 +148,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "ea9decceaa50137b24ea366c2a3c0a27f6cf2a538bd73485022813d2c457fe5b"
+      "sha256": "c85b2c71f8de7a37240b55b57a3068a2678501a1cb2cc0197c9ab496b179e0a8"
     },
     {
       "path": ".agents/skills/retro/SKILL.md",
@@ -177,6 +201,22 @@
     {
       "path": ".agents/templates/planner-handoff.md",
       "sha256": "36160a4180bbaa3648484362cccb0da7d0dda57a92b5f8be04a4d1e6a71e88be"
+    },
+    {
+      "path": ".agents/upstream/anthropics-claude-plugins-official/frontend-design/LICENSE.txt",
+      "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+    },
+    {
+      "path": ".agents/upstream/anthropics-claude-plugins-official/frontend-design/SKILL.md",
+      "sha256": "d91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3"
+    },
+    {
+      "path": ".agents/upstream/anthropics-knowledge-work-plugins/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": ".agents/upstream/anthropics-knowledge-work-plugins/accessibility-review/SKILL.md",
+      "sha256": "ef42982af0d51238dda2ab16d08626712891bdd41864876c32d1e7b13fb3124f"
     },
     {
       "path": ".agents/upstream/mattpocock-skills/LICENSE",
@@ -251,6 +291,18 @@
       "sha256": "c8cb20f68ebf0edb4e497bc11ae5fcaa196004e661cd189015b04f4109ced7f1"
     },
     {
+      "path": ".agents/upstream/mattpocock-skills/pr/CREDITS.md",
+      "sha256": "a7a087127665d7298a72280ef6e19c41ad8404523712a788c8dc3ab414bc2497"
+    },
+    {
+      "path": ".agents/upstream/mattpocock-skills/pr/SKILL.md",
+      "sha256": "ab63f1cf78647389edcd386c9427c5dfca27ed2836930c24773ffee834c19bcd"
+    },
+    {
+      "path": ".agents/upstream/mattpocock-skills/pr/agents/openai.yaml",
+      "sha256": "2295b586624db4ef546f3fd4695492f039d941a46d8a1593a702ce3ca511b8ad"
+    },
+    {
       "path": ".agents/upstream/mattpocock-skills/prototype/LOGIC.md",
       "sha256": "f61c7d249e786a79ef289018901c348271e1798dd0b0bc5607b5c6f4d4a01ab9"
     },
@@ -312,19 +364,19 @@
     },
     {
       "path": ".claude/agents/architect.md",
-      "sha256": "3fc20e30bec4bda68902f6d3c914929fc217d6137d95a83fcbd7ccab9e1f61f9"
+      "sha256": "66e7b5beb5d51db2b49eb2e5e2f548868522bafd9f702fce1d57b7538ba8851b"
     },
     {
       "path": ".claude/agents/builder-lite.md",
-      "sha256": "8183d5be254b54b0b43a0ed940b2598fbd497bdcc0adde2d08fdca2721befae9"
+      "sha256": "83f413a8bbdd0cce84cbefa534769e8edc2f620b902ee8a18466f4e045300f86"
     },
     {
       "path": ".claude/agents/builder-max.md",
-      "sha256": "d349f90091e403bf5e7f7813259d9018e8e193a42d107f70b7affa82eac47ce1"
+      "sha256": "667b738d52fe1e40cc108b12d4a507855d92e7cf51f07605d9f783b61d08ab21"
     },
     {
       "path": ".claude/agents/builder.md",
-      "sha256": "512496b6632719359a227c99b8335066d08963038c534bab58b8eca7e9fe97a0"
+      "sha256": "73ea3708d9000d6fa2f903ab262b7d88a386ff3b04df4037ebcc1538ec19528d"
     },
     {
       "path": ".claude/agents/explorer.md",
@@ -340,7 +392,7 @@
     },
     {
       "path": ".claude/agents/reviewer.md",
-      "sha256": "fea89054a461e1e0307216a4cab157a83870ac5756954375d8b64a85005b56d5"
+      "sha256": "202ae5fbdf37be9e7c730b8cae994863220a10676445a59df5090dea309f49a6"
     },
     {
       "path": ".claude/agents/security-reviewer.md",
@@ -375,8 +427,12 @@
       "sha256": "8ae234167cc0d3a9b79c9edd49aa6b3e9072ddf0ec12ef8c3ed60f6308b6922d"
     },
     {
+      "path": ".claude/skills/accessibility-review/SKILL.md",
+      "sha256": "ef42982af0d51238dda2ab16d08626712891bdd41864876c32d1e7b13fb3124f"
+    },
+    {
       "path": ".claude/skills/closeout/SKILL.md",
-      "sha256": "b279ddb5375a4535f60c20089f04b88089d80fbfd167e8cadc1cb2224b177574"
+      "sha256": "d00678d8710fe4d6c1dffc2ddebb724309688c8325297c715f1074ef09f965cd"
     },
     {
       "path": ".claude/skills/codebase-design/DEEPENING.md",
@@ -423,6 +479,14 @@
       "sha256": "f6bf2aa996c6e6f53fdd0708e18a0d16a56aed8322cca59fedbe3c0d2c75f06b"
     },
     {
+      "path": ".claude/skills/frontend-design/LICENSE.txt",
+      "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+    },
+    {
+      "path": ".claude/skills/frontend-design/SKILL.md",
+      "sha256": "d91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3"
+    },
+    {
       "path": ".claude/skills/greptile/SKILL.md",
       "sha256": "cf3ca94d51d38ba34f461f1847168c9201b815548287f24878d8def5c9679735"
     },
@@ -452,7 +516,7 @@
     },
     {
       "path": ".claude/skills/handoff/SKILL.md",
-      "sha256": "37f50ed2648c51109379a7fe000d52b99aaa1c463c64b2e3d4d8219cacf50a0f"
+      "sha256": "3dc5adc6fcc262d5582a81fecb0963438ae64804ba7eec34caf053687e645ea0"
     },
     {
       "path": ".claude/skills/improve-codebase-architecture/HTML-REPORT.md",
@@ -465,6 +529,18 @@
     {
       "path": ".claude/skills/improve-codebase-architecture/agents/openai.yaml",
       "sha256": "c8cb20f68ebf0edb4e497bc11ae5fcaa196004e661cd189015b04f4109ced7f1"
+    },
+    {
+      "path": ".claude/skills/pr/CREDITS.md",
+      "sha256": "a7a087127665d7298a72280ef6e19c41ad8404523712a788c8dc3ab414bc2497"
+    },
+    {
+      "path": ".claude/skills/pr/SKILL.md",
+      "sha256": "ab63f1cf78647389edcd386c9427c5dfca27ed2836930c24773ffee834c19bcd"
+    },
+    {
+      "path": ".claude/skills/pr/agents/openai.yaml",
+      "sha256": "2295b586624db4ef546f3fd4695492f039d941a46d8a1593a702ce3ca511b8ad"
     },
     {
       "path": ".claude/skills/prototype/LOGIC.md",
@@ -492,7 +568,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "ea9decceaa50137b24ea366c2a3c0a27f6cf2a538bd73485022813d2c457fe5b"
+      "sha256": "c85b2c71f8de7a37240b55b57a3068a2678501a1cb2cc0197c9ab496b179e0a8"
     },
     {
       "path": ".claude/skills/retro/SKILL.md",
@@ -548,19 +624,19 @@
     },
     {
       "path": ".codex/agents/architect.toml",
-      "sha256": "7a764fba82a0c50cabfe6366e523035b139fee7e2dfa7b09945be4abbbd9c5dd"
+      "sha256": "1b56d21326845560acd5c0ea58c40e17ed0722faf2cd2a62c3abbcd7f44541f2"
     },
     {
       "path": ".codex/agents/builder-lite.toml",
-      "sha256": "034ca15221566ff8ee3860d362b8c9c9f49397a21f9fb1b54786d61da4adc898"
+      "sha256": "1636061935a937f2ad34a1cc786f6e3dbd3dc4d9f28c99016f222be95e81551e"
     },
     {
       "path": ".codex/agents/builder-max.toml",
-      "sha256": "89aeb62578ac8aada3187406458b3c0c43eb21f9b00ae58d9d892cef9b0c8c2d"
+      "sha256": "4a734f905a37e52efbaf5a135e937625a8618c849318eae29125b11625fc33ca"
     },
     {
       "path": ".codex/agents/builder.toml",
-      "sha256": "7e7be330c268c8f6361db5c0948c1d1e721304486ed95c1225d7b6782daa97a5"
+      "sha256": "0560337049aec0499f08260ebae863dde2834142b0a0b57047ebcb5436b91754"
     },
     {
       "path": ".codex/agents/explorer.toml",
@@ -576,7 +652,7 @@
     },
     {
       "path": ".codex/agents/reviewer.toml",
-      "sha256": "35b68aa75e5fa5327536e4fed2a8d8ed3062ea08377ff752d6193f1b4411cc84"
+      "sha256": "f338604f735d50a489db1fcb7be3ede001d07f5345ce3d68c729bd35477d1149"
     },
     {
       "path": ".codex/agents/security-reviewer.toml",
@@ -631,7 +707,7 @@
     },
     {
       "path": ".github/pull_request_template.md",
-      "sha256": "5d3205c4d4bcf4dffd4c1111645830544ebe2e040a4939fc8f3c033f6ee3b17a"
+      "sha256": "194d4605c60bd33e3cea06d880abd0152e5d057efedbbeaf0c1039cb0f5c9a90"
     },
     {
       "path": ".github/workflows/sweep-scope.yml",
@@ -644,7 +720,7 @@
     {
       "path": "AGENTS.md",
       "region": "factory-shared",
-      "sha256": "cc62f90763c4e47e1a003d45a4a6ba70a29c2494588eaa5b21f3c56c04b7ef65"
+      "sha256": "43b23b91c2d9b2130ec0977b9ef43a8271b2b4e4d2fd00046b86c5c78dc6c1ea"
     },
     {
       "path": "CLAUDE.md",
@@ -652,7 +728,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW-board.md",
-      "sha256": "cf73cdf03357263149f78d6ce3cb3561cafe178e12667be6b2f4298d86d12fb5"
+      "sha256": "101c8a452be35fc64c3d034ad8f0621bafd8ed2117c7cf8d25b462b9f05e70e4"
     },
     {
       "path": "docs/AI-WORKFLOW-enforcement.md",
@@ -660,15 +736,15 @@
     },
     {
       "path": "docs/AI-WORKFLOW-evidence.md",
-      "sha256": "17f17b05ce283935e0eb96fb7f530513e1a5aab2a1737bb3ce8f6e37b1f8958f"
+      "sha256": "85b919867edb1121ff7cec8febef9b77180304fad8778252f2d243eb5ad439d6"
     },
     {
       "path": "docs/AI-WORKFLOW-job.md",
-      "sha256": "8ed233b86438d1d44b15eb7dd082b635598f5d03a964d9096b69ae3f8eba0430"
+      "sha256": "391faa9d25d9b467a3235b8f765977e02b4583e42671085f02f038d973d6bd28"
     },
     {
       "path": "docs/AI-WORKFLOW-runtimes.md",
-      "sha256": "329df18be1a0a595098fb7c04de9ec293a7172480e9346d29daf17316e2fc9e0"
+      "sha256": "bf6cdd0ad4ae096f665e305bf9d901001e3addbeed0348ea44709ac02c73c989"
     },
     {
       "path": "docs/AI-WORKFLOW-seats.md",
@@ -676,7 +752,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "19d50007671a779292a3242de82758c367d82aff895a980dd9a084fb28b59a30"
+      "sha256": "5a2e2af17ca2b708dbd392555fd31c840ea72dd2303830d8e0ebef9f20b4ee77"
     },
     {
       "path": "docs/WEEKLY-RETRO.md",
@@ -692,7 +768,7 @@
     },
     {
       "path": "scripts/board.mjs",
-      "sha256": "9ef50f16e1be827088e0c218dafa3303e2e4a734aec7e1609cebbd0022c8cb69",
+      "sha256": "0b6814ec18ceda51883ebc8ff032a499d55d4f7eec95da63383223e0c731ef68",
       "executable": true
     },
     {
@@ -709,7 +785,7 @@
     },
     {
       "path": "scripts/lib/board-cli.test.mjs",
-      "sha256": "4c935b38af2e21de81993d4c10ae039073877b0d3e3e715afbad78dfc988e1bc"
+      "sha256": "fbd87e2e84ad84cb852e3c59bca57ec75e2c687d4113ef452e7f241bc620849b"
     },
     {
       "path": "scripts/lib/board-fixtures.mjs",
@@ -729,19 +805,19 @@
     },
     {
       "path": "scripts/lib/board-rules.mjs",
-      "sha256": "870db1be8deff9653bf6a12e9b6fd758e03eb7559b1a0423394031777f643153"
+      "sha256": "6d3115415e9950d02c5e4b71c0886f6ebd231260586779be239422906699a6e5"
     },
     {
       "path": "scripts/lib/board-rules.test.mjs",
-      "sha256": "ff2558458288f85abcddbcb33ddf8ba3b3ea4536aee886042bad22dbcb127507"
+      "sha256": "f114d0e476d6ae5f83f4c1b4abd8cc55043789f679374210a6e7ae15dd531bdb"
     },
     {
       "path": "scripts/lib/board.mjs",
-      "sha256": "575affb7dd35b9134581afb77d938110bfc918e020ecd28ffda9f1b4ef281385"
+      "sha256": "6c4a9e14182c9fd02b492c5ff0c05b018f2197fbc4a8da02174f67f719a1e2eb"
     },
     {
       "path": "scripts/lib/board.test.mjs",
-      "sha256": "e0e5fc5ec431ad60feef786cd382422c5d0cf32b8aa5ea76022ea15eb5114e5e"
+      "sha256": "37103dbe4a5dcaa990a5f1188431f1244499cdf86b704588584b2cad1149aa54"
     },
     {
       "path": "scripts/lib/check-agents.mjs",
@@ -901,7 +977,7 @@
     },
     {
       "path": "scripts/lib/workflow-contract.test.mjs",
-      "sha256": "663560ef471c7aef055642358877fc7a1df13d4498838570fcbca2af55c1e764"
+      "sha256": "b201a06486881667a8975762426ae19238fc642d4e2a57776ba42f0fc4e4559e"
     },
     {
       "path": "scripts/merge-watch.mjs",
@@ -909,7 +985,7 @@
     },
     {
       "path": "scripts/run-log.mjs",
-      "sha256": "e6b5f364b4be903809d116e189e7f211d35fad780140552efc9bbaccdb12726b"
+      "sha256": "ad6cdb5dbb29909a289f5f8ed8ac4e2129e1545bb0946553ff556cb0e9c353c2"
     },
     {
       "path": "scripts/sweep-scope-check.mjs",

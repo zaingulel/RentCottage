@@ -13,8 +13,8 @@ state. This file holds in full only the rules every session needs; every other r
 Claude Code reads this file through `CLAUDE.md`, which adds its own notes; Codex reads it directly and prompts before a
 browser run where the repository supplies `.codex/rules/playwright.rules`. Skills are shared in `.agents/skills/`, and
 `.claude/skills/` holds a byte-identical copy of each; the agent seats in `.claude/agents/` and `.codex/agents/` carry
-the same charters. The skills vendored from mattpocock/skills, with its licence, in
-`.agents/upstream/mattpocock-skills/` are verbatim copies: they are never edited in place, an update replaces the
+the same charters. The skills vendored from upstream repositories, each repository's kept with its licence in its
+own folder under `.agents/upstream/`, are verbatim copies: they are never edited in place, an update replaces the
 vendored source and every copy of it whole, and Codex invokes any skill as `$<name>`. The root checkout is the
 integration checkout: it stays on `main`, and nothing is edited, branched, or committed there; the git guard refuses the
 branching and committing half. Resume fetches before intake and loads the fetched `AGENTS.md` and the `resume` and
@@ -65,21 +65,22 @@ Every rule this file does not hold in full has one home:
 |---|---|
 | What is true of this repository alone: its product, where its own facts live, its grounding authorities and its Conventions table | `.agents/REPOSITORY.md` |
 | Reusing instruction text already read | The [`resume`](.agents/skills/resume/SKILL.md) skill, "Before intake" |
-| Which builder seat a slice goes to; the machinery admissions, the friction route and how machinery leaves | [`resume`](.agents/skills/resume/SKILL.md), "4. Plan" |
+| Which builder seat a slice goes to; the machinery admissions, the friction route and how machinery leaves; what a plan carries for a change to how the interface looks, and who decides where the `frontend-design` skill and the design system disagree | [`resume`](.agents/skills/resume/SKILL.md), "4. Plan" |
 | Each runtime's exact form for waiting on a helper or a long command | [`resume`](.agents/skills/resume/SKILL.md), "5. Build" |
-| The two questions that choose a review tier, the three tiers, the guard rule, what a setting-only seat change is, the cross-family route with its substitution when the other family's seat cannot be reached, when `security-reviewer` runs, when Greptile runs, and how visual work is driven and how many views it needs | [`resume`](.agents/skills/resume/SKILL.md), "6. Verify and review" |
+| The two questions that choose a review tier, the three tiers, the guard rule, what a setting-only seat change is, the cross-family route with its substitution when the other family's seat cannot be reached, when `security-reviewer` runs, when Greptile runs, how visual work is driven and how many views it needs, and the accessibility audit of visual work with the minimum target size it holds | [`resume`](.agents/skills/resume/SKILL.md), "6. Verify and review" |
 | Every other Greptile rule: the pool it is metered from, the allowance lookup, how each thread is settled before the draft is marked ready, whether a review still stands after a rebase, and the provider-unavailability exception | The [`greptile`](.agents/skills/greptile/SKILL.md) skill |
 | How shared files are fingerprinted, pinned and kept as real files; what a repository needs before it runs the workflow; and how a sync job runs: the command, what one run copies and removes, when a card is covered and how covered cards close | The [`sync-job`](.agents/skills/sync-job/SKILL.md) skill |
 | The tracker and triage vocabulary the vendored skills expect to have been provided | [docs/ISSUE-TRACKER.md](docs/ISSUE-TRACKER.md) |
-| How many skills are vendored and which upstream commit they copy | [docs/AI-WORKFLOW-runtimes.md](docs/AI-WORKFLOW-runtimes.md) |
+| How many skills are vendored, from which upstream repositories and at which commits | [docs/AI-WORKFLOW-runtimes.md](docs/AI-WORKFLOW-runtimes.md) |
 | The documentation sweep and its day-after triage, when the Conventions table marks them active | [docs/DOC-SWEEP.md](docs/DOC-SWEEP.md) and [docs/SWEEP-TRIAGE.md](docs/SWEEP-TRIAGE.md) |
 | The weekly retro, in a repository whose `docs/ISSUE-TRACKER.md` records it | [docs/WEEKLY-RETRO.md](docs/WEEKLY-RETRO.md) |
 
 ## Owner gates
 
 1. **Work-pick** is the owner's pick of one row of the `resume` candidate table, which approves that card's
-   outcome and acceptance criteria as written and starts the job; no criteria list is shown and no second yes is
-   asked. Owner-directed surfaces are the Surfaces table's `owner-directed` row and need owner direction plus
+   outcome and acceptance criteria as written and starts the job, unless the `resume` skill's checks under
+   "3. Start the job" do not confirm the card is free; no criteria list is shown and no second yes is asked.
+   Owner-directed surfaces are the Surfaces table's `owner-directed` row and need owner direction plus
    canon or domain validation; sign-off surfaces are its `sign-off` row and need explicit sign-off and a named
    anti-regression test.
 2. **Push authorisation** is one yes to the filled pull request body and its screenshot, and any owner

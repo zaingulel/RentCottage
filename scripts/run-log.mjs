@@ -12,6 +12,8 @@
 // On Windows a `.cmd` shim cannot start without a shell, so bare `npm`/`npx` are started through the
 // running Node and the npm CLI the first `npm.cmd`/`npx.cmd` on PATH would pick, the one under npm's
 // global prefix when it exists, else the one beside the shim; the receipt still records the command as written.
+// No other shim is resolved: a package binary such as `eslint` is run as `npx <binary>`, and a bare one is a
+// spawn failure there.
 // The state field `head=<H> tree=<T>` is sampled before and after the command: H is the commit, or
 // `<before>-><after>` when it moved; T is `clean` only when both samples were clean against a known
 // commit, `dirty` when either had changes (untracked files included), and `unknown` otherwise, so an

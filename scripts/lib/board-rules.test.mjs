@@ -23,6 +23,8 @@ import {
   blockedClaimDrift,
   formatDrift,
   formatUnreadable,
+  intakeCards,
+  intakeOutcome,
   isEpic,
   isInFlight,
   scanBoard,
@@ -623,4 +625,65 @@ test('scanOutcome: an unresolved card with blank fields is fatal to an ordinary 
   assert.equal(lines.filter((line) => line.includes('re-run the read')).length, 1);
   assert.equal(lines.join('\n').includes('set the field(s)'), false);
   assert.equal(ROUTING_FIELD, 'Workstream'); // the field the unfielded rule names below
+});
+
+// The detail set follows what the owner must be shown, not what the drift rules flag:
+// cards 42 (waiting column) and 44 (undecomposed epic) are exempt from rule 5 yet are
+// still claims with nothing behind them, so a stalledClaimDrift filter would drop them.
+test('ANTI-REGRESSION: intakeCards keeps every numbered pickable card and every claimed card with no closing pull request, and counts the numberless', () => {
+  const [backlog, ready] = PICKABLE_STATUSES;
+  const items = parsedLeanItems([
+    ...[
+      { number: 30, status: ready },
+      { number: 10, status: backlog },
+      { number: 20, status: backlog },
+      { number: 40, status: 'In progress' },
+      { number: 41, status: 'In progress', closingPullRequests: [{ number: 50 }] },
+      { number: 44, status: 'In progress', labels: ['type:epic'] },
+      { number: 42, status: WAIT_STATUSES[0] },
+      { number: 43, status: TERMINAL_STATUSES[0], state: 'CLOSED' },
+    ].map(issueNode),
+    leanNode({ id: 'PVTI_draft', content: { __typename: 'DraftIssue' }, title: 'draft note', status: backlog, routing: 'Product' }),
+  ]);
+
+  const { candidates, claims, numberless } = intakeCards(items);
+
+  assert.deepEqual(candidates.map((c) => c.number), [30, 10, 20]);
+  assert.deepEqual(claims.map((c) => c.number), [40, 42, 44]);
+  assert.equal(numberless, 1);
+});
+
+// The exit codes are read off the intake exit table: 0 whole and clean, 3 drift with every
+// detail read, 4 something unread without drift, 5 both. The details are hand-built in the
+// entry shapes fetchCardDetails returns.
+test('ANTI-REGRESSION: intakeOutcome exits 0 only when nothing drifted and every detail was read, and 3, 4 and 5 otherwise', () => {
+  const read = { number: 1, body: 'b', parent: null, comments: ['c'], commentCount: 1, commentsUnavailable: null };
+  const complete = new Map([[1, read], [2, { ...read, number: 2 }], [3, { ...read, number: 3 }]]);
+  const withEntry = (entry) => new Map([...complete, [entry.number, entry]]);
+  const cardUnavailable = withEntry({ number: 3, unavailable: 'gh: timed out' });
+  const commentsPartial = withEntry({ ...read, number: 3, commentCount: 5, commentsUnavailable: 'offline' });
+  const unreadable = unreadableCards(RAW_ITEMS);
+  const allRead = 'board intake: details complete for 3 card(s).';
+  const someUnread = 'board intake: details UNAVAILABLE in whole or part for 1 of 3 card(s): #3.';
+
+  const cases = [
+    { label: 'complete', drifted: [], unreadable: [], details: complete, exitCode: 0, tail: allRead },
+    { label: 'no card to detail', drifted: [], unreadable: [], details: new Map(), exitCode: 0, tail: 'board intake: details complete for 0 card(s).' },
+    { label: 'drift alone', drifted: [DRIFTED_CARD], unreadable: [], details: complete, exitCode: 3, tail: allRead },
+    { label: 'a card unavailable', drifted: [], unreadable: [], details: cardUnavailable, exitCode: 4, tail: someUnread },
+    { label: 'comments partly unavailable', drifted: [], unreadable: [], details: commentsPartial, exitCode: 4, tail: someUnread },
+    { label: 'a card the board could not read', drifted: [], unreadable, details: complete, exitCode: 4, tail: allRead },
+    { label: 'drift with a card unavailable', drifted: [DRIFTED_CARD], unreadable: [], details: cardUnavailable, exitCode: 5, tail: someUnread },
+    { label: 'drift with a card the board could not read', drifted: [DRIFTED_CARD], unreadable, details: complete, exitCode: 5, tail: allRead },
+  ];
+  for (const { label, drifted, unreadable: unread, details, exitCode, tail } of cases) {
+    const outcome = intakeOutcome({ drifted, unreadable: unread, details });
+    assert.equal(outcome.exitCode, exitCode, label);
+    // The ordinary scan's own lines, then the details line.
+    assert.deepEqual(
+      outcome.lines,
+      [...scanOutcome({ drifted, unreadable: unread, closeout: false }).lines, tail],
+      label,
+    );
+  }
 });
