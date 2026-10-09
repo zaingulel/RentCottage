@@ -3267,6 +3267,102 @@ section.request-follow-up {
   cursor: pointer;
 }
 
+@media (max-width: 40rem) {
+  .site-header:not(.site-header-landing) {
+    position: relative;
+  }
+
+  .site-header-row,
+  .site-header-controls {
+    flex-wrap: nowrap;
+  }
+
+  .site-header-rule,
+  .account-menu-toggle {
+    display: none;
+  }
+
+  .site-header-toggle {
+    flex: none;
+    width: 2.75rem;
+    height: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--line-on-dark-strong);
+    border-radius: 999px;
+    padding: 0;
+    background: transparent;
+  }
+
+  .site-header-solid .site-header-toggle {
+    border-color: var(--line-menu);
+    color: var(--green);
+  }
+
+  .site-header-toggle svg {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+
+  .site-header-toggle[aria-expanded="false"] + .site-header-panel {
+    display: none;
+  }
+
+  .site-header-toggle[aria-expanded="true"] + .site-header-panel {
+    position: absolute;
+    z-index: var(--layer-menu);
+    inset-block-start: 100%;
+    inset-inline: 0;
+    width: auto;
+    display: grid;
+    gap: 0;
+    direction: inherit;
+    padding: var(--space-2);
+    border: 0;
+    border-block: 1px solid var(--line);
+    border-radius: 0;
+    background: var(--surface-raised);
+    color: var(--ink);
+    backdrop-filter: none;
+  }
+
+  .site-header-toggle[aria-expanded="true"] + .site-header-panel a {
+    min-height: 2.75rem;
+    display: flex;
+    align-items: center;
+    border: 0;
+    border-radius: var(--radius-control);
+    padding: var(--space-2) var(--space-3);
+    color: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+  }
+
+  .site-header-toggle[aria-expanded="true"]
+    + .site-header-panel
+    a[aria-current="page"] {
+    background: var(--green);
+    color: var(--ink-on-dark);
+  }
+
+  .site-header-toggle[aria-expanded="true"] + .site-header-panel > span {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .account-menu-panel {
+    position: static;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .account-menu-panel button {
+    border-radius: var(--radius-control);
+  }
+}
+
 .site-footer {
   margin-block-start: var(--space-7);
   border-block-start: 1px solid var(--line);
