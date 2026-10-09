@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -12,13 +12,17 @@ import {
 const USAGE =
   "Usage: npm run verify [-- [--baseline|--database|--browser] [--full] [--plan]]";
 
-export const baselineVerificationSteps = [
-  ["npm", ["run", "audit:production"]],
-  ["npm", ["run", "audit:shipped-dev"]],
+const overlappedBaselineSteps = [
   ["npm", ["run", "format:check"]],
   ["npm", ["run", "lint"]],
   ["npm", ["run", "typecheck"]],
   ["npm", ["test"]],
+];
+
+export const baselineVerificationSteps = [
+  ["npm", ["run", "audit:production"]],
+  ["npm", ["run", "audit:shipped-dev"]],
+  ...overlappedBaselineSteps,
   ["npm", ["run", "cf-typegen"]],
   [
     "git",
@@ -407,11 +411,28 @@ function checkLockedDependencies(cwd, stderr) {
   return false;
 }
 
-function runStep(command, args, environment, cwd) {
-  return spawnSync(command, args, {
-    cwd,
-    env: environment,
-    stdio: "inherit",
+export function runStep(command, args, environment, cwd, overlapped) {
+  if (!overlapped) {
+    return spawnSync(command, args, {
+      cwd,
+      env: environment,
+      stdio: "inherit",
+    });
+  }
+  return new Promise((resolve) => {
+    const held = [];
+    const child = spawn(command, args, {
+      cwd,
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.stdout.on("data", (chunk) => held.push([process.stdout, chunk]));
+    child.stderr.on("data", (chunk) => held.push([process.stderr, chunk]));
+    child.on("error", (error) => resolve({ error, status: null }));
+    child.on("close", (status, signal) => {
+      for (const [stream, chunk] of held) stream.write(chunk);
+      resolve({ status, signal });
+    });
   });
 }
 
@@ -874,72 +895,101 @@ export async function main(
     };
   }
   if (steps.length > 0 && !checkLockedDependencies(cwd, stderr)) return 1;
-  for (let index = 0; index < steps.length; index += 1) {
-    const [command, commandArgs] = steps[index];
-    const accessContract =
-      command === "npm" && commandArgs[0] === "run"
-        ? accessCommandContracts[commandArgs[1]]
-        : undefined;
-    const startedAt = utcNow();
-    const started = monotonicNow();
-    const result = run(command, commandArgs, stepEnvironment, cwd);
-    const durationMs = monotonicNow() - started;
-    const completedAt = utcNow();
-    const outcome = result.error
-      ? { type: "spawn-failure", code: result.error.code ?? null }
-      : result.signal
-        ? { type: "signal", signal: result.signal }
-        : { type: "exit", status: result.status };
-    stdout(
-      JSON.stringify({
-        type: "verification-phase",
-        command: [command, ...commandArgs],
-        startedAt,
-        completedAt,
-        durationMs,
-        outcome,
-      }),
-    );
-    if (result.error || result.signal || result.status !== 0) {
-      const reproduction =
-        baseline && index < baselineVerificationSteps.length
-          ? { reproduceGroup: ["npm", "run", "verify", "--", "--baseline"] }
-          : (accessContract?.failureRecipe ?? {
-              reproduceGroup: [
-                "npm",
-                "run",
-                "verify",
-                "--",
-                "--browser",
-                "--full",
-              ],
-            });
-      stderr(
-        JSON.stringify({
-          type: "verification-failure",
-          attemptedCommand: [command, ...commandArgs],
-          ...reproduction,
+  const overlap = !isHostedCheck(environment);
+  for (let index = 0; index < steps.length; ) {
+    const size =
+      overlap && steps[index] === overlappedBaselineSteps[0]
+        ? overlappedBaselineSteps.length
+        : 1;
+    const unreached = steps.length - index - size;
+    const codes = await Promise.all(
+      steps
+        .slice(index, index + size)
+        .map(async ([command, commandArgs], offset) => {
+          const accessContract =
+            command === "npm" && commandArgs[0] === "run"
+              ? accessCommandContracts[commandArgs[1]]
+              : undefined;
+          const startedAt = utcNow();
+          const started = monotonicNow();
+          const result = await run(
+            command,
+            commandArgs,
+            stepEnvironment,
+            cwd,
+            size > 1,
+          );
+          const durationMs = monotonicNow() - started;
+          const completedAt = utcNow();
+          const outcome = result.error
+            ? { type: "spawn-failure", code: result.error.code ?? null }
+            : result.signal
+              ? { type: "signal", signal: result.signal }
+              : { type: "exit", status: result.status };
+          stdout(
+            JSON.stringify({
+              type: "verification-phase",
+              command: [command, ...commandArgs],
+              startedAt,
+              completedAt,
+              durationMs,
+              outcome,
+            }),
+          );
+          if (result.error || result.signal || result.status !== 0) {
+            const reproduction =
+              baseline && index + offset < baselineVerificationSteps.length
+                ? {
+                    reproduceGroup: [
+                      "npm",
+                      "run",
+                      "verify",
+                      "--",
+                      "--baseline",
+                    ],
+                  }
+                : (accessContract?.failureRecipe ?? {
+                    reproduceGroup: [
+                      "npm",
+                      "run",
+                      "verify",
+                      "--",
+                      "--browser",
+                      "--full",
+                    ],
+                  });
+            stderr(
+              JSON.stringify({
+                type: "verification-failure",
+                attemptedCommand: [command, ...commandArgs],
+                ...reproduction,
+              }),
+            );
+          }
+          if (result.error) {
+            stderr(
+              `Unable to run ${command}: ${result.error.message}; ${unreached} later selected checks were not reached.`,
+            );
+            return 1;
+          }
+          if (result.signal) {
+            stderr(
+              `Unable to run ${command}: terminated by ${result.signal}; ${unreached} later selected checks were not reached.`,
+            );
+            return 1;
+          }
+          if (result.status !== 0) {
+            stderr(
+              `${command} ${commandArgs.join(" ")} failed; ${unreached} later selected checks were not reached.`,
+            );
+            return result.status ?? 1;
+          }
+          return 0;
         }),
-      );
-    }
-    if (result.error) {
-      stderr(
-        `Unable to run ${command}: ${result.error.message}; ${steps.length - index - 1} later selected checks were not reached.`,
-      );
-      return 1;
-    }
-    if (result.signal) {
-      stderr(
-        `Unable to run ${command}: terminated by ${result.signal}; ${steps.length - index - 1} later selected checks were not reached.`,
-      );
-      return 1;
-    }
-    if (result.status !== 0) {
-      stderr(
-        `${command} ${commandArgs.join(" ")} failed; ${steps.length - index - 1} later selected checks were not reached.`,
-      );
-      return result.status ?? 1;
-    }
+    );
+    const failed = codes.find((code) => code !== 0);
+    if (failed !== undefined) return failed;
+    index += size;
   }
   return 0;
 }

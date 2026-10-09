@@ -18,6 +18,7 @@ import {
   classifyChanges,
   expensiveVerificationSteps,
   main,
+  runStep,
 } from "./verify.mjs";
 import {
   ROOT,
@@ -479,9 +480,13 @@ describe("repository verification command", () => {
             stderr,
           }),
         ).toBe(failure.status);
+        const overlapped =
+          scenario.args[0] === "--baseline" &&
+          failedIndex >= 2 &&
+          failedIndex <= 5;
         expect(
           run.mock.calls.map(([command, args]) => [command, args]),
-        ).toEqual(scenario.steps.slice(0, failedIndex + 1));
+        ).toEqual(scenario.steps.slice(0, overlapped ? 6 : failedIndex + 1));
         const diagnostics = stderr.mock.calls
           .map(([line]) => line)
           .filter((line) => line.startsWith("{"))
@@ -644,7 +649,8 @@ describe("repository verification command", () => {
       });
       const run = vi.fn((_command, _args, _environment, cwd) => {
         expect(cwd).toBe(repository);
-        expect(records).toHaveLength(run.mock.calls.length - 1);
+        const call = run.mock.calls.length;
+        expect(records).toHaveLength(call >= 3 && call <= 6 ? 2 : call - 1);
         monotonic += 37;
         utc = new Date(Date.parse(utc) + 1000).toISOString();
         return run.mock.calls.length === 2 ? scenario.result : { status: 0 };
@@ -684,9 +690,14 @@ describe("repository verification command", () => {
         durationMs: 37,
         outcome: scenario.outcome,
       });
+      expect(records.slice(2, 6).map((record) => record.durationMs)).toEqual(
+        scenario.status === 0 ? [148, 111, 74, 37] : [],
+      );
       for (const record of records.slice(2)) {
-        expect(record.durationMs).toBe(37);
         expect(record.outcome).toEqual({ type: "exit", status: 0 });
+      }
+      for (const record of records.slice(6)) {
+        expect(record.durationMs).toBe(37);
       }
     }
 
@@ -732,6 +743,176 @@ describe("repository verification command", () => {
     expect(stderr).toHaveBeenCalledWith(
       expect.stringContaining("Unable to run npm: terminated by SIGTERM"),
     );
+  });
+
+  it("starts format, lint, type and unit checks together and reports each failure under its own name", async () => {
+    const repository = createRepository();
+    const baselineRecipe = ["npm", "run", "verify", "--", "--baseline"];
+    const pending = new Map();
+    const run = vi.fn((command, args, _environment, _cwd, overlapped) =>
+      overlapped
+        ? new Promise((resolve) => {
+            pending.set([command, ...args].join(" "), resolve);
+          })
+        : { status: 0 },
+    );
+    const stdout = vi.fn();
+    const stderr = vi.fn();
+    const finished = main(["--baseline"], {
+      cwd: repository,
+      environment: {},
+      run,
+      stdout,
+      stderr,
+    });
+
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(6));
+    expect(
+      run.mock.calls.map(([command, args, , , overlapped]) => [
+        command,
+        args,
+        overlapped,
+      ]),
+    ).toEqual([
+      ["npm", ["run", "audit:production"], false],
+      ["npm", ["run", "audit:shipped-dev"], false],
+      ["npm", ["run", "format:check"], true],
+      ["npm", ["run", "lint"], true],
+      ["npm", ["run", "typecheck"], true],
+      ["npm", ["test"], true],
+    ]);
+    expect([...pending.keys()]).toEqual([
+      "npm run format:check",
+      "npm run lint",
+      "npm run typecheck",
+      "npm test",
+    ]);
+    const phases = () =>
+      stdout.mock.calls
+        .map(([line]) => line)
+        .filter((line) => line.startsWith("{"))
+        .map((line) => JSON.parse(line).command.join(" "));
+    expect(phases()).toEqual([
+      "npm run audit:production",
+      "npm run audit:shipped-dev",
+    ]);
+
+    pending.get("npm test")({ status: 5 });
+    pending.get("npm run lint")({ status: 3 });
+    pending.get("npm run typecheck")({ status: 0 });
+    await vi.waitFor(() => expect(phases()).toHaveLength(5));
+    expect(run).toHaveBeenCalledTimes(6);
+
+    pending.get("npm run format:check")({ status: 0 });
+    expect(await finished).toBe(3);
+    expect(run).toHaveBeenCalledTimes(6);
+    expect(phases().slice(2)).toEqual([
+      "npm test",
+      "npm run lint",
+      "npm run typecheck",
+      "npm run format:check",
+    ]);
+    const messages = stderr.mock.calls.map(([line]) => line);
+    expect(
+      messages
+        .filter((line) => line.startsWith("{"))
+        .map((line) => JSON.parse(line)),
+    ).toEqual([
+      {
+        type: "verification-failure",
+        attemptedCommand: ["npm", "test"],
+        reproduceGroup: baselineRecipe,
+      },
+      {
+        type: "verification-failure",
+        attemptedCommand: ["npm", "run", "lint"],
+        reproduceGroup: baselineRecipe,
+      },
+    ]);
+    expect(messages.filter((line) => !line.startsWith("{"))).toEqual([
+      "npm test failed; 2 later selected checks were not reached.",
+      "npm run lint failed; 2 later selected checks were not reached.",
+    ]);
+  });
+
+  it("keeps the hosted baseline one step at a time", async () => {
+    const repository = createRepository();
+    const records = [];
+    const stdout = vi.fn((line) => {
+      if (line.startsWith("{")) records.push(JSON.parse(line));
+    });
+    const run = vi.fn(() => {
+      expect(records).toHaveLength(run.mock.calls.length - 1);
+      return { status: 0 };
+    });
+
+    expect(
+      await main(["--baseline"], {
+        cwd: repository,
+        environment: {
+          GITHUB_ACTIONS: "true",
+          RUNNER_ENVIRONMENT: "github-hosted",
+        },
+        run,
+        stdout,
+        stderr: vi.fn(),
+      }),
+    ).toBe(0);
+    expect(
+      run.mock.calls.map(([command, args, , , overlapped]) => [
+        command,
+        args,
+        overlapped,
+      ]),
+    ).toEqual(
+      requiredBaselineSteps.map(([command, args]) => [command, args, false]),
+    );
+    expect(records.map((record) => record.command)).toEqual(
+      requiredBaselineSteps.map(([command, args]) => [command, ...args]),
+    );
+  });
+
+  it("replays an overlapped step's output when it ends and returns how it ended", async () => {
+    const written = (spy) =>
+      spy.mock.calls.map(([chunk]) => chunk.toString()).join("");
+    const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      expect(
+        await runStep(
+          process.execPath,
+          [
+            "-e",
+            'process.stdout.write("out"); process.stderr.write("err"); process.exitCode = 3;',
+          ],
+          process.env,
+          ROOT,
+          true,
+        ),
+      ).toEqual({ status: 3, signal: null });
+      expect(written(out)).toBe("out");
+      expect(written(err)).toBe("err");
+
+      out.mockClear();
+      err.mockClear();
+      expect(
+        await runStep(
+          join(ROOT, "no-such-verification-executable"),
+          [],
+          process.env,
+          ROOT,
+          true,
+        ),
+      ).toEqual({
+        error: expect.objectContaining({ code: "ENOENT" }),
+        status: null,
+      });
+      expect(out).not.toHaveBeenCalled();
+      expect(err).not.toHaveBeenCalled();
+    } finally {
+      out.mockRestore();
+      err.mockRestore();
+    }
   });
 
   it("runs the baseline only when every changed path is explicitly approved prose", async () => {
