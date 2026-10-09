@@ -259,7 +259,6 @@ insert into public.booking_snapshots`,
     "claim_customer_booking_request_payment_recovery(uuid,uuid,text)",
     "lease_booking_request_payment_recovery_step(uuid,text,text)",
     "admit_booking_request_payment_recovery(jsonb)",
-    "reload_booking_request_payment_operation(jsonb,text,text)",
     "finalize_booking_request_confirmation(uuid,jsonb)",
     "observe_booking_request_payment_correction(uuid,uuid,jsonb,jsonb)",
   ];
@@ -269,6 +268,10 @@ insert into public.booking_snapshots`,
       .replaceAll("750000100", "750000110")
       .replaceAll("confirmation-auth-", "expiry-second-auth-")
       .replaceAll("CONFIRMATION-HOLD-1", "EXPIRY-SECOND-HOLD");
+  const swapped = () =>
+    definitions.map((definition) =>
+      definition.replaceAll("clock_timestamp()", "public.expiry_race_now()"),
+    );
   async function seed(id = requestId, merchantId = identity.merchantId) {
     harness.markTimingPhase("setup");
     try {
@@ -309,35 +312,27 @@ create temp table confirmation_capture_result as select public.record_booking_re
 from foreign_capture_admission cross join foreign_capture_occurrence;`,
         );
       }
-      for (const definition of definitions)
-        await harness.runSqlAfterSetup(paymentEvidenceSql, definition);
-      await harness.runSqlAfterSetup(
-        paymentEvidenceSql,
-        `begin;${source}commit;`,
-      );
       seeded.add(id);
-      for (const definition of definitions)
-        await harness.runSqlAfterSetup(
-          paymentEvidenceSql,
-          definition.replaceAll(
-            "clock_timestamp()",
-            "public.expiry_race_now()",
-          ),
-        );
+      await harness.runStatementsAfterSetup(paymentEvidenceSql, [
+        ...definitions,
+        `begin;${source}commit;`,
+        ...swapped(),
+      ]);
     } finally {
       harness.markTimingPhase("execution");
     }
   }
   async function cleanup() {
-    for (const id of seeded)
-      await harness.runSqlAfterSetup(
-        paymentEvidenceSql,
+    await harness.runStatementsAfterSetup(
+      paymentEvidenceSql,
+      [...seeded].map((id) =>
         captureCleanup({
           stem: id === requestId ? "100" : "110",
           paymentRecovery: true,
           publishedCottage: true,
         }),
-      );
+      ),
+    );
     seeded.clear();
   }
   async function reset() {
@@ -569,22 +564,18 @@ from foreign_capture_admission cross join foreign_capture_occurrence;`,
   try {
     await seed();
     harness.markTimingPhase("setup");
-    for (const signature of signatures)
-      definitions.push(
+    definitions.push(
+      ...JSON.parse(
         await harness.runSqlAfterSetup(
           paymentEvidenceSql,
-          `select pg_get_functiondef('public.${signature}'::regprocedure);`,
+          `select jsonb_build_array(${signatures.map((signature) => `pg_get_functiondef('public.${signature}'::regprocedure)`).join(",")});`,
         ),
-      );
-    await harness.runSqlAfterSetup(
-      paymentEvidenceSql,
-      "create table public.expiry_race_clock(instant timestamptz not null);insert into public.expiry_race_clock values(clock_timestamp());create function public.expiry_race_now() returns timestamptz language sql volatile security definer set search_path='' as $$select instant from public.expiry_race_clock$$;",
+      ),
     );
-    for (const definition of definitions)
-      await harness.runSqlAfterSetup(
-        paymentEvidenceSql,
-        definition.replaceAll("clock_timestamp()", "public.expiry_race_now()"),
-      );
+    await harness.runStatementsAfterSetup(paymentEvidenceSql, [
+      "create table public.expiry_race_clock(instant timestamptz not null);insert into public.expiry_race_clock values(clock_timestamp());create function public.expiry_race_now() returns timestamptz language sql volatile security definer set search_path='' as $$select instant from public.expiry_race_clock$$;",
+      ...swapped(),
+    ]);
     const otherIdentity = {
       ...identity,
       merchantId: "fictional-other-merchant",
@@ -1190,13 +1181,11 @@ from foreign_capture_admission cross join foreign_capture_occurrence;`,
         session.child.stdin.end("rollback;\n");
       await session.exited;
     }
-    for (const definition of definitions)
-      await harness.runSqlAfterSetup(paymentEvidenceSql, definition);
     if (definitions.length)
-      await harness.runSqlAfterSetup(
-        paymentEvidenceSql,
+      await harness.runStatementsAfterSetup(paymentEvidenceSql, [
+        ...definitions,
         "drop function if exists public.expiry_race_now();drop table if exists public.expiry_race_clock;",
-      );
+      ]);
     await cleanup();
   }
   timingOutcome = "passed";

@@ -879,6 +879,18 @@ describe("local Supabase concurrency harness", () => {
     expect(settled).toBe(true);
   });
 
+  it("installs captured function definitions through one session per list", () => {
+    for (const name of [
+      "verify-booking-request-payment-required-expiry-concurrency",
+    ]) {
+      const source = readFileSync(`scripts/${name}.mjs`, "utf8");
+      expect(source).toContain("harness.runStatementsAfterSetup(");
+      expect(source).not.toMatch(
+        /for \(const \w+ of (?:definitions|signatures|clockSignatures)\b/,
+      );
+    }
+  });
+
   it("declares payment prefix concurrency checks serial with acknowledged setup", () => {
     const checks = [
       "verify-booking-request-concurrency",
