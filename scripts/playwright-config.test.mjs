@@ -163,3 +163,15 @@ describe("Playwright reporters", () => {
     expect(local.reporter).toBe("list");
   });
 });
+
+describe("Playwright test time limit", () => {
+  it("gives local browser tests 90 seconds and keeps the hosted limit at 30 seconds", async () => {
+    vi.stubEnv("CI", "true");
+    const ci = await loadConfig();
+    expect(ci.timeout).toBe(30_000);
+
+    vi.stubEnv("CI", undefined);
+    const local = await loadConfig();
+    expect(local.timeout).toBe(90_000);
+  });
+});
