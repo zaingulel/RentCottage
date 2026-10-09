@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -480,6 +480,25 @@ test("an administrator discovers accounts and approval records with authoritativ
       expect(surface).not.toContain(value);
 });
 
+const queueArgs = {
+  target_queue: "requests",
+  target_state: null,
+  target_from: null,
+  target_through: null,
+  after_at: null,
+  after_id: null,
+};
+
+async function expectQueuesDenied(page: Page) {
+  await page.goto("/en/administrator/queues");
+  await expect(page.locator("main")).toContainText(
+    "Administrator access with authenticator verification is required.",
+  );
+  await expect(page.locator('a[href*="/administrator/payments/"]')).toHaveCount(
+    0,
+  );
+}
+
 test("marketplace users and AAL1 administrators cannot discover administrator records", async ({
   page,
 }, testInfo) => {
@@ -514,6 +533,11 @@ test("marketplace users and AAL1 administrators cannot discover administrator re
     after_id: null,
   });
   expect(denied.error?.code).toBe("42501");
+  await expectQueuesDenied(page);
+  expect(
+    (await customer.rpc("search_administrator_booking_queue", queueArgs)).error
+      ?.code,
+  ).toBe("42501");
   await page.goto("/en/administrator/access");
   await page.getByLabel("Email").fill(administratorEmail);
   await page.getByLabel("Password").fill(password);
@@ -535,4 +559,9 @@ test("marketplace users and AAL1 administrators cannot discover administrator re
     target_id: "25000000-0000-4000-8000-000000000001",
   });
   expect(aal1Denied.error?.code).toBe("42501");
+  await expectQueuesDenied(page);
+  expect(
+    (await aal1.rpc("search_administrator_booking_queue", queueArgs)).error
+      ?.code,
+  ).toBe("42501");
 });

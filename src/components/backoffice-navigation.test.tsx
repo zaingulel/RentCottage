@@ -49,6 +49,7 @@ describe("BackofficeNavigation", () => {
         "Review submitted Owner Applications",
         "Manage Cottage Profiles",
         "Payment support history",
+        "Booking queues",
         "Records",
       ],
     ],
@@ -59,6 +60,7 @@ describe("BackofficeNavigation", () => {
         "راجع طلبات المالك المرسلة",
         "إدارة ملفات الأكواخ",
         "سجل دعم الدفع",
+        "طوابير الحجوزات",
         "السجلات",
       ],
     ],
@@ -69,6 +71,7 @@ describe("BackofficeNavigation", () => {
         "داواکارییە نێردراوەکانی خاوەن بپشکنە",
         "پرۆفایلەکانی کۆتێج بەڕێوەببە",
         "مێژووی پشتگیری پارەدان",
+        "ڕیزەکانی حجز",
         "تۆمارەکان",
       ],
     ],
@@ -88,6 +91,7 @@ describe("BackofficeNavigation", () => {
         `/${locale}/administrator/owner-applications`,
         `/${locale}/administrator/cottages`,
         `/${locale}/administrator/payments`,
+        `/${locale}/administrator/queues`,
         `/${locale}/administrator/records`,
       ]);
     },
@@ -105,7 +109,7 @@ describe("BackofficeNavigation", () => {
       links("Platform administration").map((link) =>
         link.getAttribute("aria-current"),
       );
-    expect(marks()).toEqual([null, "page", null, null]);
+    expect(marks()).toEqual([null, "page", null, null, null]);
 
     rerender(
       <BackofficeNavigation
@@ -115,6 +119,21 @@ describe("BackofficeNavigation", () => {
         nested
       />,
     );
-    expect(marks()).toEqual([null, "true", null, null]);
+    expect(marks()).toEqual([null, "true", null, null, null]);
+  });
+
+  it("marks the booking queues destination as current on the queue page", () => {
+    render(
+      <BackofficeNavigation
+        locale="en"
+        area="administrator"
+        current="queues"
+      />,
+    );
+    expect(
+      links("Platform administration").map((link) =>
+        link.getAttribute("aria-current"),
+      ),
+    ).toEqual([null, null, null, "page", null]);
   });
 });

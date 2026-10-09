@@ -14,7 +14,12 @@ import * as OTPAuth from "otpauth";
 import { getConfirmedBookingAccess } from "../src/booking-request/confirmed-booking-access";
 import { getBookingFinancialView } from "../src/booking-request/booking-financial-view";
 import { triggerScheduled } from "./fixtures/trigger-scheduled";
-import { bookingPayoutMessages as payoutMessages } from "../src/i18n/administrator-payment-history-messages";
+import {
+  administratorPaymentHistoryMessages,
+  bookingPayoutMessages as payoutMessages,
+} from "../src/i18n/administrator-payment-history-messages";
+import { administratorQueuesMessages } from "../src/i18n/administrator-queues-messages";
+import { administratorRecordsMessages } from "../src/i18n/administrator-records-messages";
 import { bookingManagementMessages as messages } from "../src/i18n/booking-management-messages";
 import { bookingLifecycleMessages } from "../src/i18n/booking-lifecycle-messages";
 import { ownerBookingEarningsMessages as earningsMessages } from "../src/i18n/owner-booking-earnings-messages";
@@ -270,6 +275,20 @@ async function assertResponsiveDetails(
     ).toBe(true);
   }
 }
+// The database is shared across specs, so the reference may sit on a later page.
+async function findQueueRow(page: Page) {
+  const row = page.getByRole("link", { name: reference, exact: true });
+  const next = page.getByRole("link", {
+    name: administratorRecordsMessages.en.next,
+  });
+  while (!(await row.count())) {
+    await expect(next).toHaveCount(1);
+    await next.click();
+  }
+  return row.first();
+}
+const baghdadDate = (at: number) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Baghdad" }).format(at);
 test.describe("retained cancellation and refund controls", () => {
   test.use({ actionTimeout: 10000 });
   test.beforeEach(async () => {
@@ -698,6 +717,58 @@ test.describe("retained cancellation and refund controls", () => {
       await expect(
         ownerPage.getByText("Private address", { exact: true }),
       ).toHaveCount(0);
+      const queues = administratorQueuesMessages.en;
+      const expectRow = async (label: string) =>
+        expect(
+          page
+            .getByRole("listitem")
+            .filter({ has: await findQueueRow(page) })
+            .filter({ hasText: label })
+            .first(),
+        ).toBeVisible();
+      await page.goto("/en/administrator/queues?queue=bookings");
+      await expectRow(bookingLifecycleMessages.en.cancelled);
+      await expect(page.locator("body")).not.toContainText("PRIVATE");
+      await page
+        .getByLabel(administratorRecordsMessages.en.status)
+        .selectOption("cancelled");
+      await page
+        .getByLabel(administratorRecordsMessages.en.from)
+        .fill(baghdadDate(Date.now() - 86_400_000));
+      await page
+        .getByLabel(administratorRecordsMessages.en.through)
+        .fill(baghdadDate(Date.now()));
+      await page.getByRole("button", { name: queues.apply }).click();
+      await expect(page).toHaveURL(/state=cancelled/);
+      await expect(page).toHaveURL(/from=\d{4}-\d{2}-\d{2}/);
+      await expect(page).toHaveURL(/through=\d{4}-\d{2}-\d{2}/);
+      await expectRow(bookingLifecycleMessages.en.cancelled);
+      await page.goto("/en/administrator/queues?queue=refunds");
+      await expectRow(messages.en.approved);
+      await expect(page.locator("body")).not.toContainText("PRIVATE");
+      await page.goto("/en/administrator/queues?queue=incidents");
+      await expectRow(bookingLifecycleMessages.en.cancellationSource);
+      await expect(page.locator("body")).not.toContainText("PRIVATE");
+      for (const locale of ["ar", "ckb"] as const) {
+        await page.goto(`/${locale}/administrator/queues`);
+        await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+        await expect(
+          page.getByRole("heading", {
+            name: administratorQueuesMessages[locale].title,
+            level: 1,
+          }),
+        ).toBeVisible();
+      }
+      await page.goto("/en/administrator/queues?queue=incidents");
+      await (await findQueueRow(page)).click();
+      await expect(page).toHaveURL(
+        new RegExp(`/en/administrator/payments/${reference}$`),
+      );
+      await expect(
+        page.getByRole("heading", {
+          name: administratorPaymentHistoryMessages.en.title,
+        }),
+      ).toBeVisible();
     } finally {
       await ownerContext.close();
     }

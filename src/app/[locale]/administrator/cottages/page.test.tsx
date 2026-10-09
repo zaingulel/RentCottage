@@ -139,6 +139,7 @@ describe("Cottage Profile administrator overview page", () => {
       "Review submitted Owner Applications",
       "Manage Cottage Profiles",
       "Payment support history",
+      "Booking queues",
       "Records",
     ]);
     expect(
