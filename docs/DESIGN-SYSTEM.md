@@ -127,11 +127,11 @@ A stylesheet may write these as literals:
 - Six display heading size declarations larger than the largest step. Each stays until its screen is moved onto the
   page template, when a page title takes the style under Page template and its entry is removed here; a heading
   that is not a page title, as the home page hero headline and section headings are, keeps its entry until a rule
-  in this document replaces it. One of them is written on a rule that two headings share, so its entry names the whole rule:
+  in this document replaces it:
   - `.retreat-copy h1 { font-size: clamp(2.5rem, 6vw, 4.4rem) }`
   - `.retreat-copy h1 { font-size: clamp(2.25rem, 12vw, 3.3rem) }`
   - `.results-intro h1 { font-size: clamp(2.6rem, 6vw, 4.5rem) }`
-  - `.profile-heading h1, .request-layout h1 { font-size: clamp(2.5rem, 6vw, 4rem) }`
+  - `.profile-heading h1 { font-size: clamp(2.5rem, 6vw, 4rem) }`
   - `.access-required-card h1 { font-size: clamp(2.2rem, 6vw, 3.5rem) }`
   - `.trusted-copy h2 { font-size: clamp(2rem, 4vw, 3rem) }`
 

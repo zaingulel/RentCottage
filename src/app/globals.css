@@ -1258,8 +1258,7 @@ html[lang="ckb"] .page-title {
   background: var(--background);
 }
 
-.profile-layout,
-.request-layout {
+.profile-layout {
   width: min(71.25rem, calc(100% - 2.25rem));
   margin: var(--space-6) auto 0;
   display: grid;
@@ -1295,8 +1294,7 @@ html[lang="ckb"] .page-title {
   margin-block-start: var(--space-5);
 }
 
-.profile-heading h1,
-.request-layout h1 {
+.profile-heading h1 {
   margin: var(--space-2) 0 var(--space-1);
   color: var(--green);
   font-family: var(--display);
@@ -1417,21 +1415,6 @@ html[lang="ckb"] .booking-summary h2 {
 .booking-summary > .action + .action,
 .booking-summary > .action + .action-link {
   margin-block-start: var(--space-2);
-}
-
-.request-layout {
-  grid-template-columns: minmax(0, 1fr) 22rem;
-}
-
-.request-success {
-  max-width: 42rem;
-  margin-block-start: var(--space-5);
-  padding: var(--space-5);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--green-tint);
-  color: var(--green);
-  font-weight: 700;
 }
 
 .retreat-copy {
@@ -1730,8 +1713,7 @@ a:focus-visible {
     font-size: clamp(2.25rem, 12vw, 3.3rem);
   }
 
-  .profile-layout,
-  .request-layout {
+  .profile-layout {
     grid-template-columns: 1fr;
   }
 
