@@ -2911,40 +2911,18 @@ CREATE OR REPLACE FUNCTION "public"."resolve_public_cottage_inventory"("target_s
     LANGUAGE "sql" STABLE
     SET "search_path" TO ''
     AS $$
-  with units as (
-    select shifts.id as unit_id,
-      'shift'::public.cottage_inventory_unit_kind as unit_kind,
-      shifts.position, shifts.name, shifts.start_time, shifts.end_time
-    from public.cottage_shifts shifts
-    where shifts.schedule_revision_id = target_schedule_revision_id
-    union all
-    select schedules.full_day_bundle_id,
-      'full_day_bundle'::public.cottage_inventory_unit_kind,
-      null::smallint, 'Full-day bundle'::text,
-      (select shifts.start_time from public.cottage_shifts shifts
-        where shifts.schedule_revision_id = schedules.id order by shifts.position limit 1),
-      (select shifts.end_time from public.cottage_shifts shifts
-        where shifts.schedule_revision_id = schedules.id order by shifts.position desc limit 1)
-    from public.cottage_shift_schedule_revisions schedules
-    where schedules.id = target_schedule_revision_id
-  )
   select coalesce(jsonb_agg(jsonb_build_object(
-    'serviceDay', to_char(days.service_day, 'YYYY-MM-DD'),
+    'serviceDay', to_char(units.service_day, 'YYYY-MM-DD'),
     'kind', case units.unit_kind when 'shift'::public.cottage_inventory_unit_kind then 'shift' else 'full-day' end,
     'name', units.name,
     'startTime', to_char(units.start_time, 'HH24:MI'),
     'endTime', to_char(units.end_time, 'HH24:MI'),
-    'priceIqd', public.public_cottage_effective_price(
-      target_schedule_revision_id, units.unit_kind, units.unit_id, days.service_day::date
-    ),
-    'available', coalesce(public.public_cottage_unit_is_available(
-      target_schedule_revision_id, units.unit_kind, units.unit_id, days.service_day::date
-    ), false)
-  ) || case when units.position is not null then jsonb_build_object('position', units.position)
+    'priceIqd', units.price_iqd,
+    'available', units.available
+  ) || case when units.unit_position is not null then jsonb_build_object('position', units.unit_position)
     else '{}'::jsonb end
-    order by days.service_day, coalesce(units.position, 32767)), '[]'::jsonb)
-  from generate_series(from_day::timestamp, to_day::timestamp, interval '1 day') days(service_day)
-  cross join units;
+    order by units.service_day, coalesce(units.unit_position, 32767)), '[]'::jsonb)
+  from public.public_cottage_inventory_units(target_schedule_revision_id, from_day, to_day) units;
 $$;
 
 ALTER FUNCTION "public"."resolve_public_cottage_inventory"("target_schedule_revision_id" "uuid", "from_day" "date", "to_day" "date") OWNER TO "postgres";
@@ -3454,8 +3432,13 @@ CREATE OR REPLACE FUNCTION "public"."search_public_cottages"("target_locale" "pu
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
     AS $$
+declare
+  from_day date;
+  to_day date;
 begin
   perform public.validate_public_cottage_discovery(requested_search);
+  from_day := (requested_search ->> 'from')::date;
+  to_day := (requested_search ->> 'to')::date;
   return query
   with candidates as (
     select profiles.id as profile_id, profiles.current_shift_schedule_id as schedule_id,
@@ -3476,52 +3459,42 @@ begin
       and array(
         select value from jsonb_array_elements_text(coalesce(requested_search -> 'amenities', '[]'::jsonb)) values(value)
       ) <@ publications.amenities
-  ), matched as (
-    select candidates.*, inventory.value as public_inventory
-    from candidates
-    cross join lateral (
-      select public.resolve_public_cottage_inventory(
-        candidates.schedule_id, (requested_search ->> 'from')::date, (requested_search ->> 'to')::date
-      ) as value
-    ) inventory
-    where not exists (
-      select 1 from generate_series(
-        (requested_search ->> 'from')::timestamp,
-        (requested_search ->> 'to')::timestamp, interval '1 day'
-      ) days(service_day)
-      where not exists (
-        select 1 from jsonb_array_elements(inventory.value) options(value)
-        where value ->> 'serviceDay' = to_char(days.service_day, 'YYYY-MM-DD')
-          and (value ->> 'available')::boolean
-      )
-    ) and not exists (
-      select 1 from jsonb_array_elements(coalesce(requested_search -> 'selections', '[]'::jsonb)) filters(value)
-      where not exists (
-        select 1 from jsonb_array_elements(inventory.value) options(value)
-        where options.value ->> 'serviceDay' = filters.value ->> 'serviceDay'
-          and options.value ->> 'kind' = filters.value ->> 'kind'
-          and (filters.value ->> 'kind' = 'full-day'
-            or options.value ->> 'position' = filters.value ->> 'position')
-          and (options.value ->> 'available')::boolean
-      )
-    )
+  ), selections as (
+    select filters.value ->> 'serviceDay' as service_day, filters.value ->> 'kind' as kind,
+      filters.value ->> 'position' as unit_position
+    from jsonb_array_elements(coalesce(requested_search -> 'selections', '[]'::jsonb)) filters(value)
   )
   select jsonb_build_object(
-    'slug', matched.public_slug,
-    'name', matched.name,
-    'governorate', matched.governorate,
-    'approximateLocation', matched.approximate_location,
-    'capacity', matched.capacity,
-    'amenities', matched.amenities,
+    'slug', ordered.public_slug,
+    'name', ordered.name,
+    'governorate', ordered.governorate,
+    'approximateLocation', ordered.approximate_location,
+    'capacity', ordered.capacity,
+    'amenities', ordered.amenities,
     'mediaIds', coalesce((
       select jsonb_agg(media.opaque_id order by media.position)
       from public.cottage_publication_media media
-      where media.publication_id = matched.id
+      where media.publication_id = ordered.id
     ), '[]'::jsonb),
-    'inventory', matched.public_inventory
+    'inventory', public.resolve_public_cottage_inventory(ordered.schedule_id, from_day, to_day)
   )
-  from matched
-  order by matched.public_slug;
+  from (
+    select candidates.* from candidates
+    -- offset 0 keeps the availability check above candidate assembly and ordering.
+    order by candidates.public_slug offset 0
+  ) ordered
+  where (
+    select count(distinct units.service_day) filter (where units.available) = (to_day - from_day + 1)
+      and count(*) filter (where units.available and selections.service_day is not null)
+        = (select count(*) from selections)
+    from public.public_cottage_inventory_units(ordered.schedule_id, from_day, to_day) units
+    left join selections
+      on selections.service_day = to_char(units.service_day, 'YYYY-MM-DD')
+      and selections.kind = case units.unit_kind
+        when 'shift'::public.cottage_inventory_unit_kind then 'shift' else 'full-day' end
+      and (selections.kind = 'full-day' or selections.unit_position = units.unit_position::text)
+  )
+  order by ordered.public_slug;
 end;
 $$;
 
