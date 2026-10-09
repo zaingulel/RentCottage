@@ -14,6 +14,7 @@ vi.mock("@/access/supabase-account-access", () => ({
 }));
 vi.mock("server-only", () => ({}));
 import {
+  loadAdministratorQueue,
   loadAdministratorRecord,
   searchAdministratorRecords,
 } from "./supabase-administrator-records";
@@ -153,5 +154,160 @@ describe("administrator records request session", () => {
       "is_platform_administrator",
     ]);
     logged.mockRestore();
+  });
+
+  describe("booking queue", () => {
+    const rowId = "25000000-0000-4000-8000-000000000002";
+    const microsecondAt = "2026-09-01T10:00:00.123456+00:00";
+    const requestStates = [
+      "pending",
+      "processing",
+      "payment-required",
+      "capture-processing",
+      "declined",
+      "withdrawn",
+      "expired",
+      "cancelled",
+    ];
+    const queueReply = (overrides: Record<string, unknown> = {}) => ({
+      queue: "requests",
+      rows: [
+        {
+          id: rowId,
+          at: microsecondAt,
+          reference: "RC-REQ-0123456789ABCDEF",
+          state: "pending",
+          source: null,
+          category: null,
+        },
+      ],
+      total: 1,
+      stateCounts: Object.fromEntries(requestStates.map((s) => [s, 0])),
+      nextCursor: null,
+      ...overrides,
+    });
+
+    it("rechecks AAL2, then passes the six fixed arguments with the cursor unchanged", async () => {
+      rpc
+        .mockResolvedValueOnce({ data: true, error: null })
+        .mockResolvedValueOnce({ data: queueReply(), error: null });
+      await expect(
+        loadAdministratorQueue({
+          queue: "requests",
+          state: "pending",
+          from: "2026-09-01",
+          through: "2026-09-30",
+          afterAt: microsecondAt,
+          afterId: rowId,
+        }),
+      ).resolves.toMatchObject({
+        status: "ready",
+        page: { queue: "requests", total: 1 },
+      });
+      expect(rpc).toHaveBeenNthCalledWith(1, "is_platform_administrator", {
+        required_assurance: "aal2",
+      });
+      expect(rpc).toHaveBeenNthCalledWith(
+        2,
+        "search_administrator_booking_queue",
+        {
+          target_queue: "requests",
+          target_state: "pending",
+          target_from: "2026-09-01",
+          target_through: "2026-09-30",
+          after_at: microsecondAt,
+          after_id: rowId,
+        },
+      );
+    });
+
+    it("sends the requests defaults for an empty query", async () => {
+      rpc
+        .mockResolvedValueOnce({ data: true, error: null })
+        .mockResolvedValueOnce({ data: queueReply(), error: null });
+      await loadAdministratorQueue({});
+      expect(rpc).toHaveBeenNthCalledWith(
+        2,
+        "search_administrator_booking_queue",
+        {
+          target_queue: "requests",
+          target_state: null,
+          target_from: null,
+          target_through: null,
+          after_at: null,
+          after_id: null,
+        },
+      );
+    });
+
+    it("makes no queue call for refused access, even with invalid input", async () => {
+      resolve.mockResolvedValue(undefined);
+      rpc.mockResolvedValueOnce({ data: true, error: null });
+      await expect(
+        loadAdministratorQueue({ from: "2026-09-02", through: "2026-09-01" }),
+      ).resolves.toEqual({ status: "access_required" });
+      resolve.mockResolvedValue({ role: "platform_administrator" });
+      rpc.mockResolvedValueOnce({ data: false, error: null });
+      await expect(
+        loadAdministratorQueue({ queue: "refunds" }),
+      ).resolves.toEqual({ status: "access_required" });
+      expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+        "is_platform_administrator",
+        "is_platform_administrator",
+      ]);
+    });
+
+    it("gives invalid for a reversed date range after the gate passes", async () => {
+      rpc.mockResolvedValueOnce({ data: true, error: null });
+      await expect(
+        loadAdministratorQueue({ from: "2026-09-02", through: "2026-09-01" }),
+      ).resolves.toEqual({ status: "invalid" });
+      expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+        "is_platform_administrator",
+      ]);
+    });
+
+    it("maps 42501 to access_required, and another error or a corrupt reply to unavailable", async () => {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      rpc
+        .mockResolvedValueOnce({ data: true, error: null })
+        .mockResolvedValueOnce({ data: null, error: { code: "42501" } });
+      await expect(loadAdministratorQueue({})).resolves.toEqual({
+        status: "access_required",
+      });
+      rpc
+        .mockResolvedValueOnce({ data: true, error: null })
+        .mockResolvedValueOnce({ data: null, error: { code: "PGRST500" } });
+      await expect(loadAdministratorQueue({})).resolves.toEqual({
+        status: "unavailable",
+      });
+      rpc
+        .mockResolvedValueOnce({ data: true, error: null })
+        .mockResolvedValueOnce({
+          data: queueReply({ queue: "refunds" }),
+          error: null,
+        });
+      await expect(loadAdministratorQueue({})).resolves.toEqual({
+        status: "unavailable",
+      });
+      expect(logged.mock.calls.map(([, detail]) => detail.operation)).toEqual([
+        "queue_read",
+        "queue_read",
+      ]);
+      logged.mockRestore();
+    });
+
+    it("reports a failed Platform Administrator check as unavailable without reading", async () => {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      rpc.mockResolvedValueOnce({ data: null, error: { code: "PGRST500" } });
+      await expect(loadAdministratorQueue({})).resolves.toEqual({
+        status: "unavailable",
+      });
+      expect(logged.mock.calls.map(([, detail]) => detail.operation)).toEqual([
+        "queue_authorization",
+      ]);
+      expect(rpc).toHaveBeenCalledTimes(1);
+      logged.mockRestore();
+    });
   });
 });

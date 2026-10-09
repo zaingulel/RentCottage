@@ -11,6 +11,8 @@ import {
   AdministratorRecords,
 } from "@/components/administrator-records";
 import {
+  parseAdministratorQueueResult,
+  parseAdministratorQueueSearch,
   parseAdministratorRecordSearch,
   parseAdministratorSearchResult,
   parseAdministratorRecordDetail,
@@ -310,5 +312,246 @@ describe("administrator records validation", () => {
         "Local 07 numbers are unsupported.",
       ),
     );
+  });
+});
+
+describe("administrator booking queue validation", () => {
+  const rowId = "25000000-0000-4000-8000-000000000005";
+  const reference = "RC-REQ-0123456789ABCDEF";
+  const microsecondAt = "2026-09-01T10:00:00.123456+00:00";
+  const stateKeys = {
+    requests: [
+      "pending",
+      "processing",
+      "payment-required",
+      "capture-processing",
+      "declined",
+      "withdrawn",
+      "expired",
+      "cancelled",
+    ],
+    refunds: ["requested", "processing", "succeeded", "failed", "unknown"],
+    incidents: ["incident_pending", "completed", "no_show", "cancelled"],
+  };
+  const countsFor = (keys: string[]) =>
+    Object.fromEntries(keys.map((key) => [key, 1]));
+  const reply = (
+    queue: string,
+    keys: string[],
+    row: Record<string, unknown>,
+  ) => ({
+    queue,
+    rows: [{ id: rowId, at: microsecondAt, reference, ...row }],
+    total: 1,
+    stateCounts: countsFor(keys),
+    nextCursor: null,
+  });
+  const requestRow = { state: "pending", source: null, category: null };
+  const requestReply = (overrides: Record<string, unknown> = {}) => ({
+    ...reply("requests", stateKeys.requests, requestRow),
+    ...overrides,
+  });
+  const requestReplyWithRow = (row: Record<string, unknown>) =>
+    requestReply({
+      rows: [
+        { id: rowId, at: microsecondAt, reference, ...requestRow, ...row },
+      ],
+    });
+
+  it("defaults empty input to the requests queue with nothing set", () => {
+    expect(parseAdministratorQueueSearch({})).toEqual({
+      queue: "requests",
+      state: null,
+      from: null,
+      through: null,
+      afterAt: null,
+      afterId: null,
+    });
+  });
+
+  it("treats empty strings as not set", () => {
+    expect(
+      parseAdministratorQueueSearch({
+        queue: "",
+        state: "",
+        from: "",
+        through: "",
+        afterAt: "",
+        afterId: "",
+      }),
+    ).toEqual({
+      queue: "requests",
+      state: null,
+      from: null,
+      through: null,
+      afterAt: null,
+      afterId: null,
+    });
+  });
+
+  it("accepts every filter and passes the cursor timestamp byte for byte", () => {
+    expect(
+      parseAdministratorQueueSearch({
+        queue: "refunds",
+        state: "failed",
+        from: "2026-09-01",
+        through: "2026-09-30",
+        afterAt: microsecondAt,
+        afterId: rowId,
+      }),
+    ).toEqual({
+      queue: "refunds",
+      state: "failed",
+      from: "2026-09-01",
+      through: "2026-09-30",
+      afterAt: microsecondAt,
+      afterId: rowId,
+    });
+  });
+
+  it("refuses an unknown key, queue, state, date, range or cursor", () => {
+    for (const input of [
+      null,
+      "requests",
+      { kind: "requests" },
+      { queue: "reviews" },
+      { queue: 7 },
+      { queue: "bookings", state: "pending" },
+      { queue: "incidents", state: "confirmed" },
+      { state: null },
+      { from: "2026-02-30" },
+      { through: "2026-13-01" },
+      { from: "2026-09-02", through: "2026-09-01" },
+      { afterAt: microsecondAt },
+      { afterId: rowId },
+      { afterAt: "2026-09-01", afterId: rowId },
+      { afterAt: microsecondAt, afterId: "not-a-uuid" },
+    ])
+      expect(() => parseAdministratorQueueSearch(input)).toThrow();
+  });
+
+  it("accepts a valid reply for each queue and keeps the cursor intact", () => {
+    expect(
+      parseAdministratorQueueResult(
+        requestReply({ nextCursor: { at: microsecondAt, id: rowId } }),
+        "requests",
+      ),
+    ).toEqual({
+      queue: "requests",
+      rows: [
+        {
+          id: rowId,
+          at: microsecondAt,
+          reference,
+          state: "pending",
+          source: null,
+          category: null,
+        },
+      ],
+      total: 1,
+      stateCounts: countsFor(stateKeys.requests),
+      nextCursor: { at: microsecondAt, id: rowId },
+    });
+    expect(
+      parseAdministratorQueueResult(
+        reply("refunds", stateKeys.refunds, {
+          state: "succeeded",
+          source: "dispute",
+          category: null,
+        }),
+        "refunds",
+      ).rows[0],
+    ).toMatchObject({ source: "dispute", category: null });
+    expect(
+      parseAdministratorQueueResult(
+        reply("incidents", stateKeys.incidents, {
+          state: "no_show",
+          source: "cancellation",
+          category: null,
+        }),
+        "incidents",
+      ).rows[0],
+    ).toMatchObject({ source: "cancellation", category: null });
+    expect(
+      parseAdministratorQueueResult(
+        reply("incidents", stateKeys.incidents, {
+          state: "completed",
+          source: "lifecycle",
+          category: "property_damage",
+        }),
+        "incidents",
+      ).rows[0],
+    ).toMatchObject({ source: "lifecycle", category: "property_damage" });
+  });
+
+  it("refuses a corrupt request-queue reply", () => {
+    const rowWithoutSource = {
+      id: rowId,
+      at: microsecondAt,
+      reference,
+      state: "pending",
+      category: null,
+    };
+    for (const value of [
+      requestReply({ rows: Array(26).fill(requestReply().rows[0]), total: 26 }),
+      requestReply({ queue: "bookings" }),
+      requestReply({ extra: 1 }),
+      { ...requestReply(), stateCounts: undefined },
+      "rows",
+      requestReplyWithRow({ state: "paid" }),
+      requestReplyWithRow({ state: "confirmed" }),
+      requestReplyWithRow({ reference: "RC-REQ-0123456789abcdef" }),
+      requestReplyWithRow({ reference: "RC-REQ-0123456789ABCDEF/x" }),
+      requestReplyWithRow({ reference: "javascript:alert(1)" }),
+      requestReplyWithRow({ source: "dispute" }),
+      requestReplyWithRow({ category: "safety" }),
+      requestReplyWithRow({ id: "x" }),
+      requestReplyWithRow({ at: "yesterday" }),
+      requestReply({ rows: [rowWithoutSource] }),
+      requestReply({ total: 0 }),
+      requestReply({ total: -1 }),
+      requestReply({ total: 1.5 }),
+      requestReply({ stateCounts: countsFor(stateKeys.requests.slice(1)) }),
+      requestReply({
+        stateCounts: { ...countsFor(stateKeys.requests), unknown: 0 },
+      }),
+      requestReply({
+        stateCounts: { ...countsFor(stateKeys.requests), pending: -1 },
+      }),
+      requestReply({ nextCursor: { at: microsecondAt } }),
+      requestReply({ nextCursor: { at: microsecondAt, id: rowId, extra: 1 } }),
+    ])
+      expect(() => parseAdministratorQueueResult(value, "requests")).toThrow();
+  });
+
+  it("refuses a corrupt refund or incident reply", () => {
+    const refundRow = {
+      state: "failed",
+      source: "administrator",
+      category: null,
+    };
+    const incidentRow = {
+      state: "completed",
+      source: "lifecycle",
+      category: "safety",
+    };
+    const refunds = (row: Record<string, unknown>) =>
+      reply("refunds", stateKeys.refunds, { ...refundRow, ...row });
+    const incidents = (row: Record<string, unknown>) =>
+      reply("incidents", stateKeys.incidents, { ...incidentRow, ...row });
+    for (const value of [
+      refunds({ category: "safety" }),
+      refunds({ source: null }),
+      refunds({ source: "lifecycle" }),
+    ])
+      expect(() => parseAdministratorQueueResult(value, "refunds")).toThrow();
+    for (const value of [
+      incidents({ category: null }),
+      incidents({ category: "fraud" }),
+      incidents({ source: "cancellation", category: "other" }),
+      incidents({ source: "refund" }),
+      incidents({ state: "confirmed" }),
+    ])
+      expect(() => parseAdministratorQueueResult(value, "incidents")).toThrow();
   });
 });
