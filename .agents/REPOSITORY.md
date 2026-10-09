@@ -21,7 +21,7 @@ every guard, hook, permission file, seat file, script, test and product file. A 
 because the gate judges paths and never changed lines. A new directory under `docs/` qualifies only once the gate lists
 it. `node scripts/lib/docs-route.mjs`, given newline-separated paths on standard input, is that path definition on its
 own: it exits 0 only when every path qualifies. [The loop](../docs/TESTING-STRATEGY.md#the-loop) in the testing
-strategy says which receipts carry across a documentation-only difference.
+strategy says which convergence checks a commit added on top of a passed one runs again.
 
 ## Architecture seams
 

@@ -176,7 +176,10 @@ A TypeScript product change selects the baseline route; a database object the da
 Integrity Core object or concurrency program adds the booking and payment concurrency programs; presentation,
 Worker and Playwright paths the browser group; an unlisted path stops the run until it is listed in
 `scripts/verify.mjs`. A further broad run needs a named reason: changed evidence, an invalidated environment or an
-investigated flake. A repair that touches only tests reruns the repaired test by title and never the full local
+investigated flake. A commit added after the full local check passed is changed evidence only for the checks the
+table below reruns for it, by its rows or by the recorded investigation of a path the table does not cover; an
+invalidated environment stays a reason of its own.
+A repair that touches only tests reruns the repaired test by title and never the full local
 check. Continuous integration runs `npm run verify -- --baseline` and native `--database` and `--browser` matrices
 against the merge result once the pull request leaves draft. The database matrix runs four independent portions;
 the browser matrix runs two Next.js shards, two Worker file groups, the scheduled checks and the shell smoke checks.
@@ -187,15 +190,72 @@ run nothing. For the `resume` skill's deliver step, the hosted `test` check ther
 `npm run verify`: the same baseline steps, and, unless the change touches only documentation or workflow
 instructions, every database and browser check, which is at least the groups a local run selects from the same
 changed paths, on a rebased head as on any other. For a change touching only documentation or workflow instructions
-both run the baseline alone. No hosted job runs `npm run verify -- --full` as one command or `npm run lint:docs`;
-each reruns locally on a new head unless this paragraph marks it. Across a documentation-only difference, one whose
-every changed path the path definition of `scripts/gates/pre-push-main` admits, this strategy marks `npm run verify`
-and `npm run verify -- --full` for receipt reuse, because no database, concurrency or browser check reads a path under
-`docs/`. The script suite in the baseline does read documents, so a session that reuses either receipt also runs
-`npm run verify -- --baseline` on the current head. `npm run verify -- --baseline` and `npm run lint:docs` are not
-marked: each needs the current head. A change the gate admits whole takes the direct route to `main`, where no hosted
-check runs; [the repository profile](../.agents/REPOSITORY.md#product) says which paths qualify. The hosted
-preview is smoked with `npm run verify:preview -- <https-preview-url>` as a separate owner-approved operation.
+both run the baseline alone. Of the checks in the table below, the hosted `test` check runs the baseline for every
+change, and the database group, the booking and payment concurrency programs and the browser group for every change
+that is not documentation or workflow instructions alone, whichever local command wrote the receipt; no hosted job
+runs `npm run lint:docs`, which reruns locally on a new head. A change `scripts/gates/pre-push-main` admits whole
+takes the direct route to `main`, where no hosted check runs;
+[the repository profile](../.agents/REPOSITORY.md#product) says which paths qualify. The hosted preview is smoked
+with `npm run verify:preview -- <https-preview-url>` as a separate owner-approved operation.
+
+A commit added on top of one whose checks passed reruns a convergence check where this table names it for the
+commit, or where the investigation of a path the table does not cover finds it affected; the `resume` skill's
+Receipt reuse rule under "8. Deliver" owns how a receipt is carried, and wins where this section conflicts with it.
+The table is the router's routing, read by hand from `scripts/verify.mjs` and applied to the paths that rule prints
+for the commit, never to the whole job's: a path reruns the groups the full local check would run for a change of
+that path alone, and a change to the router's rules lands with the matching change here.
+
+| Convergence check | Its command | What reruns it |
+|---|---|---|
+| The baseline | `npm run verify -- --baseline` | Any path, and any new head even when no path changed: its format, lint and type checks cover the tree, and its script suite reads the tracked tree as a whole and queries git about the repository itself |
+| The database group without the booking and payment concurrency programs | `npm run verify:access:database-tests` | A path under `supabase/schemas/`, `supabase/migrations/`, `supabase/tests/` or `supabase/fixtures/`; a booking or payment concurrency program, `scripts/verify-booking-*-concurrency.mjs`; a full-route path |
+| The booking and payment concurrency programs | `npm run verify -- --database --full`, which runs the whole database group and so settles the row above too | A booking or payment Integrity Core schema file the router lists; a booking or payment concurrency program; a full-route path, unless it sits under `.github/workflows/` or `translation/` or is a root file the router lists as no input to these programs |
+| The browser group | `npm run verify -- --browser --full` | `src/middleware.ts`; a path under `src/app/`, `src/components/`, `src/i18n/`, `src/ci/`, `public/` or `tests/`; a root `playwright*.config.ts`; a full-route path |
+| `npm run lint:docs`, in a job that changes documentation or agent instruction | `npm run lint:docs` | Any path: it resolves every cited path and link against the whole tracked tree |
+
+The router's rules are read in its own order, and the first that matches a path decides it. A path it lists as
+baseline-only, the Markdown, Word, HTML and image files under `docs/` among them, and a test file under `src/`
+(`*.test.ts` or `*.test.tsx`) are decided first and rerun no database, concurrency or browser check; neither do the
+product-logic directories under `src/` it keeps on the baseline route. A full-route path is a file the router lists
+by name as requiring full evidence, `supabase/config.toml` among them, an example environment file, or a path under
+`.github/workflows/`, `scripts/` or `translation/` that is neither baseline-only nor a booking or payment
+concurrency program.
+
+File modes come before all of it, and the path listing shows none: the router sends an executable file, a symbolic
+link, a submodule and a file whose type changed to the full route, where the table's concurrency exclusions still
+apply. `git diff --raw --no-renames --ignore-submodules=none <earlier-commit> HEAD` prints both modes of each path:
+a path with any mode but `100644`, or `000000` where the file is absent, is a full-route path wherever it sits,
+except that the four executable entry points the router lists as baseline-only stay baseline-only while each mode
+is `100755` or `000000`.
+
+Any other path is not covered by this table and is settled by finding out, as the Receipt reuse rule says; the
+router itself still stops a full local check on a path it does not list.
+
+Each command in the table runs its check whatever paths the job changed, and `npm run verify -- --full` runs the
+first four in one command and settles them all. `npm run verify`, `npm run verify -- --database` and
+`npm run verify -- --browser` choose from the whole job's paths instead, so each can exit 0 having run none of a
+group the table names for the commit, and none of them reruns a check here.
+
+A check's receipt is the latest receipt of a command that ran it: a command in the table, or the full local check,
+`npm run verify` or `npm run verify -- --full`, whose receipt stands for each of the first four checks its route
+ran and for no other. A check the table does not name for the commit keeps that receipt on the conditions the
+Receipt reuse rule sets; where the full local check's route did not run it, there is no receipt to keep and none
+is owed, because no path of the job selects that check. Where the kept receipt is the full local check's, the pull
+request body's `Carried receipts:` line names the command that receipt records and the checks carried under it,
+never the command of a row that did not run; a full local check that ran the baseline alone, as one does for a job
+of documentation or workflow instructions alone, carries nothing once the baseline has run again.
+
+A test-only repair takes its row under Evidence by change type first: the repaired test runs by its full title.
+The table then settles the convergence checks as for any other commit, so the baseline and the group that runs a
+repaired SQL test or Playwright specification run again. One exception keeps that row's ceiling for such a repair:
+a test file under `scripts/` that the router sends to every group reruns only the baseline and any group that runs
+it, and the unit tests in the baseline alone run a `*.test.mjs` file.
+
+The inputs no path shows are the installed packages, which an unchanged `package-lock.json` shows unchanged, and
+the Node version, the Docker daemon and any ignored environment file, which hold for the life of a job. A database
+or build left by an earlier run is not one: each access run starts its own disposable project and builds what it
+serves. Installing packages again, or changing the Node version, Docker or an ignored environment file after the
+receipt was written, is a known invalidation and runs the check again.
 
 The authoritative desktop exclusion list is in [playwright.config.ts](../playwright.config.ts). These eleven
 journeys run on mobile and Worker (1280×720) only. All remaining Node.js journeys run on both mobile and desktop,
