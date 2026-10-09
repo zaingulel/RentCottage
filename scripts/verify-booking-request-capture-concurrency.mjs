@@ -1239,29 +1239,35 @@ try {
     const indexes = Array.from({ length: 21 }, (_, i) =>
       String(i + 2).padStart(2, "0"),
     );
+    const seedSql = (index) =>
+      `begin; ${clone(pending, index)} ${clone(acceptSql, index)} commit;`;
+    const expireSql = (index) =>
+      `update public.booking_request_capture_work set lease_expires_at = clock_timestamp() where booking_request_id = '${clone(requestId, index)}';`;
     try {
-      for (const index of indexes) {
-        harness.markTimingPhase("setup");
-        await harness.runSqlAfterSetup(
-          paymentEvidenceSql,
-          `begin; ${clone(pending, index)} ${clone(acceptSql, index)} commit;`,
-        );
-        const leased = JSON.parse(
-          await harness.runSqlAfterSetup(
-            paymentEvidenceSql,
+      harness.markTimingPhase("setup");
+      await harness.runStatementsAfterSetup(
+        paymentEvidenceSql,
+        indexes
+          .slice(0, -1)
+          .flatMap((index) => [
+            seedSql(index),
             clone(leaseSql, index),
-          ),
-        );
-        if (index === indexes.at(-1))
-          await harness.runSqlAfterSetup(
-            paymentEvidenceSql,
-            `select pg_temp.capture_execute(${literal(leased.permit)});`,
-          );
+            expireSql(index),
+          ]),
+      );
+      const last = indexes.at(-1);
+      await harness.runSqlAfterSetup(paymentEvidenceSql, seedSql(last));
+      const leased = JSON.parse(
         await harness.runSqlAfterSetup(
           paymentEvidenceSql,
-          `update public.booking_request_capture_work set lease_expires_at = clock_timestamp() where booking_request_id = '${clone(requestId, index)}';`,
-        );
-      }
+          clone(leaseSql, last),
+        ),
+      );
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `select pg_temp.capture_execute(${literal(leased.permit)});`,
+      );
+      await harness.runSqlAfterSetup(paymentEvidenceSql, expireSql(last));
       harness.markTimingPhase("execution");
       const unavailableBefore = await harness.runSqlAfterSetup(
         paymentEvidenceSql,
@@ -1296,11 +1302,12 @@ try {
       );
     } finally {
       harness.markTimingPhase("cleanup");
-      for (const index of indexes)
-        await harness.runSqlAfterSetup(
-          paymentEvidenceSql,
+      await harness.runStatementsAfterSetup(
+        paymentEvidenceSql,
+        indexes.map((index) =>
           captureCleanup({ stem: String(200 + Number(index)) }),
-        );
+        ),
+      );
     }
     harness.markTimingPhase("execution");
   }
@@ -1631,6 +1638,13 @@ try {
 
     harness.markTimingPhase("setup");
     const definitions = [];
+    const frozen = (deadline) =>
+      definitions.map((definition) =>
+        definition.replaceAll(
+          "clock_timestamp()",
+          `'${deadline}'::timestamptz`,
+        ),
+      );
     const unobserved = readFileSync(
       "supabase/tests/database/booking_request_payment_correction.test.sql",
       "utf8",
@@ -1670,16 +1684,12 @@ try {
           ),
         );
         harness.markTimingPhase("execution");
-        for (const definition of definitions) {
-          harness.markTimingPhase("setup");
-          harness.runSql(
-            definition.replaceAll(
-              "clock_timestamp()",
-              `'${admission.deadline}'::timestamptz`,
-            ),
-          );
-          harness.markTimingPhase("execution");
-        }
+        harness.markTimingPhase("setup");
+        await harness.runStatementsAfterSetup(
+          paymentEvidenceSql,
+          frozen(admission.deadline),
+        );
+        harness.markTimingPhase("execution");
         const now = admission.deadline;
         assert.equal(
           (
@@ -1756,24 +1766,18 @@ try {
           );
           assert.deepEqual(await state(), after);
         }
-        for (const definition of definitions) {
-          harness.markTimingPhase("setup");
-          harness.runSql(definition);
-          harness.markTimingPhase("execution");
-        }
+        harness.markTimingPhase("setup");
+        await harness.runStatementsAfterSetup(paymentEvidenceSql, definitions);
+        harness.markTimingPhase("execution");
         await clear();
       }
       const invalid = await seed();
-      for (const definition of definitions) {
-        harness.markTimingPhase("setup");
-        harness.runSql(
-          definition.replaceAll(
-            "clock_timestamp()",
-            `'${invalid.deadline}'::timestamptz`,
-          ),
-        );
-        harness.markTimingPhase("execution");
-      }
+      harness.markTimingPhase("setup");
+      await harness.runStatementsAfterSetup(
+        paymentEvidenceSql,
+        frozen(invalid.deadline),
+      );
+      harness.markTimingPhase("execution");
       await harness.runSqlAfterSetup(
         paymentEvidenceSql,
         `set role service_role;
@@ -1796,15 +1800,13 @@ try {
       assert.equal((await state()).expiry, "quarantined");
       assert.equal((await state()).active, 5);
       assert.equal((await state()).notices, 0);
-      for (const definition of definitions) {
-        harness.markTimingPhase("setup");
-        harness.runSql(definition);
-        harness.markTimingPhase("execution");
-      }
+      harness.markTimingPhase("setup");
+      await harness.runStatementsAfterSetup(paymentEvidenceSql, definitions);
+      harness.markTimingPhase("execution");
       await clear();
     } finally {
       harness.markTimingPhase("cleanup");
-      for (const definition of definitions) harness.runSql(definition);
+      await harness.runStatementsAfterSetup(paymentEvidenceSql, definitions);
     }
     harness.markTimingPhase("execution");
     console.log(

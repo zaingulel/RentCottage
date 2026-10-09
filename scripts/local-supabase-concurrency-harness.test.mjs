@@ -883,6 +883,7 @@ describe("local Supabase concurrency harness", () => {
     for (const name of [
       "verify-booking-request-payment-required-expiry-concurrency",
       "verify-booking-request-payment-recovery-concurrency",
+      "verify-booking-request-capture-concurrency",
     ]) {
       const source = readFileSync(`scripts/${name}.mjs`, "utf8");
       expect(source).toContain("harness.runStatementsAfterSetup(");
