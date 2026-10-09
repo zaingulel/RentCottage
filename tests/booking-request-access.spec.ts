@@ -930,9 +930,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
     const customerHistoryLink = page.locator(
       `a[href="/en/booking-requests/${requestReference}"]`,
     );
-    await expect(customerHistoryLink).toContainText(
-      identityBeforeRetry.bookingReference,
-    );
+    await expect(
+      page.locator(".list-rows > li").filter({ has: customerHistoryLink }),
+    ).toContainText(identityBeforeRetry.bookingReference);
     await customerHistoryLink.click();
     await expect(
       page.getByRole("region", { name: "Confirmed booking" }),
@@ -949,9 +949,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
     const ownerHistoryLink = ownerPage.locator(
       `a[href="/en/owner/booking-requests/${requestReference}"]`,
     );
-    await expect(ownerHistoryLink).toContainText(
-      identityBeforeRetry.bookingReference,
-    );
+    await expect(
+      ownerPage.locator(".list-rows > li").filter({ has: ownerHistoryLink }),
+    ).toContainText(identityBeforeRetry.bookingReference);
     await ownerHistoryLink.click();
     await expect(ownerPage.getByText(exactAddress)).toBeVisible();
 

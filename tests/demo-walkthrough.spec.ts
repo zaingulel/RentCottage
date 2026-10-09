@@ -1303,7 +1303,9 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     const customerHistory = page.locator(
       `a[href="/en/booking-requests/${requestReference}"]`,
     );
-    await expect(customerHistory).toContainText(bookingReference);
+    await expect(
+      page.locator(".list-rows > li").filter({ has: customerHistory }),
+    ).toContainText(bookingReference);
     await customerHistory.click();
     await page.getByRole("button", { name: "Open conversation" }).click();
     await expectScene(
@@ -1377,7 +1379,9 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     const ownerHistory = page.locator(
       `a[href="/en/owner/booking-requests/${requestReference}"]`,
     );
-    await expect(ownerHistory).toContainText(bookingReference);
+    await expect(
+      page.locator(".list-rows > li").filter({ has: ownerHistory }),
+    ).toContainText(bookingReference);
     await ownerHistory.click();
     await page.getByRole("button", { name: "Open conversation" }).click();
     await expectScene(
