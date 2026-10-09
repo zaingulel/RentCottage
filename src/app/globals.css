@@ -3012,20 +3012,20 @@ section.request-follow-up {
   color: var(--muted);
 }
 
-.booking-request-status-badge {
-  width: fit-content;
-  padding: var(--space-1) var(--space-3);
-  border-radius: 999px;
-  background: var(--status-approved-bg);
-  color: var(--status-approved-text);
+.status-banner {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--status-neutral-bg);
+  color: var(--green);
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .owner-booking-request-card > header.booking-request-payment-header {
   display: grid;
 }
 
-.booking-request-status-badge.booking-request-payment-status,
 .owner-booking-request-card > header > .booking-request-payment-status {
   border-radius: var(--radius-card);
   padding: var(--space-3) var(--space-4);
@@ -3035,11 +3035,14 @@ section.request-follow-up {
 }
 
 .booking-request-payment-status > strong,
-.booking-request-payment-status > span {
+.booking-request-payment-status > span,
+.status-banner > strong,
+.status-banner > span {
   display: block;
 }
 
-.booking-request-payment-status > span {
+.booking-request-payment-status > span,
+.status-banner > span {
   margin-block-start: var(--space-1);
   color: var(--ink);
   font-weight: 400;

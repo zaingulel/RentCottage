@@ -224,7 +224,9 @@ describe("Customer Booking Request status", () => {
     );
     expect(screen.getByText("Processing", { exact: true })).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Processing");
-    expect(screen.getByText(/being released/)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveClass("status-banner");
+    expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByRole("status")).toHaveTextContent("being released");
     finish({
       status: "withdrawn",
       bookingRequestReference: request.bookingRequestReference,
@@ -235,6 +237,7 @@ describe("Customer Booking Request status", () => {
       ).toBeInTheDocument(),
     );
     expect(screen.getByRole("status")).toHaveTextContent("Withdrawn");
+    expect(screen.getByRole("status")).not.toHaveTextContent("being released");
     expect(
       screen.queryByText("pending", { exact: true }),
     ).not.toBeInTheDocument();

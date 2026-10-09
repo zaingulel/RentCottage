@@ -172,11 +172,7 @@ function CustomerBookingRequestStatusView({
       <h1 id="customer-booking-request-title" className="page-title">
         {copy.title}
       </h1>
-      <p
-        className={`booking-request-status-badge${isPaymentDisplayStatus(status) || request.paymentRequiredExpiry !== null ? " booking-request-payment-status" : ""}`}
-        role="status"
-        aria-live="polite"
-      >
+      <p className="status-banner" role="status" aria-live="polite">
         <BookingRequestStatusContent
           locale={locale}
           status={status}
@@ -184,6 +180,7 @@ function CustomerBookingRequestStatusView({
           paymentRequiredPhase={request.paymentRequiredWindow?.phase}
           paymentRequiredExpiry={request.paymentRequiredExpiry}
         />
+        {status === "processing" ? <span>{copy.processing}</span> : null}
       </p>
       <BookingRequestProgress
         locale={locale}
@@ -270,7 +267,6 @@ function CustomerBookingRequestStatusView({
           </div>
         ) : null}
       </dl>
-      {status === "processing" ? <p>{copy.processing}</p> : null}
       {status === "payment-required" &&
       request.paymentRecovery?.status === "processing" ? (
         <p>{recoveryCopy.processing}</p>
