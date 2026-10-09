@@ -776,6 +776,7 @@ test("the site header keeps one compact row and opens its panels as cards inside
       const rows = [
         ...panel.querySelectorAll('a, button[type="submit"]'),
       ].filter(isVisible);
+      const rowBoxes = rows.map((row) => row.getBoundingClientRect());
       return {
         visible: isVisible(panel),
         insideScreen: box.left >= 0 && box.right <= root.clientWidth,
@@ -787,6 +788,29 @@ test("the site header keeps one compact row and opens its panels as cards inside
           .length,
         clippedRows: rows.filter((row) => row.scrollWidth > row.clientWidth)
           .length,
+        rowsOutsidePanel: rowBoxes.filter(
+          (row) =>
+            row.left < box.left - 1 ||
+            row.right > box.right + 1 ||
+            row.top < box.top - 1 ||
+            row.bottom > box.bottom + 1,
+        ).length,
+        overlappingRows: rowBoxes.reduce(
+          (count, row, index) =>
+            count +
+            rowBoxes
+              .slice(index + 1)
+              .filter(
+                (other) =>
+                  Math.min(row.right, other.right) -
+                    Math.max(row.left, other.left) >
+                    1 &&
+                  Math.min(row.bottom, other.bottom) -
+                    Math.max(row.top, other.top) >
+                    1,
+              ).length,
+          0,
+        ),
         sidewaysScroll: root.scrollWidth - root.clientWidth,
       };
     }, input);
@@ -846,6 +870,8 @@ test("the site header keeps one compact row and opens its panels as cards inside
               enoughRows: true,
               shortRows: 0,
               clippedRows: 0,
+              rowsOutsidePanel: 0,
+              overlappingRows: 0,
               sidewaysScroll: 0,
             });
           await page.keyboard.press("Escape");
