@@ -36,10 +36,10 @@ Lenses:
    - **Message Chains**: a caller walking a long `a.b().c().d()` chain; hide the walk behind one call.
    - **Middle Man**: a function or module that mostly delegates onward; call the real target directly.
    - **Refused Bequest**: an implementer that ignores or overrides most of what it inherits; use composition.
-4. **Canon fidelity**: grounding fidelity to the authorities the manual's Grounding section names, per the
+4. **Canon fidelity**: grounding fidelity to the authorities the Grounding section of `.agents/REPOSITORY.md` names, per the
    plan's Grounding step.
-5. **Constraints**: every Hard constraint and Architecture seam the manual names still holds; any artifact the
-   Conventions table in `AGENTS.md` marks generated is regenerated and committed with its source; a surface in the
+5. **Constraints**: every Hard constraint and Architecture seam `AGENTS.md` and `.agents/REPOSITORY.md` name still holds; any artifact the
+   Conventions table in `.agents/REPOSITORY.md` marks generated is regenerated and committed with its source; a surface in the
    `plan-first` or `sign-off` row of the Surfaces table in `AGENTS.md` is untouched or independently validated.
    An interface change is judged against `docs/DESIGN-SYSTEM.md`: a raw value where a token exists, or a value or
    component pattern written at the site instead of added there, is a `constraint` finding.

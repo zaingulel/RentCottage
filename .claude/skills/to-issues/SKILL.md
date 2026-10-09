@@ -33,7 +33,7 @@ issue with none.
 
 ### 2. Explore the codebase (optional)
 
-Read enough of the code and documents the manual's Architecture seams name to ground the breakdown in real seams.
+Read enough of the code and documents the Architecture seams sections of `AGENTS.md` and `.agents/REPOSITORY.md` name to ground the breakdown in real seams.
 Use `GLOSSARY.md` vocabulary and respect the applicable scoped rules. If a slice needs groundwork first, that
 prefactor is its own slice, ordered first.
 
@@ -153,8 +153,8 @@ What's missing or broken, in one or two sentences.
 
 The end-to-end behaviour of this slice; name the seam it runs through without pinning a file path. A slice
 admitting workflow machinery through the friction route, new or added to existing machinery, names the friction
-here and what doing less was tried first: fewer checks, deleted work, or a native feature (`AGENTS.md`,
-Publication and machinery, which also names the cards that list the machinery they keep).
+here and what doing less was tried first: fewer checks, deleted work, or a native feature (the machinery rule
+in the `resume` skill under "4. Plan", which also names the cards that list the machinery they keep).
 
 ## Acceptance criteria
 

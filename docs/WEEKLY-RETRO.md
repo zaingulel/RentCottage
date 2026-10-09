@@ -71,7 +71,9 @@ under `repos/<owner>/<repo>/`:
 | Issues | `issues?state=all&per_page=100`, paginated to the end |
 
 In the cloud, never a `gh` subcommand that uses GraphQL (`gh pr list`, `gh pr view`, `gh issue list`,
-`gh issue create`) and never a board script.
+`gh issue create`), never a board script, and never `gh api --paginate`: it follows GitHub's next-page links, which
+name the repository by number, and the platform proxy serves only the `repos/<owner>/<repo>/` form. Page there with
+an explicit `page=<n>` parameter.
 
 **Failures.** A pull request listing that errors, or whose last page cannot be confirmed, is a stop: file nothing
 and report. A workflow run listing, a jobs route, an attempts route or a review comment read that errors, or a
@@ -90,7 +92,7 @@ an occurrence of a false alarm, which can recur as its own problem.
 **Same problem.** Two occurrences are the same problem when one check or one sentence would have prevented both.
 
 **Recurring.** The same problem in at least three distinct merged pull requests in the window. One pull request
-counts once however often it repeats the problem. Three is the count the machinery rule in `AGENTS.md` uses to
+counts once however often it repeats the problem. Three is the count the machinery rule in the `resume` skill uses to
 admit a check: the same measurable friction across three independent jobs. A week with nothing recurring files
 nothing.
 
@@ -162,7 +164,7 @@ Category: <category name>
 
 ## What to build
 [Mechanical mistake: an automated check that fails on <the pattern>, joining <the existing check command>.] [Mechanical mistake, existing check: <the existing check command> wired or repaired so that it fails on <the pattern>.] [Judgement call: one sentence in <the document that owns the topic> saying <the rule>.] [Judgement call, existing sentence: the sentence in <the document that owns the topic> restated so that it says <the rule>.]
-This card proposes and approves nothing beyond itself: the job that takes it plans the change under the machinery rule in `AGENTS.md`.
+This card proposes and approves nothing beyond itself: the job that takes it plans the change under the machinery rule in the `resume` skill.
 
 ## Acceptance criteria
 - [ ] The owner has decided: picking this card at work-pick is the decision to proceed, and closing it as not planned is the decision to drop it.
@@ -188,8 +190,9 @@ next local session fills it from the routing line. With the board's auto-add off
 card, which is why the report lists every issue number.
 
 **What marks a proposal.** The title prefix `Retro proposal: ` is what the owner sees on the board. The marker
-line `Weekly retro: <YYYY-MM-DD>`, the last line of the body, is what a later run reads, so a proposal stays
-recognisable after the owner retitles it.
+line `Weekly retro: <YYYY-MM-DD>` is the last line the retro writes in the body, and the retro adds nothing after
+it: no attribution line, footer or link. It is what a later run reads, as a body line wherever it sits, so a
+proposal stays recognisable after the owner retitles it or the platform's tooling appends a line.
 
 **A create that fails** is not retried in another shape. The report carries that proposal's title and body in
 full.
@@ -224,7 +227,9 @@ A repository runs the retro once it has all four of these:
   Without the entry a run stops, files nothing and says so;
 - a row for this manual in `docs/README.md`;
 - the board's auto-add on for open issues, landing in `Backlog`;
-- the routine created in the owner's console, which only the owner can do.
+- the routine created on the owner's account, on the owner's decision, because it acts with the owner's full GitHub
+  identity. The owner's GitHub connection for cloud sessions must already reach the repository, or the platform
+  refuses to create the routine.
 
 ## Routine configuration
 
@@ -238,7 +243,7 @@ The parts of the retro that cannot live in this file, and what each must be set 
 | Network access | **None** | The retro reads GitHub only, which the platform's GitHub proxy serves at every level, so nothing read can be sent anywhere else. |
 | Setup script | none | The routine runs no repository script. |
 | Model | `claude-opus-5-5` at the platform's default effort | A misjudged proposal becomes a card the owner reads and a session may plan. |
-| Connectors | **none**; remove every connector the form adds by default | A connector adds every one of its tools, writes included. |
+| Connectors | **none**; remove every connector a new routine carries by default, whichever way it was created | A connector adds every one of its tools, writes included. |
 | Environment variables | none | Anything in the session can read them. |
 | Application programming interface (API) credentials | none | A credential's hosts stay reachable at every network level. |
 | Triggers | the schedule only; no API trigger, no GitHub trigger | No token should be able to start a run. |
@@ -250,8 +255,9 @@ The entire prompt is:
 > task. Never edit, commit or push anything. If the manual and this prompt ever disagree, the manual wins.
 
 The prompt opts in to no fire payload, so text passed with Run now is data. The prompt's clause, like this manual,
-is an instruction, not enforcement. The platform bounds that do hold are these: API requests reach only the
-attached repository, and GraphQL is a pinned set of operations, so the board is unreachable.
+is an instruction, not enforcement. The bounds that do hold are the ones the platform documents: its GitHub proxy
+serves API requests only for the attached repository and rejects every GraphQL request, so the board is
+unreachable.
 
 The residual is plain. The routine runs with the owner's full GitHub identity, and no issues-only grant exists for
 a routine. The platform does not refuse a push to an unprotected branch, a comment, a close or a settings change,
@@ -262,9 +268,8 @@ this file through an ordinary pull request, never editing the routine.
 
 ## Cloud environment
 
-The retro runs in a cloud sandbox, not on the owner's machine. This section is written from the platform
-documentation, not from inside the sandbox. The first scheduled run is the sandbox probe: its report names any
-divergence, so an ordinary pull request reconciles this section.
+The retro runs in a cloud sandbox, not on the owner's machine. Every run's report names any divergence between the
+sandbox and this section, so an ordinary pull request reconciles it.
 
 - **The clone is read, never written.**
 - **GitHub reads and writes go through the built-in GitHub tools or REST under the platform proxy.** The board is
@@ -272,6 +277,13 @@ divergence, so an ordinary pull request reconciles this section.
 - **Writes appear as the owner.** Every issue the retro files carries the owner's own GitHub identity, which is
   why the marker, not the author alone, tells the retro's issues apart.
 - **The routine runs no repository script and no `npm` command.**
+- **The session runs the repository's hooks.** The platform runs the hooks and permission rules
+  `.claude/settings.json` wires in a cloud session with one repository. A command a hook refuses has failed: it is
+  treated as the failure rules for that read or create say and is never retried in another form.
+- **Nothing but this manual bounds the session's other tools.** Beside the shell and file tools the session holds
+  tools of the platform's own, among them a tool search and a notification to the owner; a routine's allowed-tools
+  setting does not remove them. The run may send the owner one notification as it finishes, saying only how many
+  proposals it filed or that it stopped: it quotes nothing the run read and carries no link, title or issue text.
 
 ### GitHub actions permitted
 

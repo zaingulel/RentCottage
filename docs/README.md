@@ -1,7 +1,7 @@
 # Document index
 
-One line per document, so a reader or agent can find the right one without opening several. The operating
-manual is [AGENTS.md](../AGENTS.md).
+One line per document, so a reader or agent can find the right one without opening several. The index of this
+repository's rules is [AGENTS.md](../AGENTS.md).
 
 Kinds: **explanation** describes the system as built; **instruction** tells an agent what to do; **record**
 captures a decision or measurement and is never rewritten; **reference** is looked up on demand. Who may edit

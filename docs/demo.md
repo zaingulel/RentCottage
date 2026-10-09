@@ -478,6 +478,6 @@ check in the clean parent environment, then follow this guide with a new project
 run so ordinary Playwright output cleanup cannot erase the final recording.
 
 Keep owned workdirs, credentials, preserved volumes and failed evidence until review and any meeting are complete.
-Later disposal follows the manual's creation, ownership and inactivity checks and
+Later disposal follows `AGENTS.md`'s creation, ownership and inactivity checks and
 [closeout cleanup](../.agents/skills/closeout/SKILL.md). Preserve foreign resources, images and volumes. Uncertain
 ownership or an occupied port is a blocker to report, never permission to repair another job's environment.

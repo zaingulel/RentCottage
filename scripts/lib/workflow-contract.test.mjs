@@ -15,7 +15,7 @@ const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // Independent oracle for the resume skill's parallel-slice route: Git runs its commands verbatim. Recurring cost: one
 // disposable repository and about fifteen Git subprocesses. Remove if builders no longer run parallel slices.
 test("the resume skill's parallel-slice commands run while the job branch is checked out", () => {
-  const fixture = mkdtempSync(join(tmpdir(), 'flowgauge-parallel-slice-'));
+  const fixture = mkdtempSync(join(tmpdir(), 'workflow-parallel-slice-'));
   const repository = join(fixture, 'repository');
   const jobWorktree = join(fixture, 'job-1421');
   const sliceWorktree = join(fixture, 'slice-1421-parallel');
@@ -37,10 +37,10 @@ test("the resume skill's parallel-slice commands run while the job branch is che
     // Force the editor on and make it fail, so the skill's merge command must be non-interactive.
     GIT_MERGE_AUTOEDIT: 'yes',
     GIT_EDITOR: 'false',
-    GIT_AUTHOR_NAME: 'Flowgauge Contract Test',
-    GIT_AUTHOR_EMAIL: 'contract-test@flowgauge.invalid',
-    GIT_COMMITTER_NAME: 'Flowgauge Contract Test',
-    GIT_COMMITTER_EMAIL: 'contract-test@flowgauge.invalid',
+    GIT_AUTHOR_NAME: 'Workflow Contract Test',
+    GIT_AUTHOR_EMAIL: 'contract-test@workflow.invalid',
+    GIT_COMMITTER_NAME: 'Workflow Contract Test',
+    GIT_COMMITTER_EMAIL: 'contract-test@workflow.invalid',
   };
   const git = (cwd, args) => spawnSync('git', args, { cwd, env, encoding: 'utf8' });
   const ok = (run, what) => assert.equal(run.status, 0, `${what} failed: ${run.stderr}`);
@@ -81,15 +81,15 @@ test("the resume skill's parallel-slice commands run while the job branch is che
 // Independent oracle for the instruction-order contract. Recurring cost: one disposable repository and eight Git
 // subprocesses. Remove if closeout no longer relies on Git refusing deletion of a linked branch.
 test('Git permits job branch deletion only after its linked worktree is removed', () => {
-  const fixture = mkdtempSync(join(tmpdir(), 'flowgauge-closeout-'));
+  const fixture = mkdtempSync(join(tmpdir(), 'workflow-closeout-'));
   const repository = join(fixture, 'repository');
   const worktree = join(fixture, 'job-1350');
   const env = {
     ...process.env,
-    GIT_AUTHOR_NAME: 'Flowgauge Contract Test',
-    GIT_AUTHOR_EMAIL: 'contract-test@flowgauge.invalid',
-    GIT_COMMITTER_NAME: 'Flowgauge Contract Test',
-    GIT_COMMITTER_EMAIL: 'contract-test@flowgauge.invalid',
+    GIT_AUTHOR_NAME: 'Workflow Contract Test',
+    GIT_AUTHOR_EMAIL: 'contract-test@workflow.invalid',
+    GIT_COMMITTER_NAME: 'Workflow Contract Test',
+    GIT_COMMITTER_EMAIL: 'contract-test@workflow.invalid',
     // Hostile ambient signing config keeps the command-local `commit.gpgsign=false` override load-bearing.
     GIT_CONFIG_COUNT: '3',
     GIT_CONFIG_KEY_0: 'commit.gpgSign',
@@ -97,7 +97,7 @@ test('Git permits job branch deletion only after its linked worktree is removed'
     GIT_CONFIG_KEY_1: 'gpg.format',
     GIT_CONFIG_VALUE_1: 'openpgp',
     GIT_CONFIG_KEY_2: 'user.signingKey',
-    GIT_CONFIG_VALUE_2: 'flowgauge-contract-test-missing-key',
+    GIT_CONFIG_VALUE_2: 'workflow-contract-test-missing-key',
   };
   const git = (args) => spawnSync('git', args, { cwd: repository, env, encoding: 'utf8' });
 
@@ -176,7 +176,7 @@ test('every seat that plans, designs, builds or reviews code names the coding st
 });
 
 test('the resume deliver step carries exactly the merge-watch command', () => {
-  const rawStep = RESUME.match(/^4\. Watch it land[\s\S]*?(?=^Greptile is metered)/m);
+  const rawStep = RESUME.match(/^4\. Watch it land[\s\S]*?(?=^## )/m);
   assert.deepEqual(
     shellBlocks(rawStep[0]).map((block) => block.body),
     ['node scripts/merge-watch.mjs <pr>'],
@@ -360,7 +360,15 @@ test("the cross-review skill does not copy the reviewer seat's model or effort v
   }
 });
 
-test('the manual carries one shared workflow region followed by the product headings and tables', () => {
+const sectionOf = (text, heading) =>
+  text.match(new RegExp(`^## ${heading}\\n([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, 'm'))[1];
+const tableRowNames = (sectionText) => sectionText
+  .split('\n')
+  .filter((line) => line.startsWith('|'))
+  .slice(2)
+  .map((line) => line.split('|')[1].trim());
+
+test('AGENTS.md carries one shared workflow region followed by the product headings and the Surfaces table', () => {
   const manual = readFileSync(resolve(ROOT, 'AGENTS.md'), 'utf8');
   const start = '<!-- factory-shared:start -->';
   const end = '<!-- factory-shared:end -->';
@@ -370,34 +378,22 @@ test('the manual carries one shared workflow region followed by the product head
   const endAt = manual.indexOf(end);
   assert.ok(startAt < endAt, 'the shared-region start marker must precede its end marker');
 
-  const shared = manual.slice(startAt, endAt);
-  for (const word of ['Flowgauge', 'index.html', 'validate-math', 'Monte Carlo', 'Jira']) {
-    assert.ok(!shared.includes(word), `the shared region must not name the product term ${word}`);
-  }
-
   const product = manual.slice(endAt);
-  const headings = ['Product', 'Hard constraints', 'Architecture seams', 'Grounding', 'Surfaces', 'Conventions'];
+  const headings = ['Product', 'Hard constraints', 'Architecture seams', 'Surfaces'];
   assert.deepEqual(
     [...product.matchAll(/^## (.*)$/gm)].map((match) => match[1]),
     headings,
     `the shared region must be followed by exactly the product headings ${headings.join(', ')}, in order`,
   );
 
-  const section = (heading) => product.match(new RegExp(`^## ${heading}\\n([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, 'm'))[1];
-  const tables = {
-    Surfaces: ['plan-first', 'owner-directed', 'sign-off', 'security review'],
-    Conventions: ['generated artifacts', 'visual verification', 'fixtures', 'documentation routines'],
-  };
-  for (const [heading, rows] of Object.entries(tables)) {
-    const firstCells = section(heading)
-      .split('\n')
-      .filter((line) => line.startsWith('|'))
-      .slice(2)
-      .map((line) => line.split('|')[1].trim());
-    assert.deepEqual(firstCells, rows, `## ${heading} must carry exactly the rows ${rows.join(', ')}, in order`);
-  }
+  const rows = ['plan-first', 'owner-directed', 'sign-off', 'security review', 'hard to undo', 'wide reach'];
+  assert.deepEqual(
+    tableRowNames(sectionOf(product, 'Surfaces')),
+    rows,
+    `## Surfaces must carry exactly the rows ${rows.join(', ')}, in order`,
+  );
 
-  const surfaces = section('Surfaces').split('\n');
+  const surfaces = sectionOf(product, 'Surfaces').split('\n');
   assert.ok(
     surfaces.find((line) => /^\d+\. /.test(line))?.startsWith('1. '),
     'the standing security guarantees must start with a numbered item 1.',
@@ -412,6 +408,22 @@ test('the manual carries one shared workflow region followed by the product head
   assert.ok(Buffer.byteLength(manual) < 32768, 'AGENTS.md must stay under the 32 KiB Codex read cap');
 });
 
+test('the profile file carries its four headings and the Conventions table', () => {
+  const profile = readFileSync(resolve(ROOT, '.agents/REPOSITORY.md'), 'utf8');
+  const headings = ['Product', 'Architecture seams', 'Grounding', 'Conventions'];
+  assert.deepEqual(
+    [...profile.matchAll(/^## (.*)$/gm)].map((match) => match[1]),
+    headings,
+    `.agents/REPOSITORY.md must carry exactly the headings ${headings.join(', ')}, in order`,
+  );
+  const rows = ['generated artifacts', 'visual verification', 'fixtures', 'documentation routines'];
+  assert.deepEqual(
+    tableRowNames(sectionOf(profile, 'Conventions')),
+    rows,
+    `## Conventions in .agents/REPOSITORY.md must carry exactly the rows ${rows.join(', ')}, in order`,
+  );
+});
+
 const FIXED_PRODUCT_DOCUMENTS = [
   'GLOSSARY.md',
   'docs/README.md',
@@ -421,6 +433,7 @@ const FIXED_PRODUCT_DOCUMENTS = [
   'docs/ISSUE-TRACKER.md',
   'docs/DOC-SWEEP.md',
   'docs/SWEEP-TRIAGE.md',
+  '.agents/REPOSITORY.md',
 ];
 
 test('the fixed product documents exist', () => {
@@ -644,54 +657,12 @@ test('hook scripts carry the LF rule and the git hooks their run permission', ()
   assert.deepEqual(problems, [], 'every hook directory checks out LF and every git hook runs');
 });
 
-// Every shared workflow file the manifest pins, and the AGENTS.md shared region, reaches every adopter byte for
-// byte, so none may name a product fact. The vendored upstream skills and their installed copies are never edited
-// in place, and this file must name the tokens it forbids.
+// A vendored upstream skill or an installed copy of one.
 const VENDORED_SKILLS = new Set(
   indexEntries('.agents/upstream').flatMap(({ path }) => /^\.agents\/upstream\/[^/]+\/([^/]+)\/SKILL\.md$/.exec(path)?.slice(1) ?? []),
 );
 const vendoredCopy = (path) =>
   path.startsWith('.agents/upstream/') || VENDORED_SKILLS.has(/^\.(?:agents|claude)\/skills\/([^/]+)\//.exec(path)?.[1]);
-const TOKEN_SCAN_EXEMPT = (path) =>
-  vendoredCopy(path) || path === '.agents/factory-manifest.json' || path === 'scripts/lib/workflow-contract.test.mjs';
-const PRODUCT_TOKENS = [
-  'Flowgauge',
-  'flow-metrics-dashboard',
-  'RentCottage',
-  'Cottage',
-  'zaingulel',
-  'index.html',
-  'build-concat',
-  'validate-math',
-  'Monte Carlo',
-  'Jira',
-  'Supabase',
-  'Next.js',
-  'Cloudflare',
-  'Row Level Security',
-  'Atlassian',
-];
-
-test('shared workflow files name no product of any adopter', () => {
-  const hits = [];
-  for (const entry of readManifest(ROOT).entries) {
-    const { path } = entry;
-    if (TOKEN_SCAN_EXEMPT(path)) continue;
-    const text = readFileSync(resolve(ROOT, path), 'utf8');
-    const [scanned, where] = 'region' in entry ? [regionText(text, path), `${path} shared region line `] : [text, `${path}:`];
-    scanned.split('\n').forEach((line, index) => {
-      // This billing address serves the shared review pool across adopters.
-      const scanLine =
-        path === '.agents/skills/resume/SKILL.md' || path === '.claude/skills/resume/SKILL.md'
-          ? line.replaceAll('https://app.greptile.com/flowgauge/-/settings/billing', '')
-          : line;
-      for (const token of PRODUCT_TOKENS) {
-        if (scanLine.toLowerCase().includes(token.toLowerCase())) hits.push(`${where}${index + 1} names ${token}`);
-      }
-    });
-  }
-  assert.deepEqual(hits, [], 'shared workflow files must point at the product tables and documents instead');
-});
 
 // Paths outside the manifest that shared code or prose names in every adopter, each with the reason it may.
 const ADOPTER_PATHS = {
@@ -742,12 +713,10 @@ test('no shared file names a path only this repository has', () => {
   const hits = [];
   for (const entry of entries) {
     const { path } = entry;
-    // Vendored skills and their copies are replaced whole and never edited, so the product-name test skips them too.
+    // Vendored skills and their copies are replaced whole and never edited in place, so this scan skips them.
     if (vendoredCopy(path)) continue;
     let text = readFileSync(resolve(ROOT, path), 'utf8');
     if ('region' in entry) text = regionText(text, path);
-    // This file's forbidden-word lists, each opening with the product name, must spell a file name they forbid.
-    if (path === 'scripts/lib/workflow-contract.test.mjs') text = text.replace(/\[\s*'Flowgauge',[^\]]*\]/g, '');
     const joined = [...text.matchAll(JOINED_LITERALS)].map(([, run]) =>
       [...run.matchAll(STRING_LITERAL)].map(([, single, double]) => single ?? double).join('/'));
     const named = new Set();

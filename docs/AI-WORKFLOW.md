@@ -7,7 +7,8 @@ tests and reviews the agents cannot skip, and recorded where the owner can read 
 These pages explain that workflow to someone who has never opened the repository: what the pieces are, how a change
 moves through them, what is enforced by a machine and what is only instructed by a sentence, and which parts transfer to
 another product. This page is the front page: it maps the whole, states the rules that hold everywhere, and routes each
-question to the page that answers it. [`AGENTS.md`](../AGENTS.md) is the contract every agent loads; the skills under
+question to the page that answers it. [`AGENTS.md`](../AGENTS.md) is the index every agent loads: the rules every
+session needs in full and a pointer to the home of every other rule; the skills under
 [`.agents/skills/`](../.agents/skills/) own the exact commands. The pages explain; they never restate a rule, a setting
 or a command another document owns, and where a page and its owner disagree, the owner is right.
 
@@ -98,16 +99,19 @@ Eight things hold in every repository that carries the workflow, and they are wh
    absorbed by the session.
 5. One construction mode per claim, an executed mutation where [the testing strategy](TESTING-STRATEGY.md) requires one,
    and exit codes recorded by a script.
-6. A fresh review of the final tree, independent for code; on the pull request route, an external review requested on
+6. A fresh review of the final tree, its depth chosen by two questions asked of every change, whether it can be
+   undone and how far the damage reaches if it is wrong; on the pull request route, an external review requested on
    the draft for the sign-off tier, then CI on ready.
 7. A board, git, and documentation as three distinct stores, reconciled rather than assumed consistent.
 8. Evidence limits as visible as evidence successes.
 
 Product-specific protections are the surfaces the Surfaces table names; each product that adopts the workflow
-fills that table with its own highest-consequence invariants.
+fills that table with its own highest-consequence invariants and with its own answers to those two questions.
 
-The workflow itself travels as the files `.agents/factory-manifest.json` lists. [`AGENTS.md`](../AGENTS.md) owns how
-they are authored, pinned and synced under "Shared workflow adoption", and
+The workflow itself travels as the files `.agents/factory-manifest.json` lists. [`AGENTS.md`](../AGENTS.md) owns where
+they are authored and when a sync card is opened, under "Shared workflow adoption";
+[the `sync-job` skill](../.agents/skills/sync-job/SKILL.md) owns how they are fingerprinted, pinned and kept, what a
+repository needs before it runs the workflow, how a sync job runs and which cards it covers; and
 [the head of `scripts/factory-sync.mjs`](../scripts/factory-sync.mjs) owns its commands and exit codes.
 
 Where the answer to a question lives, the board, git or a document, is set out in [`AGENTS.md`](../AGENTS.md) under
@@ -127,8 +131,10 @@ a claim that work is next is checked against the board.
 | What stops an agent from skipping a check, and what is only a sentence | [Enforced or instructed](AI-WORKFLOW-enforcement.md) |
 | What counts as proof that a change works | [The evidence bar](AI-WORKFLOW-evidence.md) |
 | What a pull request's review line means | [The review line](#the-review-line) below |
-| How the workflow reaches another repository | [`AGENTS.md`](../AGENTS.md) under "Shared workflow adoption" |
-| The exact steps of a job | The [`resume`](../.agents/skills/resume/SKILL.md) and [`closeout`](../.agents/skills/closeout/SKILL.md) skills |
+| How the workflow reaches another repository | [`AGENTS.md`](../AGENTS.md) under "Shared workflow adoption", then the [`sync-job`](../.agents/skills/sync-job/SKILL.md) skill |
+| What is true of one repository alone: its product, own facts, grounding authorities and conventions | [`.agents/REPOSITORY.md`](../.agents/REPOSITORY.md) |
+| What happens to a file, worktree or branch another job left behind | [Leftover rule](../.agents/skills/closeout/SKILL.md#leftover-rule) in the `closeout` skill; [`AGENTS.md`](../AGENTS.md) under "Owner gates" for the authority to delete one |
+| The exact steps of a job | The [`resume`](../.agents/skills/resume/SKILL.md) and [`closeout`](../.agents/skills/closeout/SKILL.md) skills, and the [`greptile`](../.agents/skills/greptile/SKILL.md) skill for the external review of a sign-off tier change |
 | Where every other document is | [`docs/README.md`](../docs/README.md) |
 
 ## The review line
@@ -144,7 +150,7 @@ Review: tier=sign-off rounds=7 raised=16 fixed=13 dismissed=2 deferred=1 greptil
 
 | Field | Value |
 |---|---|
-| `tier` | `document`, `code` or `sign-off`: the review tier the `resume` skill assigned. A pass run on the writing family's seat because the other family was unavailable keeps its tier; the pull request body declares the substitution |
+| `tier` | `document`, `code` or `sign-off`: the review tier the `resume` skill chose from the two questions: the session's own review, the cross-family review, or the cross-family review followed by Greptile. A pass run on the writing family's seat because the other family was unavailable keeps its tier; the pull request body declares the substitution |
 | `rounds` | Reviewer passes over the tree, at least 1: the fresh review, each pass scoped to a repair, each `security-reviewer` pass, and each Greptile review of a commit count one each; a pass counts once it records its verdict, zero findings included |
 | `raised` | Findings reported across every round, Greptile's included, a finding reported more than once counted once; in a self-review, the findings the session records in the Review section. A candidate the reviewer discarded itself is not one |
 | `fixed` | Raised findings repaired in this pull request |
@@ -166,6 +172,6 @@ Greptile review or every attempt was `UNAVAILABLE`, carries `greptile_rounds=0` 
 that reads as Greptile did not look, never as a clean Greptile review. Lines inside fenced code blocks or HTML
 comments are not review lines, and a body carrying more than one valid line is invalid.
 
-Below the line, the Review section carries the fresh reviewer's verdict, every finding with its disposition, and
-one usage line for each reviewer pass the Usage view cannot show, as the `cross-review` skill specifies; raw usage
-blocks stay out of the body.
+Below the line, the Review section carries the two answers the tier was chosen from, each with its reason, then the
+fresh reviewer's verdict, every finding with its disposition, and one usage line for each reviewer pass the Usage
+view cannot show, as the `cross-review` skill specifies; raw usage blocks stay out of the body.

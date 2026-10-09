@@ -11,7 +11,7 @@ receipt is recorded. A more specific product, domain or architecture decision wi
 A change adds its tests to the existing suites: Vitest files beside the code under `src/`, SQL tests under
 `supabase/tests/database/`, Playwright specifications under `tests/`, and the `node --test` suite under
 `scripts/lib/`. A job never adds a test script, harness, runner or test-only tool on its own: that is workflow
-machinery, admitted only under [the manual's machinery rule](../AGENTS.md#publication-and-machinery). No database
+machinery, admitted only under the machinery rule in the [`resume`](../.agents/skills/resume/SKILL.md) skill under "4. Plan". No database
 migration needs its own upgrade program. Each row names the minimum evidence, the evidence route (the cheapest
 layer that catches the failure), and the ceiling beyond which further evidence needs a named reason. A mixed
 change takes every row it touches.

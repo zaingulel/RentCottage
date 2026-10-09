@@ -14,7 +14,7 @@ on the Codex `plan-reviewer` seat before any build.
 
 ## 1. Dispatch the other family's seat as configured
 
-Read the seat file and pass its settings unchanged; the manual's model routing rule forbids raising or lowering
+Read the seat file and pass its settings unchanged; `AGENTS.md`'s model routing rule forbids raising or lowering
 them. The read-only sandbox has no network, so the prompt carries the card, body and comments, that the charter's spec lens needs,
 and the charter's own `gh` and web calls fail harmlessly. `<out>` is a directory outside the worktree.
 
@@ -79,7 +79,7 @@ claude -p --agent reviewer --permission-mode plan --output-format json \
   "Review branch <branch> against main for issue #<issue>. Still running or already scheduled, so in hand and outside your findings: <pending>." > <out>/result.json
 ```
 
-Read-only is not instruction isolation: the reviewer reads the checkout's manual, rules and skills as its charter
+Read-only is not instruction isolation: the reviewer reads the checkout's `AGENTS.md`, rules and skills as its charter
 directs, and nothing else is handed to it.
 
 ## 2. Settle the findings

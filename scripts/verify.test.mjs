@@ -1031,6 +1031,7 @@ describe("repository verification command", () => {
     ["root Prettier config", [".prettierrc.json"], "full without concurrency"],
     ["the selector itself", ["scripts/verify.mjs"], "full"],
     ["the selector tests", ["scripts/verify.test.mjs"], "full"],
+    ["the repository profile", [".agents/REPOSITORY.md"], "baseline"],
     ["board configuration", ["scripts/lib/board-config.mjs"], "baseline"],
     ["a board test", ["scripts/lib/board-rules.test.mjs"], "baseline"],
     [

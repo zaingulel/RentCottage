@@ -117,6 +117,12 @@ test("classifyDocLintPath: Codex prose surfaces join path/date scans; a skill bo
     illegalInvocations: false,
     skillMeta: false,
   });
+  assert.deepEqual(classifyDocLintPath(".agents/REPOSITORY.md"), {
+    pathRefs: true,
+    dateStamps: true,
+    illegalInvocations: false,
+    skillMeta: false,
+  });
   assert.deepEqual(classifyDocLintPath(".agents/skills/tdd/SKILL.md"), {
     pathRefs: true,
     dateStamps: true,

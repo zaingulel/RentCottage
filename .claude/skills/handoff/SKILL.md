@@ -9,7 +9,7 @@ disable-model-invocation: true
 Owner-invoked to park unfinished work. Completed work uses `closeout`.
 
 1. **Commit what exists** on the job branch with a message that says it is work in progress. Regenerate any
-   artifact the `generated artifacts` row of the Conventions table in `AGENTS.md` names and commit it with its
+   artifact the `generated artifacts` row of the Conventions table in `.agents/REPOSITORY.md` names and commit it with its
    source; the Stop and pre-commit hooks enforce it.
 2. **Prepare the draft pull-request body.** Fill
    `.github/pull_request_template.md`. Write the **Not done** section for a reader with no memory of this

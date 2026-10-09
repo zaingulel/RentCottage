@@ -9,6 +9,7 @@ cloudflare-env.d.ts
 prototype
 docs
 AGENTS.md
+.agents/REPOSITORY.md
 GLOSSARY.md
 *.docx
 

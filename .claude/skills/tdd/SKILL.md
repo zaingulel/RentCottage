@@ -26,7 +26,7 @@ an executed mutation proof with expected values from an independent oracle.
   internal rename.
 - **Deterministic wherever possible.** Seed randomness (keep draw-order parity), pin dates and fixtures, no
   wall-clock or network. Validate REAL behaviour against the real fixtures the `fixtures` row of the
-  Conventions table in `AGENTS.md` names, never a synthetic one.
+  Conventions table in `.agents/REPOSITORY.md` names, never a synthetic one.
 - **Asserts the actual promise, not a structural proxy.** For visual promises — order, placement, visibility —
   assert the RENDERED result (computed style, bounding box, `toBeVisible`), never DOM order or an attribute.
 - **Mutation-proven.** Break the thing on purpose, confirm RED, restore.

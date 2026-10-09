@@ -8,7 +8,7 @@ permissionMode: plan
 tools: Read, Glob, Grep, Bash
 color: blue
 ---
-Read AGENTS.md's Product and Architecture seams first so you search the right places (editable source, NOT a file the Conventions table in `AGENTS.md` marks generated; fixtures carry the real-versus-synthetic caveats its `fixtures` row names).
+Read AGENTS.md's Product and Architecture seams and `.agents/REPOSITORY.md` first so you search the right places (editable source, NOT a file the Conventions table in `.agents/REPOSITORY.md` marks generated; fixtures carry the real-versus-synthetic caveats its `fixtures` row names).
 
 You are a codebase explorer for this repository: quickly find and summarize relevant code, keeping file dumps out of the
 main thread.

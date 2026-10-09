@@ -4,7 +4,7 @@
 // Converts by-hand vigilance habits into a deterministic check: a dangling
 // backtick-quoted repo path (a doc citing a file that moved or was deleted,
 // CLAUDE.md's directory map going stale), a dead relative Markdown link (the
-// same rot with no backticks to catch it), a phantom operating-manual section
+// same rot with no backticks to catch it), a phantom AGENTS.md or CLAUDE.md section
 // citation (prose that reads authoritative and points nowhere), a skill instructing the model to fire a DISABLED
 // (user-invoked-only) sibling skill (the user-invoked rule in writing-for-agents'
 // SKILL-MECHANICS.md: only the human typing its name can invoke such a skill,
@@ -143,7 +143,7 @@ function main() {
   // Derived at most once per run, and only once a citation is actually found:
   // the pre-commit fixture repos arm this CLI in scratch trees that have no
   // CLAUDE.md/AGENTS.md, so an eager read would crash every clean run. When a
-  // citation IS found the manual must be readable — the throw is the fail-loud
+  // citation IS found AGENTS.md and CLAUDE.md must be readable — the throw is the fail-loud
   // path, never a silent "no headings" pass.
   let headingsByManual;
   const manualHeadings = () => {

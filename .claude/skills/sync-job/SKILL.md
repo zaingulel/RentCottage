@@ -1,0 +1,37 @@
+---
+name: sync-job
+description: Run a sync job, which copies the shared workflow files from the canonical repository into this repository. Use only when the job's card is a sync card.
+---
+
+# sync-job
+
+`AGENTS.md` owns what is shared, where it is authored and when a sync card is opened, under "Shared workflow adoption";
+this skill owns how a sync job runs, which cards it covers and how they close, how shared files are fingerprinted,
+pinned and kept, and what a repository needs before it runs the workflow.
+
+A sync card runs `node scripts/factory-sync.mjs --from <canonical checkout>` from the adopter's job worktree against a
+clean canonical checkout at its fetched `main`. That run copies everything on the canonical `main`, so one sync job
+resolves every open sync card in the adopter whose change it carried. The same run removes each file the adopter's
+committed manifest listed and the canonical no longer shares, when the adopter's copy is committed and byte for byte
+the one last synced, and prints it; anything else at such a path stops the run before it writes, naming the path. A
+card is covered when `git merge-base --is-ancestor` shows its canonical merge commit is an ancestor of the canonical
+commit the run copied from, and its acceptance criteria hold in the adopter; the job's pull request body lists each
+covered card with that evidence. After the merge, the job's own card closes as completed and closeout closes each
+covered card as not planned, with a comment naming the card that did the sync and quoting its evidence. A card whose
+change merged after the run, or whose evidence the job cannot show, stays open.
+
+**How shared files are kept.** The manifest's `canonical` repository authors each shared file under `src/` and keeps an
+installed copy at its root in the same commit, fingerprinted with `node scripts/factory-sync.mjs --write`; a test in its
+suite refuses a difference. Each repository in `adopters` holds a copy pinned at the commit its manifest records as
+`syncedFrom`. A shared file edited without its manifest hash following fails the contract test; `--write` refreshes the
+hashes, and only in the canonical repository. Shared files are real files, never symlinks, since a symlink reaches a
+Windows checkout as plain text: a skill lives in `.agents/skills/` and is copied whole to `.claude/skills/`, and each
+hook directory carries its own `.gitattributes` so hooks keep LF endings wherever line endings are converted; the
+contract test fails on a symlink, a copy that differs from its source, or a missing rule. A git hook's run permission is
+its committed file mode.
+
+**What a repository needs.** The supported profile is self-use, Claude Code plus Codex with cross-family review; nothing
+installs the workflow for a customer. It needs a private repository, the two branch rulesets with the administrator
+bypass of the required check that the direct documentation route depends on, the required `test` check, the board,
+`npm ci` for the hooks, and each runtime having trusted the repository's hooks, since a hook file a runtime has not
+trusted does not run.

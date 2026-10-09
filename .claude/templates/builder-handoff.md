@@ -53,6 +53,8 @@ Standing contract:
   run the full suite, that is the orchestrator's job after the claim converges.
 - Run the focused evidence by its actual full title and report each count separately. A command matching ZERO
   tests is a failure to report loudly, never a pass.
+- If the runtime refuses the focused command as git it cannot verify, rerun it in the form
+  `docs/TESTING-STRATEGY.md` names for a job worktree; never rename the file or leave it out of the run.
 - Follow the construction mode exactly; you cannot select, reinterpret, or downgrade it.
 - Stop and ask instead of guessing: on ambiguity about scope or acceptance, a discovery the plan did not
   anticipate, or a conflict between this handoff and the observed code, stop with the specific question, the

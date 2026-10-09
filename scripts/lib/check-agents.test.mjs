@@ -136,7 +136,7 @@ const FABLE_LINE = /^model:[^\S\n]*["']?fable["']?[^\S\n]*$/m;
 const ASTRA_LINE = /^model[^\S\n]*=[^\S\n]*["']gpt-6-astra["'][^\S\n]*$/m;
 
 // Mutation: put `fable` (or `gpt-6-astra`) on another seat, in any spelling the agent check accepts, and this goes red.
-test('the costliest models stay on the seats the manual names', () => {
+test('the costliest models stay on the seats AGENTS.md names', () => {
   const seatsWith = (dir, extension, modelLine) => readdirSync(dir)
     .filter((file) => file.endsWith(extension) && modelLine.test(readFileSync(join(dir, file), 'utf8')))
     .map((file) => file.slice(0, -extension.length))

@@ -1,5 +1,5 @@
 // doc-lint-citations.test.mjs — mutation-proof unit tests for the
-// operating-manual section-citation scan.
+// AGENTS.md and CLAUDE.md section-citation scan.
 // Run: node --test scripts/lib/doc-lint-citations.test.mjs   (or `npm run test:scripts`)
 //
 // Price tag: each doc-lint run adds one content read and a bounded heading-citation
@@ -75,7 +75,7 @@ test('extractManualHeadings: indented and closing-sequence ATX headings are pars
   );
 });
 
-test('checkHeadingCitations: a quoted citation of a non-existent manual heading is reported with file line and phrase', () => {
+test('checkHeadingCitations: a quoted citation of a non-existent AGENTS.md or CLAUDE.md heading is reported with file line and phrase', () => {
   const text = [
     'Intro line.',
     'Raise it to the owner — per CLAUDE.md\'s "Code-quality bar".',
@@ -86,7 +86,7 @@ test('checkHeadingCitations: a quoted citation of a non-existent manual heading 
   assert.deepEqual(violations, [{ manual: 'CLAUDE.md', heading: 'Code-quality bar', line: 2 }]);
 });
 
-test('checkHeadingCitations: a citation of a real manual heading is never flagged', () => {
+test('checkHeadingCitations: a citation of a real AGENTS.md or CLAUDE.md heading is never flagged', () => {
   const text = 'The bar lives in CLAUDE.md\'s "Executed test and quality bar" and binds every change.';
 
   assert.deepEqual(checkHeadingCitations(extractHeadingCitations(text), fakeManuals), []);
@@ -113,21 +113,21 @@ test('extractHeadingCitations: a trailing period inside the quotes is stripped b
   assert.deepEqual(checkHeadingCitations(extractHeadingCitations(text), fakeManuals), []);
 });
 
-test('checkHeadingCitations: each manual validates against its own heading set, never the sibling manual\'s', () => {
+test('checkHeadingCitations: each file validates against its own heading set, never the sibling file\'s', () => {
   const text = [
     'See CLAUDE.md\'s "Autonomy and owner gates".',
     'See AGENTS.md\'s "Autonomy and owner gates".',
   ].join('\n');
 
   // The fixture gives that heading to CLAUDE.md only: the AGENTS.md citation
-  // must fail even though the exact phrase exists in the other manual's set.
+  // must fail even though the exact phrase exists in the other file's set.
   assert.deepEqual(checkHeadingCitations(extractHeadingCitations(text), fakeManuals), [
     { manual: 'AGENTS.md', heading: 'Autonomy and owner gates', line: 2 },
   ]);
 });
 
-test('extractHeadingCitations: backticked-manual and possessive-free citation shapes are extracted', () => {
-  // The three shapes the real repo writes: backticked manual name with the
+test('extractHeadingCitations: backticked-file-name and possessive-free citation shapes are extracted', () => {
+  // The three shapes the real repo writes: backticked file name with the
   // possessive, no possessive at all, and both at once.
   const text = [
     'The NARRATIVE companion to `CLAUDE.md`\'s "Autonomy and owner gates".',
@@ -141,16 +141,16 @@ test('extractHeadingCitations: backticked-manual and possessive-free citation sh
     { manual: 'AGENTS.md', heading: 'Autonomy and owner gates', line: 3 },
   ]);
   // The fixture gives "Autonomy and owner gates" to CLAUDE.md only, so the
-  // widened shapes still validate against their own manual.
+  // widened shapes still validate against their own file.
   assert.deepEqual(checkHeadingCitations(extractHeadingCitations(text), fakeManuals), [
     { manual: 'AGENTS.md', heading: 'Autonomy and owner gates', line: 3 },
   ]);
 });
 
 // --- Repo-pass: the standing guard --------------------------------------------
-// Scans the real doc-lint path-ref surface against the real manuals' headings.
+// Scans the real doc-lint path-ref surface against the real AGENTS.md and CLAUDE.md headings.
 
-test('repo-pass: the real repo has zero phantom manual citations', () => {
+test('repo-pass: the real repo has zero phantom AGENTS.md or CLAUDE.md citations', () => {
   const tracked = execFileSync('git', ['ls-files'], { encoding: 'utf8', cwd: ROOT })
     .split('\n').filter(Boolean)
     .filter((rel) => fs.existsSync(path.join(ROOT, rel)));
@@ -198,7 +198,7 @@ test('repo-pass: the real repo has zero phantom manual citations', () => {
 // --- CLI wire proof ---------------------------------------------------------
 //
 // The unit tests above prove the pure module; this proves the CLI actually
-// calls it, including the lazy manual read that resolves the cited heading set.
+// calls it, including the lazy AGENTS.md and CLAUDE.md read that resolves the cited heading set.
 
 // The CLI refuses a vacuous run, so the fixture must classify at least one
 // file into every scan set.
@@ -231,7 +231,7 @@ function runCliFixture(root) {
   return spawnSync(process.execPath, ['scripts/doc-lint.mjs'], { cwd: root, encoding: 'utf8' });
 }
 
-test('doc lint ignores arbitrary identifiers but fails a phantom manual-heading citation', () => {
+test('doc lint ignores arbitrary identifiers but fails a phantom AGENTS.md or CLAUDE.md heading citation', () => {
   const root = makeCliFixture({
     'CLAUDE.md': '# Seed\n\n## Coding standards\n\nThe seeded operating manual.\n',
     'docs/C.md': 'An arbitrary [M999] marker has no registry meaning.\n',
