@@ -40,6 +40,8 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
+  // Two local checks share one machine, which measured about three times slower than a hosted runner.
+  timeout: process.env.CI ? 30_000 : 90_000,
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
   use: {
     baseURL: workerPreview ? workerOrigin : nextOrigin,
