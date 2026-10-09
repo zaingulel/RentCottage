@@ -1858,6 +1858,7 @@ CREATE OR REPLACE FUNCTION "public"."public_cottage_inventory_units"("target_sch
       on date_prices.schedule_revision_id = target_schedule_revision_id
       and date_prices.unit_kind = units.unit_kind and date_prices.unit_id = units.unit_id
       and date_prices.service_day = days.service_day
+      and date_prices.service_day between from_day and to_day
     left join public.cottage_inventory_weekday_price_overrides weekday_prices
       on weekday_prices.schedule_revision_id = target_schedule_revision_id
       and weekday_prices.unit_kind = units.unit_kind and weekday_prices.unit_id = units.unit_id
@@ -1869,6 +1870,7 @@ CREATE OR REPLACE FUNCTION "public"."public_cottage_inventory_units"("target_sch
       on availability.schedule_revision_id = target_schedule_revision_id
       and availability.unit_kind = units.unit_kind and availability.unit_id = units.unit_id
       and availability.service_day = days.service_day
+      and availability.service_day between from_day and to_day
       and availability.state = 'open'::public.cottage_inventory_availability_state
   )
   select unit_days.service_day, unit_days.unit_kind, unit_days.unit_position, unit_days.name,
