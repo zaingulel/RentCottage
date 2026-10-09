@@ -33,6 +33,6 @@ semantics. Competitors are interface prior art only and never override RentCotta
 Codex prompts before a browser run under `.codex/rules/playwright.rules`, pinned by
 `scripts/lib/codex-browser-policy.test.mjs`.
 
-On Claude Code and Herdr a job worktree lives in the root checkout's gitignored `.claude/worktrees/`, created by `git
-worktree add` or `herdr worktree create`; on Codex it is the Codex-managed worktree or a sibling worktree beside the
-repository. The current adopters of the shared workflow are Flowgauge and RentCottage.
+On Claude Code a job worktree lives in the root checkout's gitignored `.claude/worktrees/`, created by
+`git worktree add`; on Codex it is the Codex-managed worktree or a sibling worktree beside the repository. The current
+adopters of the shared workflow are Flowgauge and RentCottage.
