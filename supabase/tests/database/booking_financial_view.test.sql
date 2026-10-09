@@ -180,6 +180,8 @@ select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-00000000
 select throws_ok($$select public.get_booking_financial_view('RC-REQ-0000000000001001','platform_administrator')$$,'42501',null,'administrator audit requires strong authentication');
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","aal":"aal2"}',true);
 select public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003851','PRIVATE compensation reason','{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}');
+select is(jsonb_array_length(public.search_administrator_booking_queue('refunds',null,null,null,null,null)->'rows'),1,'refund queue lists the requested exception');
+select ok(public.search_administrator_booking_queue('refunds',null,null,null,null,null)::text not like '%PRIVATE%','refund queue never carries the administrator reason');
 select is(public.get_booking_financial_view('RC-REQ-0000000000001001','platform_administrator')#>>'{audit,refunds,0,reason}','PRIVATE compensation reason','administrator retains the attributed approval reason');
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001001","aal":"aal1"}',true);
@@ -201,6 +203,7 @@ select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-00000000
 select is(public.get_booking_financial_view('RC-REQ-0000000000001001','platform_administrator')#>>'{audit,cancellation,reason}','PRIVATE owner reason','administrator can inspect retained cancellation reason');
 select is((select count(distinct notice->>'recipientRole') from jsonb_array_elements(public.get_booking_financial_view('RC-REQ-0000000000001001','platform_administrator')->'notifications') notice where notice->>'kind'='preparation_reminder'),2::bigint,'administrator financial history exposes both participant reminder states');
 select is(public.get_administrator_booking_request_payment_history('RC-REQ-0000000000001001')#>>'{current,paymentStatus}','cancelled','administrator current status reflects cancellation rather than capture processing');
+select is(public.search_administrator_booking_queue('bookings',null,null,null,null,null)#>>'{rows,0,state}','cancelled','booking queue shows the cancelled Confirmed Booking');
 select is((select event->>'reasonCode' from jsonb_array_elements(public.get_administrator_booking_request_payment_history('RC-REQ-0000000000001001')->'events') event where event->>'toState'='cancelled'),'cottage_owner-cancellation','administrator history retains the finite cancellation actor category');
 reset role;
 select is((select operation.current_outcome from public.payment_provider_operations operation join public.booking_confirmations confirmation on confirmation.capture_operation_id=operation.id where confirmation.booking_request_id='60000000-0000-4000-8000-000000001001'),'succeeded','cancelled history does not rewrite the original verified capture outcome');

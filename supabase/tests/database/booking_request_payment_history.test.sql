@@ -655,5 +655,19 @@ select is((select result#>>'{events,-1,providerRequestId}' from foreign_referenc
 select ok((select result::text not like '%'||source.provider_request_id||'%' and result::text not like '%'||source.provider_reference||'%'
  from internal_reference_display,internal_reference_source source),'raw accepted provider references remain private');
 
+-- The request queue derives its state exactly as the support projection does.
+create temp table queue_request_rows as select count(*) value from public.booking_requests;
+grant select on queue_request_rows to authenticated;
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001370","role":"authenticated","aal":"aal2"}',true);
+set local role authenticated;
+create temp table queue_partition as select name,public.search_administrator_booking_queue(name,null,null,null,null,null) result from unnest(array['requests','bookings']) name;
+select is((select count(*) from queue_partition,jsonb_array_elements(result->'rows') listed where listed->>'reference' in ('RC-REQ-0000000000000137','RC-REQ-0000000000001001')),2::bigint,'each fixture Booking Request is listed in exactly one of the two queues');
+select is(listed->>'state',coalesce(projection.history#>>'{current,paymentStatus}',projection.history#>>'{current,requestStatus}'),'request queue state equals the support projection: '||(listed->>'reference'))
+from queue_partition,jsonb_array_elements(result->'rows') listed
+cross join lateral (select public.get_administrator_booking_request_payment_history(listed->>'reference') history) projection
+where name='requests' and listed->>'reference' in ('RC-REQ-0000000000000137','RC-REQ-0000000000001001');
+select is((select sum((result->>'total')::bigint) from queue_partition)::bigint,(select value from queue_request_rows),'request and booking queues partition every Booking Request');
+reset role;
+
 select * from finish();
 rollback;

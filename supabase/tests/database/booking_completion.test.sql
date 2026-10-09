@@ -171,6 +171,21 @@ create function pg_temp.source_history() returns jsonb language sql as $$
  'observations',(select jsonb_agg(to_jsonb(o) order by id) from public.payment_provider_observations o),
  'paymentHistory',(select jsonb_agg(to_jsonb(h) order by id) from public.booking_request_payment_history h));
 $$;
+create function pg_temp.queue(target_queue text,target_state text default null,target_from date default null,target_through date default null) returns jsonb language plpgsql as $$ begin
+  return public.search_administrator_booking_queue(target_queue,target_state,target_from,target_through,null,null);
+end $$;
+-- The oracle reads the source tables as the test owner; API roles cannot.
+create function pg_temp.queue_source_facts() returns jsonb language sql security definer as $$
+ select jsonb_build_object(
+ 'incidentRows',(select count(*) from public.booking_incidents)+(select count(*) from public.booking_cancellation_incidents),
+ 'confirmedOn',(select (confirmed_at at time zone 'Asia/Baghdad')::date from public.booking_confirmations),
+ 'incidentOn',(select (max(recorded_at) at time zone 'Asia/Baghdad')::date from public.booking_incidents),
+ 'requestedOn',(select (created_at at time zone 'Asia/Baghdad')::date from public.booking_requests));
+$$;
+create function pg_temp.queue_state_counts_match_totals() returns boolean language sql as $$
+ select bool_and((select sum(counted.value::bigint) from jsonb_each_text(result->'stateCounts') counted)=(result->>'total')::bigint)
+ from unnest(array['requests','bookings','refunds','incidents']) name cross join lateral (select pg_temp.queue(name) result) queue;
+$$;
 select no_plan();
 select is(public.booking_completion_is_due('2101-01-02 23:00+00','2101-01-02 22:59:59.999999+00'),false,'completion and maturity are not due one microsecond before original end');
 select is(public.booking_completion_is_due('2101-01-02 23:00+00','2101-01-02 23:00+00'),true,'completion and maturity become due exactly at original end');
@@ -208,6 +223,36 @@ select throws_ok($$select public.commit_booking_cancellation('60000000-0000-4000
 select pg_temp.actor('10000000-0000-4000-8000-000000003801','aal2');
 select throws_ok($$select public.get_booking_no_show_facts('60000000-0000-4000-8000-000000001001')$$,'RC409',null,'completion conflicts with later no-show');
 select lives_ok($$select public.record_booking_incident('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003902','platform_administrator','safety','Private later incident')$$,'completion permits a later restricted incident');
+select is(pg_temp.queue('bookings')->>'total','1','booking queue holds the one Confirmed Booking');
+select is(pg_temp.queue('bookings')#>>'{rows,0,state}','completed','booking queue shows the completed lifecycle status');
+select is(pg_temp.queue('bookings')->'stateCounts','{"confirmed":0,"incident_pending":0,"completed":1,"no_show":0,"cancelled":0}'::jsonb,'booking queue counts every lifecycle status, zeros included');
+select is(pg_temp.queue('incidents')->>'total','1','incident queue holds the one lifecycle incident');
+select is((pg_temp.queue('incidents')#>'{rows,0}')-array['id','at'],'{"reference":"RC-REQ-0000000000001001","state":"completed","source":"lifecycle","category":"safety"}'::jsonb,'incident row carries its source, category and the booking status, and no narrative');
+select is(pg_temp.queue('requests')->>'total','0','a Confirmed Booking leaves the Booking Request queue');
+select is(pg_temp.queue('bookings',null,(pg_temp.queue_source_facts()->>'confirmedOn')::date,(pg_temp.queue_source_facts()->>'confirmedOn')::date)->>'total','1','booking queue includes the Baghdad day of confirmation');
+select is(pg_temp.queue('bookings',null,null,(pg_temp.queue_source_facts()->>'confirmedOn')::date-1)->>'total','0','booking queue window ending the day before confirmation is empty');
+select is(pg_temp.queue('bookings',null,(pg_temp.queue_source_facts()->>'confirmedOn')::date+1),'{"queue":"bookings","rows":[],"total":0,"stateCounts":{"confirmed":0,"incident_pending":0,"completed":0,"no_show":0,"cancelled":0},"nextCursor":null}'::jsonb,'booking queue window starting the day after confirmation has no rows and zero counts');
+select is(pg_temp.queue('incidents',null,(pg_temp.queue_source_facts()->>'incidentOn')::date+1),'{"queue":"incidents","rows":[],"total":0,"stateCounts":{"incident_pending":0,"completed":0,"no_show":0,"cancelled":0},"nextCursor":null}'::jsonb,'incident queue window starting the day after the incident has no rows and zero counts');
+select ok(pg_temp.queue_state_counts_match_totals(),'every queue''s state counts sum to its unfiltered total after a completed booking takes an incident');
+select is((pg_temp.queue('incidents')->>'total')::bigint,(pg_temp.queue_source_facts()->>'incidentRows')::bigint,'incident queue total equals the stored incident rows after a completed booking takes an incident');
+savepoint queue_paging;
+reset role;
+insert into public.booking_incidents(id,booking_request_id,booking_confirmation_id,customer_user_id,owner_user_id,profile_id,command_id,command_fingerprint,actor_user_id,actor_role,category,narrative,recorded_at)
+select gen_random_uuid(),incidents.booking_request_id,incidents.booking_confirmation_id,incidents.customer_user_id,incidents.owner_user_id,incidents.profile_id,gen_random_uuid(),incidents.command_fingerprint,incidents.actor_user_id,incidents.actor_role,incidents.category,incidents.narrative,incidents.recorded_at+make_interval(secs=>later)
+from public.booking_incidents incidents cross join generate_series(1,26) later;
+set local role authenticated;
+create temp table queue_first_page as select pg_temp.queue('incidents') result;
+create temp table queue_second_page as select public.search_administrator_booking_queue('incidents',null,null,null,(result#>>'{nextCursor,at}')::timestamptz,(result#>>'{nextCursor,id}')::uuid) result from queue_first_page;
+select is((select jsonb_array_length(result->'rows') from queue_first_page),25,'first incident queue page is bounded to 25');
+select is((select result->>'total' from queue_first_page),'27','first incident queue page reports the full total');
+select is((select jsonb_typeof(result->'nextCursor') from queue_first_page),'object','first incident queue page exposes a continuation cursor');
+select is((select jsonb_array_length(result->'rows') from queue_second_page),2,'second incident queue page holds the remaining rows');
+select is((select result->>'total' from queue_second_page),'27','continuation retains the full incident total');
+select is((select result->'nextCursor' from queue_second_page),'null'::jsonb,'last incident queue page has no continuation');
+select is((select count(distinct incident->>'id') from (select result from queue_first_page union all select result from queue_second_page) pages,jsonb_array_elements(pages.result->'rows') incident),27::bigint,'the two incident queue pages share no row');
+rollback to queue_paging;
+select pg_temp.actor('10000000-0000-4000-8000-000000003801','aal2');
+set local role authenticated;
 select pg_temp.actor('10000000-0000-4000-8000-000000001002');
 select is(public.get_booking_lifecycle('RC-REQ-0000000000001001','customer')->>'status','completed','later incident preserves completed outcome');
 select ok(not public.get_booking_lifecycle('RC-REQ-0000000000001001','customer') ? 'incidents','participant lifecycle excludes restricted narrative');
@@ -230,6 +275,13 @@ select ok(not public.get_booking_lifecycle('RC-REQ-0000000000001001','cottage_ow
 select pg_temp.actor('10000000-0000-4000-8000-000000003801','aal2');
 select throws_ok($$select public.get_booking_no_show_facts('60000000-0000-4000-8000-000000001001')$$,'RC409',null,'incident-first prevents no-show finalization');
 select is(public.get_booking_lifecycle('RC-REQ-0000000000001001','platform_administrator')#>>'{incidents,0,narrative}','Private owner incident','administrator receives restricted original narrative');
+select is(pg_temp.queue('bookings')#>>'{rows,0,state}','incident_pending','booking queue shows a booking with an open incident');
+select is(pg_temp.queue('incidents','incident_pending')->>'total','1','incident queue filters by the booking status');
+select is(pg_temp.queue('incidents','incident_pending')#>>'{rows,0,category}','property_damage','incident queue row carries the owner incident category');
+select is(pg_temp.queue('incidents','completed')->>'total','0','incident queue state filter excludes other booking statuses');
+select is(pg_temp.queue('incidents','completed')#>>'{stateCounts,incident_pending}','1','incident queue counts states before applying the state filter');
+select ok(pg_temp.queue_state_counts_match_totals(),'every queue''s state counts sum to its unfiltered total while an incident is pending');
+select is((pg_temp.queue('incidents')->>'total')::bigint,(pg_temp.queue_source_facts()->>'incidentRows')::bigint,'incident queue total equals the stored incident rows while an incident is pending');
 reset role;
 select ok((select (customer_user_id,owner_user_id,profile_id)=('10000000-0000-4000-8000-000000001002'::uuid,'10000000-0000-4000-8000-000000001001'::uuid,'20000000-0000-4000-8000-000000001001'::uuid) from public.booking_incidents),'incident participants and cottage derive from the booking');
 set local role service_role;
@@ -246,6 +298,9 @@ select is(public.commit_booking_no_show('60000000-0000-4000-8000-000000001001','
 create temp table no_show_receipt as select public.commit_booking_no_show('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003904','Did not arrive',pg_temp.no_show_decision()) value;
 select is((select value->'refundObligation' from no_show_receipt),'{"bookingPriceFils":0,"bookingServiceFeeFils":0}'::jsonb,'no-show preserves the literal zero standard refund');
 select is(public.get_booking_lifecycle('RC-REQ-0000000000001001','platform_administrator')#>>'{noShow,reason}','Did not arrive','administrator sees no-show attribution in restricted lifecycle section');
+select is(pg_temp.queue('bookings')#>>'{rows,0,state}','no_show','booking queue shows the no-show outcome');
+select ok(pg_temp.queue_state_counts_match_totals(),'every queue''s state counts sum to its unfiltered total after a no-show');
+select is((pg_temp.queue('incidents')->>'total')::bigint,(pg_temp.queue_source_facts()->>'incidentRows')::bigint,'incident queue total equals the stored incident rows after a no-show');
 select lives_ok($$select public.record_booking_incident('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003905','platform_administrator','conduct','Private late incident')$$,'no-show-first accepts later incident');
 select is(public.commit_booking_no_show('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003904','Did not arrive','{}'),(select value from no_show_receipt),'same no-show command replays even after a later incident');
 select throws_ok($$select public.commit_booking_no_show('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003904','Different reason','{}')$$,'RC409',null,'no-show conflicting command reuse fails');
@@ -406,6 +461,11 @@ select lives_ok($$select public.commit_booking_cancellation('60000000-0000-4000-
 select pg_temp.actor('10000000-0000-4000-8000-000000003801','aal2');
 select is(public.get_booking_lifecycle('RC-REQ-0000000000001001','platform_administrator')#>>'{incidents,0,narrative}','Unsafe property','administrator projection includes preserved cancellation incident');
 select is(public.get_booking_lifecycle('RC-REQ-0000000000001001','platform_administrator')#>>'{incidents,0,source}','cancellation','administrator projection identifies cancellation incident source');
+select is(pg_temp.queue('bookings')#>>'{rows,0,state}','cancelled','booking queue shows the cancelled booking');
+select is(pg_temp.queue('incidents')->>'total','1','incident queue holds the cancellation incident');
+select is((pg_temp.queue('incidents')#>'{rows,0}')-array['id','at'],'{"reference":"RC-REQ-0000000000001001","state":"cancelled","source":"cancellation","category":null}'::jsonb,'owner cancellation incident row names its source and has no category');
+select ok(pg_temp.queue_state_counts_match_totals(),'every queue''s state counts sum to its unfiltered total after an owner cancellation');
+select is((pg_temp.queue('incidents')->>'total')::bigint,(pg_temp.queue_source_facts()->>'incidentRows')::bigint,'incident queue total equals the stored incident rows after an owner cancellation');
 reset role;
 set local role service_role;
 select is((select count(*) from public.list_due_booking_completions(50)),0::bigint,'full-refund cancellation has no completion or payout maturity');
@@ -417,6 +477,14 @@ select is((select count(*) from public.booking_confirmations),0::bigint,'unconfi
 select pg_temp.actor('10000000-0000-4000-8000-000000001002');
 set local role authenticated;
 select throws_ok($$select public.get_booking_lifecycle('RC-REQ-0000000000001001','customer')$$,'RC409',null,'unconfirmed source cannot fabricate confirmed lifecycle');
+select pg_temp.actor('10000000-0000-4000-8000-000000003801','aal2');
+select is(pg_temp.queue('requests')->>'total','1','an unconfirmed request stays in the Booking Request queue');
+select is(pg_temp.queue('bookings')->>'total','0','an unconfirmed request is not a Confirmed Booking');
+select is(pg_temp.queue('bookings','completed')->>'total','0','a booking state filter never derives a lifecycle for an unconfirmed request');
+select is(pg_temp.queue('requests',null,(pg_temp.queue_source_facts()->>'requestedOn')::date+1),'{"queue":"requests","rows":[],"total":0,"stateCounts":{"pending":0,"processing":0,"payment-required":0,"capture-processing":0,"declined":0,"withdrawn":0,"expired":0,"cancelled":0},"nextCursor":null}'::jsonb,'request queue window starting the day after the request has no rows and zero counts');
+select ok(pg_temp.queue_state_counts_match_totals(),'every queue''s state counts sum to its unfiltered total for an unconfirmed request');
+select is((pg_temp.queue('incidents')->>'total')::bigint,(pg_temp.queue_source_facts()->>'incidentRows')::bigint,'incident queue total equals the stored incident rows for an unconfirmed request');
+select pg_temp.actor('10000000-0000-4000-8000-000000001002');
 reset role;
 rollback to before_fixture;
 -- Future and in-progress purchased ranges exercise real commit guards with valid source revisions.
@@ -504,6 +572,15 @@ insert into public.booking_request_payment_required_expiry_work(id,booking_reque
 set local role service_role;
 select is((select count(*) from public.list_due_booking_completions(50)),0::bigint,'cancellation does not bypass current quarantine');
 select throws_ok($$select public.commit_booking_completion_maturity('60000000-0000-4000-8000-000000001001','stale')$$,'RC409',null,'quarantined cancellation cannot mature directly');
+reset role;
+select pg_temp.actor('10000000-0000-4000-8000-000000003801','aal2');
+set local role authenticated;
+select is(pg_temp.queue('requests')->>'total','1','a quarantined cancelled confirmation is listed as a Booking Request');
+select is(pg_temp.queue('requests')#>>'{rows,0,reference}','RC-REQ-0000000000001001','the quarantined Booking Request keeps its reference');
+select is(pg_temp.queue('bookings')->>'total','0','a quarantined cancelled confirmation is not a Confirmed Booking');
+select ok(pg_temp.queue_state_counts_match_totals(),'every queue''s state counts sum to its unfiltered total under a current quarantine');
+select is((pg_temp.queue('incidents')->>'total')::bigint,(pg_temp.queue_source_facts()->>'incidentRows')::bigint,'incident queue total equals the stored incident rows under a current quarantine');
+select pg_temp.actor('10000000-0000-4000-8000-000000001002');
 reset role;
 rollback to valid_source;
 
