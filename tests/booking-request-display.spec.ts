@@ -305,7 +305,11 @@ test("Customer Booking Request status sits in the record page column under the h
   }
   await mountBookingRequestDisplay(page, testInfo);
 
-  for (const locale of ["en", "ar", "ckb"] as const) {
+  for (const [locale, title] of [
+    ["en", "Booking Request status"],
+    ["ar", "حالة طلب الحجز"],
+    ["ckb", "دۆخی داواکاری حجز"],
+  ] as const) {
     await page.evaluate((input) => window.renderBookingRequestDisplay(input), {
       locale,
       role: "customer" as const,
@@ -313,15 +317,32 @@ test("Customer Booking Request status sits in the record page column under the h
     });
     await expect(page.locator("html")).toHaveAttribute("lang", locale);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    // The language attribute changes before the page renders, so the title is
+    // what shows this language's content is the one being measured.
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(title);
     await page.evaluate(() => document.fonts.ready);
+    const valueOffsetFromLabel = expect.poll(() =>
+      page.evaluate((stacked) => {
+        const fact = document.querySelector(
+          "main.page .customer-booking-request-status .fact-list > div",
+        );
+        const label = fact?.querySelector("dt")?.getBoundingClientRect();
+        const value = fact?.querySelector("dd")?.getBoundingClientRect();
+        if (!label || !value)
+          throw new Error("Booking Request fact list is missing");
+        return value.top - (stacked ? label.bottom : label.top);
+      }, testInfo.project.name === "mobile"),
+    );
+    if (testInfo.project.name === "mobile") {
+      await valueOffsetFromLabel.toBeGreaterThanOrEqual(0);
+    } else {
+      await valueOffsetFromLabel.toBeCloseTo(0, 0);
+    }
     const measured = await page.evaluate(() => {
       const column = document.querySelector("main.page");
       const card = column?.querySelector(".customer-booking-request-status");
       const followUp = column?.querySelector(".request-follow-up");
-      const fact = card?.querySelector(".fact-list > div");
-      const label = fact?.querySelector("dt")?.getBoundingClientRect();
-      const value = fact?.querySelector("dd")?.getBoundingClientRect();
-      if (!column || !card || !followUp || !label || !value)
+      if (!column || !card || !followUp)
         throw new Error("Booking Request record page column is missing");
       const columnBox = column.getBoundingClientRect();
       column.classList.remove("page-record");
@@ -337,16 +358,8 @@ test("Customer Booking Request status sits in the record page column under the h
         cardTop: card.getBoundingClientRect().top,
         cardWidth: card.getBoundingClientRect().width,
         followUpWidth: followUp.getBoundingClientRect().width,
-        labelTop: label.top,
-        labelBottom: label.bottom,
-        valueTop: value.top,
       };
     });
-    if (testInfo.project.name === "mobile") {
-      expect(measured.valueTop).toBeGreaterThanOrEqual(measured.labelBottom);
-    } else {
-      expect(measured.valueTop).toBeCloseTo(measured.labelTop, 0);
-    }
     const columnWidth = Math.min(measured.available - 36, 760);
     expect(measured.columnWidth).toBeCloseTo(columnWidth, 0);
     expect(measured.defaultWidth).toBeCloseTo(

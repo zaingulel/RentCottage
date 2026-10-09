@@ -379,7 +379,8 @@ test("a verified Customer double-submit creates one Pending request and one mini
     const secondReference = await submitAnotherRequest("ckb");
     await page.goto(`/ckb/booking-requests/${secondReference}`);
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-    await expect(page.locator(".status-banner")).toContainText("چاوەڕێ");
+    // The sentence starts with the label's letters, so the label is asserted together with the sentence's first word.
+    await expect(page.locator(".status-banner")).toContainText("چاوەڕێچاوەڕێی");
     await page
       .getByRole("button", { name: "کشاندنەوەی داواکاری چاوەڕێ" })
       .click();
