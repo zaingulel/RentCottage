@@ -312,7 +312,8 @@ its own; the block it sits in sets the space around it.
   `.action-text` link are smaller. Three controls outside those classes are smaller as well: above the `phone`
   breakpoint the site header's account and support pills are `2.5rem` tall and its language links `2rem`, and the
   choose-file button inside a file field is `2.25rem`. The search form's Booking Period filters are
-  `.action-compact` toggles that `.booking-period-defaults .action-toggle` sets to `2.4rem`.
+  `.action-compact` toggles; before dates are chosen, `.booking-period-defaults .action-toggle` sets them to
+  `2.4rem`.
 - Status and errors are announced through `ActionFeedback`, which renders `role="status"` for success and
   `role="alert"` for errors.
 - No new interaction ships without a visible focus state.
