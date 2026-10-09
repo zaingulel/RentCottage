@@ -249,6 +249,10 @@ Anything else is a token.
   not-started steps, so no state is conveyed by colour alone. The Customer Booking Request status page shows the
   steps, and a Customer's Confirmed Booking page shows them all completed inside `.booking-request-progress-card`
   above the Confirmed Booking details. States are derived by `customerBookingRequestProgress` and never stored.
+- Results paging: `nav.results-paging`, named by `aria-label`, follows a paged list of results and holds only
+  secondary content-width `ActionLink`s at the inline end: one back to the first results on a continued page, then
+  one to the next results when more exist. Paging continues from the last result shown, so it has no page numbers
+  and no total, and the `nav` is omitted when neither link applies.
 - A new button, link-styled action, form field, checkbox, radio button, option group, disclosure or submit
   feedback reuses these. A pattern they lack is added there, not built inside a feature component.
 

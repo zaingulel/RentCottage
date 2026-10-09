@@ -47,8 +47,9 @@ describe("PublicCottageResults", () => {
     render(
       <PublicCottageResults
         locale="en"
-        result={{ status: "loaded", cottages: [cottage] }}
+        result={{ status: "loaded", cottages: [cottage], nextAfter: null }}
         query={query}
+        continued={false}
         queryString="guests=4"
       />,
     );
@@ -77,8 +78,9 @@ describe("PublicCottageResults", () => {
       render(
         <PublicCottageResults
           locale={locale}
-          result={{ status: "loaded", cottages: [cottage] }}
+          result={{ status: "loaded", cottages: [cottage], nextAfter: null }}
           query={query}
+          continued={false}
           queryString=""
         />,
       );
@@ -115,8 +117,9 @@ describe("PublicCottageResults", () => {
       const { unmount } = render(
         <PublicCottageResults
           locale={locale}
-          result={{ status: "loaded", cottages: [cottage] }}
+          result={{ status: "loaded", cottages: [cottage], nextAfter: null }}
           query={query}
+          continued={false}
           queryString=""
         />,
       );
@@ -148,8 +151,9 @@ describe("PublicCottageResults", () => {
     render(
       <PublicCottageResults
         locale="en"
-        result={{ status: "loaded", cottages: [unpriced] }}
+        result={{ status: "loaded", cottages: [unpriced], nextAfter: null }}
         query={query}
+        continued={false}
         queryString=""
       />,
     );
@@ -243,8 +247,9 @@ describe("PublicCottageResults", () => {
     render(
       <PublicCottageResults
         locale="en"
-        result={{ status: "loaded", cottages: [result] }}
+        result={{ status: "loaded", cottages: [result], nextAfter: null }}
         query={query}
+        continued={false}
         queryString={queryString}
       />,
     );
@@ -277,5 +282,139 @@ describe("PublicCottageResults", () => {
       "href",
       "/en/cottages/garden-house?" + queryString,
     );
+  });
+
+  it("offers the next and first results with the search preserved in every launch language", () => {
+    const after = "cottage-0123456789abcdef0123456789abcdef";
+    const search = "from=2026-09-22&to=2026-09-23&guests=4";
+    for (const [locale, label, next, first] of [
+      ["en", "Results pages", "Next results", "Back to first results"],
+      ["ar", "صفحات النتائج", "النتائج التالية", "العودة إلى أول النتائج"],
+      [
+        "ckb",
+        "لاپەڕەکانی ئەنجام",
+        "ئەنجامەکانی دواتر",
+        "گەڕانەوە بۆ یەکەم ئەنجامەکان",
+      ],
+    ] as const) {
+      const { unmount } = render(
+        <PublicCottageResults
+          locale={locale}
+          result={{ status: "loaded", cottages: [cottage], nextAfter: after }}
+          query={query}
+          queryString={search}
+          continued
+        />,
+      );
+      const paging = screen.getByRole("navigation", { name: label });
+      expect(paging).toHaveClass("results-paging");
+      const links = within(paging).getAllByRole("link");
+      expect(links.map((link) => link.textContent)).toEqual([first, next]);
+      expect(links[0]).toHaveAttribute("href", `/${locale}/results?${search}`);
+      expect(links[1]).toHaveAttribute(
+        "href",
+        `/${locale}/results?${search}&after=${after}`,
+      );
+      for (const link of links) {
+        expect(link).toHaveClass("action-secondary", "action-content");
+      }
+      expect(
+        screen
+          .getAllByRole("link")
+          .map((link) => link.getAttribute("href"))
+          .filter((href) => href?.includes("/cottages/")),
+      ).toEqual([`/${locale}/cottages/garden-house?${search}`]);
+      unmount();
+    }
+
+    const firstPage = render(
+      <PublicCottageResults
+        locale="en"
+        result={{ status: "loaded", cottages: [cottage], nextAfter: after }}
+        query={query}
+        queryString={search}
+        continued={false}
+      />,
+    );
+    expect(
+      within(screen.getByRole("navigation")).getAllByRole("link"),
+    ).toHaveLength(1);
+    expect(
+      screen.getByRole("link", { name: "Next results" }),
+    ).toBeInTheDocument();
+    firstPage.unmount();
+
+    render(
+      <PublicCottageResults
+        locale="en"
+        result={{ status: "loaded", cottages: [cottage], nextAfter: null }}
+        query={query}
+        queryString={search}
+        continued
+      />,
+    );
+    expect(
+      within(screen.getByRole("navigation")).getAllByRole("link"),
+    ).toHaveLength(1);
+    expect(
+      screen.getByRole("link", { name: "Back to first results" }),
+    ).toHaveAttribute("href", `/en/results?${search}`);
+  });
+
+  it("says when a continued page has nothing further", () => {
+    const search = "from=2026-09-22&to=2026-09-23&guests=4";
+    for (const [locale, pastEnd, empty, first] of [
+      [
+        "en",
+        "There are no more cottages for this search.",
+        "No cottage matches every requested Service Day and selected filter.",
+        "Back to first results",
+      ],
+      [
+        "ar",
+        "لا توجد بيوت أخرى لهذا البحث.",
+        "لا يوجد بيت يطابق كل يوم مطلوب وجميع المرشحات المحددة.",
+        "العودة إلى أول النتائج",
+      ],
+      [
+        "ckb",
+        "هیچ کۆتێجێکی تر بۆ ئەم گەڕانە نییە.",
+        "هیچ کۆتێجێک لەگەڵ هەموو ڕۆژە داواکراوەکان و پاڵاوتە دیاریکراوەکان ناگونجێت.",
+        "گەڕانەوە بۆ یەکەم ئەنجامەکان",
+      ],
+    ] as const) {
+      const { unmount } = render(
+        <PublicCottageResults
+          locale={locale}
+          result={{ status: "loaded", cottages: [], nextAfter: null }}
+          query={query}
+          queryString={search}
+          continued
+        />,
+      );
+      expect(screen.getByText(pastEnd)).toHaveClass("empty-results");
+      expect(screen.queryByText(empty)).toBeNull();
+      expect(screen.getByRole("link", { name: first })).toHaveAttribute(
+        "href",
+        `/${locale}/results?${search}`,
+      );
+      unmount();
+    }
+
+    render(
+      <PublicCottageResults
+        locale="en"
+        result={{ status: "loaded", cottages: [], nextAfter: null }}
+        query={query}
+        queryString={search}
+        continued={false}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "No cottage matches every requested Service Day and selected filter.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole("navigation")).toBeNull();
   });
 });

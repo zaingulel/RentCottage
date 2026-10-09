@@ -1,7 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
+import {
+  serializeCottageResultsQuery,
+  type CottageDiscoveryQuery,
+} from "@/cottage-discovery/discovery-query";
 import { fromPriceIqd } from "@/cottage-discovery/from-price";
 import type { CottageDiscoveryResult } from "@/cottage-discovery/supabase-cottage-discovery";
 import { formatIqd, formatServiceDay } from "@/i18n/format";
@@ -25,6 +28,10 @@ const copy = {
     from: "ابتداءً من",
     fromNote:
       "أقل سعر لمناوبة واحدة متاحة في تواريخك، دون احتساب رسوم خدمة الحجز.",
+    pagingLabel: "صفحات النتائج",
+    next: "النتائج التالية",
+    first: "العودة إلى أول النتائج",
+    pastEnd: "لا توجد بيوت أخرى لهذا البحث.",
   },
   ckb: {
     title: "کۆتێجە بەردەستەکان",
@@ -44,6 +51,10 @@ const copy = {
     from: "دەستپێک لە",
     fromNote:
       "کەمترین نرخ بۆ یەک شیفتی بەردەست لە ڕۆژەکانی تۆ، بەبێ کرێی خزمەتگوزاریی حجز.",
+    pagingLabel: "لاپەڕەکانی ئەنجام",
+    next: "ئەنجامەکانی دواتر",
+    first: "گەڕانەوە بۆ یەکەم ئەنجامەکان",
+    pastEnd: "هیچ کۆتێجێکی تر بۆ ئەم گەڕانە نییە.",
   },
   en: {
     title: "Available cottages",
@@ -63,6 +74,10 @@ const copy = {
     from: "From",
     fromNote:
       "Lowest price for one available shift on your dates, excluding the Booking Service Fee.",
+    pagingLabel: "Results pages",
+    next: "Next results",
+    first: "Back to first results",
+    pastEnd: "There are no more cottages for this search.",
   },
 } as const;
 
@@ -71,11 +86,13 @@ export function PublicCottageResults({
   result,
   queryString,
   query,
+  continued,
 }: {
   locale: Locale;
   result: CottageDiscoveryResult;
   queryString: string;
   query: CottageDiscoveryQuery;
+  continued: boolean;
 }) {
   const messages = copy[locale];
   return (
@@ -92,7 +109,9 @@ export function PublicCottageResults({
           {messages.unavailable}
         </p>
       ) : result.cottages.length === 0 ? (
-        <p className="empty-results">{messages.empty}</p>
+        <p className="empty-results">
+          {continued ? messages.pastEnd : messages.empty}
+        </p>
       ) : (
         <section className="results-grid" aria-label={messages.title}>
           {result.cottages.map((cottage) => {
@@ -185,6 +204,28 @@ export function PublicCottageResults({
           })}
         </section>
       )}
+      {result.status === "loaded" && (continued || result.nextAfter) ? (
+        <nav className="results-paging" aria-label={messages.pagingLabel}>
+          {continued ? (
+            <ActionLink
+              kind="secondary"
+              width="content"
+              href={`/${locale}/results?${queryString}`}
+            >
+              {messages.first}
+            </ActionLink>
+          ) : null}
+          {result.nextAfter ? (
+            <ActionLink
+              kind="secondary"
+              width="content"
+              href={`/${locale}/results?${serializeCottageResultsQuery(query, result.nextAfter)}`}
+            >
+              {messages.next}
+            </ActionLink>
+          ) : null}
+        </nav>
+      ) : null}
     </main>
   );
 }
