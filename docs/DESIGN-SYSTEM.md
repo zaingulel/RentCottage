@@ -41,8 +41,10 @@ the code keeps them.
     Normal-size text in these three text tokens reaches 4.5:1 on every surface it sits on, which
     [globals.test.ts](../src/app/globals.test.ts) checks against a list of surfaces, so new work that puts such
     text on another surface adds that surface to the test.
-  - `--ink-on-dark` is the text colour on every dark surface, the green panels and buttons and the shaded hero
-    photograph alike. `--ink-on-dark-soft` is the supporting paragraph there and `--ink-on-dark-muted` the small
+  - `--ink-on-dark` is the text colour on a dark surface, the green panels and buttons and the shaded hero
+    photograph alike; the one exception is `--ink-on-green-bright`, the white label of the solid green buttons and
+    links that the administrator review list, the publication review and the cottage profile editor style for
+    themselves. `--ink-on-dark-soft` is the supporting paragraph there and `--ink-on-dark-muted` the small
     label.
   - `--line-panel` is the outline of a panel and of a message.
   - `--gold-tint` is the one gold wash, behind a label or a page corner; a notice sits on `--surface-notice`.
@@ -203,8 +205,10 @@ Anything else is a token.
   (`.site-header-panel`) spans the screen directly under the header on `--surface-raised` at `--layer-menu`, one
   destination per row, each row at least `2.75rem` tall; it lies over the page and moves nothing. Each of these
   buttons, the Account button included, reports `aria-expanded` and names its panel with `aria-controls`; an icon
-  button is named by `aria-label` and the Account button by its visible text; the stylesheet shows and hides a
-  panel from its button's `aria-expanded`, so the two cannot disagree. One panel is open at a time.
+  button is named by `aria-label` and the Account button by its visible text; at the `phone` breakpoint the
+  stylesheet shows and hides a panel from its button's `aria-expanded`, so the two cannot disagree, and above it
+  the Account menu carries the `hidden` attribute, set from the same state as its button's `aria-expanded`. One
+  panel is open at a time.
   It closes when a destination or Sign out is chosen, on Escape, which returns focus to the button that opened
   it, on a press outside the header and when focus leaves the header. It is a disclosure, not a dialog: focus is
   not trapped and no `menu` role is used.
@@ -305,10 +309,10 @@ its own; the block it sits in sets the space around it.
 - The `prefers-reduced-motion: reduce` rule turns off transitions and smooth scrolling.
 - `.action`, `.action-link`, `.action-regular`, `.form-control`, `.choice-control` and the `.disclosure` summary
   are at least `2.75rem` tall; of the shared controls only `.action-compact` (`2.25rem`) and the inline
-  `.action-text` link are smaller. Four controls outside those classes are smaller as well: above the `phone`
-  breakpoint the site header's account and support pills are `2.5rem` tall and its language links `2rem`, the
-  choose-file button inside a file field is `2.25rem`, and the compact toggles of the search form's Booking Period
-  filters (`.booking-period-defaults .action-toggle`) are `2.4rem`.
+  `.action-text` link are smaller. Three controls outside those classes are smaller as well: above the `phone`
+  breakpoint the site header's account and support pills are `2.5rem` tall and its language links `2rem`, and the
+  choose-file button inside a file field is `2.25rem`. The search form's Booking Period filters are
+  `.action-compact` toggles that `.booking-period-defaults .action-toggle` sets to `2.4rem`.
 - Status and errors are announced through `ActionFeedback`, which renders `role="status"` for success and
   `role="alert"` for errors.
 - No new interaction ships without a visible focus state.
