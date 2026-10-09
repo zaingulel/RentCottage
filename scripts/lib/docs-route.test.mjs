@@ -228,29 +228,72 @@ const DIRECT_ROUTE_DIRECTORIES = [
   "docs/research/",
 ];
 
+const INDEX_KINDS = ["explanation", "instruction", "record", "reference"];
+
+// The instruction rows of an index whose target sits in a direct-route location, and how many
+// instruction rows the index has. A Kind outside INDEX_KINDS throws, so no row is skipped unread.
+function directRouteInstructions(index) {
+  const instructions = [];
+  const rows = index
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("|"))
+    .map((line) => line.split("|").map((cell) => cell.trim()))
+    .filter(([, , kind]) => kind !== "Kind" && !/^:?-+:?$/.test(kind));
+  for (const [, document, rawKind] of rows) {
+    const kind = rawKind.replace(/[*_`]/g, "");
+    if (!INDEX_KINDS.includes(kind))
+      throw new Error(
+        `the index row for ${document} has the unknown kind ${rawKind}`,
+      );
+    if (kind === "instruction") instructions.push(document);
+  }
+  const offending = [];
+  for (const document of instructions) {
+    // A link is relative to docs/, and a `../` target leaves it; a backticked directory is under docs/.
+    const target =
+      document.match(/\]\(<?([^)#>]+)/)?.[1] ??
+      document.match(/`([^`]+)`/)?.[1];
+    assert.ok(target, `no target found in the row for ${document}`);
+    const path = posix.normalize(posix.join("docs", target));
+    if (
+      DIRECT_ROUTE_DIRECTORIES.some((directory) => path.startsWith(directory))
+    )
+      offending.push(document);
+  }
+  return { instructions: instructions.length, offending };
+}
+
 test("the index marks no document in a direct-route location as an instruction", () => {
   const index = readFileSync(
     new URL("../../docs/README.md", import.meta.url),
     "utf8",
   );
-  const instructions = index
-    .split("\n")
-    .filter((line) => line.startsWith("|"))
-    .map((line) => line.split("|").map((cell) => cell.trim()))
-    .filter((cells) => cells[2] === "instruction");
-  assert.ok(instructions.length > 0, "the index has no instruction rows");
-  for (const [, document] of instructions) {
-    // A link is relative to docs/, and a `../` target leaves it; a backticked directory is under docs/.
-    const target =
-      document.match(/\]\(([^)#]+)/)?.[1] ?? document.match(/`([^`]+)`/)?.[1];
-    assert.ok(target, `no target found in the row for ${document}`);
-    const path = posix.normalize(posix.join("docs", target));
-    for (const directory of DIRECT_ROUTE_DIRECTORIES)
-      assert.ok(
-        !path.startsWith(directory),
-        `the index marks ${document} as an instruction inside ${directory}`,
-      );
-  }
+  const { instructions, offending } = directRouteInstructions(index);
+  assert.ok(instructions > 0, "the index has no instruction rows");
+  assert.deepEqual(offending, []);
+});
+
+test("the index observer reads an indented row, an emphasised kind and a bracketed link", () => {
+  const table = (row) =>
+    ["| Document | Kind | What it is |", "|---|---|---|", row].join("\n");
+  const link = "[shortcuts.md](engineering/shortcuts.md)";
+  const bracketed = "[shortcuts.md](<engineering/shortcuts.md>)";
+  const rows = [
+    [` | ${link} | instruction | x |`, link],
+    [`| ${link} | **instruction** | x |`, link],
+    [`| ${bracketed} | instruction | x |`, bracketed],
+  ];
+  for (const [row, document] of rows)
+    assert.deepEqual(
+      directRouteInstructions(table(row)).offending,
+      [document],
+      row,
+    );
+  assert.throws(
+    () => directRouteInstructions(table("| [a.md](a.md) | guideline | x |")),
+    /guideline/,
+  );
 });
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
