@@ -21,6 +21,7 @@ each document is set out in [DOC-SWEEP.md](DOC-SWEEP.md); the day-after triage i
 | [TESTING-STRATEGY.md](TESTING-STRATEGY.md) | instruction | Which evidence a claim needs and the executed bar it must clear. |
 | [agents/domain.md](agents/domain.md) | instruction | How the engineering skills should read the domain glossary and architecture decisions before exploring the code. |
 | [engineering/demo-runtime-investigation.md](engineering/demo-runtime-investigation.md) | record | What the evidence shows about the local demo preview failing on Wrangler, and what cause remains unresolved. |
+| [engineering/main-branch-rulesets.md](engineering/main-branch-rulesets.md) | record | The two rulesets on `main` as applied and read back, who can bypass the pull request and required check, and how to restore the earlier setting. |
 | `adr/` | record | Accepted architecture decisions. |
 | `commercial/` | record | Commercial papers for the marketplace business. |
 | `discovery/` | record | Client discovery and design exploration written before implementation. |

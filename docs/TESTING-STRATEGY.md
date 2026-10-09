@@ -188,9 +188,13 @@ run nothing. For the `resume` skill's deliver step, the hosted `test` check ther
 instructions, every database and browser check, which is at least the groups a local run selects from the same
 changed paths, on a rebased head as on any other. For a change touching only documentation or workflow instructions
 both run the baseline alone. No hosted job runs `npm run verify -- --full` as one command or `npm run lint:docs`;
-each reruns locally on a new head. This strategy marks no check for receipt reuse across a documentation-only
-difference: that exception of the deliver step needs an executable `scripts/gates/pre-push-main`, which this
-repository does not have, so a documentation-only difference alone never carries a receipt to a new head. The hosted
+each reruns locally on a new head unless this paragraph marks it. Across a documentation-only difference, one whose
+every changed path the path definition of `scripts/gates/pre-push-main` admits, this strategy marks `npm run verify`
+and `npm run verify -- --full` for receipt reuse, because no database, concurrency or browser check reads a path under
+`docs/`. The script suite in the baseline does read documents, so a session that reuses either receipt also runs
+`npm run verify -- --baseline` on the current head. `npm run verify -- --baseline` and `npm run lint:docs` are not
+marked: each needs the current head. A change the gate admits whole takes the direct route to `main`, where no hosted
+check runs; [the repository profile](../.agents/REPOSITORY.md#product) says which paths qualify. The hosted
 preview is smoked with `npm run verify:preview -- <https-preview-url>` as a separate owner-approved operation.
 
 The authoritative desktop exclusion list is in [playwright.config.ts](../playwright.config.ts). These eleven
