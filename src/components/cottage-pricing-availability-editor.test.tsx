@@ -171,8 +171,9 @@ describe("Cottage Pricing and Availability editor", () => {
     );
 
     expect(
-      within(screen.getByRole("group", { name: "Pricing and availability" }))
-        .getAllByRole("heading", { level: 3 }),
+      within(
+        screen.getByRole("group", { name: "Pricing and availability" }),
+      ).getAllByRole("heading", { level: 3 }),
     ).toHaveLength(4);
     for (const [name, range, price] of [
       [`Shift 1: ${hostileName}`, "06:00 to 09:00 (same day)", 125000],

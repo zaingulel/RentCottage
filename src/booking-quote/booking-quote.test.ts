@@ -118,9 +118,9 @@ describe("Booking Quote", () => {
         { ...items[0], endsAt: items[0].startsAt, crossesMidnight: false },
       ]),
     ).toBe(false);
-    expect(
-      validateQuotedItems([{ ...items[0], crossesMidnight: false }]),
-    ).toBe(false);
+    expect(validateQuotedItems([{ ...items[0], crossesMidnight: false }])).toBe(
+      false,
+    );
     expect(continuousFullDayAccess(items)).toEqual([
       {
         fromServiceDay: "2026-08-21",
