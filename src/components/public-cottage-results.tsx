@@ -86,15 +86,16 @@ export function PublicCottageResults({
   result,
   queryString,
   query,
-  continued,
+  after,
 }: {
   locale: Locale;
   result: CottageDiscoveryResult;
   queryString: string;
   query: CottageDiscoveryQuery;
-  continued: boolean;
+  after: string | null;
 }) {
   const messages = copy[locale];
+  const continued = after !== null;
   return (
     <main className="results-page">
       <header className="results-header">
@@ -194,7 +195,7 @@ export function PublicCottageResults({
                   <ActionLink
                     kind="secondary"
                     width="full"
-                    href={`/${locale}/cottages/${cottage.slug}?${queryString}`}
+                    href={`/${locale}/cottages/${cottage.slug}?${serializeCottageResultsQuery(query, after)}`}
                   >
                     {messages.view}
                   </ActionLink>

@@ -86,7 +86,7 @@ export function safeReturnDestination(locale: Locale, value: unknown): string {
         return fallback;
       params.delete("conversation");
     }
-    if (route === "/results") {
+    if (route === "/results" || route.startsWith("/cottages/")) {
       const afters = params.getAll("after");
       if (
         afters.length > 1 ||

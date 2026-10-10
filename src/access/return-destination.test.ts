@@ -133,12 +133,7 @@ describe("account return destinations", () => {
     expect(safeReturnDestination("en", `/en/results?after=${slug}`)).toBe(
       "/en/bookings",
     );
-    for (const route of [
-      `cottages/${slug}`,
-      `quote/${slug}`,
-      `request/${slug}`,
-      "messages",
-    ]) {
+    for (const route of [`quote/${slug}`, `request/${slug}`, "messages"]) {
       const context = route === "messages" ? `cottage=${slug}&` : "";
       expect(
         safeReturnDestination(
@@ -188,6 +183,47 @@ describe("account return destinations", () => {
       );
     },
   );
+});
+
+describe("a cottage page results position", () => {
+  const slug = "cottage-0123456789abcdef0123456789abcdef";
+  const after = "cottage-50000000000040008000000000000018";
+  const search =
+    "from=2030-01-12&to=2030-01-13&guests=4&selection=2030-01-12:shift:1&selection=2030-01-13:full-day";
+
+  it("accepts a cottage destination carrying one valid after", () => {
+    const destination = `/en/cottages/${slug}?${search}&after=${after}`;
+    expect(safeReturnDestination("en", destination)).toBe(destination);
+  });
+  it("falls back for a cottage destination with a malformed after", () => {
+    expect(
+      safeReturnDestination(
+        "en",
+        `/en/cottages/${slug}?${search}&after=river-house`,
+      ),
+    ).toBe("/en/bookings");
+  });
+  it("falls back for a cottage destination with a repeated after", () => {
+    expect(
+      safeReturnDestination(
+        "en",
+        `/en/cottages/${slug}?${search}&after=${after}&after=${after}`,
+      ),
+    ).toBe("/en/bookings");
+  });
+  it("falls back for a quote destination carrying after", () => {
+    expect(
+      safeReturnDestination("en", `/en/quote/${slug}?${search}&after=${after}`),
+    ).toBe("/en/bookings");
+  });
+  it("falls back for a request destination carrying after", () => {
+    expect(
+      safeReturnDestination(
+        "en",
+        `/en/request/${slug}?${search}&after=${after}`,
+      ),
+    ).toBe("/en/bookings");
+  });
 });
 
 describe("administrator return destinations", () => {

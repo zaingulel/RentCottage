@@ -44,12 +44,12 @@ const copy = {
 export function PublicCottageProfileView({
   locale,
   result,
-  queryString,
+  resultsQueryString,
   query,
 }: {
   locale: Locale;
   result: CottageDiscoveryProfileResult;
-  queryString: string;
+  resultsQueryString: string;
   query: CottageDiscoveryQuery | null;
 }) {
   const messages = copy[locale];
@@ -57,7 +57,7 @@ export function PublicCottageProfileView({
     return (
       <main className="results-page">
         <header className="results-header">
-          <Link href={`/${locale}/results?${queryString}`}>
+          <Link href={`/${locale}/results?${resultsQueryString}`}>
             {messages.back}
           </Link>
         </header>
@@ -68,7 +68,9 @@ export function PublicCottageProfileView({
   return (
     <main className="profile-page">
       <header className="results-header">
-        <Link href={`/${locale}/results?${queryString}`}>{messages.back}</Link>
+        <Link href={`/${locale}/results?${resultsQueryString}`}>
+          {messages.back}
+        </Link>
       </header>
       <div className="profile-layout">
         <div>

@@ -49,7 +49,7 @@ describe("PublicCottageResults", () => {
         locale="en"
         result={{ status: "loaded", cottages: [cottage], nextAfter: null }}
         query={query}
-        continued={false}
+        after={null}
         queryString="guests=4"
       />,
     );
@@ -64,7 +64,10 @@ describe("PublicCottageResults", () => {
     );
     expect(within(rows[1]).getByText("Price unavailable")).toBeVisible();
     const view = within(card).getByRole("link", { name: "View cottage" });
-    expect(view).toHaveAttribute("href", "/en/cottages/garden-house?guests=4");
+    expect(view).toHaveAttribute(
+      "href",
+      "/en/cottages/garden-house?from=2026-09-22&to=2026-09-23&guests=4",
+    );
     expect(view).toHaveClass("action-link", "action-secondary", "action-full");
     expect(screen.queryByRole("navigation")).toBeNull();
   });
@@ -80,7 +83,7 @@ describe("PublicCottageResults", () => {
           locale={locale}
           result={{ status: "loaded", cottages: [cottage], nextAfter: null }}
           query={query}
-          continued={false}
+          after={null}
           queryString=""
         />,
       );
@@ -119,7 +122,7 @@ describe("PublicCottageResults", () => {
           locale={locale}
           result={{ status: "loaded", cottages: [cottage], nextAfter: null }}
           query={query}
-          continued={false}
+          after={null}
           queryString=""
         />,
       );
@@ -153,7 +156,7 @@ describe("PublicCottageResults", () => {
         locale="en"
         result={{ status: "loaded", cottages: [unpriced], nextAfter: null }}
         query={query}
-        continued={false}
+        after={null}
         queryString=""
       />,
     );
@@ -249,7 +252,7 @@ describe("PublicCottageResults", () => {
         locale="en"
         result={{ status: "loaded", cottages: [result], nextAfter: null }}
         query={query}
-        continued={false}
+        after={null}
         queryString={queryString}
       />,
     );
@@ -303,7 +306,7 @@ describe("PublicCottageResults", () => {
           result={{ status: "loaded", cottages: [cottage], nextAfter: after }}
           query={query}
           queryString={search}
-          continued
+          after={after}
         />,
       );
       const paging = screen.getByRole("navigation", { name: label });
@@ -323,7 +326,7 @@ describe("PublicCottageResults", () => {
           .getAllByRole("link")
           .map((link) => link.getAttribute("href"))
           .filter((href) => href?.includes("/cottages/")),
-      ).toEqual([`/${locale}/cottages/garden-house?${search}`]);
+      ).toEqual([`/${locale}/cottages/garden-house?${search}&after=${after}`]);
       unmount();
     }
 
@@ -333,7 +336,7 @@ describe("PublicCottageResults", () => {
         result={{ status: "loaded", cottages: [cottage], nextAfter: after }}
         query={query}
         queryString={search}
-        continued={false}
+        after={null}
       />,
     );
     expect(
@@ -350,7 +353,7 @@ describe("PublicCottageResults", () => {
         result={{ status: "loaded", cottages: [cottage], nextAfter: null }}
         query={query}
         queryString={search}
-        continued
+        after={after}
       />,
     );
     expect(
@@ -362,6 +365,7 @@ describe("PublicCottageResults", () => {
   });
 
   it("says when a continued page has nothing further", () => {
+    const after = "cottage-0123456789abcdef0123456789abcdef";
     const search = "from=2026-09-22&to=2026-09-23&guests=4";
     for (const [locale, pastEnd, empty, first] of [
       [
@@ -389,7 +393,7 @@ describe("PublicCottageResults", () => {
           result={{ status: "loaded", cottages: [], nextAfter: null }}
           query={query}
           queryString={search}
-          continued
+          after={after}
         />,
       );
       expect(screen.getByText(pastEnd)).toHaveClass("empty-results");
@@ -407,7 +411,7 @@ describe("PublicCottageResults", () => {
         result={{ status: "loaded", cottages: [], nextAfter: null }}
         query={query}
         queryString={search}
-        continued={false}
+        after={null}
       />,
     );
     expect(
@@ -416,5 +420,44 @@ describe("PublicCottageResults", () => {
       ),
     ).toBeVisible();
     expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
+  describe("cottage links keep the results position", () => {
+    it("a continued page's cottage links carry after", () => {
+      render(
+        <PublicCottageResults
+          locale="en"
+          result={{ status: "loaded", cottages: [cottage], nextAfter: null }}
+          query={query}
+          queryString="from=2026-09-22&to=2026-09-23&guests=4"
+          after="cottage-0123456789abcdef0123456789abcdef"
+        />,
+      );
+      expect(
+        screen.getByRole("link", { name: "View cottage" }),
+      ).toHaveAttribute(
+        "href",
+        "/en/cottages/garden-house?from=2026-09-22&to=2026-09-23&guests=4&after=cottage-0123456789abcdef0123456789abcdef",
+      );
+    });
+
+    it("a first page's cottage links carry no after", () => {
+      render(
+        <PublicCottageResults
+          locale="en"
+          result={{ status: "loaded", cottages: [cottage], nextAfter: null }}
+          query={query}
+          queryString="from=2026-09-22&to=2026-09-23&guests=4"
+          after={null}
+        />,
+      );
+      const href = screen
+        .getByRole("link", { name: "View cottage" })
+        .getAttribute("href");
+      expect(href).toBe(
+        "/en/cottages/garden-house?from=2026-09-22&to=2026-09-23&guests=4",
+      );
+      expect(href).not.toContain("after=");
+    });
   });
 });

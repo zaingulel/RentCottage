@@ -4,9 +4,9 @@ import { PublicCottageProfileView } from "@/components/public-cottage-profile";
 import { InvalidCottageSearch } from "@/components/invalid-cottage-search";
 import { SiteFooter } from "@/components/site-footer";
 import {
-  parseCottageDiscoveryQuery,
+  parseCottageResultsQuery,
   preserveRawCottageDiscoveryQuery,
-  serializeCottageDiscoveryQuery,
+  serializeCottageResultsQuery,
 } from "@/cottage-discovery/discovery-query";
 import {
   loadDefaultPublicCottageQuery,
@@ -25,7 +25,7 @@ export default async function CottagePage({
   if (!isLocale(locale)) notFound();
   const rawQuery = await searchParams;
   const path = `/cottages/${slug}`;
-  let parsed = parseCottageDiscoveryQuery(rawQuery);
+  let parsed = parseCottageResultsQuery(rawQuery);
   if (Object.keys(rawQuery).length === 0) {
     const defaultQuery = await loadDefaultPublicCottageQuery(slug);
     if (defaultQuery.status === "not-found") notFound();
@@ -36,13 +36,13 @@ export default async function CottagePage({
             locale={locale}
             result={{ status: "unavailable" }}
             query={null}
-            queryString=""
+            resultsQueryString=""
           />
           <SiteFooter locale={locale} path={path} queryString="" />
         </>
       );
     }
-    parsed = { status: "loaded", query: defaultQuery.query };
+    parsed = { status: "loaded", query: defaultQuery.query, after: null };
   }
   if (parsed.status === "invalid") {
     return (
@@ -58,16 +58,23 @@ export default async function CottagePage({
   }
   const result = await loadPublicCottageProfile(locale, slug, parsed.query);
   if (result.status === "not-found") notFound();
-  const queryString = serializeCottageDiscoveryQuery(parsed.query);
+  const resultsQueryString = serializeCottageResultsQuery(
+    parsed.query,
+    parsed.after,
+  );
   return (
     <>
       <PublicCottageProfileView
         locale={locale}
         result={result}
         query={parsed.query}
-        queryString={queryString}
+        resultsQueryString={resultsQueryString}
       />
-      <SiteFooter locale={locale} path={path} queryString={queryString} />
+      <SiteFooter
+        locale={locale}
+        path={path}
+        queryString={resultsQueryString}
+      />
     </>
   );
 }

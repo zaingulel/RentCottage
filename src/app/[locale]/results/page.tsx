@@ -45,7 +45,7 @@ export default async function ResultsPage({
         result={result}
         query={parsed.query}
         queryString={queryString}
-        continued={parsed.after !== null}
+        after={parsed.after}
       />
       <SiteFooter
         locale={locale}
