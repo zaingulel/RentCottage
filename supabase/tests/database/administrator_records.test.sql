@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(78);
+select plan(79);
 
 -- BEGIN ADMINISTRATOR RECORDS FIXTURE
 -- Fictional reserved 250 namespace. The local transaction rolls every row back.
@@ -270,6 +270,7 @@ reset role;
 select ok(not has_function_privilege('anon','public.search_administrator_booking_queue(text,text,date,date,timestamptz,uuid)','EXECUTE'),'anonymous role cannot execute the booking queue reader');
 select ok(not has_function_privilege('service_role','public.search_administrator_booking_queue(text,text,date,date,timestamptz,uuid)','EXECUTE'),'service role cannot execute the booking queue reader');
 select ok(has_function_privilege('authenticated','public.search_administrator_booking_queue(text,text,date,date,timestamptz,uuid)','EXECUTE'),'authenticated role reaches the booking queue reader and its AAL2 gate');
+select ok(not has_function_privilege('anon','public.booking_lifecycle_status(uuid)','EXECUTE') and not has_function_privilege('authenticated','public.booking_lifecycle_status(uuid)','EXECUTE') and not has_function_privilege('service_role','public.booking_lifecycle_status(uuid)','EXECUTE'),'no API role can execute the status-only lifecycle helper');
 select set_config('request.jwt.claims','{"sub":"25000000-0000-4000-8000-000000000201","role":"authenticated","aal":"aal2"}',true);
 set local role authenticated;
 select is(public.search_administrator_booking_queue('requests',null,null,null,null,null)->>'queue','requests','administrator AAL2 reads the Booking Request queue');

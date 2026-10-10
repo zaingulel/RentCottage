@@ -498,8 +498,8 @@ begin
       and (public.booking_request_payment_status(requests)='paid-confirmed' or exists(select 1 from public.booking_cancellations cancellation where cancellation.booking_request_id=requests.id)) paid_access) access
     where target_queue in ('requests','bookings')
   ),
-  -- MATERIALIZED keeps the state filter out of the branches, where the lifecycle
-  -- derivation could otherwise run on an unconfirmed request and raise.
+  -- MATERIALIZED keeps the state filter out of the branches, so each lifecycle
+  -- status is derived once and shared by the state counts and the filtered page.
   candidates as materialized (
     select (listed.requests).id, (listed.requests).created_at at, (listed.requests).booking_request_reference reference,
       coalesce(case when exists(select 1 from public.booking_cancellations cancellation where cancellation.booking_request_id=(listed.requests).id)
@@ -511,7 +511,7 @@ begin
       and (target_through is null or (listed.requests).created_at < ((target_through + 1)::timestamp at time zone 'Asia/Baghdad'))
     union all
     select (listed.requests).id, listed.confirmed_at, (listed.requests).booking_request_reference,
-      public.get_booking_lifecycle((listed.requests).booking_request_reference,'platform_administrator')->>'status',
+      public.booking_lifecycle_status((listed.requests).id),
       null::text, null::text
     from request_access listed
     where target_queue = 'bookings' and listed.paid_access
@@ -527,7 +527,7 @@ begin
       and (target_through is null or intents.created_at < ((target_through + 1)::timestamp at time zone 'Asia/Baghdad'))
     union all
     select incident_sources.id, incident_sources.recorded_at, requests.booking_request_reference,
-      public.get_booking_lifecycle(requests.booking_request_reference,'platform_administrator')->>'status',
+      public.booking_lifecycle_status(requests.id),
       incident_sources.source, incident_sources.category
     from (
       select incidents.id, incidents.recorded_at, incidents.booking_request_id, 'lifecycle'::text source, incidents.category

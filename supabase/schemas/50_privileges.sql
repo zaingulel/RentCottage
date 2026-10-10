@@ -1384,6 +1384,7 @@ REVOKE ALL ON FUNCTION public.commit_booking_completion_maturity(uuid,text) FROM
 REVOKE ALL ON FUNCTION public.get_booking_no_show_facts(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.commit_booking_no_show(uuid,uuid,text,jsonb) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.record_booking_incident(uuid,uuid,text,text,text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.booking_lifecycle_status(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.get_booking_lifecycle(text,text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.get_booking_completion_eligibility(text,text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.list_due_booking_completions(integer) TO service_role;
