@@ -82,7 +82,7 @@ const OUTSIDE = [
   ".agents/factory-manifest.json",
   ".agents/skills/resume/SKILL.md",
   ".claude/skills/resume/SKILL.md",
-  ".claude/templates/builder-handoff.md",
+  ".agents/templates/builder-handoff.md",
   // Scripts and tests.
   "scripts/verify.mjs",
   "package.json",

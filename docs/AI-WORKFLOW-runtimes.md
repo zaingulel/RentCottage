@@ -1,9 +1,10 @@
 # Two runtimes, one contract
 
-Two agent runtimes, Claude Code and Codex, read the same contract, skills and seat charters, each through its own copy
-or format. This page explains what they share, where each keeps its own files, and what changes on native Windows. This
-page is part of [the workflow guide](AI-WORKFLOW.md). Related: [Enforced or instructed](AI-WORKFLOW-enforcement.md) for
-what the hooks refuse, and [The seats](AI-WORKFLOW-seats.md) for the agent seats each runtime defines.
+A repository runs Claude Code, Codex or both, and its settings file names which. Each runtime reads the same contract,
+skills and seat charters through its own copy or format. This page explains what they share, where each keeps its own
+files, and what changes on native Windows. This page is part of [the workflow guide](AI-WORKFLOW.md). Related:
+[Enforced or instructed](AI-WORKFLOW-enforcement.md) for what the hooks refuse, and [The seats](AI-WORKFLOW-seats.md)
+for the agent seats each runtime defines.
 
 ## Mental model
 
@@ -17,23 +18,29 @@ what the hooks refuse, and [The seats](AI-WORKFLOW-seats.md) for the agent seats
 
 ## How it works
 
-The factory runs on Claude Code and on Codex, and switches between them when one runs out of budget. Both read
-the same file: `AGENTS.md` is the contract, `CLAUDE.md` imports it and adds its own Claude-only notes. Skills
-are shared in `.agents/skills/`, which Codex reads directly, and `.claude/skills/` holds a byte-identical
-copy of each for Claude Code; they are real copies rather than symlinks so they survive a Windows checkout. Some of
-those skills are themselves copied whole from `.agents/upstream/`, which holds one folder for each upstream
-repository, a verbatim vendored copy kept with its own licence, so a vendored skill is invoked by the same name and
-reached by the same path as a first-party one. Fifteen skills are vendored: thirteen from mattpocock/skills at commit
-24fe0ef7737efae15c87225755e9f6f5965e4888, in `.agents/upstream/mattpocock-skills/`; `frontend-design` from
+With both runtimes the factory switches between them when one runs out of budget; with one, only that runtime's column
+of the table above is installed. Both read the same file: `AGENTS.md` is the contract, `CLAUDE.md` imports it and adds
+its own Claude-only notes. Skills are shared in `.agents/skills/`, which Codex reads directly, and `.claude/skills/`
+holds a byte-identical copy of each for Claude Code; they are real copies rather than symlinks so they survive a Windows
+checkout. Some of those skills are themselves copied whole from `.agents/upstream/`, which holds one folder for each
+upstream repository, a verbatim vendored copy kept with its own licence, so a vendored skill is invoked by the same name
+and reached by the same path as a first-party one. Seventeen skills are vendored: thirteen from mattpocock/skills at
+commit 24fe0ef7737efae15c87225755e9f6f5965e4888, in `.agents/upstream/mattpocock-skills/`; `frontend-design` from
 anthropics/claude-plugins-official at commit 44490cccaf6d9f82fdeec9416fbf7c9bd72575dc, where it sits under
 `plugins/frontend-design/skills/frontend-design/`, in `.agents/upstream/anthropics-claude-plugins-official/`; and
-`accessibility-review` from anthropics/knowledge-work-plugins at commit 2d6f7e22dd25593f0f748010430ef86f19659735,
-where it sits under `design/skills/accessibility-review/` and takes its licence from that repository's root
-`LICENSE`, in `.agents/upstream/anthropics-knowledge-work-plugins/`.
-[`AGENTS.md`](../AGENTS.md) owns how each copy is refreshed, under "Runtime notes". The agent seats under
-`.claude/agents/` and `.codex/agents/` are maintained counterparts, with shared charters kept aligned across the two
-runtime formats. The safety hooks exist as twins: `.claude/settings.json` wires the Claude set, `.codex/hooks.json` the
-Codex set.
+`accessibility-review` from anthropics/knowledge-work-plugins at commit 2d6f7e22dd25593f0f748010430ef86f19659735, where
+it sits under `design/skills/accessibility-review/` and takes its licence from that repository's root `LICENSE`, in
+`.agents/upstream/anthropics-knowledge-work-plugins/`. Two more, `supabase` and
+`supabase-postgres-best-practices`, come from the official `supabase/agent-skills` repository at commit
+c9be0e931b7930f7d02126d04774d904c381e7d7, under its `skills/` directory. The complete skill trees and repository-root
+MIT `LICENSE` are kept in `.agents/upstream/supabase-agent-skills/`. The accessibility skill links to a `CONNECTORS.md` two folders above itself,
+which upstream keeps at `design/CONNECTORS.md` to explain the plugin's placeholders for connected tools; it is an
+optional reference that is not carried, so the link resolves to nothing by intent: from each of the skill's three copies
+it would point outside the vendored folder, at a different place each time, and the accessibility audit follows no
+connector note. [`AGENTS.md`](../AGENTS.md) owns how each copy is refreshed, under "Runtime notes". The agent seats
+under `.claude/agents/` and `.codex/agents/` are maintained counterparts, with shared charters kept aligned across the
+two runtime formats. The safety hooks exist as twins: `.claude/settings.json` wires the Claude set, `.codex/hooks.json`
+the Codex set.
 
 ### On native Windows
 
@@ -74,6 +81,8 @@ Codex at the repository root on each affected platform.
 - [The `resume` skill](../.agents/skills/resume/SKILL.md) under "Before intake": how a session checks that its hooks
   are running, and what the owner does when they are not.
 - [`docs/TESTING-STRATEGY.md`](TESTING-STRATEGY.md): which suites run on which platform.
+- [The `sync-job` skill](../.agents/skills/sync-job/SKILL.md): how a repository names its runtimes, and which files
+  each owns.
 
 ## Failure modes
 
@@ -86,6 +95,8 @@ Codex at the repository root on each affected platform.
 - **A runtime has not trusted the hooks.** A hook file a runtime has not trusted does not run. A session checks
   for this when it starts and tells the owner; [the `resume` skill](../.agents/skills/resume/SKILL.md) owns the
   check and the remedy under "Before intake".
+- **A file of a runtime the repository does not run is in the tree.** The contract test refuses it by path. Remove it,
+  or name the runtime in the settings file and sync.
 
 ## Key files
 
@@ -96,3 +107,4 @@ Codex at the repository root on each affected platform.
 - `.claude/settings.json` and `.codex/hooks.json`: the hook registrations.
 - `.codex/hooks/verify-green.mjs` and `scripts/lib/posix-shell.mjs`: the Windows route to the shell hooks.
 - `scripts/lib/codex-hooks-windows.test.mjs`: the proof of the Windows registrations.
+- `scripts/lib/runtimes.mjs`: which shared path belongs to which runtime.

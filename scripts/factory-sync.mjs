@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // factory-sync.mjs — maintain the factory manifest, `.agents/factory-manifest.json`, which pins every shared
-// workflow file an adopter carries byte for byte, and copy those files from the canonical into an adopter.
+// workflow file an adopter carries byte for byte, apart from the seat setting values its own seat settings file
+// names, and copy those files from the canonical into an adopter.
 //
 //   node scripts/factory-sync.mjs --write   # canonical repository only: re-record every entry from disk
 //   node scripts/factory-sync.mjs --check   # adopter: is this manifest the canonical's manifest on main?
+//   node scripts/factory-sync.mjs --render  # adopter: apply the seat settings file to the seats, between syncs
 //   node scripts/factory-sync.mjs --from <source> [--into <target>] [--canonical <owner/repo>]
 //                                           # adopter: copy every entry from a canonical checkout
 //
@@ -16,8 +18,17 @@
 // contract in scripts/lib/factory-sync.mjs: every check runs before any write, so a refusal writes nothing.
 // It removes, and prints, each file the target's committed manifest listed and the fetched one no longer shares,
 // when the target holds it committed with the exact bytes last recorded; anything else at such a path is a refusal.
+// It writes no entry of a runtime the target's settings file does not name, treats such an entry's path the same
+// way, and prints how many entries it left out.
 // --canonical is needed only for a target with no committed manifest. Source and target must be different
 // repositories. Exit 0 on success, 1 on a refusal with its cause, 2 on a usage error.
+//
+// --render brings the seats and the manifest to the state a sync would leave for the seat settings file as it now
+// stands, under the renderSettings contract in scripts/lib/factory-sync.mjs: it reads no commit, needs no network
+// and no canonical checkout, and refuses in the canonical repository. Every check runs before any write, so a
+// refusal writes nothing. It prints each seat it rewrote; when no seat changed it prints that the manifest alone was
+// rewritten, or that the seat settings are already applied when nothing was written. Exit 0 on success, 1 on a
+// refusal with its cause, 2 on a usage error.
 //
 // Every git call runs without the inherited repository-scoped variables (GIT_DIR, GIT_INDEX_FILE and the rest).
 //
@@ -38,11 +49,12 @@ import {
   isGithubRepository,
   MANIFEST_PATH,
   readManifest,
+  renderSettings,
   syncInto,
 } from './lib/factory-sync.mjs';
 
 const USAGE =
-  'usage: node scripts/factory-sync.mjs --write | --check | --from <source> [--into <target>] [--canonical <owner/repo>]';
+  'usage: node scripts/factory-sync.mjs --write | --check | --render | --from <source> [--into <target>] [--canonical <owner/repo>]';
 const FLAGS = { '--from': 'from', '--into': 'into', '--canonical': 'canonical' };
 
 function git(...args) {
@@ -74,10 +86,25 @@ function write() {
 function sync({ from, into = '.', canonical }) {
   const [source, target] = [topLevel(from), topLevel(into)];
   if (source === target) throw new Error(`the source and target are the same repository (${source})`);
-  const { files, regions, removed } = syncInto({ source, target, canonical, fetchMain });
+  const { files, regions, removed, omitted } = syncInto({ source, target, canonical, fetchMain });
   console.log(`factory-sync: wrote ${files} files and ${regions} regions from ${source} into ${target}`);
+  if (omitted > 0) console.log(`factory-sync: left out ${omitted} entries of a runtime the settings file does not name`);
   console.log(`factory-sync: removed ${removed.length} retired files`);
   for (const path of removed) console.log(`  ${path}`);
+}
+
+function render() {
+  const { seats, manifest } = renderSettings(topLevel('.'));
+  if (seats.length === 0) {
+    console.log(
+      manifest
+        ? 'factory-sync: applied the seat settings; no seat file changed, and the manifest now records the defaults'
+        : 'factory-sync: the seat settings are already applied',
+    );
+    return;
+  }
+  console.log(`factory-sync: applied the seat settings to ${seats.length} seats`);
+  for (const path of seats) console.log(`  ${path}`);
 }
 
 function fetchCanonicalManifest(canonical) {
@@ -134,13 +161,14 @@ function parseFrom(args) {
 
 const args = process.argv.slice(2);
 const fromOptions = parseFrom(args);
-if (!fromOptions && !(args.length === 1 && ['--write', '--check'].includes(args[0]))) {
+if (!fromOptions && !(args.length === 1 && ['--write', '--check', '--render'].includes(args[0]))) {
   console.error(USAGE);
   process.exit(2);
 }
 if (args[0] === '--check') process.exit(check());
 try {
   if (fromOptions) sync(fromOptions);
+  else if (args[0] === '--render') render();
   else write();
 } catch (error) {
   console.error(`factory-sync: ${error.message}`);

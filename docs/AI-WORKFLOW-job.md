@@ -96,7 +96,8 @@ whose every path qualifies skips the pull request, is pushed straight to `main`,
   GitHub completes only when the checks the repository's branch rules require are green; no agent merges a job's
   pull request directly. After the merge is queued the session waits on one command that only reads the pull
   request's state, and closeout follows a merge. A change `scripts/gates/pre-push-main` admits whole skips the
-  pull request and is pushed straight to `main` on the same push authorisation.
+  pull request and is pushed straight to `main` on the same push authorisation. The gate that judges that push is the
+  copy already on the remote's `main`, so a job that changes the gate takes the pull request route.
   [The `resume` skill](../.agents/skills/resume/SKILL.md) owns the sequence, the waiting command and the direct
   route under "8. Deliver", and how a session waits on a long command under "5. Build";
   [Enforced or instructed](AI-WORKFLOW-enforcement.md) names the checks the branch rules require;

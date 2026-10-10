@@ -12,12 +12,15 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { presentRuntimes } from './runtimes.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const settings = JSON.parse(readFileSync(resolve(ROOT, '.claude/settings.json'), 'utf8'));
-const codexHooks = JSON.parse(readFileSync(resolve(ROOT, '.codex/hooks.json'), 'utf8'));
+const PRESENT = presentRuntimes(ROOT);
+const without = (runtime) => !PRESENT.includes(runtime) && `the settings file names no ${runtime} runtime`;
+const readJson = (path) => JSON.parse(readFileSync(resolve(ROOT, path), 'utf8'));
 
-test('only the board scripts, the merge watch and the two delivery commands are auto-approved, and nothing is denied by omission', () => {
+test('only the board scripts, the merge watch and the two delivery commands are auto-approved, and nothing is denied by omission', { skip: without('claude') }, () => {
+  const settings = readJson('.claude/settings.json');
   assert.deepEqual(settings.permissions.allow, [
     'Bash(node scripts/board.mjs *)',
     'Bash(node scripts/board-move.mjs *)',
@@ -29,7 +32,8 @@ test('only the board scripts, the merge watch and the two delivery commands are 
   assert.equal(settings.permissions.deny, undefined);
 });
 
-test('the hook set is exactly the documented guards', () => {
+test('the hook set is exactly the documented guards', { skip: without('claude') }, () => {
+  const settings = readJson('.claude/settings.json');
   const commands = (event, matcher) => (settings.hooks[event] ?? [])
     .filter((h) => (matcher === undefined ? h.matcher === undefined : h.matcher === matcher))
     .flatMap((h) => h.hooks.map((hook) => hook.command));
@@ -44,8 +48,8 @@ test('the hook set is exactly the documented guards', () => {
   assert.deepEqual(Object.keys(settings.hooks).sort(), ['PreToolUse', 'Stop']);
 });
 
-test('the Codex hook set is exact and cannot be widened or deleted silently', () => {
-  assert.deepEqual(codexHooks, {
+test('the Codex hook set is exact and cannot be widened or deleted silently', { skip: without('codex') }, () => {
+  assert.deepEqual(readJson('.codex/hooks.json'), {
     hooks: {
       PreToolUse: [
         {

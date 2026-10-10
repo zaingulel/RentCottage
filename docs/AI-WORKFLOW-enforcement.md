@@ -19,9 +19,9 @@ sentence had failed to prevent it or because the bad state would be silent or ha
 | Runner output stays readable | `.claude/hooks/filter-test-output.mjs` | Condenses a green run, passes a red run through in full |
 | The artifact matches its source | The product gates `scripts/gates/{stop,pre-commit}`, where the repository supplies them (run on a merge that auto-commits through `.githooks/pre-merge-commit`), and CI | A turn end, commit or merge whose generated artifact, as the Conventions table names it, is not the byte-identical build of its source; a repository that supplies none enforces its generated artifacts by the checks its Conventions table names |
 | The installed copy matches its source | In the canonical repository, a test in its script suite, run by `.githooks/pre-push` and CI | A push or merge where a shared file's source and the manifest disagree |
-| Agent definitions parse and the reviewer charter matches | `.githooks/pre-commit` | A staged seat file the runtime would drop silently, a Claude seat file carrying an `initialPrompt` key, which never reaches a subagent, and Claude and Codex reviewer charters that differ beyond the skill-invocation sigil |
-| Lint and the script suite pass | `.githooks/pre-push`, which on a push to `main` first runs the product gate `scripts/gates/pre-push-main`, before lint and the script suite | A push with a red script suite, and a push to `main` whose product gate is missing, not executable or exits non-zero |
-| Shared workflow files match the manifest | `scripts/lib/workflow-contract.test.mjs`, run by `.githooks/pre-push` and CI | A push or merge where any file `.agents/factory-manifest.json` lists differs from its recorded hash; the failure names both fix routes, `--write` in the canonical repository and a sync in an adopter |
+| Agent definitions parse and the reviewer charter matches | `.githooks/pre-commit` | A staged seat file the runtime would drop silently, a Claude seat file carrying an `initialPrompt` key, which never reaches a subagent, and Claude and Codex reviewer charters that differ beyond the skill-invocation sigil, compared only where the repository runs both |
+| Lint and the script suite pass | `.githooks/pre-push`, which on a push to `main` first runs the product gate `scripts/gates/pre-push-main` as it stands on the remote's `main`, from a copy of that commit's tree, before lint and the script suite | A push with a red script suite, and a push to `main` when the gate on the remote's `main` is missing, not executable or exits non-zero, or when the remote's `main` cannot be read |
+| Shared workflow files match the manifest | `scripts/lib/workflow-contract.test.mjs`, run by `.githooks/pre-push` and CI | A push or merge where any file `.agents/factory-manifest.json` lists differs from its recorded hash, other than in a seat setting value the repository's own seat settings file names; the failure names the fix routes, `--write` in the canonical repository, a sync in an adopter and `--render` for a seat setting |
 | Only green code merges | Two branch rulesets on `main`, one requiring the checks the repository's branch rules name, `test` everywhere and `sweep-scope` as well where the documentation routines are active, and auto-merge; the required-check ruleset lets the administrator role bypass it, which the direct documentation route depends on | A merge before every required check is green; on a draft the `test` gate reports under a different name so it can never satisfy the rule |
 | Metered suites run on purpose | `.codex/rules/playwright.rules`, where the repository supplies that rule file | A browser run on Codex without a prompt |
 
@@ -61,8 +61,17 @@ stale guidance rather than adding a second authority.
   runtime cannot be observed, the delivery report still names that limit.
 - **A command is wrapped or disguised.** The git guard reads an agent's plainly written command and, apart from a
   plain `env` prefix in front of git, does not look inside a wrapper, so it catches accidents and is not a security
-  boundary; the branch rules on the server are.
+  boundary. The branch rules on the server bind only an identity that cannot bypass them; for the role that can, a
+  push to `main` is judged by the pre-push hook, which is local.
   [The head of `scripts/lib/unsafe-git.mjs`](../scripts/lib/unsafe-git.mjs) says exactly what it does not model.
+- **The push hook is skipped or changed.** Git runs the pre-push hook from the checkout that pushes. The hook judges a
+  push to `main` with the gate as it stands on the remote's `main`, so a commit cannot admit itself by rewriting the
+  gate or a file it loads. A push made with the hook skipped, from a clone where the hooks were never armed, or from a
+  checkout whose copy of the hook was changed, or from a machine where the git configuration or attribute files git
+  reads for that push, at any level, were changed is not judged at all. The permission prompt on a push is an approval
+  checkpoint, not a second boundary: the git guard reads the command an agent submits, not what a program that command
+  starts does afterwards, so nothing in the repository establishes that every way of publishing meets that prompt.
+  A push that runs unprompted would need a boundary on the server first.
 - **A guard refuses something legitimate.** A safeguard's refusal keeps its target and is reported with the
   evidence, never forced ([`AGENTS.md`](../AGENTS.md) under "Owner gates"); every new guard names its
   non-destructive recovery route in the change that adds it.

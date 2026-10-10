@@ -30,6 +30,7 @@ import {
   STATUS_OPTIONS,
 } from './board-config.mjs';
 import { rejectUnknownArgs } from './cli-flags.mjs';
+import { GhOutputTooLargeError } from './gh-exec.mjs';
 
 // The one command's arguments, parsed before any gh call. A typo'd flag would otherwise
 // be discarded into the DEFAULT read — a metered board read answering a question the
@@ -510,7 +511,7 @@ export function fetchBoard(exec) {
 }
 
 // How many cards one detail call asks for. A failed call costs every card it named, so
-// the batch is the unit of loss.
+// the batch is the unit of loss, except that a batch too large to read is read again in halves.
 export const DETAIL_BATCH_SIZE = 20;
 
 // The newest 100 comments and the cursor to the ones before them. `totalCount` is the
@@ -538,7 +539,7 @@ const thrownReason = (err) =>
 
 const isObject = (value) => value !== null && typeof value === 'object';
 
-// One detail call → `{ repository }` or `{ reason }`, where `malformed` is the reason for
+// One detail call → `{ repository }` or `{ reason, tooLarge }`, where `malformed` is the reason for
 // a response that is not the shape asked for. gh prints partial data beside GraphQL
 // errors, so no part of a response that carries errors is used. No value from the response
 // is put into a reason before its type is checked: one that cannot be turned into text
@@ -548,7 +549,7 @@ function readDetailCall(exec, args, malformed) {
   try {
     out = exec(args);
   } catch (err) {
-    return { reason: thrownReason(err) };
+    return { reason: thrownReason(err), tooLarge: err instanceof GhOutputTooLargeError };
   }
   let response;
   try {
@@ -627,7 +628,7 @@ function cardDetail(exec, number, issue) {
   }
   if (typeof issue.body !== 'string') return unavailable('malformed detail: body');
   const { parent, comments: firstPage } = issue;
-  if (parent !== null && !Number.isInteger(parent?.number)) return unavailable('malformed detail: parent');
+  if (parent !== null && !(Number.isInteger(parent?.number) && parent.number > 0)) return unavailable('malformed detail: parent');
   if (
     !isCommentPage(firstPage)
     || (!firstPage.pageInfo.hasPreviousPage && firstPage.nodes.length < firstPage.totalCount)
@@ -637,24 +638,36 @@ function cardDetail(exec, number, issue) {
   return { number, body: issue.body, parent: parent?.number ?? null, ...readOlderComments(exec, number, firstPage) };
 }
 
+// Writes one entry per card of the batch, in card order. A batch whose reply was too large
+// to read is read again as two halves.
+function readDetailBatch(exec, batch, details) {
+  const { repository, reason, tooLarge } = readDetailCall(
+    exec,
+    ['api', 'graphql', '-f', `query=${cardDetailsQuery(batch)}`],
+    'malformed detail response',
+  );
+  if (tooLarge && batch.length > 1) {
+    const half = Math.ceil(batch.length / 2);
+    readDetailBatch(exec, batch.slice(0, half), details);
+    readDetailBatch(exec, batch.slice(half), details);
+    return;
+  }
+  for (const number of batch) {
+    details.set(number, repository
+      ? cardDetail(exec, number, repository[`i${number}`])
+      : { number, unavailable: reason });
+  }
+}
+
 // Every requested card gets exactly one entry: its details, or the reason they are
 // unavailable. A detail that was not read is never an empty body or zero comments, and
-// nothing is retried. Each call goes through the injected executor, so the transport
-// stays at the CLI edge.
+// nothing is retried, except that a batch too large to read is read again in halves, down
+// to one card, so only a card whose own reply is too large is lost. Each call goes through
+// the injected executor, so the transport stays at the CLI edge.
 export function fetchCardDetails(exec, numbers) {
   const details = new Map();
   for (let start = 0; start < numbers.length; start += DETAIL_BATCH_SIZE) {
-    const batch = numbers.slice(start, start + DETAIL_BATCH_SIZE);
-    const { repository, reason } = readDetailCall(
-      exec,
-      ['api', 'graphql', '-f', `query=${cardDetailsQuery(batch)}`],
-      'malformed detail response',
-    );
-    for (const number of batch) {
-      details.set(number, repository
-        ? cardDetail(exec, number, repository[`i${number}`])
-        : { number, unavailable: reason });
-    }
+    readDetailBatch(exec, numbers.slice(start, start + DETAIL_BATCH_SIZE), details);
   }
   return details;
 }

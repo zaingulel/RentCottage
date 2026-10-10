@@ -50,6 +50,3 @@ export const KIND_LABELS = {
   docs: 'type:docs',
 };
 
-// The label that marks an epic; the bare form is Flowgauge's legacy alias, kept so the
-// shared tests stay byte-identical. No RentCottage issue carries it.
-export const EPIC_LABELS = ['type:epic', 'epic'];

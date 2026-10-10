@@ -10,7 +10,7 @@
 
 import { INTAKE_EXIT, isContentUnresolved, normalizeItem, pickable, sortForDisplay } from './board.mjs';
 import {
-  EPIC_LABELS,
+  KIND_LABELS,
   PICKABLE_STATUSES,
   ROUTING_FIELD,
   TERMINAL_STATUSES,
@@ -31,9 +31,9 @@ export function isInFlight(status) {
   return Boolean(status) && !PICKABLE_STATUSES.includes(status) && !TERMINAL_STATUSES.includes(status);
 }
 
-// Board labels arrive as bare names; EPIC_LABELS carries the legacy bare 'epic' too.
+// Board labels arrive as bare names; an epic carries the configured epic kind label.
 export function isEpic(card) {
-  return card.labels.some((label) => EPIC_LABELS.includes(label));
+  return card.labels.includes(KIND_LABELS.epic);
 }
 
 // A card missing its Status still reaches the rules below that quote its column. The

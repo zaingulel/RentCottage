@@ -4,7 +4,7 @@
     "zaingulel/flow-metrics-dashboard",
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "659f5780b2f1e00cfdb0da126b900996d1a653bf",
+  "syncedFrom": "0069f4d502b89f3780dca0159c8b42592efdd671",
   "entries": [
     {
       "path": ".agents/skills/accessibility-review/SKILL.md",
@@ -12,7 +12,7 @@
     },
     {
       "path": ".agents/skills/closeout/SKILL.md",
-      "sha256": "d00678d8710fe4d6c1dffc2ddebb724309688c8325297c715f1074ef09f965cd"
+      "sha256": "c30c22abde9afcba198923f08f7638c4dd49dd94d03f9a4195e928ec7f70ab60"
     },
     {
       "path": ".agents/skills/codebase-design/DEEPENING.md",
@@ -32,15 +32,11 @@
     },
     {
       "path": ".agents/skills/cross-review/SKILL.md",
-      "sha256": "f31a1e937e69e95cf9ade8c1f9b8f137840610748db537633db482249b52de99"
+      "sha256": "295975101f8748d0bdd27ef0ea269f3c39620e76e541f556809ed6265dd6f219"
     },
     {
       "path": ".agents/skills/diagnosing-bugs/SKILL.md",
       "sha256": "ce71d43efbf11a19c32cc585933a0ed49437a22266eaa3c5b242ab73051f450a"
-    },
-    {
-      "path": ".agents/skills/doc-audit/SKILL.md",
-      "sha256": "3d517e31a9105d8a6599370edfec1e1a7a92a81d092725d211e9a04718b321dd"
     },
     {
       "path": ".agents/skills/domain-modeling/ADR-FORMAT.md",
@@ -148,7 +144,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "c85b2c71f8de7a37240b55b57a3068a2678501a1cb2cc0197c9ab496b179e0a8"
+      "sha256": "b8d8491615a56f9eee4df48d59695655eec3eb385437b67e1358f4c5f2aa5789"
     },
     {
       "path": ".agents/skills/retro/SKILL.md",
@@ -160,7 +156,7 @@
     },
     {
       "path": ".agents/skills/sync-job/SKILL.md",
-      "sha256": "cf3257e721de086545cc01bc54a59ca0514d9f562dec0af12949c1a11a492e92"
+      "sha256": "1cfc493286477381025074e4df5f72fe9b5077950e91d6685c095e6d982d972a"
     },
     {
       "path": ".agents/skills/tdd/SKILL.md",
@@ -168,7 +164,7 @@
     },
     {
       "path": ".agents/skills/to-issues/SKILL.md",
-      "sha256": "84a5a277da2a93e93c5322126037da8080d550c0cac1de68929cc499b92152df"
+      "sha256": "641f6a31862dec887c00f9c5ad005f6678ebb3d479ebddfbe98f61fda3ac7b6a"
     },
     {
       "path": ".agents/skills/to-spec/SKILL.md",
@@ -197,6 +193,10 @@
     {
       "path": ".agents/skills/writing-for-agents/agents/openai.yaml",
       "sha256": "eacb24b2a618cfb81dacb0416f4fdd75ddf3a8060f8ddb99aae1b1e301907e4b"
+    },
+    {
+      "path": ".agents/templates/builder-handoff.md",
+      "sha256": "2b7c7314ba5013d01cc12f7252858e60cabdf7999bd92540904d66342a174491"
     },
     {
       "path": ".agents/templates/planner-handoff.md",
@@ -368,19 +368,19 @@
     },
     {
       "path": ".claude/agents/builder-lite.md",
-      "sha256": "83f413a8bbdd0cce84cbefa534769e8edc2f620b902ee8a18466f4e045300f86"
+      "sha256": "2229ac637c1633094134e04875f0724fc45d99cc987f41d28014c9f7818eb332"
     },
     {
       "path": ".claude/agents/builder-max.md",
-      "sha256": "667b738d52fe1e40cc108b12d4a507855d92e7cf51f07605d9f783b61d08ab21"
+      "sha256": "cede2c783a9dd0bb0ba8662bc57dd53d43e7b911b82ff089d4e80309f12f5fca"
     },
     {
       "path": ".claude/agents/builder.md",
-      "sha256": "73ea3708d9000d6fa2f903ab262b7d88a386ff3b04df4037ebcc1538ec19528d"
+      "sha256": "beaf5cd65cc5888a930da5ce8854251bf85f0d4d7ba63055df1f51fa68ec238c"
     },
     {
       "path": ".claude/agents/explorer.md",
-      "sha256": "ac84b30c8105f2cf0d79081f49a25184434057258025a1d676110e6d5b6263bb"
+      "sha256": "e543d8b1d85114d6b2050db128f3435766603fb831ea3358e3fda796d962b64d"
     },
     {
       "path": ".claude/agents/oracle.md",
@@ -404,7 +404,7 @@
     },
     {
       "path": ".claude/hooks/block-unsafe-git.mjs",
-      "sha256": "05d8946492428620a003cc0fd2c0cfdd69011401fd284b5fa7a455afef4f3873"
+      "sha256": "0c93ee10c8c745f524ef2dee22ff0ad582330139f40b02e5b9bff648cab92676"
     },
     {
       "path": ".claude/hooks/check-builder-handoff.mjs",
@@ -432,7 +432,7 @@
     },
     {
       "path": ".claude/skills/closeout/SKILL.md",
-      "sha256": "d00678d8710fe4d6c1dffc2ddebb724309688c8325297c715f1074ef09f965cd"
+      "sha256": "c30c22abde9afcba198923f08f7638c4dd49dd94d03f9a4195e928ec7f70ab60"
     },
     {
       "path": ".claude/skills/codebase-design/DEEPENING.md",
@@ -452,15 +452,11 @@
     },
     {
       "path": ".claude/skills/cross-review/SKILL.md",
-      "sha256": "f31a1e937e69e95cf9ade8c1f9b8f137840610748db537633db482249b52de99"
+      "sha256": "295975101f8748d0bdd27ef0ea269f3c39620e76e541f556809ed6265dd6f219"
     },
     {
       "path": ".claude/skills/diagnosing-bugs/SKILL.md",
       "sha256": "ce71d43efbf11a19c32cc585933a0ed49437a22266eaa3c5b242ab73051f450a"
-    },
-    {
-      "path": ".claude/skills/doc-audit/SKILL.md",
-      "sha256": "3d517e31a9105d8a6599370edfec1e1a7a92a81d092725d211e9a04718b321dd"
     },
     {
       "path": ".claude/skills/domain-modeling/ADR-FORMAT.md",
@@ -568,7 +564,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "c85b2c71f8de7a37240b55b57a3068a2678501a1cb2cc0197c9ab496b179e0a8"
+      "sha256": "b8d8491615a56f9eee4df48d59695655eec3eb385437b67e1358f4c5f2aa5789"
     },
     {
       "path": ".claude/skills/retro/SKILL.md",
@@ -580,7 +576,7 @@
     },
     {
       "path": ".claude/skills/sync-job/SKILL.md",
-      "sha256": "cf3257e721de086545cc01bc54a59ca0514d9f562dec0af12949c1a11a492e92"
+      "sha256": "1cfc493286477381025074e4df5f72fe9b5077950e91d6685c095e6d982d972a"
     },
     {
       "path": ".claude/skills/tdd/SKILL.md",
@@ -588,7 +584,7 @@
     },
     {
       "path": ".claude/skills/to-issues/SKILL.md",
-      "sha256": "84a5a277da2a93e93c5322126037da8080d550c0cac1de68929cc499b92152df"
+      "sha256": "641f6a31862dec887c00f9c5ad005f6678ebb3d479ebddfbe98f61fda3ac7b6a"
     },
     {
       "path": ".claude/skills/to-spec/SKILL.md",
@@ -619,24 +615,20 @@
       "sha256": "eacb24b2a618cfb81dacb0416f4fdd75ddf3a8060f8ddb99aae1b1e301907e4b"
     },
     {
-      "path": ".claude/templates/builder-handoff.md",
-      "sha256": "2b7c7314ba5013d01cc12f7252858e60cabdf7999bd92540904d66342a174491"
-    },
-    {
       "path": ".codex/agents/architect.toml",
       "sha256": "1b56d21326845560acd5c0ea58c40e17ed0722faf2cd2a62c3abbcd7f44541f2"
     },
     {
       "path": ".codex/agents/builder-lite.toml",
-      "sha256": "1636061935a937f2ad34a1cc786f6e3dbd3dc4d9f28c99016f222be95e81551e"
+      "sha256": "36ba7acbcf27c755d51f54e568e23045bfe55ec74945fbe1291c67799c4d6d6e"
     },
     {
       "path": ".codex/agents/builder-max.toml",
-      "sha256": "4a734f905a37e52efbaf5a135e937625a8618c849318eae29125b11625fc33ca"
+      "sha256": "e773e1fff45c783872c8c50c38cc31278433989f1808020e96278eb7cebf84d3"
     },
     {
       "path": ".codex/agents/builder.toml",
-      "sha256": "0560337049aec0499f08260ebae863dde2834142b0a0b57047ebcb5436b91754"
+      "sha256": "841a4ebe42caf5196a0b61c3dd085f16db2db99f4b37d23d101ed6760998d48b"
     },
     {
       "path": ".codex/agents/explorer.toml",
@@ -668,7 +660,7 @@
     },
     {
       "path": ".codex/hooks/block-unsafe-git.mjs",
-      "sha256": "1cb7ae0bdf5a7f5ff2d7fa866bb7373d27806d5184afdfcda474c91cbf217e60"
+      "sha256": "45c266ff7eb0afc205091385f03a71a924db77722c770d8e8cd92b2594188020"
     },
     {
       "path": ".codex/hooks/check-builder-handoff.mjs",
@@ -688,11 +680,11 @@
     },
     {
       "path": ".githooks/README.md",
-      "sha256": "d7fe4f1b1c86ca8111eff8990785028b3ba6ea33aa4d902d0ef5c0560fb7ecb6"
+      "sha256": "6a9ee1e13f95deb3861224c6c3e9739203140e77af50294d4719e5a6bdcfb6a5"
     },
     {
       "path": ".githooks/pre-commit",
-      "sha256": "970b3edbe08570ad028e4f025821073788ac3455a7da8f1533547bbc0d8015d3",
+      "sha256": "f4686476fd6f5788db7ad1776e87b8fd14329fb5dca3c3019eaf6d68d3b899fa",
       "executable": true
     },
     {
@@ -702,7 +694,7 @@
     },
     {
       "path": ".githooks/pre-push",
-      "sha256": "31b32d830aef084079df1d84ce975f261b0c5c41c1df32f6d755200a484212c8",
+      "sha256": "dbd596ae9721f3acc4b8cc7abd7f1537622cfc5fc8e8a1d7879bd6406170a0e0",
       "executable": true
     },
     {
@@ -720,7 +712,7 @@
     {
       "path": "AGENTS.md",
       "region": "factory-shared",
-      "sha256": "43b23b91c2d9b2130ec0977b9ef43a8271b2b4e4d2fd00046b86c5c78dc6c1ea"
+      "sha256": "9a5cf5d87e814334ad3ed59885e86d3812b2a31569273c615995f4b40e07cdf0"
     },
     {
       "path": "CLAUDE.md",
@@ -732,7 +724,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW-enforcement.md",
-      "sha256": "a0b7b4a5c07476efb4e67a1eabc931726a00902c8dbd1c8f36939c56a32bcef5"
+      "sha256": "5dcb3f79158fe7724be6c5aee29d6a669cff30ce43efd72a2f743b0532f75472"
     },
     {
       "path": "docs/AI-WORKFLOW-evidence.md",
@@ -740,19 +732,19 @@
     },
     {
       "path": "docs/AI-WORKFLOW-job.md",
-      "sha256": "391faa9d25d9b467a3235b8f765977e02b4583e42671085f02f038d973d6bd28"
+      "sha256": "689af3812dd93a874d6b4c2383d836e361ab6a85b2baa4bdba7a6382192f6792"
     },
     {
       "path": "docs/AI-WORKFLOW-runtimes.md",
-      "sha256": "bf6cdd0ad4ae096f665e305bf9d901001e3addbeed0348ea44709ac02c73c989"
+      "sha256": "4a28100362fa70cc67905e4e47c09637b1eff063a783c3fccd973506ae8fa720"
     },
     {
       "path": "docs/AI-WORKFLOW-seats.md",
-      "sha256": "015a70f4fa4434871dc77be3bde0db31e4c925bc60d22b8e8d9c988c6e7f67c2"
+      "sha256": "0944aa4ce94eb73147b4507759da66139781a59c66561b6d4369f69c68350289"
     },
     {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "5a2e2af17ca2b708dbd392555fd31c840ea72dd2303830d8e0ebef9f20b4ee77"
+      "sha256": "47000dfe50adbbb30784fb88c749b07eac413bc03f8f64a000da6cfea9ccee0d"
     },
     {
       "path": "docs/WEEKLY-RETRO.md",
@@ -773,7 +765,7 @@
     },
     {
       "path": "scripts/factory-sync.mjs",
-      "sha256": "4298c9ff2484d5431aa0038596700c69201046ba902ffecf42b598ff369a0938"
+      "sha256": "cd16b47275a888022568f5c7d5a2b556881df713b78de4f4182fb2b035cd2ebe"
     },
     {
       "path": "scripts/lib/board-add.mjs",
@@ -801,31 +793,31 @@
     },
     {
       "path": "scripts/lib/board-portability.test.mjs",
-      "sha256": "46192e08ffa6c66d309aba894a94c04327393b21bdb99bc9491114ccca4012de"
+      "sha256": "46b028c4ffe83b3c04716b06f167b5a55973c1668f768a66048671f065915dab"
     },
     {
       "path": "scripts/lib/board-rules.mjs",
-      "sha256": "6d3115415e9950d02c5e4b71c0886f6ebd231260586779be239422906699a6e5"
+      "sha256": "173321b287129a94459a0e455ae30d61c53fb770788ad20785ce08cd95d21606"
     },
     {
       "path": "scripts/lib/board-rules.test.mjs",
-      "sha256": "f114d0e476d6ae5f83f4c1b4abd8cc55043789f679374210a6e7ae15dd531bdb"
+      "sha256": "a40b7649039da8b547f62ba24a87d6ebe1ae99f6ebdf345ac38a0c4a5f29a2fe"
     },
     {
       "path": "scripts/lib/board.mjs",
-      "sha256": "6c4a9e14182c9fd02b492c5ff0c05b018f2197fbc4a8da02174f67f719a1e2eb"
+      "sha256": "fd4f9f5ca3b77a15bc54386beeba97e66eb2927caa5e2006b5678d3def5e0f07"
     },
     {
       "path": "scripts/lib/board.test.mjs",
-      "sha256": "37103dbe4a5dcaa990a5f1188431f1244499cdf86b704588584b2cad1149aa54"
+      "sha256": "c5e6a7002b4158634d4019e793d5dcd11a59db263412344da6f756da0a9571fa"
     },
     {
       "path": "scripts/lib/check-agents.mjs",
-      "sha256": "e193008617a952dd68dff96b32179da1e528be6b648a2d4f3f039f3cc9b3c10b"
+      "sha256": "83e63b016d70becc20529a12c44a99c7ed4d5e86c867d5286ec1664ae28c872e"
     },
     {
       "path": "scripts/lib/check-agents.test.mjs",
-      "sha256": "07eddca1615bd006d908b7478283fcc707371d8c02a8b1b3185b583759b8a95e"
+      "sha256": "5cf40e30eda4a4bae7670f698dd2c3bff0661cae42b1d972ecb69c301b5cca65"
     },
     {
       "path": "scripts/lib/checkout-context.mjs",
@@ -861,7 +853,7 @@
     },
     {
       "path": "scripts/lib/doc-lint-citations.test.mjs",
-      "sha256": "c7469d0d96cca7c9cf9b7e6fc8d8b96d09bc5b2b37ba0eef26f9ac82246d5a11"
+      "sha256": "25332a3a28c2e0845609ce4b77bc5163197748711ddf98acbbaf959eb8c708ae"
     },
     {
       "path": "scripts/lib/doc-lint-links.mjs",
@@ -869,15 +861,15 @@
     },
     {
       "path": "scripts/lib/doc-lint-links.test.mjs",
-      "sha256": "658846da9ebddad928e0b77bcad87432d7c70ea75991ad596f9504dd4a0e4d29"
+      "sha256": "e563d4ff6a531d234d943d6e27d831fe104d9408c8197b69b9390b6ffacd17c6"
     },
     {
       "path": "scripts/lib/factory-sync.mjs",
-      "sha256": "bf06c0571fa5366f54f3da49ae275a08614876a20f27d1992bc04ad3d181ddfc"
+      "sha256": "5ced8a07d79ec711a33196b03c78510e5988e9a81b24aea191de1b65ac2cb1bf"
     },
     {
       "path": "scripts/lib/factory-sync.test.mjs",
-      "sha256": "db47f3626718a986d348ff535456aa7c7d6f6f279f9b43de48d96cc0c9d4e604"
+      "sha256": "10d3d6d0d8cc59457fb8244c95becce882388cde399e49e0e6673ec8481ae80e"
     },
     {
       "path": "scripts/lib/fake-gh.mjs",
@@ -885,27 +877,27 @@
     },
     {
       "path": "scripts/lib/gh-exec.mjs",
-      "sha256": "f3f3467e6fc92acfd3424a97b07472c25e4998aa4dc8649ca3fc1e04c64d4592"
+      "sha256": "10418ff736ed53d02046890ec34a9069059cddb33535818d0361a475f88ab484"
     },
     {
       "path": "scripts/lib/gh-exec.test.mjs",
-      "sha256": "74ff544cf6174bda5b7f50808cfc6f1bb920cb01fd277fce6635dc9383589ba1"
+      "sha256": "6a8f58fc2b0bf9c8bbf3c99082d2f975656aa87f155b5030fe6a639e438891ef"
     },
     {
       "path": "scripts/lib/handoff-check.mjs",
-      "sha256": "ef3d929052f993a4bd8e00d53b8b11c0089d827d82378fd5740b1838cd300d70"
+      "sha256": "4e5e467e37d5ff62124be4427318602a1f9e97a1793abad591ea4979c0a3ce81"
     },
     {
       "path": "scripts/lib/handoff-check.test.mjs",
-      "sha256": "f211a31eb3b0de44a23874ff6b7df2e9366cbf4a7c83801a4981ef3ce78bfc7a"
+      "sha256": "6692913e0b92e3101a791ef58bf7d1c655c7a504956cfe6f2073f07ad6a1db7e"
     },
     {
       "path": "scripts/lib/issue-publish.mjs",
-      "sha256": "973eec88f92ac5625bebbb73a4c2c07729347c84ab83459a15b27b052c7eeadf"
+      "sha256": "ea3b70abf9a6fed21dca9fea5382e6bdc8f336b68ba4f4e78a6fea0e588f78ce"
     },
     {
       "path": "scripts/lib/issue-publish.test.mjs",
-      "sha256": "360565a825cfceb757ca68bdeb94dc87f16c8567d91999b57890fbdae3045954"
+      "sha256": "2105835057530f445c659bc8a54f869f5afc2aa7760868ab6636a842205435dd"
     },
     {
       "path": "scripts/lib/merge-watch.mjs",
@@ -925,19 +917,35 @@
     },
     {
       "path": "scripts/lib/precommit.test.mjs",
-      "sha256": "89b10cd9859ec126632c2f31f9664eff0381ef496481bb98554dfa1bee27a65a"
+      "sha256": "039e5cbafaa72e2e75c87f25286c32715fa44f09e3e2e538369c39d4302643c5"
     },
     {
       "path": "scripts/lib/prepush.test.mjs",
-      "sha256": "cea40b8b3592bd49c355b6023bdde1f17c2c60331755cf8d66991a68f55d1b20"
+      "sha256": "1194b5862e09922354b92360083af0425c307432a1785b3fc76ebb6f824532ab"
     },
     {
       "path": "scripts/lib/run-log.test.mjs",
       "sha256": "cf2d4606255c675d59fcec51963090779aab2a354f8bedd2d19226d86ca34006"
     },
     {
+      "path": "scripts/lib/runtimes.mjs",
+      "sha256": "e43aee3a80ddf79f21f3a911b80b9dd87622c479122da488d29f10e94550cd6e"
+    },
+    {
+      "path": "scripts/lib/runtimes.test.mjs",
+      "sha256": "3b4facfec06a22e8ee5c0d46550fcfdcd59102eee409018441ca5b36394cd84f"
+    },
+    {
+      "path": "scripts/lib/seat-settings.mjs",
+      "sha256": "b1691b6714b16c52713d57bfa1082b99e6610fdf9e3e19dfeb27382b3a40c3d1"
+    },
+    {
+      "path": "scripts/lib/seat-settings.test.mjs",
+      "sha256": "f3f5702286b157af3e780817fe23a662f53461ee1325e8ab7ca6a0176f775b8a"
+    },
+    {
       "path": "scripts/lib/settings-policy.test.mjs",
-      "sha256": "dcdd85534a13bb9039d6bad1f14064fb4b3348b8a83e0d8f4aa567fe7d4d08d4"
+      "sha256": "469163193b456d6c24635ac6c70072bb1d3c918c8cd37ac544cc38a81ce4469d"
     },
     {
       "path": "scripts/lib/sweep-scope-corpus.mjs",
@@ -965,7 +973,7 @@
     },
     {
       "path": "scripts/lib/unsafe-git.mjs",
-      "sha256": "1af88c79a2d70911b57968ead0be943f2ea916ea40a6d646e0e6e00b8162daf1"
+      "sha256": "49efb9e3c687e82355ef93edde942e207266ff4d92c53742ad0f165f1f9bd0f1"
     },
     {
       "path": "scripts/lib/unsafe-git.test.mjs",
@@ -973,11 +981,11 @@
     },
     {
       "path": "scripts/lib/verify-green.test.mjs",
-      "sha256": "d0e827a564d85a9f808c35c7c14455a4290f4047f386a97143f90b9575acb2c1"
+      "sha256": "b3f0a66e7b544ea9d91c2f22f03e953c996aa7a52d13aa05e904d9271421cd99"
     },
     {
       "path": "scripts/lib/workflow-contract.test.mjs",
-      "sha256": "b201a06486881667a8975762426ae19238fc642d4e2a57776ba42f0fc4e4559e"
+      "sha256": "f9bd0dfa4f2a5580153485263093b0f14fef98b76e51ba76764aface6abb275d"
     },
     {
       "path": "scripts/merge-watch.mjs",
@@ -994,6 +1002,490 @@
     {
       "path": "scripts/verify-issue-publish.mjs",
       "sha256": "10f495da003808b07df19f8d79a6c6fa10daedd6b0563bcececfa47625d3917e"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/CHANGELOG.md",
+      "sha256": "751ad110037c85d400018c9894716a04fa46357ff55c22b1169b280752e19e88"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/SKILL.md",
+      "sha256": "ad65e776f45e761bafc609d3f506c77c1032225aa65e0c4c02f241b8071e5855"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/_contributing.md",
+      "sha256": "191e039e7d94764e6073410b513b559f9a594e0fdf0252a30c2a2986df2ab3bc"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/_sections.md",
+      "sha256": "c9e992612b422c7122de0b7542ebc2450db283edaab08cfe86c6d657fcccccd5"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/_template.md",
+      "sha256": "6299954250f212caabe339d752c3e5313a8e07d1a182a4e4b425baee91df1bd2"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/advanced-full-text-search.md",
+      "sha256": "40c2606bbb4c4dce31308f201b24cc7f58c7df05b1d9c6856fe2b888d3b7cf28"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/advanced-jsonb-indexing.md",
+      "sha256": "24cacf6a8bc35901dd566d24502ce8e57f810a5c196b897e61d52726e521d106"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/conn-idle-timeout.md",
+      "sha256": "630588902c00fcec59a5988cc5d042f76dcf2c923a535abfd8c47dca205eaed5"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/conn-limits.md",
+      "sha256": "11b2a67a7c7679cbbc5d807bbb17e69c98484a581d0c8b929c03408f412b81b2"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/conn-pooling.md",
+      "sha256": "88cf086bf98ba865d2e9d0579974e1366b14157619d6a93e7da77be91084e4a5"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/conn-prepared-statements.md",
+      "sha256": "174e9332fe3dda5c99b2b00159fb1915ae36c00bab3a7882c14e73e4344e946e"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/data-batch-inserts.md",
+      "sha256": "531933b82d6a622d0fae29e0ea80be6fe5d78655adf2804c271ea84a1930de37"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/data-n-plus-one.md",
+      "sha256": "21a44905e5b16a42741892ec34bb1bfef124d049b140a76934a9acd0f46f5fc2"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/data-pagination.md",
+      "sha256": "73c9fa10a3d439bedea0e11b640bd25bf30dd50f0d9006cf85baf7c3151543fa"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/data-upsert.md",
+      "sha256": "2612af83b20a2701dde30ef1f8d7efd26b7e9eef84717226b8f038a2d2150ff7"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/lock-advisory.md",
+      "sha256": "c88d259dbf81c3771438f59a165f7eab8acd09999dd370bdf807521c73f35aab"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/lock-deadlock-prevention.md",
+      "sha256": "09aee46f51d7178c8e55fe056cd5a94a64ba2c122fe418e6900cd99f297b2347"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/lock-short-transactions.md",
+      "sha256": "5aa7f61095916986d39644b446cdbcd2bacca7ef698a3bb50b3f82dd60207602"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/lock-skip-locked.md",
+      "sha256": "6c45077f430f29cd9cd8f448c94d578e827e7bd023fcdaf717a756acb116fa4b"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/monitor-explain-analyze.md",
+      "sha256": "4cb67ffbf8e57f2e5b380b0beb4242528b513723ce314a2c2ffcf083bd4203d7"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/monitor-pg-stat-statements.md",
+      "sha256": "89dca99d4e894fcbdcac136be7ad9fbc03d1342904f065c1b198dc9cf495f098"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/monitor-vacuum-analyze.md",
+      "sha256": "2892272011710eb49b3f185ec12f15ce9ce4c365792c672f6e2a9c90da426a1a"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/query-composite-indexes.md",
+      "sha256": "73e42424e671f0266e74fdb220db3196790f69fb43e2b19c7b9483eb4971b554"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/query-covering-indexes.md",
+      "sha256": "daf2a7f0477fb7357b62b5fb5b185b1995a77a186347e45cb780e25e7a7589b6"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/query-index-types.md",
+      "sha256": "472a74f22c2df203bd0154999b3a5a0187cca2ab3d9a3978e305bb7c32f1a282"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/query-missing-indexes.md",
+      "sha256": "91ad8b0ff4365704b4830a7f077c6f140f7140fd5d3ce5cd0b92b160cf9e25f1"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/query-partial-indexes.md",
+      "sha256": "6448982bc8558c6555284958edc331b29239c6a0130e6b4501dd6d4da607a6dd"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/schema-constraints.md",
+      "sha256": "90e8efda3e9e81095e642911ad4aae2809d160f29414338fa997253238f510f8"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/schema-data-types.md",
+      "sha256": "e01b58c14c7f3f65d8ead580b9a4fcf70b83baaab0f9a5f83c569c9fd113e8c8"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/schema-foreign-key-indexes.md",
+      "sha256": "7587713d12a65a212365459b3d39e4717d8a79e4073b10bd62f1054d8192c0dd"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/schema-lowercase-identifiers.md",
+      "sha256": "4bc80f70865f2390872591f326c8a6be6456a0aeb5a7e5a2475d7cd9d43059ab"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/schema-partitioning.md",
+      "sha256": "541e13fbeaf4bb1485c9059d4c9417dbdb766cf16f4237cd63a04ada7ec45b90"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/schema-primary-keys.md",
+      "sha256": "3c8beabef82066f9a0838b926da0885117fd2d9a263aaf84cb5ca9e5f0d400e9"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/security-privileges.md",
+      "sha256": "095909274a4fb43df785d7144cf674eeb40284d2d45628f14af4108737b93663"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/security-rls-basics.md",
+      "sha256": "e04dd1a3a382aafdaaa73fe9f7976352acdde6e90c2a2470d281b94d4f44b096"
+    },
+    {
+      "path": ".agents/skills/supabase-postgres-best-practices/references/security-rls-performance.md",
+      "sha256": "2e1faeca7d5746e246b1c78f9492fe2a9cfa41c4d7fa1e23c402d58fa18ea014"
+    },
+    {
+      "path": ".agents/skills/supabase/CHANGELOG.md",
+      "sha256": "4b9c9387871d7888f18e9c97a7d5691ea38e333401ccdcb0161d2140cb16b2d8"
+    },
+    {
+      "path": ".agents/skills/supabase/SKILL.md",
+      "sha256": "697e0e949f97621c6fc1784169eb3ccbf673747d6bb8299a52962d3d84d93dc6"
+    },
+    {
+      "path": ".agents/skills/supabase/assets/feedback-issue-template.md",
+      "sha256": "ea211aa174c5a096fe76461f25143b8bc23f3bde3adc9e727cda38218cc8c282"
+    },
+    {
+      "path": ".agents/skills/supabase/references/skill-feedback.md",
+      "sha256": "09ad94c0291735dfc04c92557c8734fa259ec39e1d56bf2bd5c6a6529d838717"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/LICENSE",
+      "sha256": "b65e575eb4f04a13c187d64e958321298e2ab84d67aa8428819f362056ba292c"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/CHANGELOG.md",
+      "sha256": "751ad110037c85d400018c9894716a04fa46357ff55c22b1169b280752e19e88"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/SKILL.md",
+      "sha256": "ad65e776f45e761bafc609d3f506c77c1032225aa65e0c4c02f241b8071e5855"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/_contributing.md",
+      "sha256": "191e039e7d94764e6073410b513b559f9a594e0fdf0252a30c2a2986df2ab3bc"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/_sections.md",
+      "sha256": "c9e992612b422c7122de0b7542ebc2450db283edaab08cfe86c6d657fcccccd5"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/_template.md",
+      "sha256": "6299954250f212caabe339d752c3e5313a8e07d1a182a4e4b425baee91df1bd2"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/advanced-full-text-search.md",
+      "sha256": "40c2606bbb4c4dce31308f201b24cc7f58c7df05b1d9c6856fe2b888d3b7cf28"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/advanced-jsonb-indexing.md",
+      "sha256": "24cacf6a8bc35901dd566d24502ce8e57f810a5c196b897e61d52726e521d106"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/conn-idle-timeout.md",
+      "sha256": "630588902c00fcec59a5988cc5d042f76dcf2c923a535abfd8c47dca205eaed5"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/conn-limits.md",
+      "sha256": "11b2a67a7c7679cbbc5d807bbb17e69c98484a581d0c8b929c03408f412b81b2"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/conn-pooling.md",
+      "sha256": "88cf086bf98ba865d2e9d0579974e1366b14157619d6a93e7da77be91084e4a5"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/conn-prepared-statements.md",
+      "sha256": "174e9332fe3dda5c99b2b00159fb1915ae36c00bab3a7882c14e73e4344e946e"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/data-batch-inserts.md",
+      "sha256": "531933b82d6a622d0fae29e0ea80be6fe5d78655adf2804c271ea84a1930de37"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/data-n-plus-one.md",
+      "sha256": "21a44905e5b16a42741892ec34bb1bfef124d049b140a76934a9acd0f46f5fc2"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/data-pagination.md",
+      "sha256": "73c9fa10a3d439bedea0e11b640bd25bf30dd50f0d9006cf85baf7c3151543fa"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/data-upsert.md",
+      "sha256": "2612af83b20a2701dde30ef1f8d7efd26b7e9eef84717226b8f038a2d2150ff7"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/lock-advisory.md",
+      "sha256": "c88d259dbf81c3771438f59a165f7eab8acd09999dd370bdf807521c73f35aab"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/lock-deadlock-prevention.md",
+      "sha256": "09aee46f51d7178c8e55fe056cd5a94a64ba2c122fe418e6900cd99f297b2347"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/lock-short-transactions.md",
+      "sha256": "5aa7f61095916986d39644b446cdbcd2bacca7ef698a3bb50b3f82dd60207602"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/lock-skip-locked.md",
+      "sha256": "6c45077f430f29cd9cd8f448c94d578e827e7bd023fcdaf717a756acb116fa4b"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/monitor-explain-analyze.md",
+      "sha256": "4cb67ffbf8e57f2e5b380b0beb4242528b513723ce314a2c2ffcf083bd4203d7"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/monitor-pg-stat-statements.md",
+      "sha256": "89dca99d4e894fcbdcac136be7ad9fbc03d1342904f065c1b198dc9cf495f098"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/monitor-vacuum-analyze.md",
+      "sha256": "2892272011710eb49b3f185ec12f15ce9ce4c365792c672f6e2a9c90da426a1a"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/query-composite-indexes.md",
+      "sha256": "73e42424e671f0266e74fdb220db3196790f69fb43e2b19c7b9483eb4971b554"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/query-covering-indexes.md",
+      "sha256": "daf2a7f0477fb7357b62b5fb5b185b1995a77a186347e45cb780e25e7a7589b6"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/query-index-types.md",
+      "sha256": "472a74f22c2df203bd0154999b3a5a0187cca2ab3d9a3978e305bb7c32f1a282"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/query-missing-indexes.md",
+      "sha256": "91ad8b0ff4365704b4830a7f077c6f140f7140fd5d3ce5cd0b92b160cf9e25f1"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/query-partial-indexes.md",
+      "sha256": "6448982bc8558c6555284958edc331b29239c6a0130e6b4501dd6d4da607a6dd"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/schema-constraints.md",
+      "sha256": "90e8efda3e9e81095e642911ad4aae2809d160f29414338fa997253238f510f8"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/schema-data-types.md",
+      "sha256": "e01b58c14c7f3f65d8ead580b9a4fcf70b83baaab0f9a5f83c569c9fd113e8c8"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/schema-foreign-key-indexes.md",
+      "sha256": "7587713d12a65a212365459b3d39e4717d8a79e4073b10bd62f1054d8192c0dd"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/schema-lowercase-identifiers.md",
+      "sha256": "4bc80f70865f2390872591f326c8a6be6456a0aeb5a7e5a2475d7cd9d43059ab"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/schema-partitioning.md",
+      "sha256": "541e13fbeaf4bb1485c9059d4c9417dbdb766cf16f4237cd63a04ada7ec45b90"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/schema-primary-keys.md",
+      "sha256": "3c8beabef82066f9a0838b926da0885117fd2d9a263aaf84cb5ca9e5f0d400e9"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/security-privileges.md",
+      "sha256": "095909274a4fb43df785d7144cf674eeb40284d2d45628f14af4108737b93663"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/security-rls-basics.md",
+      "sha256": "e04dd1a3a382aafdaaa73fe9f7976352acdde6e90c2a2470d281b94d4f44b096"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/security-rls-performance.md",
+      "sha256": "2e1faeca7d5746e246b1c78f9492fe2a9cfa41c4d7fa1e23c402d58fa18ea014"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase/CHANGELOG.md",
+      "sha256": "4b9c9387871d7888f18e9c97a7d5691ea38e333401ccdcb0161d2140cb16b2d8"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase/SKILL.md",
+      "sha256": "697e0e949f97621c6fc1784169eb3ccbf673747d6bb8299a52962d3d84d93dc6"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase/assets/feedback-issue-template.md",
+      "sha256": "ea211aa174c5a096fe76461f25143b8bc23f3bde3adc9e727cda38218cc8c282"
+    },
+    {
+      "path": ".agents/upstream/supabase-agent-skills/supabase/references/skill-feedback.md",
+      "sha256": "09ad94c0291735dfc04c92557c8734fa259ec39e1d56bf2bd5c6a6529d838717"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/CHANGELOG.md",
+      "sha256": "751ad110037c85d400018c9894716a04fa46357ff55c22b1169b280752e19e88"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/SKILL.md",
+      "sha256": "ad65e776f45e761bafc609d3f506c77c1032225aa65e0c4c02f241b8071e5855"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/_contributing.md",
+      "sha256": "191e039e7d94764e6073410b513b559f9a594e0fdf0252a30c2a2986df2ab3bc"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/_sections.md",
+      "sha256": "c9e992612b422c7122de0b7542ebc2450db283edaab08cfe86c6d657fcccccd5"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/_template.md",
+      "sha256": "6299954250f212caabe339d752c3e5313a8e07d1a182a4e4b425baee91df1bd2"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/advanced-full-text-search.md",
+      "sha256": "40c2606bbb4c4dce31308f201b24cc7f58c7df05b1d9c6856fe2b888d3b7cf28"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/advanced-jsonb-indexing.md",
+      "sha256": "24cacf6a8bc35901dd566d24502ce8e57f810a5c196b897e61d52726e521d106"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/conn-idle-timeout.md",
+      "sha256": "630588902c00fcec59a5988cc5d042f76dcf2c923a535abfd8c47dca205eaed5"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/conn-limits.md",
+      "sha256": "11b2a67a7c7679cbbc5d807bbb17e69c98484a581d0c8b929c03408f412b81b2"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/conn-pooling.md",
+      "sha256": "88cf086bf98ba865d2e9d0579974e1366b14157619d6a93e7da77be91084e4a5"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/conn-prepared-statements.md",
+      "sha256": "174e9332fe3dda5c99b2b00159fb1915ae36c00bab3a7882c14e73e4344e946e"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/data-batch-inserts.md",
+      "sha256": "531933b82d6a622d0fae29e0ea80be6fe5d78655adf2804c271ea84a1930de37"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/data-n-plus-one.md",
+      "sha256": "21a44905e5b16a42741892ec34bb1bfef124d049b140a76934a9acd0f46f5fc2"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/data-pagination.md",
+      "sha256": "73c9fa10a3d439bedea0e11b640bd25bf30dd50f0d9006cf85baf7c3151543fa"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/data-upsert.md",
+      "sha256": "2612af83b20a2701dde30ef1f8d7efd26b7e9eef84717226b8f038a2d2150ff7"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/lock-advisory.md",
+      "sha256": "c88d259dbf81c3771438f59a165f7eab8acd09999dd370bdf807521c73f35aab"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/lock-deadlock-prevention.md",
+      "sha256": "09aee46f51d7178c8e55fe056cd5a94a64ba2c122fe418e6900cd99f297b2347"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/lock-short-transactions.md",
+      "sha256": "5aa7f61095916986d39644b446cdbcd2bacca7ef698a3bb50b3f82dd60207602"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/lock-skip-locked.md",
+      "sha256": "6c45077f430f29cd9cd8f448c94d578e827e7bd023fcdaf717a756acb116fa4b"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/monitor-explain-analyze.md",
+      "sha256": "4cb67ffbf8e57f2e5b380b0beb4242528b513723ce314a2c2ffcf083bd4203d7"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/monitor-pg-stat-statements.md",
+      "sha256": "89dca99d4e894fcbdcac136be7ad9fbc03d1342904f065c1b198dc9cf495f098"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/monitor-vacuum-analyze.md",
+      "sha256": "2892272011710eb49b3f185ec12f15ce9ce4c365792c672f6e2a9c90da426a1a"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/query-composite-indexes.md",
+      "sha256": "73e42424e671f0266e74fdb220db3196790f69fb43e2b19c7b9483eb4971b554"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/query-covering-indexes.md",
+      "sha256": "daf2a7f0477fb7357b62b5fb5b185b1995a77a186347e45cb780e25e7a7589b6"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/query-index-types.md",
+      "sha256": "472a74f22c2df203bd0154999b3a5a0187cca2ab3d9a3978e305bb7c32f1a282"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/query-missing-indexes.md",
+      "sha256": "91ad8b0ff4365704b4830a7f077c6f140f7140fd5d3ce5cd0b92b160cf9e25f1"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/query-partial-indexes.md",
+      "sha256": "6448982bc8558c6555284958edc331b29239c6a0130e6b4501dd6d4da607a6dd"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/schema-constraints.md",
+      "sha256": "90e8efda3e9e81095e642911ad4aae2809d160f29414338fa997253238f510f8"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/schema-data-types.md",
+      "sha256": "e01b58c14c7f3f65d8ead580b9a4fcf70b83baaab0f9a5f83c569c9fd113e8c8"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/schema-foreign-key-indexes.md",
+      "sha256": "7587713d12a65a212365459b3d39e4717d8a79e4073b10bd62f1054d8192c0dd"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/schema-lowercase-identifiers.md",
+      "sha256": "4bc80f70865f2390872591f326c8a6be6456a0aeb5a7e5a2475d7cd9d43059ab"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/schema-partitioning.md",
+      "sha256": "541e13fbeaf4bb1485c9059d4c9417dbdb766cf16f4237cd63a04ada7ec45b90"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/schema-primary-keys.md",
+      "sha256": "3c8beabef82066f9a0838b926da0885117fd2d9a263aaf84cb5ca9e5f0d400e9"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/security-privileges.md",
+      "sha256": "095909274a4fb43df785d7144cf674eeb40284d2d45628f14af4108737b93663"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/security-rls-basics.md",
+      "sha256": "e04dd1a3a382aafdaaa73fe9f7976352acdde6e90c2a2470d281b94d4f44b096"
+    },
+    {
+      "path": ".claude/skills/supabase-postgres-best-practices/references/security-rls-performance.md",
+      "sha256": "2e1faeca7d5746e246b1c78f9492fe2a9cfa41c4d7fa1e23c402d58fa18ea014"
+    },
+    {
+      "path": ".claude/skills/supabase/CHANGELOG.md",
+      "sha256": "4b9c9387871d7888f18e9c97a7d5691ea38e333401ccdcb0161d2140cb16b2d8"
+    },
+    {
+      "path": ".claude/skills/supabase/SKILL.md",
+      "sha256": "697e0e949f97621c6fc1784169eb3ccbf673747d6bb8299a52962d3d84d93dc6"
+    },
+    {
+      "path": ".claude/skills/supabase/assets/feedback-issue-template.md",
+      "sha256": "ea211aa174c5a096fe76461f25143b8bc23f3bde3adc9e727cda38218cc8c282"
+    },
+    {
+      "path": ".claude/skills/supabase/references/skill-feedback.md",
+      "sha256": "09ad94c0291735dfc04c92557c8734fa259ec39e1d56bf2bd5c6a6529d838717"
     }
   ]
 }

@@ -111,7 +111,7 @@ export function pathExists(trackedSet, ref) {
 // Extract every backtick-quoted token from markdown text that looks like a
 // concrete repo-path reference (not a glob/placeholder pattern like `docs/**`
 // or `src/script/NN-*.js`, which are legal prose, not refs).
-export function extractPathRefs(markdownText) {
+export function extractPathRefs(markdownText, sourcePath = "") {
   const refs = [];
   const lines = markdownText.split("\n");
   for (let i = 0; i < lines.length; i++) {
@@ -120,6 +120,12 @@ export function extractPathRefs(markdownText) {
     const tokens = line.match(/`([^`]+)`/g) || [];
     for (const raw of tokens) {
       let token = raw.slice(1, -1);
+      if (
+        token === "supabase/agent-skills" &&
+        (sourcePath === "docs/AI-WORKFLOW-runtimes.md" ||
+          sourcePath === ".agents/skills/supabase/references/skill-feedback.md")
+      )
+        continue;
       token = token.replace(/\s§[^`]*$/, ""); // strip a trailing " §…" section suffix
       token = token.replace(/:\d+$/, ""); // strip a trailing :NNN line suffix
       if (/[*<>{}|$]/.test(token)) continue; // glob/placeholder marker

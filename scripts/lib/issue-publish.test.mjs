@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { BOARD_OWNER, BOARD_PROJECT_NUMBER, BOARD_REPOSITORY } from './board-config.mjs';
+import { BOARD_OWNER, BOARD_PROJECT_NUMBER, BOARD_REPOSITORY, KIND_LABELS } from './board-config.mjs';
 import { fetchBoard } from './board.mjs';
 import { leanBoardPage, leanNode } from './board-fixtures.mjs';
 import { installFakeGh } from './fake-gh.mjs';
@@ -16,9 +16,9 @@ import {
 import { main } from '../verify-issue-publish.mjs';
 
 const BOARD = [
-  { content: { number: 475 }, status: 'Ready', routing: 'Platform', labels: ['type:epic', 'area:board'] },
-  { content: { number: 476 }, status: 'Ready', routing: 'Product', labels: ['type:task', 'area:board'] },
-  { content: { number: 477 }, status: 'Backlog', routing: 'Go-to-market', labels: ['area:board', 'type:bug'] },
+  { content: { number: 475 }, status: 'Ready', routing: 'Platform', labels: [KIND_LABELS.epic, 'area:board'] },
+  { content: { number: 476 }, status: 'Ready', routing: 'Product', labels: [KIND_LABELS.task, 'area:board'] },
+  { content: { number: 477 }, status: 'Backlog', routing: 'Go-to-market', labels: ['area:board', KIND_LABELS.bug] },
 ];
 
 // `totalCount` defaults to the returned numbers so a fixture is complete unless a
@@ -74,7 +74,7 @@ test('issue-publish: reports exact board presence, Statuses, Workstreams, and th
   assert.deepEqual(report, [
     'issue-publish: board presence verified for #475, #476, #477.',
     'issue-publish: Statuses and Workstreams verified for #475, #476, #477.',
-    'issue-publish: exactly one type: label verified for #475, #476, #477.',
+    'issue-publish: exactly one kind label verified for #475, #476, #477.',
     'issue-publish: native child set verified: #475 has exactly the 2 supplied child issues.',
   ]);
   assert.equal(calls.filter(([name]) => name === 'fetchBoard').length, 1);
@@ -344,14 +344,21 @@ function boardWithLabels(number, labels) {
   return board;
 }
 
-test('issue-publish: fails an issue with no type: label, naming the issue and the labels found', () => {
+const KIND_NAMES = Object.values(KIND_LABELS).join(', ');
+
+test('issue-publish: fails an issue with no kind label, naming the issue and the labels found', () => {
   assert.throws(
     () => verify(['475', '476', '477'], { board: boardWithLabels(476, ['area:board']) }),
-    { message: 'requested issue #476 needs exactly one type: label but has 0 (labels found: area:board)' },
+    { message: `requested issue #476 needs exactly one kind label (${KIND_NAMES}) but has 0 (labels found: area:board)` },
   );
   assert.throws(
     () => verify(['475', '476', '477'], { board: boardWithLabels(476, []) }),
-    { message: 'requested issue #476 needs exactly one type: label but has 0 (labels found: none)' },
+    { message: `requested issue #476 needs exactly one kind label (${KIND_NAMES}) but has 0 (labels found: none)` },
+  );
+  // A `type:` label is not a kind, so an issue carrying only one states none.
+  assert.throws(
+    () => verify(['475', '476', '477'], { board: boardWithLabels(476, ['type:task', 'area:board']) }),
+    { message: `requested issue #476 needs exactly one kind label (${KIND_NAMES}) but has 0 (labels found: type:task, area:board)` },
   );
 
   // Through the real board parser and the command: the labels the check reads are the ones
@@ -369,24 +376,31 @@ test('issue-publish: fails an issue with no type: label, naming the issue and th
   });
   assert.equal(status, 1);
   assert.deepEqual(errors, [
-    'issue-publish: requested issue #480 needs exactly one type: label but has 0 (labels found: area:board)',
+    `issue-publish: requested issue #480 needs exactly one kind label (${KIND_NAMES}) but has 0 (labels found: area:board)`,
   ]);
 });
 
-test('issue-publish: fails an issue with two type: labels, naming the issue and the labels found', () => {
+test('issue-publish: fails an issue with two kind labels, naming the issue and the labels found', () => {
   assert.throws(
-    () => verify(['475', '476', '477'], { board: boardWithLabels(477, ['type:bug', 'area:board', 'type:task']) }),
-    { message: 'requested issue #477 needs exactly one type: label but has 2 (labels found: type:bug, area:board, type:task)' },
+    () => verify(['475', '476', '477'], { board: boardWithLabels(477, [KIND_LABELS.bug, 'area:board', KIND_LABELS.task]) }),
+    { message: `requested issue #477 needs exactly one kind label (${KIND_NAMES}) but has 2 (labels found: ${KIND_LABELS.bug}, area:board, ${KIND_LABELS.task})` },
   );
 });
 
-test('issue-publish: passes an issue with exactly one type: label among other labels', () => {
+test('issue-publish: fails an issue whose label list holds a name that is not text', () => {
+  assert.throws(
+    () => verify(['475', '476', '477'], { board: boardWithLabels(476, [KIND_LABELS.task, null]) }),
+    { message: 'requested issue #476 has a label whose name is not text' },
+  );
+});
+
+test('issue-publish: passes an issue with exactly one kind label among other labels', () => {
   const { report } = verify(['475'], {
-    board: boardWithLabels(475, ['area:board', 'type:feature', 'priority:high']),
+    board: boardWithLabels(475, ['area:board', KIND_LABELS.feature, 'priority:high']),
     graph: graphChildren([]),
   });
 
-  assert.equal(report[2], 'issue-publish: exactly one type: label verified for #475.');
+  assert.equal(report[2], 'issue-publish: exactly one kind label verified for #475.');
 });
 
 test('issue-publish: fails loud when duplicate board cards share a requested issue number', () => {
@@ -510,7 +524,7 @@ test('issue-publish: verifies a standalone issue and reports its zero native chi
   assert.deepEqual(report, [
     'issue-publish: board presence verified for #475.',
     'issue-publish: Statuses and Workstreams verified for #475.',
-    'issue-publish: exactly one type: label verified for #475.',
+    'issue-publish: exactly one kind label verified for #475.',
     'issue-publish: #475 verified as a standalone issue; it has 0 native child issues (none supplied; pass them as arguments to verify an Epic).',
   ]);
 });

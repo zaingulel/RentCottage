@@ -1,5 +1,5 @@
 // factory-sync.test.mjs — tests for the factory manifest reader, its drift verification, the sync into an
-// adopter, the lag check against the canonical main, and the CLI.
+// adopter, the render of an adopter's seat settings, the lag check against the canonical main, and the CLI.
 // Run: node --test scripts/lib/factory-sync.test.mjs   (or `npm run test:scripts`)
 //
 // Price tag: every tree is a real temporary directory; each sync test builds and commits two small git
@@ -32,8 +32,9 @@ import {
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkLag, checkManifestPath, computeEntries, fetchMain, readManifest, syncInto, verifyManifest } from './factory-sync.mjs';
+import { checkLag, checkManifestPath, computeEntries, fetchMain, readManifest, renderSettings, syncInto, verifyManifest } from './factory-sync.mjs';
 import { gitExecutable } from './posix-shell.mjs';
+import { presentRuntimes } from './runtimes.mjs';
 
 // Whether this machine lets an unprivileged process create a file symlink. Only Windows without Developer Mode or
 // administrator rights refuses, with EPERM; any other failure, and any failure elsewhere, is thrown.
@@ -63,11 +64,12 @@ const REGION_SHA256 = '09834d488008f5f1ef589a2d7cedc52425bee9dd23b2212e4c1d673c5
 const START = '<!-- factory-shared:start -->';
 const END = '<!-- factory-shared:end -->';
 
-function writeManifest(root, entries) {
+// seatDefaults left out writes a manifest with no such record.
+function writeManifest(root, entries, seatDefaults) {
   mkdirSync(join(root, '.agents'), { recursive: true });
   writeFileSync(
     join(root, '.agents', 'factory-manifest.json'),
-    JSON.stringify({ canonical: 'example-owner/example-repo', adopters: ['example-owner/adopter'], entries }),
+    JSON.stringify({ canonical: 'example-owner/example-repo', adopters: ['example-owner/adopter'], seatDefaults, entries }),
   );
 }
 
@@ -288,6 +290,21 @@ for (const [name, paths, ancestor, descendant] of [
   });
 }
 
+test('ANTI-REGRESSION: a manifest that lists the seat settings path in any letter case or a path under it is refused by name', (t) => {
+  for (const path of [
+    '.agents/factory-settings.json',
+    '.agents/Factory-Settings.json',
+    '.AGENTS/factory-settings.json',
+    '.agents/factory-settings.json/x',
+  ]) {
+    assertPathsRefused(
+      t,
+      [path],
+      `.agents/factory-manifest.json lists ${path}, which names the seat settings file .agents/factory-settings.json or lies under it; that file is the repository's own and no manifest may list it`,
+    );
+  }
+});
+
 function regionTree(t, manual) {
   const root = mkdtempSync(join(tmpdir(), 'factory-sync-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -321,6 +338,190 @@ for (const [name, manual] of [
     assert.throws(() => verifyManifest(regionTree(t, manual)), /AGENTS\.md: malformed region markers/);
   });
 }
+
+const CLAUDE_SEAT = '.claude/agents/builder.md';
+const CODEX_SEAT = '.codex/agents/reviewer.toml';
+const SETTINGS = '.agents/factory-settings.json';
+// Each seat's shared bytes and the same bytes with the settings below in place, written by hand; the last line of
+// the Claude charter repeats a setting line outside the settings block. Each hash was computed by `shasum -a 256`
+// over a file holding the literal, never by the code under test.
+const CLAUDE_SHARED = '---\nname: builder\nmodel: sonnet\neffort: medium\nmaxTurns: 60\n---\nBuild the slice.\nmodel: sonnet\n';
+const CLAUDE_SHARED_SHA256 = 'e0fe01d14f1ff60b229d6cf7dbb49621a8b0410c100ce0f83acefd9de80582f3';
+const CLAUDE_OVERRIDDEN = '---\nname: builder\nmodel: opus\neffort: medium\nmaxTurns: 120\n---\nBuild the slice.\nmodel: sonnet\n';
+const CLAUDE_OVERRIDDEN_SHA256 = '636b1f54c6a5ed129705e425ff9bf4f5ac549dc5befdc3c52f5a6c6a6e348b98';
+const CODEX_SHARED = 'model = "gpt-6.1-sol"\nmodel_reasoning_effort = "medium"\ndeveloper_instructions = """\nReview the change.\n"""\n';
+const CODEX_SHARED_SHA256 = '45f015d74b0968dd65bea04ae4d487bc2ede027d9a1872d5787948b81ebb34fa';
+const CODEX_OVERRIDDEN = 'model = "gpt-6.1-sol"\nmodel_reasoning_effort = "high"\ndeveloper_instructions = """\nReview the change.\n"""\n';
+const CODEX_OVERRIDDEN_SHA256 = '7c1a90822bdaa4b7ac6c5cb576611f0c06a38543f7d37697193a6843d9edf4fd';
+const SEAT_ENTRIES = [
+  { path: CLAUDE_SEAT, sha256: CLAUDE_SHARED_SHA256 },
+  { path: CODEX_SEAT, sha256: CODEX_SHARED_SHA256 },
+];
+const SEAT_SETTINGS = { claude: { builder: { model: 'opus', maxTurns: 120 } }, codex: { reviewer: { model_reasoning_effort: 'high' } } };
+const SEAT_DEFAULTS = { claude: { builder: { model: 'sonnet', maxTurns: 60 } }, codex: { reviewer: { model_reasoning_effort: 'medium' } } };
+
+// A tree whose two seats hold the overridden bytes, with a settings file naming seats and a manifest recording
+// seatDefaults; null leaves the settings file, or the record, out.
+function seatTree(t, { seats = SEAT_SETTINGS, seatDefaults = SEAT_DEFAULTS } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'factory-sync-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  put(root, CLAUDE_SEAT, CLAUDE_OVERRIDDEN);
+  put(root, CODEX_SEAT, CODEX_OVERRIDDEN);
+  writeManifest(root, SEAT_ENTRIES, seatDefaults ?? undefined);
+  if (seats !== null) put(root, SETTINGS, JSON.stringify({ version: 1, seats }));
+  return root;
+}
+
+test('an overridden seat verifies while it differs from the shared bytes only in the values the settings file names', (t) => {
+  assert.deepEqual(verifyManifest(seatTree(t)), []);
+});
+
+// Each hash is `shasum -a 256` over a file holding CLAUDE_SHARED with that one change: the bytes the recorded
+// defaults restore.
+test('ANTI-REGRESSION: one changed byte outside the named setting values of an overridden seat is reported', (t) => {
+  for (const [name, from, to, actual] of [
+    ['a charter byte', 'Build the slice.', 'Build the slicE.', 'dcba2f02ea52ad97e1acf884141c603eed749d21b34da62700e7e57d6e9ce543'],
+    ['a setting the settings file does not name', 'effort: medium', 'effort: high', 'ab3084dcc0b2c2622dbc71351440c5f66e6b16c95c1662cf7a5889a3161f5cc4'],
+  ]) {
+    const root = seatTree(t);
+    put(root, CLAUDE_SEAT, CLAUDE_OVERRIDDEN.replace(from, to));
+    assert.deepEqual(verifyManifest(root), [{ path: CLAUDE_SEAT, expected: CLAUDE_SHARED_SHA256, actual }], name);
+  }
+
+  const root = seatTree(t);
+  put(root, CLAUDE_SEAT, CLAUDE_OVERRIDDEN.replace('maxTurns: 120\n', ''));
+  const [mismatch, ...rest] = verifyManifest(root);
+  assert.deepEqual(rest, []);
+  assert.equal(mismatch.path, CLAUDE_SEAT);
+  assert.equal(mismatch.expected, CLAUDE_SHARED_SHA256);
+  assert.match(mismatch.actual, /^\.claude\/agents\/builder\.md: setting maxTurns is not carried exactly once/);
+});
+
+const NOT_RENDERED = 'seat settings not rendered; run node scripts/factory-sync.mjs --render';
+
+test('an override the manifest does not record and a recorded default the settings file does not name are each reported', (t) => {
+  const bothNotRendered = [
+    { path: CLAUDE_SEAT, expected: CLAUDE_SHARED_SHA256, actual: NOT_RENDERED },
+    { path: CODEX_SEAT, expected: CODEX_SHARED_SHA256, actual: NOT_RENDERED },
+  ];
+  assert.deepEqual(verifyManifest(seatTree(t, { seatDefaults: null })), bothNotRendered, 'an override with no recorded default');
+  assert.deepEqual(verifyManifest(seatTree(t, { seats: null })), bothNotRendered, 'a recorded default with no override');
+  const oneOfTwo = { claude: { builder: { model: 'sonnet' } }, codex: SEAT_DEFAULTS.codex };
+  assert.deepEqual(verifyManifest(seatTree(t, { seatDefaults: oneOfTwo })), [bothNotRendered[0]], 'one of two overrides recorded');
+});
+
+test('an overridden seat whose setting line holds another value than the settings file names is reported', (t) => {
+  const root = seatTree(t);
+  put(root, CLAUDE_SEAT, CLAUDE_SHARED.replace('model: sonnet\neffort', 'model: haiku\neffort').replace('maxTurns: 60', 'maxTurns: 120'));
+  put(root, CODEX_SEAT, CODEX_SHARED);
+  assert.deepEqual(verifyManifest(root), [
+    { path: CLAUDE_SEAT, expected: CLAUDE_SHARED_SHA256, actual: NOT_RENDERED },
+    { path: CODEX_SEAT, expected: CODEX_SHARED_SHA256, actual: NOT_RENDERED },
+  ]);
+});
+
+test('a malformed settings file or seat defaults record fails verification by name', (t) => {
+  const notJson = seatTree(t);
+  put(notJson, SETTINGS, '{');
+  assert.throws(() => verifyManifest(notJson), /^Error: \.agents\/factory-settings\.json: is not valid JSON/);
+
+  const unlistedSeat = seatTree(t, { seats: { claude: { planner: { model: 'opus' } } }, seatDefaults: null });
+  assert.throws(
+    () => verifyManifest(unlistedSeat),
+    /^Error: \.agents\/factory-settings\.json names the seat \.claude\/agents\/planner\.md, which is not a file entry of the manifest/,
+  );
+
+  const unlistedDefault = seatTree(t, { seatDefaults: { claude: { planner: { model: 'sonnet' } } } });
+  assert.throws(
+    () => verifyManifest(unlistedDefault),
+    /^Error: \.agents\/factory-manifest\.json seatDefaults names the seat \.claude\/agents\/planner\.md, which is not a file entry of the manifest/,
+  );
+
+  const unsafeDefault = seatTree(t, { seatDefaults: { claude: { builder: { model: 'son net' } } } });
+  assert.throws(
+    () => verifyManifest(unsafeDefault),
+    /^Error: \.agents\/factory-manifest\.json seatDefaults: seats\.claude\.builder\.model: must be a string matching .*; found "son net"/,
+  );
+});
+
+// The file the link reaches is not JSON, so reading it would throw the JSON refusal instead.
+test('a settings file that is a symlink is refused and never read', NEEDS_FILE_SYMLINK, (t) => {
+  const root = seatTree(t, { seats: null });
+  put(root, 'elsewhere.json', '{');
+  link(root, SETTINGS, '../elsewhere.json');
+  assert.throws(() => verifyManifest(root), /^Error: \.agents\/factory-settings\.json is not a regular file \(a symlink\)/);
+  assert.throws(() => presentRuntimes(root), /^Error: \.agents\/factory-settings\.json is not a regular file \(a symlink\)/);
+});
+
+// The directory the link reaches holds a valid manifest and a settings file that is not JSON, so reading that
+// file would throw the JSON refusal instead.
+test('a settings file reached through a symlinked parent is refused and never read', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'factory-sync-'));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const root = join(base, 'tree');
+  writeManifest(join(base, 'outside'), [{ path: 'docs/a.txt', sha256: HELLO_SHA256 }]);
+  put(base, 'outside/.agents/factory-settings.json', '{');
+  put(root, 'docs/a.txt', 'hello\n');
+  link(root, '.agents', '../outside/.agents');
+  assert.throws(() => verifyManifest(root), /^Error: \.agents\/factory-settings\.json: its parent .*\.agents is a symlink/);
+  assert.throws(() => presentRuntimes(root), /^Error: \.agents\/factory-settings\.json: its parent .*\.agents is a symlink/);
+});
+
+test('ANTI-REGRESSION: a seat setting changed without the settings file naming it is reported', (t) => {
+  assert.deepEqual(verifyManifest(seatTree(t, { seats: null, seatDefaults: null })), [
+    { path: CLAUDE_SEAT, expected: CLAUDE_SHARED_SHA256, actual: CLAUDE_OVERRIDDEN_SHA256 },
+    { path: CODEX_SEAT, expected: CODEX_SHARED_SHA256, actual: CODEX_OVERRIDDEN_SHA256 },
+  ]);
+});
+
+const absentFor = (runtime) => `absent (the settings file names no ${runtime} runtime)`;
+
+test('ANTI-REGRESSION: a tree that names one runtime verifies without the other\'s files, refuses anything at their paths, and still refuses a missing or changed file of its own', (t) => {
+  const tree = () => {
+    const root = mkdtempSync(join(tmpdir(), 'factory-sync-'));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    put(root, 'docs/a.txt', 'hello\n');
+    writeManifest(root, [...SEAT_ENTRIES, { path: 'docs/a.txt', sha256: HELLO_SHA256 }]);
+    return root;
+  };
+  const claude = { name: 'claude', path: CLAUDE_SEAT, shared: CLAUDE_SHARED, sharedSha256: CLAUDE_SHARED_SHA256, other: CLAUDE_OVERRIDDEN, otherSha256: CLAUDE_OVERRIDDEN_SHA256 };
+  const codex = { name: 'codex', path: CODEX_SEAT, shared: CODEX_SHARED, sharedSha256: CODEX_SHARED_SHA256, other: CODEX_OVERRIDDEN, otherSha256: CODEX_OVERRIDDEN_SHA256 };
+
+  for (const [named, leftOut] of [
+    [claude, codex],
+    [codex, claude],
+  ]) {
+    const root = tree();
+    put(root, named.path, named.shared);
+    put(root, SETTINGS, JSON.stringify({ version: 1, runtimes: [named.name], seats: {} }));
+    assert.deepEqual(verifyManifest(root), [], `${named.name} alone, none of the other runtime's files`);
+
+    const expected = absentFor(leftOut.name);
+    put(root, leftOut.path, leftOut.shared);
+    assert.deepEqual(verifyManifest(root), [{ path: leftOut.path, expected, actual: leftOut.sharedSha256 }], 'the recorded bytes at a left-out path');
+    put(root, leftOut.path, leftOut.other);
+    assert.deepEqual(verifyManifest(root), [{ path: leftOut.path, expected, actual: leftOut.otherSha256 }], 'other bytes at a left-out path');
+    rmSync(join(root, leftOut.path));
+    mkdirSync(join(root, leftOut.path));
+    assert.deepEqual(verifyManifest(root), [{ path: leftOut.path, expected, actual: 'not a regular file (a directory)' }], 'a directory at a left-out path');
+    rmSync(join(root, leftOut.path), { recursive: true });
+
+    put(root, named.path, named.other);
+    assert.deepEqual(verifyManifest(root), [{ path: named.path, expected: named.sharedSha256, actual: named.otherSha256 }], 'a changed file of the named runtime');
+    rmSync(join(root, named.path));
+    assert.deepEqual(verifyManifest(root), [{ path: named.path, expected: named.sharedSha256, actual: 'missing' }], 'a missing file of the named runtime');
+    put(root, named.path, named.shared);
+    rmSync(join(root, 'docs/a.txt'));
+    assert.deepEqual(verifyManifest(root), [{ path: 'docs/a.txt', expected: HELLO_SHA256, actual: 'missing' }], 'a missing file of every install');
+  }
+
+  const invalid = tree();
+  put(invalid, SETTINGS, JSON.stringify({ version: 1, runtimes: [], seats: {} }));
+  assert.throws(
+    () => verifyManifest(invalid),
+    /^Error: \.agents\/factory-settings\.json: runtimes: must be a non-empty array naming claude, codex or both, each once; found \[\]$/,
+  );
+});
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'factory-sync.mjs');
 const ZERO_SHA256 = '0'.repeat(64);
@@ -506,7 +707,7 @@ test('a sync writes every shared file and region into the adopter and records th
   const at = (path) => join(fixture.target, path);
   const outsideBefore = snapshot(fixture.outside);
 
-  assert.deepEqual(fixture.sync(), { files: 2, regions: 1, removed: [] });
+  assert.deepEqual(fixture.sync(), { files: 2, regions: 1, removed: [], omitted: 0 });
 
   assert.equal(readFileSync(at('AGENTS.md'), 'utf8'), `# Adopter manual\n${START}\nshared v2\n${END}\n## Adopter rules\n`);
   assert.ok(lstatSync(at('docs/a.txt')).isFile(), 'a shared file that was a symlink must become a regular file');
@@ -522,6 +723,457 @@ test('a sync writes every shared file and region into the adopter and records th
   const syncedFrom = git(fixture.source, 'rev-parse', 'HEAD');
   assert.equal(readFileSync(at(MANIFEST), 'utf8'), `${JSON.stringify({ canonical, adopters, syncedFrom, entries }, null, 2)}\n`);
   assert.deepEqual(verifyManifest(fixture.target), []);
+});
+
+// A sync fixture whose source also shares the given seat files, keyed by path.
+function seatSyncFixture(t, seats) {
+  const fixture = syncFixture(t);
+  for (const [path, text] of Object.entries(seats)) put(fixture.source, path, text);
+  recordSource(fixture.source, [...SOURCE_ENTRIES, ...Object.keys(seats).map((path) => ({ path, sha256: ZERO_SHA256 }))]);
+  return fixture;
+}
+
+// Seat files as a canonical ships them; with a known model and effort each passes the agent check. The bytes a
+// sync is expected to leave are written out by hand in each test, never built by these.
+const ORACLE_MD = '.claude/agents/oracle.md';
+const BUILDER_MD = '.claude/agents/builder.md';
+const REVIEWER_TOML = '.codex/agents/reviewer.toml';
+const claudeSeat = (name, model, effort, maxTurns) =>
+  `---\nname: ${name}\ndescription: "Fixture ${name}"\nmodel: ${model}\neffort: ${effort}\nmaxTurns: ${maxTurns}\n---\nDo the work.\n`;
+const codexSeat = (name, model, effort) =>
+  `name = "${name}"\ndescription = "Fixture ${name}"\nmodel = "${model}"\nmodel_reasoning_effort = "${effort}"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\nDo the work.\n"""\n`;
+
+// runtimes left out writes a settings file with no such key.
+const putSettings = (fixture, seats, runtimes) => put(fixture.target, SETTINGS, JSON.stringify({ version: 1, runtimes, seats }));
+
+test('a sync applies the seat settings of the adopter to the fetched bytes and records the replaced defaults', (t) => {
+  const fixture = seatSyncFixture(t, {
+    [ORACLE_MD]: claudeSeat('oracle', 'fable', 'high', 90),
+    [REVIEWER_TOML]: codexSeat('reviewer', 'gpt-6-luna', 'medium'),
+  });
+  const at = (path) => join(fixture.target, path);
+  putSettings(fixture, { claude: { oracle: { model: 'opus', maxTurns: 60 } }, codex: { reviewer: { model_reasoning_effort: 'high' } } });
+  const settingsBefore = readFileSync(at(SETTINGS), 'utf8');
+
+  assert.deepEqual(fixture.sync(), { files: 4, regions: 1, removed: [], omitted: 0 });
+
+  assert.equal(
+    readFileSync(at(ORACLE_MD), 'utf8'),
+    '---\nname: oracle\ndescription: "Fixture oracle"\nmodel: opus\neffort: high\nmaxTurns: 60\n---\nDo the work.\n',
+  );
+  assert.equal(
+    readFileSync(at(REVIEWER_TOML), 'utf8'),
+    'name = "reviewer"\ndescription = "Fixture reviewer"\nmodel = "gpt-6-luna"\nmodel_reasoning_effort = "high"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\nDo the work.\n"""\n',
+  );
+  assert.equal(readFileSync(at(SETTINGS), 'utf8'), settingsBefore, 'a sync must never write the settings file');
+
+  const { canonical, adopters, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
+  const syncedFrom = git(fixture.source, 'rev-parse', 'HEAD');
+  const seatDefaults = { claude: { oracle: { model: 'fable', maxTurns: 90 } }, codex: { reviewer: { model_reasoning_effort: 'medium' } } };
+  assert.equal(readFileSync(at(MANIFEST), 'utf8'), `${JSON.stringify({ canonical, adopters, syncedFrom, seatDefaults, entries }, null, 2)}\n`);
+  assert.deepEqual(verifyManifest(fixture.target), []);
+});
+
+test('a retune in the canonical reaches a setting the adopter does not override and leaves the one it does', (t) => {
+  const fixture = seatSyncFixture(t, { [BUILDER_MD]: claudeSeat('builder', 'sonnet', 'medium', 60) });
+  const builder = () => readFileSync(join(fixture.target, BUILDER_MD), 'utf8');
+  const recorded = () => JSON.parse(readFileSync(join(fixture.target, MANIFEST), 'utf8')).seatDefaults;
+  putSettings(fixture, { claude: { builder: { effort: 'high' } } });
+
+  fixture.sync();
+  assert.equal(builder(), '---\nname: builder\ndescription: "Fixture builder"\nmodel: sonnet\neffort: high\nmaxTurns: 60\n---\nDo the work.\n');
+  assert.deepEqual(recorded(), { claude: { builder: { effort: 'medium' } } });
+  commitAll(fixture.target);
+
+  put(fixture.source, BUILDER_MD, claudeSeat('builder', 'opus', 'low', 60));
+  recordSource(fixture.source, [...SOURCE_ENTRIES, { path: BUILDER_MD, sha256: ZERO_SHA256 }]);
+  fixture.sync();
+  assert.equal(builder(), '---\nname: builder\ndescription: "Fixture builder"\nmodel: opus\neffort: high\nmaxTurns: 60\n---\nDo the work.\n');
+  assert.deepEqual(recorded(), { claude: { builder: { effort: 'low' } } }, 'the recorded default must follow the retune');
+  assert.deepEqual(verifyManifest(fixture.target), []);
+});
+
+// The sentence a refused value ends with, word for word as the head of seat-settings.mjs gives it.
+const NAMED_AFTER_SYNC = /; a value only a newer copy of the shared workflow admits can be named after the sync that installs it$/;
+
+test('a sync refuses seat settings it cannot apply and writes nothing', (t) => {
+  const fixture = seatSyncFixture(t, {
+    [ORACLE_MD]: claudeSeat('oracle', 'fable', 'high', 90),
+    [BUILDER_MD]: claudeSeat('builder', 'sonnet', 'medium', 60),
+    '.claude/agents/explorer.md': '---\nname: explorer\ndescription: "Fixture explorer"\nmodel: haiku\n---\nDo the work.\n',
+    '.codex/agents/builder.toml': codexSeat('builder', 'gpt-6-luna', 'medium'),
+    [REVIEWER_TOML]: codexSeat('reviewer', 'gpt-6-luna', 'medium'),
+  });
+
+  put(fixture.target, SETTINGS, '{');
+  assertRefused(fixture, /^Error: \.agents\/factory-settings\.json: is not valid JSON/);
+
+  for (const [name, seats, ...causes] of [
+    [
+      'a seat the fetched manifest does not share',
+      { claude: { planner: { model: 'opus' } } },
+      /^Error: \.agents\/factory-settings\.json names the seat \.claude\/agents\/planner\.md, which is not a file entry of the manifest/,
+      /remove that seat from \.agents\/factory-settings\.json, run node scripts\/factory-sync\.mjs --render, commit, then sync$/,
+    ],
+    ['an unsafe value', { claude: { builder: { model: 'op us' } } }, /seats\.claude\.builder\.model: must be a string matching .*; found "op us"/],
+    [
+      'a setting the seat does not carry',
+      { claude: { explorer: { effort: 'high' } } },
+      /^Error: \.claude\/agents\/explorer\.md: setting effort is not carried exactly once/,
+    ],
+    [
+      'a model the running check does not know',
+      { codex: { reviewer: { model: 'example-newer-model' } } },
+      /\.codex\/agents\/reviewer\.toml.*unknown model `example-newer-model`/,
+      NAMED_AFTER_SYNC,
+    ],
+    [
+      'the costliest Claude model on the builder',
+      { claude: { builder: { model: 'fable' } } },
+      /\.claude\/agents\/builder\.md.*the costliest Claude model may sit only on the oracle and security-reviewer seats/,
+      NAMED_AFTER_SYNC,
+    ],
+    [
+      'the costliest Codex model on the builder',
+      { codex: { builder: { model: 'gpt-6-astra' } } },
+      /\.codex\/agents\/builder\.toml.*the costliest Codex model may sit only on the architect, oracle and security-reviewer seats/,
+      NAMED_AFTER_SYNC,
+    ],
+    [
+      'a turn limit of 120 on the oracle',
+      { claude: { oracle: { maxTurns: 120 } } },
+      /\.claude\/agents\/oracle\.md.*the turn limit of this seat must be one line maxTurns: N with N a whole number from 1 to 90/,
+      NAMED_AFTER_SYNC,
+    ],
+    ['inherit', { claude: { builder: { model: 'inherit' } } }, /seats\.claude\.builder\.model: inherit leaves the seat model to the session/],
+  ]) {
+    putSettings(fixture, seats);
+    for (const cause of causes) {
+      assertRefused(fixture, (error) => {
+        assert.match(String(error), cause, name);
+        return true;
+      });
+    }
+  }
+});
+
+// example-newer-model is on no known list, and the seat policy refuses fable on the builder: each is what the
+// canonical ships here, not what the settings file names.
+test('a sync run by a copy that does not know a default the canonical now ships applies the override and judges only the values the settings file names', (t) => {
+  const fixture = seatSyncFixture(t, {
+    [BUILDER_MD]: claudeSeat('builder', 'fable', 'medium', 60),
+    [REVIEWER_TOML]: codexSeat('reviewer', 'example-newer-model', 'medium'),
+  });
+  const at = (path) => join(fixture.target, path);
+  putSettings(fixture, { claude: { builder: { effort: 'high' } }, codex: { reviewer: { model_reasoning_effort: 'high' } } });
+
+  assert.deepEqual(fixture.sync(), { files: 4, regions: 1, removed: [], omitted: 0 });
+
+  assert.equal(
+    readFileSync(at(BUILDER_MD), 'utf8'),
+    '---\nname: builder\ndescription: "Fixture builder"\nmodel: fable\neffort: high\nmaxTurns: 60\n---\nDo the work.\n',
+  );
+  assert.equal(
+    readFileSync(at(REVIEWER_TOML), 'utf8'),
+    'name = "reviewer"\ndescription = "Fixture reviewer"\nmodel = "example-newer-model"\nmodel_reasoning_effort = "high"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\nDo the work.\n"""\n',
+  );
+  assert.deepEqual(JSON.parse(readFileSync(at(MANIFEST), 'utf8')).seatDefaults, {
+    claude: { builder: { effort: 'medium' } },
+    codex: { reviewer: { model_reasoning_effort: 'medium' } },
+  });
+});
+
+// The two seats the canonical ships in the left-out runtime tests, and the bytes of each written out by hand.
+const ORACLE_SHIPPED = '---\nname: oracle\ndescription: "Fixture oracle"\nmodel: fable\neffort: high\nmaxTurns: 90\n---\nDo the work.\n';
+const REVIEWER_SHIPPED =
+  'name = "reviewer"\ndescription = "Fixture reviewer"\nmodel = "gpt-6-luna"\nmodel_reasoning_effort = "medium"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\nDo the work.\n"""\n';
+const bothRuntimesFixture = (t) =>
+  seatSyncFixture(t, { [ORACLE_MD]: claudeSeat('oracle', 'fable', 'high', 90), [REVIEWER_TOML]: codexSeat('reviewer', 'gpt-6-luna', 'medium') });
+
+test('a sync into a target that names one runtime writes only that runtime\'s files, records every entry, and verifies clean', (t) => {
+  for (const [runtime, written, shipped, leftOut] of [
+    ['claude', ORACLE_MD, ORACLE_SHIPPED, REVIEWER_TOML],
+    ['codex', REVIEWER_TOML, REVIEWER_SHIPPED, ORACLE_MD],
+  ]) {
+    const fixture = bothRuntimesFixture(t);
+    const at = (path) => join(fixture.target, path);
+    putSettings(fixture, {}, [runtime]);
+
+    assert.deepEqual(fixture.sync(), { files: 3, regions: 1, removed: [], omitted: 1 }, runtime);
+
+    assert.equal(readFileSync(at(written), 'utf8'), shipped, runtime);
+    assert.equal(readFileSync(at('docs/a.txt'), 'utf8'), 'hello v2\n', runtime);
+    assert.equal(existsSync(at(leftOut)), false, `${leftOut} belongs to a runtime the target does not name`);
+    const { canonical, adopters, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
+    assert.deepEqual(entries.map(({ path }) => path), ['AGENTS.md', 'docs/a.txt', 'scripts/run.sh', ORACLE_MD, REVIEWER_TOML]);
+    const syncedFrom = git(fixture.source, 'rev-parse', 'HEAD');
+    assert.equal(readFileSync(at(MANIFEST), 'utf8'), `${JSON.stringify({ canonical, adopters, syncedFrom, entries }, null, 2)}\n`, runtime);
+    assert.deepEqual(verifyManifest(fixture.target), [], runtime);
+  }
+});
+
+// An adopter repository holding the two seats with the given bytes, a manifest that lists them with seatDefaults,
+// when given, and a settings file naming seats; null leaves the settings file out.
+function renderTree(t, { claude = CLAUDE_SHARED, codex = CODEX_SHARED, seats = SEAT_SETTINGS, seatDefaults, origin = ADOPTER_URL } = {}) {
+  const root = staleRepository(t, origin);
+  put(root, CLAUDE_SEAT, claude);
+  put(root, CODEX_SEAT, codex);
+  writeManifest(root, SEAT_ENTRIES, seatDefaults);
+  if (seats !== null) put(root, SETTINGS, JSON.stringify({ version: 1, seats }));
+  return root;
+}
+
+// The manifest text a render leaves in a renderTree: seatDefaults left out leaves no such record.
+const renderedManifest = (seatDefaults) =>
+  `${JSON.stringify({ canonical: CANONICAL, adopters: ['example-owner/adopter'], seatDefaults, entries: SEAT_ENTRIES }, null, 2)}\n`;
+
+test('render applies the settings file to the named seats, records the replaced defaults, and changes nothing on a second run', (t) => {
+  const root = renderTree(t);
+
+  assert.deepEqual(renderSettings(root), { seats: [CLAUDE_SEAT, CODEX_SEAT], manifest: true });
+
+  assert.equal(readFileSync(join(root, CLAUDE_SEAT), 'utf8'), CLAUDE_OVERRIDDEN);
+  assert.equal(readFileSync(join(root, CODEX_SEAT), 'utf8'), CODEX_OVERRIDDEN);
+  assert.equal(manifestBytes(root), renderedManifest(SEAT_DEFAULTS));
+  assert.deepEqual(verifyManifest(root), []);
+
+  const rendered = snapshot(root);
+  assert.deepEqual(renderSettings(root), { seats: [], manifest: false });
+  assert.deepEqual(snapshot(root), rendered, 'a second render must write nothing');
+});
+
+test('render with an override removed restores the seat to the shared bytes and drops its recorded default', (t) => {
+  const root = renderTree(t, { claude: CLAUDE_OVERRIDDEN, codex: CODEX_OVERRIDDEN, seats: { codex: SEAT_SETTINGS.codex }, seatDefaults: SEAT_DEFAULTS });
+
+  assert.deepEqual(renderSettings(root), { seats: [CLAUDE_SEAT], manifest: true });
+  assert.equal(readFileSync(join(root, CLAUDE_SEAT), 'utf8'), CLAUDE_SHARED);
+  assert.equal(readFileSync(join(root, CODEX_SEAT), 'utf8'), CODEX_OVERRIDDEN);
+  assert.equal(manifestBytes(root), renderedManifest({ codex: SEAT_DEFAULTS.codex }));
+  assert.deepEqual(verifyManifest(root), []);
+
+  rmSync(join(root, SETTINGS));
+  assert.deepEqual(renderSettings(root), { seats: [CODEX_SEAT], manifest: true });
+  assert.equal(readFileSync(join(root, CODEX_SEAT), 'utf8'), CODEX_SHARED);
+  assert.equal(manifestBytes(root), renderedManifest(), 'a tree with no override left must record no seatDefaults');
+  assert.deepEqual(verifyManifest(root), []);
+});
+
+test('render skips the recorded default of a seat whose runtime the settings file leaves out, and drops it', (t) => {
+  const root = renderTree(t, { claude: CLAUDE_OVERRIDDEN, codex: CODEX_OVERRIDDEN, seats: null, seatDefaults: SEAT_DEFAULTS });
+  put(root, SETTINGS, JSON.stringify({ version: 1, runtimes: ['claude'], seats: { claude: SEAT_SETTINGS.claude } }));
+
+  assert.deepEqual(renderSettings(root), { seats: [], manifest: true });
+
+  assert.equal(readFileSync(join(root, CODEX_SEAT), 'utf8'), CODEX_OVERRIDDEN, 'a seat of a left-out runtime must not be written');
+  assert.equal(manifestBytes(root), renderedManifest({ claude: SEAT_DEFAULTS.claude }));
+  assert.deepEqual(verifyManifest(root), [{ path: CODEX_SEAT, expected: absentFor('codex'), actual: CODEX_OVERRIDDEN_SHA256 }]);
+  rmSync(join(root, CODEX_SEAT));
+  assert.deepEqual(verifyManifest(root), []);
+  assert.deepEqual(renderSettings(root), { seats: [], manifest: false });
+});
+
+test('render reports whether it rewrote the manifest', (t) => {
+  const equalToDefault = renderTree(t, { seats: { claude: { builder: { model: 'sonnet' } } } });
+  assert.deepEqual(renderSettings(equalToDefault), { seats: [], manifest: true }, 'a value equal to the default changes only the manifest');
+  assert.deepEqual(renderSettings(equalToDefault), { seats: [], manifest: false });
+
+  const changed = renderTree(t, { seats: { claude: SEAT_SETTINGS.claude } });
+  assert.deepEqual(renderSettings(changed), { seats: [CLAUDE_SEAT], manifest: true });
+  assert.deepEqual(renderSettings(changed), { seats: [], manifest: false });
+});
+
+// The key is written as JSON text: an object literal naming __proto__ would set a prototype, not an own key.
+test('--render keeps a top-level manifest key named __proto__', (t) => {
+  const root = renderTree(t);
+  const path = join(root, MANIFEST);
+  writeFileSync(path, readFileSync(path, 'utf8').replace('{', '{"__proto__":{"sentinel":"preserve-me"},'));
+
+  assert.deepEqual(renderSettings(root), { seats: [CLAUDE_SEAT, CODEX_SEAT], manifest: true });
+
+  const rendered = JSON.parse(manifestBytes(root));
+  assert.ok(Object.hasOwn(rendered, '__proto__'), 'the render dropped the __proto__ key');
+  assert.deepEqual(rendered['__proto__'], { sentinel: 'preserve-me' });
+  assert.deepEqual(rendered.seatDefaults, SEAT_DEFAULTS);
+});
+
+// A render of root that must throw cause and leave root, and outside when given, as they were.
+function assertRenderRefused(root, cause, outside = root) {
+  const before = [snapshot(root), snapshot(outside)];
+  assert.throws(() => renderSettings(root), cause);
+  assert.deepEqual([snapshot(root), snapshot(outside)], before, 'a refused render must write nothing');
+}
+
+// The Claude seat sorts first and could be rendered, so a render that wrote as it went would have rewritten it.
+test('render refuses a seat whose bytes outside its setting lines are not the shared file and writes nothing', (t) => {
+  const cause = /^Error: \.codex\/agents\/reviewer\.toml: its bytes outside its setting lines are not the shared file/;
+  const edited = (seat) => seat.replace('Review the change.', 'Review the changE.');
+  assertRenderRefused(renderTree(t, { codex: edited(CODEX_SHARED) }), cause);
+  assertRenderRefused(renderTree(t, { codex: edited(CODEX_OVERRIDDEN), seatDefaults: { codex: SEAT_DEFAULTS.codex } }), cause);
+});
+
+test('render refuses the canonical repository and invalid settings and writes nothing', (t) => {
+  const root = staleRepository(t, ADOPTER_URL);
+  const seats = {
+    [ORACLE_MD]: claudeSeat('oracle', 'fable', 'high', 90),
+    [BUILDER_MD]: claudeSeat('builder', 'sonnet', 'medium', 60),
+    '.claude/agents/explorer.md': '---\nname: explorer\ndescription: "Fixture explorer"\nmodel: haiku\n---\nDo the work.\n',
+    [REVIEWER_TOML]: codexSeat('reviewer', 'gpt-6-luna', 'medium'),
+  };
+  for (const [path, text] of Object.entries(seats)) put(root, path, text);
+  writeManifest(root, computeEntries(root, { entries: Object.keys(seats).map((path) => ({ path, sha256: ZERO_SHA256 })) }));
+
+  put(root, SETTINGS, '{');
+  assertRenderRefused(root, /^Error: \.agents\/factory-settings\.json: is not valid JSON/);
+
+  for (const [name, named, ...causes] of [
+    [
+      'a seat the manifest does not share',
+      { claude: { planner: { model: 'opus' } } },
+      /^Error: \.agents\/factory-settings\.json names the seat \.claude\/agents\/planner\.md, which is not a file entry of the manifest$/,
+    ],
+    [
+      'an unknown model',
+      { codex: { reviewer: { model: 'example-newer-model' } } },
+      /\.codex\/agents\/reviewer\.toml.*unknown model `example-newer-model`/,
+      NAMED_AFTER_SYNC,
+    ],
+    [
+      'a setting the seat does not carry',
+      { claude: { explorer: { effort: 'high' } } },
+      /^Error: \.claude\/agents\/explorer\.md: setting effort is not carried exactly once/,
+    ],
+    [
+      'the costliest Claude model on the builder',
+      { claude: { builder: { model: 'fable' } } },
+      /\.claude\/agents\/builder\.md.*the costliest Claude model may sit only on the oracle and security-reviewer seats/,
+      NAMED_AFTER_SYNC,
+    ],
+    [
+      'a turn limit of 120 on the oracle',
+      { claude: { oracle: { maxTurns: 120 } } },
+      /\.claude\/agents\/oracle\.md.*the turn limit of this seat must be one line maxTurns: N with N a whole number from 1 to 90/,
+      NAMED_AFTER_SYNC,
+    ],
+    ['inherit', { claude: { builder: { model: 'inherit' } } }, /seats\.claude\.builder\.model: inherit leaves the seat model to the session/],
+  ]) {
+    put(root, SETTINGS, JSON.stringify({ version: 1, seats: named }));
+    for (const cause of causes) {
+      assertRenderRefused(root, (error) => {
+        assert.match(String(error), cause, name);
+        return true;
+      });
+    }
+  }
+
+  // Settings an adopter could render, so the canonical origin is the only cause left.
+  put(root, SETTINGS, JSON.stringify({ version: 1, seats: { claude: { builder: { effort: 'high' } } } }));
+  git(root, 'remote', 'set-url', 'origin', CANONICAL_URL);
+  assertRenderRefused(
+    root,
+    /^Error: the origin https:\/\/github\.com\/example-owner\/example-repo is the canonical github\.com\/example-owner\/example-repo, whose seat lines are the defaults/,
+  );
+});
+
+test('--render prints each seat it rewrote and exits 0', (t) => {
+  const root = renderTree(t);
+  const run = runCli(root, '--render');
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(run.stdout.split('\n'), [
+    'factory-sync: applied the seat settings to 2 seats',
+    '  .claude/agents/builder.md',
+    '  .codex/agents/reviewer.toml',
+    '',
+  ]);
+  assert.equal(readFileSync(join(root, CLAUDE_SEAT), 'utf8'), CLAUDE_OVERRIDDEN, 'a printed seat must hold the named values');
+  assert.equal(readFileSync(join(root, CODEX_SEAT), 'utf8'), CODEX_OVERRIDDEN, 'a printed seat must hold the named values');
+});
+
+test('--render that changes only the manifest says so, and says already applied only when it writes nothing', (t) => {
+  const root = renderTree(t, { seats: { claude: { builder: { model: 'sonnet' } } } });
+  const run = runCli(root, '--render');
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout, 'factory-sync: applied the seat settings; no seat file changed, and the manifest now records the defaults\n');
+  assert.equal(readFileSync(join(root, CLAUDE_SEAT), 'utf8'), CLAUDE_SHARED, 'a value equal to the default must leave the seat as it was');
+  assert.equal(manifestBytes(root), renderedManifest({ claude: { builder: { model: 'sonnet' } } }));
+
+  const rendered = snapshot(root);
+  const again = runCli(root, '--render');
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(again.stdout, 'factory-sync: the seat settings are already applied\n');
+  assert.deepEqual(snapshot(root), rendered, 'the second --render must write nothing');
+});
+
+test('--render exits 1 naming the cause when the settings file is invalid and leaves the tree unchanged', (t) => {
+  const root = renderTree(t);
+  put(root, SETTINGS, '{');
+  const before = snapshot(root);
+  const run = runCli(root, '--render');
+  assert.equal(run.status, 1, run.stderr);
+  assert.match(run.stderr, /^factory-sync: \.agents\/factory-settings\.json: is not valid JSON\n$/);
+  assert.deepEqual(snapshot(root), before, 'a refused --render must write nothing');
+});
+
+test('render after a sync that applied no settings applies them and keeps the recorded source commit', (t) => {
+  const fixture = seatSyncFixture(t, { [BUILDER_MD]: claudeSeat('builder', 'sonnet', 'medium', 60) });
+  fixture.sync();
+  commitAll(fixture.target);
+  putSettings(fixture, { claude: { builder: { effort: 'high' } } });
+  assert.deepEqual(
+    verifyManifest(fixture.target).map(({ path, actual }) => [path, actual]),
+    [[BUILDER_MD, NOT_RENDERED]],
+  );
+
+  assert.deepEqual(renderSettings(fixture.target), { seats: [BUILDER_MD], manifest: true });
+
+  assert.equal(
+    readFileSync(join(fixture.target, BUILDER_MD), 'utf8'),
+    '---\nname: builder\ndescription: "Fixture builder"\nmodel: sonnet\neffort: high\nmaxTurns: 60\n---\nDo the work.\n',
+  );
+  const { canonical, adopters, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
+  const syncedFrom = git(fixture.source, 'rev-parse', 'HEAD');
+  const seatDefaults = { claude: { builder: { effort: 'medium' } } };
+  assert.equal(manifestBytes(fixture.target), `${JSON.stringify({ canonical, adopters, syncedFrom, seatDefaults, entries }, null, 2)}\n`);
+  assert.deepEqual(verifyManifest(fixture.target), []);
+});
+
+// A tree holding the Claude seat at its shared bytes beside an outside directory holding a valid manifest that
+// lists that seat, as { tree, outside }. The caller links the tree to the outside manifest and adds a settings file
+// overriding the seat, so a render that missed its check would write.
+function treeBesideOutside(t) {
+  const base = mkdtempSync(join(tmpdir(), 'factory-sync-render-'));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const [tree, outside] = ['tree', 'outside'].map((name) => join(base, name));
+  put(tree, CLAUDE_SEAT, CLAUDE_SHARED);
+  writeManifest(outside, [SEAT_ENTRIES[0]]);
+  return { tree, outside };
+}
+
+const CLAUDE_OVERRIDE = JSON.stringify({ version: 1, seats: { claude: SEAT_SETTINGS.claude } });
+
+test('ANTI-REGRESSION: render refuses a manifest and settings file reached through a symlinked parent and writes nothing inside or outside the tree', (t) => {
+  const { tree, outside } = treeBesideOutside(t);
+  put(outside, SETTINGS, CLAUDE_OVERRIDE);
+  link(tree, '.agents', '../outside/.agents');
+  assertRenderRefused(tree, /^Error: \.agents\/factory-manifest\.json: its parent .*\.agents is a symlink/, outside);
+});
+
+// The manifest and a settings file overriding the seat sit inside the tree, so a render that missed the seat check
+// would rewrite the seat in the outside directory the tree's agents directory points at.
+test('ANTI-REGRESSION: render refuses a seat file reached through a symlinked directory and writes nothing inside or outside the tree', (t) => {
+  const { tree, outside } = treeBesideOutside(t);
+  rmSync(join(tree, '.claude'), { recursive: true });
+  put(outside, CLAUDE_SEAT, CLAUDE_SHARED);
+  writeManifest(tree, [SEAT_ENTRIES[0]]);
+  put(tree, SETTINGS, CLAUDE_OVERRIDE);
+  link(tree, '.claude/agents', '../../outside/.claude/agents');
+  assertRenderRefused(tree, /^Error: \.claude\/agents\/builder\.md: its parent .*agents is a symlink/, outside);
+});
+
+test('render refuses a manifest that is a symlink and writes nothing', NEEDS_FILE_SYMLINK, (t) => {
+  const { tree, outside } = treeBesideOutside(t);
+  put(tree, SETTINGS, CLAUDE_OVERRIDE);
+  link(tree, MANIFEST, '../../outside/.agents/factory-manifest.json');
+  assertRenderRefused(tree, /^Error: \.agents\/factory-manifest\.json is not a regular file \(a symlink\)$/, outside);
 });
 
 test('a sync removes a file the target\'s previous manifest listed and the fetched one does not, reports it, and removes nothing else', (t) => {
@@ -643,6 +1295,51 @@ test('a retired path that differs only in letter case from a path the fetched ma
   put(fixture.target, 'agents.md', 'hello\n');
   listInTarget(fixture, [{ path: 'agents.md', sha256: HELLO_SHA256 }]);
   assertRefused(fixture, /agents\.md: the manifest no longer shares it but now shares AGENTS\.md/);
+});
+
+// The canonical retunes the reviewer between the two syncs, so the bytes the target holds are the ones its own
+// committed manifest recorded and not the ones the fetched manifest records.
+test('a sync after a target stops naming a runtime removes that runtime\'s files that hold the recorded bytes, and nothing else', (t) => {
+  const fixture = bothRuntimesFixture(t);
+  assert.deepEqual(fixture.sync(), { files: 4, regions: 1, removed: [], omitted: 0 });
+  put(fixture.target, '.codex/own.toml', 'own\n');
+  putSettings(fixture, {}, ['claude']);
+  commitAll(fixture.target);
+  put(fixture.source, REVIEWER_TOML, codexSeat('reviewer', 'gpt-6-luna', 'high'));
+  recordSource(fixture.source, [...SOURCE_ENTRIES, { path: ORACLE_MD, sha256: ZERO_SHA256 }, { path: REVIEWER_TOML, sha256: ZERO_SHA256 }]);
+  const before = snapshot(fixture.target);
+  // snapshot keys its paths with the platform's separator.
+  const [removed, manifest] = [join(REVIEWER_TOML), join(MANIFEST)];
+
+  assert.deepEqual(fixture.sync(), { files: 3, regions: 1, removed: [REVIEWER_TOML], omitted: 1 });
+
+  const after = snapshot(fixture.target);
+  assert.deepEqual(Object.keys(after), Object.keys(before).filter((path) => path !== removed));
+  for (const path of Object.keys(after)) if (path !== manifest) assert.equal(after[path], before[path], path);
+  assert.equal(JSON.parse(readFileSync(join(fixture.target, MANIFEST), 'utf8')).entries.length, 5, 'the record must keep every entry');
+  assert.deepEqual(verifyManifest(fixture.target), []);
+
+  commitAll(fixture.target);
+  assert.deepEqual(fixture.sync(), { files: 3, regions: 1, removed: [], omitted: 1 });
+  assert.deepEqual(snapshot(fixture.target), after);
+});
+
+test('a file of a left-out runtime that holds other bytes is refused by name, and nothing is written or removed', (t) => {
+  for (const listed of [true, false]) {
+    const fixture = bothRuntimesFixture(t);
+    if (listed) fixture.sync();
+    put(fixture.target, REVIEWER_TOML, codexSeat('reviewer', 'gpt-6-luna', 'high'));
+    putSettings(fixture, {}, ['claude']);
+    commitAll(fixture.target);
+    assertRefused(fixture, (error) => {
+      assert.match(
+        String(error),
+        /^Error: \.codex\/agents\/reviewer\.toml: the settings file names no codex runtime, and the sync removes only the exact bytes it last recorded there, but this is a file with other bytes; /,
+        listed ? 'the previous manifest lists the path' : 'the previous manifest does not list the path',
+      );
+      return true;
+    });
+  }
 });
 
 test('a target whose committed manifest cannot be read is refused by name, never synced as a first sync', (t) => {
@@ -1027,6 +1724,24 @@ test('--from prints what it wrote and each retired file it removed, and exits 0'
   assert.equal(existsSync(join(fixture.target, 'retired.sh')), false, 'the printed file must be gone');
 });
 
+test('--from prints how many entries it left out', (t) => {
+  const fixture = bothRuntimesFixture(t);
+  putSettings(fixture, {}, ['claude']);
+  git(fixture.source, 'remote', 'set-url', 'origin', `git@github.com:${CANONICAL}.git`);
+  const run = spawnSync(process.execPath, [CLI, '--from', fixture.source], {
+    cwd: fixture.target,
+    encoding: 'utf8',
+    env: { ...process.env, ...SERVED_BY_ITSELF },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(run.stdout.split('\n'), [
+    `factory-sync: wrote 3 files and 1 regions from ${fixture.source} into ${fixture.target}`,
+    'factory-sync: left out 1 entries of a runtime the settings file does not name',
+    'factory-sync: removed 0 retired files',
+    '',
+  ]);
+});
+
 test('--from with no value, or an unknown flag, prints the usage for both modes and exits 2', (t) => {
   const root = staleRepository(t, CANONICAL_URL);
   for (const args of [['--from'], ['--from', root, '--bogus', 'x'], ['--into', root]]) {
@@ -1145,10 +1860,10 @@ for (const [name, local, fetch, cause] of [
   });
 }
 
-test('--check with any other argument prints the usage for all three modes and exits 2', (t) => {
+test('--check with any other argument prints the usage for all four modes and exits 2', (t) => {
   const run = runCli(staleRepository(t, ADOPTER_URL), '--check', 'extra');
   assert.equal(run.status, 2);
-  assert.match(run.stderr, /^usage: node scripts\/factory-sync\.mjs --write \| --check \| --from <source>/);
+  assert.match(run.stderr, /^usage: node scripts\/factory-sync\.mjs --write \| --check \| --render \| --from <source>/);
 });
 
 // The environment with PATH replaced. Windows names are case-insensitive, so any other spelling of PATH is dropped

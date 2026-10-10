@@ -191,7 +191,9 @@ serve that build. Each hosted browser portion builds what it serves.
 A TypeScript product change selects the baseline route; a database object the database group; a booking or payment
 Integrity Core object or concurrency program adds the booking and payment concurrency programs; presentation,
 Worker and Playwright paths the browser group; an unlisted path stops the run until it is listed in
-`scripts/verify.mjs`. A further broad run needs a named reason: changed evidence, an invalidated environment or an
+`scripts/verify.mjs`. Regular non-executable prose from the approved `supabase-agent-skills` vendor uses the
+existing upstream prose baseline route; executable, symlink and file-type changes still select full evidence.
+A further broad run needs a named reason: changed evidence, an invalidated environment or an
 investigated flake. A commit added after the full local check passed is changed evidence only for the checks the
 table below reruns for it, by its rows or by the recorded investigation of a path the table does not cover; an
 invalidated environment stays a reason of its own.

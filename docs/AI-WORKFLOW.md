@@ -91,7 +91,8 @@ overstates what was verified. The workflow is built around three answers to that
 
 Eight things hold in every repository that carries the workflow, and they are what transfers to another product:
 
-1. One contract file both runtimes read, with skills for the steps and hooks for what must never happen.
+1. One contract file every runtime the repository runs reads, with skills for the steps and hooks for what must never
+   happen.
 2. Two human gates, phrased for a reader of prose: what to build, and whether the finished change may ship.
 3. One worktree per issue, and one draft pull request for every change that does not qualify for the direct route to
    `main`; a job's pull request is merged only by the platform's own auto-merge.
@@ -110,7 +111,7 @@ fills that table with its own highest-consequence invariants and with its own an
 
 The workflow itself travels as the files `.agents/factory-manifest.json` lists. [`AGENTS.md`](../AGENTS.md) owns where
 they are authored and when a sync card is opened, under "Shared workflow adoption";
-[the `sync-job` skill](../.agents/skills/sync-job/SKILL.md) owns how they are fingerprinted, pinned and kept, what a
+[the `sync-job` skill](../.agents/skills/sync-job/SKILL.md) owns how they are fingerprinted, pinned and kept, how a repository overrides a seat's settings, what a
 repository needs before it runs the workflow, how a sync job runs and which cards it covers; and
 [the head of `scripts/factory-sync.mjs`](../scripts/factory-sync.mjs) owns its commands and exit codes.
 
@@ -150,7 +151,7 @@ Review: tier=sign-off rounds=7 raised=16 fixed=13 dismissed=2 deferred=1 greptil
 
 | Field | Value |
 |---|---|
-| `tier` | `document`, `code` or `sign-off`: the review tier the `resume` skill chose from the two questions: the session's own review, the cross-family review, or the cross-family review followed by Greptile. A change whose parts answer the two questions differently carries the tier of its heaviest part, and the one review covers the whole change at that tier. A pass run on the writing family's seat because the other family was unavailable keeps its tier; the pull request body declares the substitution |
+| `tier` | `document`, `code` or `sign-off`: the review tier the `resume` skill chose from the two questions: the session's own review, the cross-family review, or the cross-family review followed by Greptile. A change whose parts answer the two questions differently carries the tier of its heaviest part, and the one review covers the whole change at that tier. A pass run on the writing family's seat because the other family was unavailable keeps its tier; the pull request body declares the substitution. A pass run on the repository's one family, because its settings file names one runtime, keeps its tier the same way; the body declares that too |
 | `rounds` | Reviewer passes over the tree, at least 1: the fresh review, each pass scoped to a repair, each `security-reviewer` pass, and each Greptile review of a commit count one each; a pass counts once it records its verdict, zero findings included |
 | `raised` | Findings reported across every round, Greptile's included, a finding reported more than once counted once; in a self-review, the findings the session records in the Review section. A candidate the reviewer discarded itself is not one |
 | `fixed` | Raised findings repaired in this pull request |

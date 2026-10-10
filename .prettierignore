@@ -82,6 +82,10 @@ scripts/lib/posix-shell.test.mjs
 scripts/lib/precommit.test.mjs
 scripts/lib/prepush.test.mjs
 scripts/lib/run-log.test.mjs
+scripts/lib/runtimes.mjs
+scripts/lib/runtimes.test.mjs
+scripts/lib/seat-settings.mjs
+scripts/lib/seat-settings.test.mjs
 scripts/lib/settings-policy.test.mjs
 scripts/lib/sweep-scope.mjs
 scripts/lib/sweep-scope-corpus.mjs

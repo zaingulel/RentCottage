@@ -10,6 +10,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { leanBoardPage, leanNode } from './board-fixtures.mjs';
+import { installFakeGh } from './fake-gh.mjs';
+import { ghExec } from './gh-exec.mjs';
 import {
   BOARD_OWNER,
   BOARD_OWNER_TYPE,
@@ -964,6 +966,14 @@ test('ANTI-REGRESSION: a card detail that failed or came back malformed is unava
   assert.deepEqual(one(detailBatch({ i7: detailIssue(8) })), unavailable(7, 'GitHub returned issue #8 for this card'));
   assert.deepEqual(one(detailBatch({ i7: detailIssue(7, { body: null }) })), unavailable(7, 'malformed detail: body'));
   assert.deepEqual(
+    one(detailBatch({ i7: detailIssue(7, { parent: { number: 0 } }) })),
+    unavailable(7, 'malformed detail: parent'),
+  );
+  assert.deepEqual(
+    one(detailBatch({ i7: detailIssue(7, { parent: { number: -1 } }) })),
+    unavailable(7, 'malformed detail: parent'),
+  );
+  assert.deepEqual(
     one(detailBatch({ i7: detailIssue(7, { comments: commentPage(['only'], { totalCount: '1' }) }) })),
     unavailable(7, 'malformed detail: comments'),
   );
@@ -1010,6 +1020,52 @@ test('ANTI-REGRESSION: a card detail that failed or came back malformed is unava
     one(detailBatch({ i7: detailIssue(7) }, [{ message: untextable }])),
     unavailable(7, 'malformed detail response'),
   );
+});
+
+// Points the real wrapper at a fake gh that answers `api rate_limit` with `{}` and every other
+// call with `reply`, a JavaScript statement; restores the environment and removes the fake after
+// the test.
+function useFakeGh(t, reply) {
+  const fakeGh = installFakeGh('board-details-', `
+    if (process.argv.includes('rate_limit')) { process.stdout.write('{}'); process.exit(0); }
+    process.stdout.on('error', () => {});
+    ${reply}
+  `);
+  const previous = process.env.BOARD_TOOLKIT_GH;
+  process.env.BOARD_TOOLKIT_GH = fakeGh.env().BOARD_TOOLKIT_GH;
+  t.after(() => {
+    if (previous === undefined) delete process.env.BOARD_TOOLKIT_GH;
+    else process.env.BOARD_TOOLKIT_GH = previous;
+    fakeGh.cleanup();
+  });
+}
+
+test('ANTI-REGRESSION: a card detail response larger than 1 MiB is read whole through the real gh wrapper', (t) => {
+  const body = 'x'.repeat(1.5 * 1024 * 1024);
+  const reply = detailBatch({ i7: detailIssue(7, { body }), i8: detailIssue(8, { body: 'short' }) });
+  useFakeGh(t, `process.stdout.write(${JSON.stringify(reply)});`);
+
+  const details = fetchCardDetails(ghExec, [7, 8]);
+
+  assert.equal(details.get(7).body, body);
+  assert.equal(details.get(8).body, 'short');
+  assert.equal('unavailable' in details.get(7), false);
+  assert.equal('unavailable' in details.get(8), false);
+});
+
+// Recurring cost: this one test pipes two replies of about 64 MiB each through a real subprocess
+// on every run: the whole batch, then card 7 alone.
+test('ANTI-REGRESSION: a card detail batch beyond the gh output limit is read again in halves, and only the oversized card is unavailable, with a reason naming the size', (t) => {
+  const short = detailBatch({ i8: detailIssue(8) });
+  useFakeGh(t, `
+    if (process.argv.some((arg) => arg.includes('i7:'))) process.stdout.write(Buffer.alloc(${64 * 1024 * 1024 + 1}, 'x'));
+    else process.stdout.write(${JSON.stringify(short)});
+  `);
+
+  assert.deepEqual([...fetchCardDetails(ghExec, [7, 8])], [
+    [7, { number: 7, unavailable: 'gh output exceeded the 64 MiB read limit' }],
+    [8, { number: 8, body: 'body of 8', parent: null, comments: [], commentCount: 0, commentsUnavailable: null }],
+  ]);
 });
 
 test('fetchCardDetails: reads body, parent and every comment page, oldest comment first', () => {

@@ -26,15 +26,17 @@ process list; nothing is inferred from chat.
    issue the pull request resolved but did not name is reported to the owner, never closed unasked: only the
    issues the approved body names are within this run's authorisation. After a sync job, close each covered card the
    body lists as the [`sync-job`](../sync-job/SKILL.md) skill says.
-3. **Main.** Run [Update local main](#update-local-main). A session inside the job worktree is retained until
-   its runtime can leave it; on Claude Code, `ExitWorktree` with `action: "keep"` returns the session to the folder
-   the shell was in when `EnterWorktree` ran and removes nothing, so step 5 finishes in the same run. If that
-   folder no longer exists, the session stays in the job worktree and cannot leave it in this run: a Bash `cd` out
-   of it is reset back into the worktree. `keep` matches what the tool can do: `ExitWorktree` removes only a
-   worktree this session's own `EnterWorktree` created, so for a worktree that `git worktree add` made and the
-   session entered by path, it returns the session and leaves the directory in place, and step 5's `git worktree
-   remove` stays the thing that deletes it. This does not require switching the root checkout. Stop closeout if no
-   current verifier checkout is available.
+3. **Main.** A session inside the job worktree leaves it before anything else in this step: Update local main
+   redirects git to the `main` checkout with `-C`, and a runtime that isolates a session in its worktree refuses
+   that from inside. Then run [Update local main](#update-local-main). A session inside the job worktree is
+   retained until its runtime can leave it; on Claude Code, `ExitWorktree` with `action: "keep"` returns the
+   session to the folder the shell was in when `EnterWorktree` ran and removes nothing, so step 5 finishes in
+   the same run. If that folder no longer exists, the session stays in the job worktree and cannot leave it in
+   this run: a Bash `cd` out of it is reset back into the worktree. `keep` matches what the tool can do:
+   `ExitWorktree` removes only a worktree this session's own `EnterWorktree` created, so for a worktree that
+   `git worktree add` made and the session entered by path, it returns the session and leaves the directory in
+   place, and step 5's `git worktree remove` stays the thing that deletes it. This does not require switching
+   the root checkout. Stop closeout if no current verifier checkout is available.
 4. **Board.** From the current verifier checkout selected by Update local main, run
    `node scripts/board-move.mjs --batch <issue>:Done ...` for every closed issue. Done is the board's only
    terminal column, so a card closed as superseded or not planned also moves there. Then run
@@ -82,12 +84,13 @@ process list; nothing is inferred from chat.
    that it cannot read a filesystem, whether or not it lists an open file, so read its listing and never its
    exit status: a row naming the target or a path below it is use. A warning about a filesystem that does not
    hold the target is the denied access the next sentence covers; one about a filesystem that holds the target
-   is an incomplete lookup. Denied access to an unrelated protected process alone neither blocks cleanup nor
-   requires elevation. An unreadable relevant process, unavailable meaningful target-use check or unresolved
-   target relationship retains the affected targets; silence from an incomplete lookup of the target or a
-   relevant process is never proof of inactivity. Stop only processes confirmed as this session's own, then
-   verify they stopped and the target is unused; unconfirmed termination or uncertain ownership retains the
-   target.
+   is an incomplete lookup. The warning comes back on every run, so the command is never run again to silence it
+   or with its error output discarded: the first run's listing and warning are the evidence. Denied access to an
+   unrelated protected process alone neither blocks cleanup nor requires elevation. An unreadable relevant
+   process, unavailable meaningful target-use check or unresolved target relationship retains the affected
+   targets; silence from an incomplete lookup of the target or a relevant process is never proof of inactivity.
+   Stop only processes confirmed as this session's own, then verify they stopped and the target is unused;
+   unconfirmed termination or uncertain ownership retains the target.
    For verifier-reported artifacts, also require that this session started the reporting run, that it has
    stopped, and that its output reports neither a retained process group nor unconfirmed termination. Either
    report retains the artifact even if other checks pass; verifier output never replaces independent path,

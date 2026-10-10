@@ -10,6 +10,11 @@ state. This file holds in full only the rules every session needs; every other r
 
 ## Runtime notes
 
+A repository runs Claude Code, Codex or both. Its settings file names which under `runtimes`, as the `sync-job` skill
+says, and a repository that names none runs both. Only the named runtimes' seats, hooks, skill copies and contract file
+are installed, so a sentence here, in a skill or in a charter about a runtime the repository does not run applies to
+nothing in it.
+
 Claude Code reads this file through `CLAUDE.md`, which adds its own notes; Codex reads it directly and prompts before a
 browser run where the repository supplies `.codex/rules/playwright.rules`. Skills are shared in `.agents/skills/`, and
 `.claude/skills/` holds a byte-identical copy of each; the agent seats in `.claude/agents/` and `.codex/agents/` carry
@@ -67,9 +72,9 @@ Every rule this file does not hold in full has one home:
 | Reusing instruction text already read | The [`resume`](.agents/skills/resume/SKILL.md) skill, "Before intake" |
 | Which builder seat a slice goes to; the machinery admissions, the friction route and how machinery leaves; what a plan carries for a change to how the interface looks, and who decides where the `frontend-design` skill and the design system disagree | [`resume`](.agents/skills/resume/SKILL.md), "4. Plan" |
 | Each runtime's exact form for waiting on a helper or a long command | [`resume`](.agents/skills/resume/SKILL.md), "5. Build" |
-| The two questions that choose a review tier, the three tiers, the guard rule, what a setting-only seat change is, the cross-family route with its substitution when the other family's seat cannot be reached, when `security-reviewer` runs, when Greptile runs, how visual work is driven and how many views it needs, and the accessibility audit of visual work with the minimum target size it holds | [`resume`](.agents/skills/resume/SKILL.md), "6. Verify and review" |
+| The two questions that choose a review tier, the three tiers, the guard rule, what a setting-only seat change is, the cross-family route, its single-family form in a repository that runs one runtime, and its substitution when the other family's seat cannot be reached, when `security-reviewer` runs, when Greptile runs, how visual work is driven and how many views it needs, and the accessibility audit of visual work with the minimum target size it holds | [`resume`](.agents/skills/resume/SKILL.md), "6. Verify and review" |
 | Every other Greptile rule: the pool it is metered from, the allowance lookup, how each thread is settled before the draft is marked ready, whether a review still stands after a rebase, and the provider-unavailability exception | The [`greptile`](.agents/skills/greptile/SKILL.md) skill |
-| How shared files are fingerprinted, pinned and kept as real files; what a repository needs before it runs the workflow; and how a sync job runs: the command, what one run copies and removes, when a card is covered and how covered cards close | The [`sync-job`](.agents/skills/sync-job/SKILL.md) skill |
+| How shared files are fingerprinted, pinned and kept as real files; how a repository overrides a seat's settings and what an override may not do; how a repository names the runtimes it runs and which files each runtime owns; what a repository needs before it runs the workflow; and how a sync job runs: the command, what one run copies and removes, when a card is covered and how covered cards close | The [`sync-job`](.agents/skills/sync-job/SKILL.md) skill |
 | The tracker and triage vocabulary the vendored skills expect to have been provided | [docs/ISSUE-TRACKER.md](docs/ISSUE-TRACKER.md) |
 | How many skills are vendored, from which upstream repositories and at which commits | [docs/AI-WORKFLOW-runtimes.md](docs/AI-WORKFLOW-runtimes.md) |
 | The documentation sweep and its day-after triage, when the Conventions table marks them active | [docs/DOC-SWEEP.md](docs/DOC-SWEEP.md) and [docs/SWEEP-TRIAGE.md](docs/SWEEP-TRIAGE.md) |
@@ -145,7 +150,9 @@ Push only with owner authorisation, through a draft pull request. A change the r
 `scripts/gates/pre-push-main` admits whole is instead pushed, on the same authorisation, as a fast-forward of `main`
 from the job worktree (`git push origin HEAD:main`), its commit carrying `Closes #<issue>`; no pull request opens and no
 workflow runs. The gate alone decides what qualifies: documentation by its path and, where the gate judges changed
-lines, a setting-only seat change. A repository without that gate has no direct route.
+lines, a setting-only seat change. The push is judged by the gate as it stands on the remote's `main`, never by the
+pushed checkout's copy, so a commit cannot admit itself by changing the gate or a file it loads. A repository without
+that gate on `main` has no direct route.
 
 New executable machinery in the workflow itself, including test scripts, harnesses, runners, and test-only tools
 (product code and ordinary tests added to existing suites are exempt), needs one of the admissions the `resume` skill
@@ -160,9 +167,13 @@ skill or charter may forbid it.
 The files `.agents/factory-manifest.json` lists are shared workflow bytes, and `AGENTS.md` shares only the text between
 its `factory-shared` markers. Each shared file is authored only in the manifest's `canonical` repository, under `src/`,
 and reaches any other repository only through the manifest and a sync; the `sync-job` skill says how the files are
-fingerprinted, pinned at a commit and kept as real files. An ordinary shared change opens no sync card: `resume` reports
-at intake, as information, whether this repository lags the canonical copy. An urgent fix is authored in the canonical
-repository first and pulled by a sync card on the owner's decision. A job whose card is a sync card reads the
+fingerprinted, pinned at a commit and kept as real files. An adopter's copy of a shared file differs from the canonical
+bytes in one way only: the value of a seat's model, effort or turn-limit line that the adopter's own committed seat
+settings file names; the `sync-job` skill says how a repository overrides a seat and what an override may not do. An
+adopter that runs one runtime carries no file of the other, and a file found at one of the other's shared paths is
+refused like a changed byte. An ordinary shared change opens no sync card: `resume` reports at intake, as information,
+whether this repository lags the canonical copy. An urgent fix is authored in the canonical repository first and pulled
+by a sync card on the owner's decision. A job whose card is a sync card reads the
 [`sync-job`](.agents/skills/sync-job/SKILL.md) skill before it runs the sync.
 
 Whoever can use the administrator bypass of the required check on `main` can put any commit on `main` when the local

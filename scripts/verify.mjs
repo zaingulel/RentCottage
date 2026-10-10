@@ -253,7 +253,7 @@ function isBaselineOnlyPath(path) {
     baselineOnlyPaths.has(path) ||
     /^\.agents\/(?:skills|templates)\/.+\.md$/i.test(path) ||
     /^\.agents\/skills\/[^/]+\/agents\/openai\.yaml$/i.test(path) ||
-    /^\.agents\/upstream\/(?:mattpocock-skills|anthropics-claude-plugins-official|anthropics-knowledge-work-plugins)\/(?:(?:.+\/)?LICENSE(?:\.txt)?|.+\.(?:md|yaml))$/i.test(
+    /^\.agents\/upstream\/(?:mattpocock-skills|anthropics-claude-plugins-official|anthropics-knowledge-work-plugins|supabase-agent-skills)\/(?:(?:.+\/)?LICENSE(?:\.txt)?|.+\.(?:md|yaml))$/i.test(
       path,
     ) ||
     /^\.(?:agents|claude)\/skills\/[^/]+\/LICENSE\.txt$/i.test(path) ||
