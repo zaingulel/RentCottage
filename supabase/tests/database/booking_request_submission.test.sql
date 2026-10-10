@@ -58,7 +58,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(297);
+select plan(304);
 
 select has_function(
   'public', 'prepare_booking_request_submission', array['uuid', 'uuid', 'jsonb'],
@@ -471,6 +471,21 @@ from public.cottage_inventory_standard_prices
 cross join (values ('2099-08-21'::date), ('2099-08-22'::date)) days(service_day)
 where schedule_revision_id = '60000000-0000-4000-8000-000000003201';
 
+-- Stands in for the search limit being lowered after an attempt was admitted.
+create function pg_temp.lower_search_admission_limit() returns void language plpgsql as $$
+begin
+  execute $admission$
+    create or replace function public.validate_public_cottage_discovery_admission(requested_search jsonb)
+      returns void language plpgsql stable set search_path to ''
+    as $body$
+    begin
+      raise exception 'Public Cottage search input is invalid' using errcode = '22023';
+    end;
+    $body$
+  $admission$;
+end;
+$$;
+
 create temporary table submission_fixture as
 select
   '{"from":"2099-08-21","to":"2099-08-21","guests":4,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":2}]}'::jsonb as search,
@@ -513,6 +528,43 @@ select jsonb_build_object(
 ) as submission
 from submission_fixture;
 grant select on valid_submission to service_role;
+
+savepoint search_limit_edges;
+insert into public.cottage_inventory_availability (
+  schedule_revision_id, unit_kind, unit_id, service_day, state
+)
+select schedule_revision_id, unit_kind, unit_id, service_day::date, 'open'
+from public.cottage_inventory_standard_prices
+cross join generate_series('2099-08-23'::date, '2099-09-21'::date, interval '1 day') days(service_day)
+where schedule_revision_id = '60000000-0000-4000-8000-000000003201';
+create temporary table long_search as
+select jsonb_build_object('from', '2099-08-21', 'to', '2099-09-21', 'guests', 4, 'selections', (
+  select jsonb_agg(jsonb_build_object(
+    'serviceDay', to_char(service_day, 'YYYY-MM-DD'), 'kind', 'shift', 'position', 2
+  ))
+  from generate_series('2099-08-21'::date, '2099-09-21'::date, interval '1 day') service_day
+)) as search;
+grant select on long_search to service_role;
+select is(
+  public.resolve_booking_quote_with_fingerprint(
+    'en', 'cottage-30000000000040008000000000003201', (select search from long_search), false
+  ) ->> 'bookingPriceIqd',
+  '3520000',
+  'a stored search of 32 Service Days is still quoted in full'
+);
+set local role service_role;
+select throws_ok(
+  $$select public.prepare_booking_request_submission(
+    '00000000-0000-0000-0000-000000003202',
+    '11111111-1111-4111-8111-111111113231',
+    jsonb_set((select submission from valid_submission),
+      '{discoveryQuery}', (select search from long_search))
+  )$$,
+  '22023', 'Public Cottage search input is invalid',
+  'Booking Request admission refuses a search of 32 Service Days'
+);
+reset role;
+rollback to savepoint search_limit_edges;
 
 select matches(
   (select quote ->> 'quoteFingerprint' from submission_fixture),
@@ -1081,6 +1133,31 @@ select is(
   'an initial claim transaction that left no claim, outbox, or snapshot is safely retryable'
 );
 reset role;
+
+savepoint lowered_search_limit_claim;
+select pg_temp.lower_search_admission_limit();
+set local role service_role;
+select throws_ok(
+  format(
+    'select public.prepare_booking_request_submission(%L::uuid, %L::uuid, %L::jsonb)',
+    '00000000-0000-0000-0000-000000003202',
+    '11111111-1111-4111-8111-111111113201',
+    (select submission::text from journey_submission)
+  ),
+  '22023', 'Public Cottage search input is invalid',
+  'a prepared attempt with no Authorization Claim is refused on retry once the search limit is lowered'
+);
+select is(
+  public.begin_booking_request_authorization_claim(
+    (select (result ->> 'attemptId')::uuid from prepared_submission),
+    (select snapshot from pending_authorization_payment),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  ) -> 'executionPermit' ->> 'purpose',
+  'booking-request-authorization',
+  'an attempt admitted before the search limit was lowered still begins its Authorization Claim'
+);
+reset role;
+rollback to savepoint lowered_search_limit_claim;
 
 savepoint independent_reconciliation;
 set local role service_role;
@@ -1822,6 +1899,43 @@ select results_eq(
   'recovered finalization creates one Pending Hold for the four-hour owner deadline'
 );
 rollback to savepoint authorized_finalization_recovery;
+
+savepoint lowered_search_limit_recovery;
+select pg_temp.lower_search_admission_limit();
+create temporary table lowered_limit_finalization_work (result jsonb);
+grant select, insert on lowered_limit_finalization_work to service_role;
+set local role service_role;
+select throws_ok(
+  format(
+    'select public.get_public_booking_quote_with_fingerprint(''en'', ''cottage-30000000000040008000000000003201'', %L::jsonb)',
+    (select search::text from submission_fixture)
+  ),
+  '22023', 'Public Cottage search input is invalid',
+  'the lowered search limit refuses the authorized search as new input'
+);
+insert into lowered_limit_finalization_work
+select public.dequeue_booking_request_authorization_reconciliation();
+select is(
+  public.complete_booking_request_authorization_reconciliation(
+    ((select result ->> 'claimId' from lowered_limit_finalization_work))::uuid,
+    ((select result ->> 'generation' from lowered_limit_finalization_work))::integer,
+    ((select result ->> 'stateRevision' from lowered_limit_finalization_work))::bigint,
+    ((select result ->> 'leaseToken' from lowered_limit_finalization_work))::uuid,
+    (select snapshot from authorized_payment),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  ) ->> 'claimState',
+  'converted',
+  'an authorized request admitted before the search limit was lowered completes recovery'
+);
+reset role;
+select results_eq(
+  $$select count(*)::integer,
+      (select count(*)::integer from public.cottage_booking_period_commitments)
+    from public.booking_requests$$,
+  $$values (1::integer, 1::integer)$$,
+  'recovery under the lowered search limit creates one Booking Request and one Pending Hold'
+);
+rollback to savepoint lowered_search_limit_recovery;
 
 savepoint lost_release_response;
 create temporary table pending_release_payment as

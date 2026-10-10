@@ -1,5 +1,5 @@
 begin;
-select plan(20);
+select plan(23);
 
 select is(
   (select prosecdef from pg_proc where oid =
@@ -305,6 +305,31 @@ select results_eq(
       '2099-08-22T08:00:00+03:00'::text, '2099-08-22T23:00:00+03:00'::text,
       260000::bigint)$$,
   'the Quote preserves ordered Full-Day Bundle dates, access bounds, and applied prices'
+);
+select throws_ok(format(
+  'select public.%I(''en'', ''cottage-30000000000040008000000000002901'', %L::jsonb)',
+  quote_function,
+  jsonb_build_object('from', '2099-08-21', 'to', '2099-09-21', 'guests', 4, 'selections', (
+    select jsonb_agg(jsonb_build_object(
+      'serviceDay', to_char(service_day, 'YYYY-MM-DD'), 'kind', 'shift', 'position', 1
+    ))
+    from generate_series('2099-08-21'::date, '2099-09-21'::date, interval '1 day') service_day
+  ))
+), '22023', 'Public Cottage search input is invalid', label) from (values
+  ('get_public_booking_quote', 'a new Booking Quote refuses 32 Service Days'),
+  ('get_public_booking_quote_with_fingerprint', 'a new fingerprinted Booking Quote refuses 32 Service Days')
+) inputs(quote_function, label);
+select ok(
+  not exists (
+    select 1
+    from (values
+      ('public.resolve_booking_quote(public.cottage_profile_source_language,text,jsonb,boolean)'),
+      ('public.resolve_booking_quote_with_fingerprint(public.cottage_profile_source_language,text,jsonb,boolean)')
+    ) resolvers(signature)
+    cross join (values ('anon'), ('authenticated'), ('service_role')) api_roles(role_name)
+    where has_function_privilege(role_name, signature, 'execute')
+  ),
+  'no API role can execute the Booking Quote resolvers'
 );
 reset role;
 select is(

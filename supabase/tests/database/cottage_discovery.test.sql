@@ -1,5 +1,5 @@
 begin;
-select plan(101);
+select plan(105);
 
 select has_table(
   'public', 'cottage_marketplace_listings',
@@ -65,6 +65,7 @@ select throws_ok(format(
   ('{"from":"2099-02-31","to":"2099-08-21","guests":4,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]}', 'invalid date'),
   ('{"from":"2099-08-21","to":"2099-08-20","guests":4,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]}', 'reversed dates'),
   ('{"from":"2099-08-21","to":"2100-09-25","guests":4,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]}', 'oversized range'),
+  ('{"from":"2099-08-21","to":"2099-09-21","guests":4}', '32 Service Days'),
   ('{"from":"2099-08-21","to":"2099-08-21","guests":null,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]}', 'null guests'),
   ('{"from":"2099-08-21","to":"2099-08-21","guests":"4","selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]}', 'string guests'),
   ('{"from":"2099-08-21","to":"2099-08-21","guests":{},"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]}', 'object guests'),
@@ -103,6 +104,22 @@ select throws_ok(format(
   ('', '12', 'empty continuation'),
   ('cottage-ABCDEF00000040008000000000002811', '12', 'uppercase continuation')
 ) inputs(target_after_slug, target_limit, label);
+select lives_ok(format(
+  'select public.search_public_cottages(''en'', %L::jsonb, null, 12)',
+  jsonb_build_object('from', '2099-08-21', 'to', '2099-09-20', 'guests', 100, 'selections', (
+    select jsonb_agg(jsonb_build_object(
+      'serviceDay', to_char(service_day, 'YYYY-MM-DD'), 'kind', 'shift', 'position', shift_position
+    ))
+    from generate_series('2099-08-21'::date, '2099-09-20'::date, interval '1 day') service_day
+    cross join generate_series(1, 3) shift_position
+  ))
+), 'discovery accepts the largest permitted search');
+select throws_ok(
+  $$select public.get_public_cottage_profile('en', 'cottage-30000000000040008000000000002801',
+    '{"from":"2099-08-21","to":"2099-09-21","guests":4}'::jsonb)$$,
+  '22023', 'Public Cottage search input is invalid',
+  'the Cottage Profile refuses inventory for 32 Service Days'
+);
 reset role;
 
 insert into auth.users (id, aud, role, phone, phone_confirmed_at)
@@ -654,6 +671,12 @@ select ok(
   and not has_function_privilege('authenticated', 'public.public_cottage_inventory_units(uuid, date, date)', 'execute')
   and not has_function_privilege('service_role', 'public.public_cottage_inventory_units(uuid, date, date)', 'execute'),
   'no API role can execute the set-based inventory unit rows'
+);
+select ok(
+  not has_function_privilege('anon', 'public.validate_public_cottage_discovery_admission(jsonb)', 'execute')
+  and not has_function_privilege('authenticated', 'public.validate_public_cottage_discovery_admission(jsonb)', 'execute')
+  and not has_function_privilege('service_role', 'public.validate_public_cottage_discovery_admission(jsonb)', 'execute'),
+  'no API role can execute the discovery admission validator'
 );
 rollback to savepoint inventory_unit_rows;
 

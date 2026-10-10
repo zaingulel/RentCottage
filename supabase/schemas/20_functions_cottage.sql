@@ -1149,6 +1149,7 @@ CREATE OR REPLACE FUNCTION "public"."get_public_cottage_profile"("target_locale"
 declare result jsonb;
 begin
   perform public.validate_public_cottage_discovery(requested_search);
+  perform public.validate_public_cottage_discovery_admission(requested_search);
   with target as (
     select listing.public_slug, profile.current_shift_schedule_id as schedule_id,
       publication.*, localization.description, localization.house_rules
@@ -3459,6 +3460,7 @@ declare
   next_cursor text;
 begin
   perform public.validate_public_cottage_discovery(requested_search);
+  perform public.validate_public_cottage_discovery_admission(requested_search);
   if target_limit is null or target_limit < 1 or target_limit > 12
     or target_after_slug !~ '^cottage-[0-9a-f]{32}$' then
     raise exception 'Public Cottage search input is invalid' using errcode = '22023';
@@ -4150,6 +4152,20 @@ end;
 $_$;
 
 ALTER FUNCTION "public"."validate_public_cottage_discovery"("requested_search" "jsonb") OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."validate_public_cottage_discovery_admission"("requested_search" "jsonb") RETURNS "void"
+    LANGUAGE "plpgsql" STABLE
+    SET "search_path" TO ''
+    AS $$
+begin
+  -- Callers validate the search first; this adds only the admission limit.
+  if (requested_search ->> 'to')::date - (requested_search ->> 'from')::date + 1 > 31 then
+    raise exception 'Public Cottage search input is invalid' using errcode = '22023';
+  end if;
+end;
+$$;
+
+ALTER FUNCTION "public"."validate_public_cottage_discovery_admission"("requested_search" "jsonb") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."validate_public_cottage_search"("requested_search" "jsonb") RETURNS "void"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
