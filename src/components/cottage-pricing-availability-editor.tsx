@@ -47,18 +47,16 @@ type InventoryUnit = {
 function unitsFor(
   schedule: CottageShiftSchedule | null,
   copy: ScheduleCopy,
+  legacy: boolean,
 ): InventoryUnit[] {
   if (!schedule) return [];
-  const legacy = schedule.shifts.length === 3;
   return [
     ...schedule.shifts.map((shift) => {
       const identity = legacy
         ? `${copy.shift} ${shift.position}`
         : shift.position === 1
           ? copy.morning
-          : shift.position === 2
-            ? copy.evening
-            : `${copy.shift} ${shift.position}`;
+          : copy.evening;
       return {
         id: shift.id,
         kind: "shift" as const,
@@ -151,7 +149,7 @@ export function CottagePricingAvailabilityEditor({
     );
   const scheduleCopy = cottageShiftScheduleMessages[locale];
   const legacy = schedule?.shifts.length === 3;
-  const units = unitsFor(schedule, scheduleCopy);
+  const units = unitsFor(schedule, scheduleCopy, legacy);
   const direction = directionFor(locale);
   const priceFeedback = feedback(pricingState, copy);
   const availabilityFeedback = feedback(availabilityState, copy);

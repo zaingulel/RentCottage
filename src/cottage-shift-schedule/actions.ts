@@ -68,13 +68,6 @@ export async function saveCottageShiftScheduleAction(
     startTime: "shiftStartTime",
     endTime: "shiftEndTime",
   };
-  const toFormFields = (fields: string[]) =>
-    fields.map((field) =>
-      field.replace(
-        /^shifts\.(\d+)\.(name|startTime|endTime)$/,
-        (_, index: string, name: string) => `${formFields[name]}.${index}`,
-      ),
-    );
   // Reject malformed forms before constructing the cookie-bound service, which also validates independent callers.
   const parsed = readCottageShiftSchedule({
     shifts: entries.shiftName.map((name, index) => ({
@@ -85,7 +78,15 @@ export async function saveCottageShiftScheduleAction(
     })),
   });
   if (parsed.status === "invalid") {
-    return { status: "invalid", fields: toFormFields(parsed.fields) };
+    return {
+      status: "invalid",
+      fields: parsed.fields.map((field) =>
+        field.replace(
+          /^shifts\.(\d+)\.(name|startTime|endTime)$/,
+          (_, index: string, name: string) => `${formFields[name]}.${index}`,
+        ),
+      ),
+    };
   }
   if (parsed.status === "overlap") return parsed;
 
@@ -96,9 +97,6 @@ export async function saveCottageShiftScheduleAction(
   if (result.status === "saved") {
     revalidatePath(`/${requestedLocale}/owner/cottages/${profileId}`);
     return result;
-  }
-  if (result.status === "invalid") {
-    return { status: "invalid", fields: toFormFields(result.fields) };
   }
   return result;
 }

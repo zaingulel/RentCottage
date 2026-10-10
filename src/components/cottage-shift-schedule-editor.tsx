@@ -275,16 +275,16 @@ export function CottageShiftScheduleEditor({
                   </dd>
                 </div>
                 {!legacy ? (
-                  <div>
-                    <dt>{copy.betweenShifts}</dt>
-                    <dd>{copy.fullDayBetweenShifts}</dd>
-                  </div>
-                ) : null}
-                {!legacy ? (
-                  <div>
-                    <dt>{copy.consecutiveDays}</dt>
-                    <dd>{copy.consecutiveDaysAccess}</dd>
-                  </div>
+                  <>
+                    <div>
+                      <dt>{copy.betweenShifts}</dt>
+                      <dd>{copy.fullDayBetweenShifts}</dd>
+                    </div>
+                    <div>
+                      <dt>{copy.consecutiveDays}</dt>
+                      <dd>{copy.consecutiveDaysAccess}</dd>
+                    </div>
+                  </>
                 ) : null}
               </dl>
             </>
