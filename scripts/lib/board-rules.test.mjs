@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BOARD_OWNER,
+  KIND_LABELS,
   PICKABLE_STATUSES,
   ROUTING_FIELD,
   TERMINAL_STATUSES,
@@ -190,7 +191,7 @@ test('rule 5 — a claim with no closing pull request at all is an advisory; an 
     // twin: an open draft is exactly what an in-flight job looks like.
     { number: 2, status: 'In review', closingPullRequests: [{ number: 50 }] },
     // twin: a slice's "Closes #<slice>" creates no closing reference on the epic wrapper.
-    { number: 3, status: 'In progress', labels: ['type:epic'], subIssues: { total: 1, completed: 0 } },
+    { number: 3, status: 'In progress', labels: [KIND_LABELS.epic], subIssues: { total: 1, completed: 0 } },
     // twin: Awaiting push is the gap before any push has happened.
     { number: 4, status: 'Awaiting push' },
   ]);
@@ -245,10 +246,10 @@ test('a parked claim is still reported by rule 4 when unassigned and by rule 3 w
 
 test('rule 6 — an open epic whose every child is closed is fatal drift; one open child or zero children is not', () => {
   const { drifted } = scan([
-    { number: 1, status: 'Ready', labels: ['type:epic'], subIssues: { total: 3, completed: 3 } },
-    { number: 2, status: 'Ready', labels: ['type:epic'], subIssues: { total: 2, completed: 1 } },
+    { number: 1, status: 'Ready', labels: [KIND_LABELS.epic], subIssues: { total: 3, completed: 3 } },
+    { number: 2, status: 'Ready', labels: [KIND_LABELS.epic], subIssues: { total: 2, completed: 1 } },
     // twin: nothing can be "all closed" with no children — that is rule 7's shape.
-    { number: 3, status: 'Ready', labels: ['type:epic'], subIssues: { total: 0, completed: 0 } },
+    { number: 3, status: 'Ready', labels: [KIND_LABELS.epic], subIssues: { total: 0, completed: 0 } },
   ]);
   assert.deepEqual(rowsFor(drifted, 1), [{
     number: 1,
@@ -263,10 +264,10 @@ test('rule 6 — an open epic whose every child is closed is fatal drift; one op
 
 test('rule 7 — an epic claimed with no sub-issues is an advisory; one sub-issue or a card still in Ready is not', () => {
   const { drifted } = scan([
-    { number: 1, status: 'In progress', labels: ['type:epic'], subIssues: { total: 0, completed: 0 } },
-    { number: 2, status: 'In progress', labels: ['type:epic'], subIssues: { total: 1, completed: 0 } },
+    { number: 1, status: 'In progress', labels: [KIND_LABELS.epic], subIssues: { total: 0, completed: 0 } },
+    { number: 2, status: 'In progress', labels: [KIND_LABELS.epic], subIssues: { total: 1, completed: 0 } },
     // twin: an undecomposed epic waiting in Ready is the normal pre-pick state.
-    { number: 3, status: 'Ready', labels: ['type:epic'], subIssues: { total: 0, completed: 0 } },
+    { number: 3, status: 'Ready', labels: [KIND_LABELS.epic], subIssues: { total: 0, completed: 0 } },
   ]);
   assert.deepEqual(rowsFor(drifted, 1), [{
     number: 1,
@@ -458,11 +459,11 @@ test('the pickable, terminal and wait columns are board-config\'s, and Awaiting 
   }
 });
 
-test('isEpic: true for the type:epic label (or legacy bare epic), false otherwise', () => {
-  assert.equal(isEpic({ labels: ['type:epic'] }), true);
-  assert.equal(isEpic({ labels: ['area:ui', 'type:epic'] }), true);
-  assert.equal(isEpic({ labels: ['epic'] }), true);
-  assert.equal(isEpic({ labels: ['type:feature'] }), false);
+test('isEpic: true for the configured epic kind label alone, false for any other label', () => {
+  assert.equal(isEpic({ labels: [KIND_LABELS.epic] }), true);
+  assert.equal(isEpic({ labels: ['area:ui', KIND_LABELS.epic] }), true);
+  assert.equal(isEpic({ labels: [`x:${KIND_LABELS.epic}`] }), false);
+  assert.equal(isEpic({ labels: [KIND_LABELS.feature] }), false);
   assert.equal(isEpic({ labels: [] }), false);
 });
 
@@ -639,7 +640,7 @@ test('ANTI-REGRESSION: intakeCards keeps every numbered pickable card and every 
       { number: 20, status: backlog },
       { number: 40, status: 'In progress' },
       { number: 41, status: 'In progress', closingPullRequests: [{ number: 50 }] },
-      { number: 44, status: 'In progress', labels: ['type:epic'] },
+      { number: 44, status: 'In progress', labels: [KIND_LABELS.epic] },
       { number: 42, status: WAIT_STATUSES[0] },
       { number: 43, status: TERMINAL_STATUSES[0], state: 'CLOSED' },
     ].map(issueNode),

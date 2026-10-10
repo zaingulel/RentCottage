@@ -8,6 +8,7 @@ import {
   classifyGhFailure,
   ghArgvPrefix,
   ghExec,
+  GhOutputTooLargeError,
 } from './gh-exec.mjs';
 
 // Fixed epoch (independent of when this test runs) so the expected HH:MM is a
@@ -65,6 +66,21 @@ test('ghExec: failure + stubbed probe remaining=0 throws the quota error', () =>
     () => ghExec(['api', 'graphql', '-f', 'query=...'], execImpl),
     /GitHub GraphQL quota exhausted \(0\/5000\)/,
   );
+});
+
+test('ANTI-REGRESSION: ghExec rethrows an output-size error unchanged and never probes the quota', () => {
+  const tooLarge = new GhOutputTooLargeError(new Error('spawnSync gh ENOBUFS'));
+  const calls = [];
+  const execImpl = (args) => {
+    calls.push(args);
+    if (args[0] === 'api' && args[1] === 'rate_limit') return JSON.stringify(EXHAUSTED_PAYLOAD);
+    throw tooLarge;
+  };
+  assert.throws(
+    () => ghExec(['issue', 'view', '453'], execImpl),
+    (err) => err === tooLarge && err.message === 'gh output exceeded the 64 MiB read limit',
+  );
+  assert.equal(calls.length, 1);
 });
 
 test('ghExec: failure + probe that ITSELF throws rethrows the ORIGINAL error (probe never masks)', () => {

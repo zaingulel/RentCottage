@@ -1,6 +1,6 @@
 ---
 name: cross-review
-description: The fresh reviewer pass for a code diff, run by the model family that did not write it, the Codex reviewer seat from a Claude session and the Claude reviewer seat from a Codex session, dispatched as configured; and the plan review of a plan-first card, run on the Codex plan-reviewer seat before any build.
+description: The fresh reviewer pass for a code diff, run by the model family that did not write it, the Codex reviewer seat from a Claude session and the Claude reviewer seat from a Codex session, dispatched as configured, or by that family's own seat where the repository runs one runtime; and the plan review of a plan-first card, run on the Codex plan-reviewer seat before any build.
 ---
 
 # cross-review
@@ -82,6 +82,10 @@ claude -p --agent reviewer --permission-mode plan --output-format json \
 Read-only is not instruction isolation: the reviewer reads the checkout's `AGENTS.md`, rules and skills as its charter
 directs, and nothing else is handed to it.
 
+**The repository runs one runtime**: there is no other family's seat. Dispatch this family's own `reviewer` seat
+natively, as configured, in a fresh context, with `<pending>` and the card in the dispatch. The `resume` skill owns what
+the pull request body records, under "6. Verify and review".
+
 ## 2. Settle the findings
 
 The same loop as any reviewer pass: fix each true finding by its cheapest valid fix, take a true finding whose every
@@ -105,6 +109,9 @@ view reads, so the body carries no usage for them. A run that fails is reported 
 The `resume` skill's Plan step sends a plan-first card's fixed plan to the Codex `plan-reviewer` seat,
 `.codex/agents/plan-reviewer.toml`, on both runtimes, and owns what happens when that seat cannot be reached.
 Its settings are read from the seat file and passed unchanged, as in section 1.
+
+In a repository that runs Claude Code alone the plan review is the fallback's seat and dispatch below, with no
+unavailability to establish; the `resume` skill's Plan step owns what the body records.
 
 **From a Claude session**: plain `codex exec` again. The sandbox has no network, so the prompt carries the
 charter, the card and the whole plan. The charter writes its findings to an assigned file, which the sandbox

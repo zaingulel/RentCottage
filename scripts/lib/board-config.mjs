@@ -42,6 +42,11 @@ export const ROUTING_OPTIONS = ['Go-to-market', 'Product', 'Platform'];
 // has no parked lane.
 export const PARKED_LANE = null;
 
-// The label that marks an epic; the bare form is Flowgauge's legacy alias, kept so the
-// shared tests stay byte-identical. No RentCottage issue carries it.
-export const EPIC_LABELS = ['type:epic', 'epic'];
+// Kind labels use the vocabulary in docs/ISSUE-TRACKER.md.
+export const KIND_LABELS = {
+  epic: 'type:epic',
+  feature: 'type:feature',
+  task: 'type:task',
+  bug: 'type:bug',
+  docs: 'type:docs',
+};

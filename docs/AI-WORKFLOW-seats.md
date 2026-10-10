@@ -25,7 +25,9 @@ The session that talks to the owner is the orchestrator. It plans the cards that
 every edit to a builder seat, reviews, and delivers; it never builds. Each seat has a narrow charter and no more
 tools than the charter needs. Which model and effort each seat runs at is set in its seat file, under
 [`.claude/agents/`](../.claude/agents/) and [`.codex/agents/`](../.codex/agents/);
-[`AGENTS.md`](../AGENTS.md) says under "Runtime notes" which seats the costliest models are kept to.
+[`AGENTS.md`](../AGENTS.md) says under "Runtime notes" which seats the costliest models are kept to. Those values are the defaults: a repository that adopts the workflow may
+override a seat's settings in its own seat settings file, as [the `sync-job` skill](../.agents/skills/sync-job/SKILL.md)
+sets out under "How a repository overrides a seat".
 
 ```mermaid
 flowchart LR
@@ -56,8 +58,8 @@ plan-first, which seat and model run that review, how a session on either runtim
 when it cannot be reached are in [the `resume` skill](../.agents/skills/resume/SKILL.md) under "4. Plan" and
 [the `cross-review` skill](../.agents/skills/cross-review/SKILL.md) under "4. Review a plan before the build".
 
-A handoff to a builder is a filled copy of `.claude/templates/builder-handoff.md`; to the architect, a filled
-copy of `.agents/templates/planner-handoff.md`. [The builder template](../.claude/templates/builder-handoff.md) and
+A handoff to a builder is a filled copy of `.agents/templates/builder-handoff.md`; to the architect, a filled
+copy of `.agents/templates/planner-handoff.md`. [The builder template](../.agents/templates/builder-handoff.md) and
 [the planner template](../.agents/templates/planner-handoff.md) each list the labelled lines a handoff must
 carry, and the handoff hook refuses a handoff that drops one. A builder proves only its own slice: the full suite
 and every commit stay with the orchestrator, as [the `resume` skill](../.agents/skills/resume/SKILL.md) sets out
@@ -77,13 +79,15 @@ fixed, and a review finding then costs a replan.
   costliest models are kept to, and how a seat is dispatched.
 - [`AGENTS.md`](../AGENTS.md) under "Coding standards and the executed test bar": which seats read the coding
   standards.
-- [`.claude/templates/builder-handoff.md`](../.claude/templates/builder-handoff.md) and
+- [`.agents/templates/builder-handoff.md`](../.agents/templates/builder-handoff.md) and
   [`.agents/templates/planner-handoff.md`](../.agents/templates/planner-handoff.md): the labelled lines of each
   handoff.
 - [The `resume` skill](../.agents/skills/resume/SKILL.md) under "4. Plan" and "5. Build": who plans, which plans are
   reviewed and by whom, and what a builder may run.
 - [The `cross-review` skill](../.agents/skills/cross-review/SKILL.md): how a review or a plan review runs on the
   other model family.
+- [The `sync-job` skill](../.agents/skills/sync-job/SKILL.md) under "How a repository overrides a seat": how a
+  repository overrides a seat's model, effort or turn cap, and what an override may not do.
 
 ## Failure modes
 
@@ -97,10 +101,16 @@ fixed, and a review finding then costs a replan.
   unfilled slot, and a builder checks the same lines itself before it edits.
 - **The plan-review seat cannot be reached.** Another seat reviews the plan instead and the pull request body
   says so; [the `resume` skill](../.agents/skills/resume/SKILL.md) owns that route under "4. Plan".
+- **A seat file and the seat settings file disagree.** The contract test fails naming the seat until
+  `node scripts/factory-sync.mjs --render` has applied the settings file and the result is committed. A settings file
+  that would put a costliest model on another seat, raise the turn cap of the `oracle` or `security-reviewer` seat
+  above 90, or name a model the agent check does not know is refused by the sync and by `--render` before either
+  writes.
 
 ## Key files
 
 - `.claude/agents/` and `.codex/agents/`: the seat files.
-- `.claude/templates/builder-handoff.md` and `.agents/templates/planner-handoff.md`: the handoff templates.
+- `.agents/templates/builder-handoff.md` and `.agents/templates/planner-handoff.md`: the handoff templates.
 - `.claude/hooks/check-builder-handoff.mjs`: the handoff hook.
 - `docs/CODING-STANDARDS.md`: the standards every planning, building and reviewing seat reads.
+- `scripts/lib/seat-settings.mjs`: the seat settings file's path, schema and substitution.

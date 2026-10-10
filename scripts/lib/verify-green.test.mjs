@@ -26,8 +26,11 @@ import { tmpdir } from 'node:os';
 import { join, dirname, resolve, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { posixShell } from './posix-shell.mjs';
+import { presentRuntimes } from './runtimes.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const PRESENT = presentRuntimes(ROOT);
+const without = (runtime) => !PRESENT.includes(runtime) && `the settings file names no ${runtime} runtime`;
 // The located POSIX shell: `sh` off Windows, Git for Windows' sh.exe on it, null when there is none.
 const SHELL = posixShell();
 const NO_SHELL = 'a POSIX shell is required: install Git for Windows';
@@ -36,7 +39,10 @@ const NO_SHELL = 'a POSIX shell is required: install Git for Windows';
 const CLAUDE_HOOK = { launcher: SHELL, script: resolve(ROOT, '.claude/hooks/verify-green.sh') };
 const CODEX_HOOK = { launcher: SHELL, script: resolve(ROOT, '.codex/hooks/verify-green.sh') };
 const CODEX_LAUNCHER = { launcher: process.execPath, script: resolve(ROOT, '.codex/hooks/verify-green.mjs') };
-const HOOKS = [CLAUDE_HOOK, CODEX_HOOK, CODEX_LAUNCHER];
+const HOOKS = [
+  ...(PRESENT.includes('claude') ? [CLAUDE_HOOK] : []),
+  ...(PRESENT.includes('codex') ? [CODEX_HOOK, CODEX_LAUNCHER] : []),
+];
 
 function git(dir, args) {
   const r = spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
@@ -92,7 +98,7 @@ function withScratchRoot(fn) {
   }
 }
 
-test('Stop gate: both runtimes use ancestor-installed ESLint for a linked worktree', () => {
+test('Stop gate: every installed runtime uses ancestor-installed ESLint for a linked worktree', () => {
   withScratchRoot((scratch) => {
     const root = initRootRepo(scratch);
     const worktree = join(root, '.claude', 'worktrees', 'job');
@@ -109,7 +115,7 @@ test('Stop gate: both runtimes use ancestor-installed ESLint for a linked worktr
   });
 });
 
-test('Stop gate: with no Git work tree under the working directory, CLAUDE_PROJECT_DIR is still the fallback root', () => {
+test('Stop gate: with no Git work tree under the working directory, CLAUDE_PROJECT_DIR is still the fallback root', { skip: without('claude') }, () => {
   withScratchRoot((scratch) => {
     const root = initRootRepo(scratch);
     const outside = join(scratch, 'outside');
@@ -348,7 +354,7 @@ test('product gate: a non-executable Stop gate blocks and names the chmod fix', 
   });
 });
 
-test('Codex Stop launcher: no reachable POSIX shell blocks with the Git for Windows remedy', () => {
+test('Codex Stop launcher: no reachable POSIX shell blocks with the Git for Windows remedy', { skip: without('codex') }, () => {
   withScratchRoot((scratch) => {
     const root = initRootRepo(scratch);
     // An empty PATH leaves `sh` unspawnable (ENOENT), the same outcome as a Windows host with no shell.

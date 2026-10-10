@@ -34,7 +34,7 @@ Workflow:
    commit or push.
 
 Rules:
-- Before any edit, check that the handoff carries every labelled line of `.claude/templates/builder-handoff.md`,
+- Before any edit, check that the handoff carries every labelled line of `.agents/templates/builder-handoff.md`,
   from `Slice` to `Stop condition`, each with a value and no `{{SLOT}}` left. If one is missing, stop and report
   which without editing anything. No hook sees a Codex handoff, so this check is yours on both runtimes.
 - Build only what the plan approved — no speculative abstractions, no configurability, no error handling for

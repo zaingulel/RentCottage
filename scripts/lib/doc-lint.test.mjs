@@ -44,6 +44,43 @@ test("extractPathRefs: a known-root backtick token is extracted with its line nu
   ]);
 });
 
+test("extractPathRefs: the upstream repository identity is exempt only in its two provenance documents", () => {
+  const mention = "The upstream repository is `supabase/agent-skills`.";
+  for (const sourcePath of [
+    "docs/AI-WORKFLOW-runtimes.md",
+    ".agents/skills/supabase/references/skill-feedback.md",
+  ]) {
+    assert.deepEqual(extractPathRefs(mention, sourcePath), []);
+    assert.deepEqual(
+      extractPathRefs(`${mention} Read \`supabase/missing.sql\`.`, sourcePath),
+      [{ path: "supabase/missing.sql", line: 1 }],
+    );
+    assert.deepEqual(
+      extractPathRefs(
+        [
+          "Read `supabase/agent-skills/references.md`.",
+          "Read `supabase/agent-skills-extra`.",
+          "Read `supabase/agent-skills:42`.",
+          "Read `supabase/agent-skills §9`.",
+        ].join("\n"),
+        sourcePath,
+      ),
+      [
+        { path: "supabase/agent-skills/references.md", line: 1 },
+        { path: "supabase/agent-skills-extra", line: 2 },
+        { path: "supabase/agent-skills", line: 3 },
+        { path: "supabase/agent-skills", line: 4 },
+      ],
+    );
+  }
+  assert.deepEqual(extractPathRefs(mention, "docs/other.md"), [
+    { path: "supabase/agent-skills", line: 1 },
+  ]);
+  assert.deepEqual(extractPathRefs(mention), [
+    { path: "supabase/agent-skills", line: 1 },
+  ]);
+});
+
 test("extractPathRefs + checkPathRefs: a dangling ref (path that does not exist) IS caught", () => {
   const md = "Read `docs/NOPE-does-not-exist.md` first.";
   const refs = extractPathRefs(md);
@@ -136,7 +173,7 @@ test("classifyDocLintPath: Codex prose surfaces join path/date scans; a skill bo
     skillMeta: false,
   });
   assert.equal(
-    classifyDocLintPath(".agents/skills/doc-audit/SKILL.md").illegalInvocations,
+    classifyDocLintPath(".agents/skills/example/SKILL.md").illegalInvocations,
     true,
   );
 });
@@ -162,7 +199,7 @@ test("classifyDocLintPath: Claude prose surfaces join the path and date scans on
   // The retired commands directory and the symlinked skills directory classify as nothing:
   // git lists a symlinked skill as the link entry itself, never as a SKILL.md beneath it.
   for (const rel of [
-    ".claude/commands/doc-audit.md",
+    ".claude/commands/example.md",
     ".claude/skills/resume/SKILL.md",
     ".claude/skills/resume",
   ]) {
@@ -469,7 +506,7 @@ test("findIllegalInvocations: a path-embedded slash never false-matches as an in
   const files = [
     {
       path: "b.md",
-      text: "---\nname: b\ndescription: ok.\n---\n\nRun `.claude/commands/doc-audit.md` through the linter.\n",
+      text: "---\nname: b\ndescription: ok.\n---\n\nRun `.claude/commands/example.md` through the linter.\n",
     },
   ];
   assert.deepEqual(findIllegalInvocations(files, ["resume"]), []);
@@ -566,6 +603,35 @@ function runDocLintFixture(root, args = []) {
     encoding: "utf8",
   });
 }
+
+test("doc-lint CLI accepts the bundled provenance and still rejects a missing database path", () => {
+  const root = makeDocLintFixture({
+    ...SCAN_SET_SEEDS,
+    "docs/AI-WORKFLOW-runtimes.md": [
+      "`supabase-postgres-best-practices`, come from the official `supabase/agent-skills` repository at commit",
+      "c9be0e931b7930f7d02126d04774d904c381e7d7, under its `skills/` directory.",
+    ].join("\n"),
+    ".agents/skills/supabase/references/skill-feedback.md":
+      "3. **Submit** — Create a GitHub Issue on the `supabase/agent-skills` repository using the draft as the issue body. The title must follow this format: `user-feedback: <summary of the problem>`.",
+  });
+  try {
+    const accepted = runDocLintFixture(root);
+    assert.equal(accepted.status, 0, accepted.stderr);
+
+    fs.appendFileSync(
+      path.join(root, "docs/AI-WORKFLOW-runtimes.md"),
+      "\nRead `supabase/missing.sql`.\n",
+    );
+    const rejected = runDocLintFixture(root);
+    assert.equal(rejected.status, 1);
+    assert.match(
+      rejected.stderr,
+      /docs\/AI-WORKFLOW-runtimes\.md:3 .+ `supabase\/missing\.sql` does not exist/,
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("working-tree CLI excludes unstaged tracked deletions from scans and path resolution", () => {
   const root = makeDocLintFixture({

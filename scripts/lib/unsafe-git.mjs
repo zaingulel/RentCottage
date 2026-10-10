@@ -45,9 +45,18 @@
 // `-C`, `--chdir`, joined short options, an unset name of any other shape, an option after an
 // assignment, a whole quoted assignment, a second `env`) is not read, and `env` in front of `cd`
 // or `gh pr create` is not read either. The guard is an accident-catcher for an agent's own
-// plainly written tool calls, not a security boundary. Server-side branch protection is the
-// boundary, and a manual command in your own terminal is not a tool call, so your escape hatch
-// survives.
+// plainly written tool calls, not a security boundary, and a manual command in your own
+// terminal is not a tool call, so your escape hatch survives. The rules on the server bind
+// only an identity that cannot bypass them. Where the administrator role may bypass them,
+// which the direct route to `main` relies on, a push to `main` by that role is judged
+// locally, by the pre-push hook with the gate as it stands on the remote's `main`. Git runs
+// that hook from the checkout that pushes, so a push that skips it, or comes from a checkout
+// whose copy of it was changed or from a machine where the git configuration or attribute
+// files git reads for that push, at any level, were changed, is not judged. The permission
+// prompt on a push is an approval checkpoint and not a boundary either: this guard reads the
+// command an agent submits, not what a program started by that command does afterwards, so
+// nothing here establishes that every way of publishing meets that prompt. A push that runs
+// unprompted would need a boundary on the server first.
 // The `gh pr merge` and `gh pr ready` rules are the exception: the allow rules in
 // `.claude/settings.json` run those prefixes unprompted, so these two rules bound what the prefixes
 // admit and fail closed on any segment that invokes either and that they cannot fully read (a

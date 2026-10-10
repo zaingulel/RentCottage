@@ -164,7 +164,7 @@ function main() {
   // --- Dangling path refs, dead links, citations — the full scan set ---------
   for (const rel of pathRefScanFiles) {
     const text = readContent(rel);
-    const refs = extractPathRefs(text);
+    const refs = extractPathRefs(text, rel);
     const dangling = checkPathRefs(refs, (p) => pathExists(trackedSet, p));
     for (const d of dangling) {
       errors.push(

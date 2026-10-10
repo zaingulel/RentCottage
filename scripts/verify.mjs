@@ -253,12 +253,12 @@ function isBaselineOnlyPath(path) {
     baselineOnlyPaths.has(path) ||
     /^\.agents\/(?:skills|templates)\/.+\.md$/i.test(path) ||
     /^\.agents\/skills\/[^/]+\/agents\/openai\.yaml$/i.test(path) ||
-    /^\.agents\/upstream\/(?:mattpocock-skills|anthropics-claude-plugins-official|anthropics-knowledge-work-plugins)\/(?:(?:.+\/)?LICENSE(?:\.txt)?|.+\.(?:md|yaml))$/i.test(
+    /^\.agents\/upstream\/(?:mattpocock-skills|anthropics-claude-plugins-official|anthropics-knowledge-work-plugins|supabase-agent-skills)\/(?:(?:.+\/)?LICENSE(?:\.txt)?|.+\.(?:md|yaml))$/i.test(
       path,
     ) ||
     /^\.(?:agents|claude)\/skills\/[^/]+\/LICENSE\.txt$/i.test(path) ||
     /^\.claude\/skills\/[^/]+\/(?:.+\.md|agents\/openai\.yaml)$/i.test(path) ||
-    /^\.claude\/(?:agents|templates)\/.+\.md$/i.test(path) ||
+    /^\.claude\/agents\/.+\.md$/i.test(path) ||
     /^\.codex\/agents\/[^/]+\.toml$/i.test(path) ||
     /^docs\/.+\.(?:avif|docx|gif|html|jpe?g|md|png|svg|webp)$/i.test(path)
   );
@@ -568,6 +568,16 @@ export function classifyChanges(changes) {
       selectFullRoute(
         change.path,
         `${change.path} has a symlink or file-type change`,
+      );
+      continue;
+    }
+    if (
+      change.status === "D" &&
+      change.path === ".claude/templates/builder-handoff.md"
+    ) {
+      selectFullRoute(
+        change.path,
+        "retired builder template deletion requires full evidence",
       );
       continue;
     }

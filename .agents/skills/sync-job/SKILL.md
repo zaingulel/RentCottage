@@ -30,8 +30,41 @@ hook directory carries its own `.gitattributes` so hooks keep LF endings whereve
 contract test fails on a symlink, a copy that differs from its source, or a missing rule. A git hook's run permission is
 its committed file mode.
 
-**What a repository needs.** The supported profile is self-use, Claude Code plus Codex with cross-family review; nothing
-installs the workflow for a customer. It needs a private repository, the two branch rulesets with the administrator
-bypass of the required check that the direct documentation route depends on, the required `test` check, the board,
-`npm ci` for the hooks, and each runtime having trusted the repository's hooks, since a hook file a runtime has not
-trusted does not run.
+**How a repository overrides a seat.** Each seat file's setting lines, as the canonical repository ships them, are
+the defaults: a model, an effort and a turn limit in a Claude seat file, and a model and an effort in a Codex seat
+file, which carries no turn limit. An adopter that wants another value names the seat and the value in its seat
+settings file, a committed file of its own that the manifest never lists and no tool writes; the head of
+`scripts/lib/seat-settings.mjs` gives its path, its schema and what it refuses. `node scripts/factory-sync.mjs --render`
+applies the file to the seat files and records each replaced default in the manifest, and every sync applies it again
+to the fetched bytes, so a setting the adopter does not name follows the canonical's next retune and a named one stays.
+The settings file, the seat files and the manifest are committed together; the contract test refuses a seat that
+differs from the shared file anywhere but in a named value. An override changes a value the seat already carries. It
+may raise or lower any seat's effort, put a cheaper model on a seat or lower a turn limit. It may never put the
+costliest Claude or Codex model on a seat other than the ones `AGENTS.md` names for it under "Runtime notes", raise the
+turn limit of the `oracle` or `security-reviewer` seat above 90, or leave a seat's model to the session with `inherit`;
+the sync and `--render` refuse such a settings file before they write anything. Both judge only the values the settings
+file names, with the copy of the workflow the repository has installed, so a value only a newer copy admits can be
+named after the sync that installs it. Where a skill, a guide page or a seat's own description names a seat's model or
+effort, it names the canonical default.
+
+**How a repository names its runtimes.** The same settings file may carry `runtimes`, a list naming `claude`, `codex` or
+both; without it the repository runs both. Everything shared under `.claude/`, and `CLAUDE.md`, belongs to Claude Code;
+everything under `.codex/` to Codex; `scripts/lib/runtimes.mjs` names the few scripts tied to each; every other shared
+file belongs to every install. A sync writes only the named runtimes' files and keeps every entry in the manifest, so
+`--check` still compares like with like. The contract test requires each path of a runtime the file leaves out to hold
+nothing and refuses anything found there, and the agent check reads only the named runtimes' seats, comparing the
+reviewer charters only where both run. To stop running a runtime, remove its seat overrides and run `--render`, name the
+remaining runtime, commit, then sync: the sync removes each of the other runtime's files that holds exactly the bytes it
+recorded and refuses, by name, one that holds anything else. To start running one, name it, commit and sync.
+
+**What a repository needs.** The supported profiles are Claude Code alone, Codex alone, or both with cross-family
+review; nothing installs the workflow for a customer. It needs a private repository whose default branch is `main`, the
+two branch rulesets with the administrator bypass of the required check that the direct documentation route depends on,
+the required `test` check, the board, `npm ci` for the hooks, and each runtime having trusted the repository's hooks,
+since a hook file a runtime has not trusted does not run. A repository that runs one runtime makes three changes of its
+own, which no sync carries. It removes its own files of the other runtime. It leaves the other runtime's hook folder out
+of the `lint` script in its `package.json`. And its document lint command, `scripts/doc-lint.mjs`, accepts a path
+reference, link or `CLAUDE.md` citation whose target `installs` in `scripts/lib/runtimes.mjs` says the repository does
+not install, and reads `CLAUDE.md` only where Claude Code runs; its `scripts/lib/doc-lint.test.mjs` then copies
+`scripts/lib/runtimes.mjs` into the scratch repository it builds. The shared documents still name both runtimes, and the
+shared link and citation tests apply the same rule themselves.

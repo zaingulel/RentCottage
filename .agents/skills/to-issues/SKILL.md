@@ -48,8 +48,8 @@ disjoint-path issues can build as concurrent lanes.
 
 Size signals, judged once by the owner at Step 4, apply to a single captured idea as much as to a breakdown: the
 outcome fits one sentence a reviewer could demonstrate, and more than five distinct outcome or invariant
-statements, checkbox or bullet, is a signal to make the work a `type:epic` parent with native child slices. A
-`type:epic` parent holds no acceptance criteria of its own; any whole-journey or end-to-end check becomes its last
+statements, checkbox or bullet, is a signal to make the work an epic parent with native child slices. An
+epic parent holds no acceptance criteria of its own; any whole-journey or end-to-end check becomes its last
 child, blocked by the others, so the parent closes when its children do. No later seat stops, replans, splits
 or refuses work on these signals or on a line count; after work-pick the only split is the plan-time finding in
 the `resume` skill's Plan section.
@@ -80,17 +80,18 @@ a Workstream.
 ```bash
 gh issue create \
   --title "..." \
-  --label "type:<epic|feature|task|bug|docs>,area:<...>" \
+  --label "<kind label>[,<other labels that fit>]" \
   --blocked-by <N>[,<N>...] \
   --body "..."
 ```
 
-Every issue carries exactly one `type:` label, chosen by what the issue is: `type:epic` for a parent whose work is
-its native child issues; `type:bug` for behaviour that contradicts what the code, a test or a document says it
-does; `type:feature` for a new or changed capability for the people using the product; `type:docs` for a change to
-documents or prose alone; `type:task` for any other bounded work, such as tooling, a refactor, research or a
-recorded decision. When two fit, the first in that order wins. Step 8's verifier fails an issue with none or more
-than one.
+Every issue carries exactly one kind label, the one `KIND_LABELS` in `scripts/lib/board-config.mjs` records for the
+issue's kind, chosen by what the issue is: epic for a parent whose work is its native child issues; bug for
+behaviour that contradicts what the code, a test or a document says it does; feature for a new or changed
+capability for the people using the product; docs for a change to documents or prose alone; task for any other
+bounded work, such as tooling, a refactor, research or a recorded decision. When two fit, the first in that order
+wins. Step 8's verifier fails an issue with none or more than one. The other labels are those the repository's
+`docs/ISSUE-TRACKER.md` names.
 
 `--blocked-by` takes each owner-approved blocker and needs gh 2.94 or later; omit it when the slice has none. A
 blocker and a parent live only in GitHub's built-in links, never in the body. The link is a second call after
@@ -185,9 +186,9 @@ Run the shared verifier once with the Epic followed by every child (a standalone
 node scripts/verify-issue-publish.mjs <EPIC_N> <CHILD_N...>
 ```
 
-Report its four results: board presence, Statuses and Workstreams, the one `type:` label, native child count. On
+Report its four results: board presence, Statuses and Workstreams, the one kind label, native child count. On
 failure, read WHICH failure: `absent from the board` means the publication genuinely failed — fix before reporting
-ready; `needs exactly one type: label` means correct that issue's labels with `gh issue edit <N> --add-label` or
+ready; `needs exactly one kind label` means correct that issue's labels with `gh issue edit <N> --add-label` or
 `--remove-label`, then re-run; `is archived on the board` means unarchive that card, never add a second;
 `is on the board but not in this board read` and `is not on this board read` mean the read lagged — re-run the
 verifier, never add again; `could not confirm whether` means fix the named cause. A silent skip here is the exact

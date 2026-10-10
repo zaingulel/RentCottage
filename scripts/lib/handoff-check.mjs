@@ -1,7 +1,7 @@
 // Shared prompt-side agent-spawn contracts behind the thin Claude and Codex hooks.
 //
 // Builder handoffs (`builder-lite`, `builder`, and `builder-max` share one charter): the prompt must be a filled
-// copy of .claude/templates/builder-handoff.md; handoff-check.test.mjs fills the real template
+// copy of .agents/templates/builder-handoff.md; handoff-check.test.mjs fills the real template
 // and pins that it passes. The guard checks the lines that make a handoff bounded and
 // verifiable, not the prose around them:
 //   1. exactly one non-empty line for each required field;
@@ -87,7 +87,7 @@ export function checkHandoff(toolInput) {
     if (command !== null && isPlaceholder(command)) {
       problems.push("focused verification command is a placeholder: name the exact command the builder runs");
     }
-    return rejection("builder", problems, ".claude/templates/builder-handoff.md");
+    return rejection("builder", problems, ".agents/templates/builder-handoff.md");
   }
 
   if (type === "architect") {

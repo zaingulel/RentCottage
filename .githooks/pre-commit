@@ -6,7 +6,8 @@
 # 2. Agent definitions must parse. Both harnesses DROP an agent file silently when its
 #    definition fails to parse (that is how `reviewer` once vanished for a whole session),
 #    so a staged .claude/agents/*.md or .codex/agents/*.toml triggers a check of the STAGED
-#    definitions with a named cause.
+#    definitions with a named cause. Which seat folders it requires comes from the STAGED
+#    .agents/factory-settings.json, read by the STAGED scripts/lib/runtimes.mjs.
 # 3. Then an executable scripts/gates/pre-commit (the product gate) runs on every commit, its
 #    output on stderr; a non-zero exit, or a gate file that is not executable, blocks.
 #
@@ -49,10 +50,10 @@ if echo "$staged" | grep -qE '^\.(claude|codex)/agents/.*\.(md|toml)$'; then
       echo "✖ pre-commit: refused an unsafe temporary directory for staged agent validation." >&2
       exit 1
     fi
-    if ! git -C "$repo_root" ls-files -z -- .claude/agents .codex/agents scripts/lib/check-agents.mjs >"$agent_snap/staged.list" \
+    if ! git -C "$repo_root" ls-files -z -- .claude/agents .codex/agents scripts/lib/check-agents.mjs scripts/lib/runtimes.mjs .agents/factory-settings.json >"$agent_snap/staged.list" \
       || ! xargs -0 sh -c 'snap=$1 root=$2; shift 2; for p; do mkdir -p "$snap/$(dirname "$p")" && git -C "$root" cat-file blob ":$p" >"$snap/$p" || exit 255; done' sh "$agent_snap" "$repo_root" <"$agent_snap/staged.list"; then
       rm -rf "$agent_snap"
-      echo "✖ pre-commit: could not copy the staged .claude/agents, .codex/agents and scripts/lib/check-agents.mjs to validate them." >&2
+      echo "✖ pre-commit: could not copy the staged .claude/agents, .codex/agents, scripts/lib/check-agents.mjs, scripts/lib/runtimes.mjs and .agents/factory-settings.json to validate them." >&2
       exit 1
     fi
     agents_status=0

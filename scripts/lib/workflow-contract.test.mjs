@@ -6,9 +6,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { gitEnvironment, MANIFEST_PATH, readManifest, regionText, verifyManifest } from './factory-sync.mjs';
+import { installs, presentRuntimes, SEATS } from './runtimes.mjs';
 import { blockReason } from './unsafe-git.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const PRESENT = presentRuntimes(ROOT);
+const without = (runtime) => !PRESENT.includes(runtime) && `the settings file names no ${runtime} runtime`;
 const RESUME = readFileSync(resolve(ROOT, '.agents/skills/resume/SKILL.md'), 'utf8');
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -149,7 +152,7 @@ test('every seat that plans, designs, builds or reviews code names the coding st
   const LOCATE_ONLY_SEATS = ['explorer'];
   const STANDARDS_PATH = /docs\/CODING-STANDARDS\.md(?![\w./-])/;
   const missing = [];
-  for (const [dir, extension] of [['.claude/agents', '.md'], ['.codex/agents', '.toml']]) {
+  for (const { directory: dir, extension } of PRESENT.map((runtime) => SEATS[runtime])) {
     const seats = readdirSync(resolve(ROOT, dir))
       .filter((name) => name.endsWith(extension))
       .map((name) => name.slice(0, -extension.length));
@@ -175,7 +178,7 @@ for (const [skill, readingSeats] of Object.entries(SKILL_READING_SEATS)) {
   test(`exactly the seats that read the ${skill} skill name it, and the resume skill names it`, () => {
     const SKILL_PATH = `.agents/skills/${skill}/SKILL.md`;
     const SKILL_TOKEN = `\`${SKILL_PATH}\``;
-    for (const [dir, extension] of [['.claude/agents', '.md'], ['.codex/agents', '.toml']]) {
+    for (const { directory: dir, extension } of PRESENT.map((runtime) => SEATS[runtime])) {
       const naming = readdirSync(resolve(ROOT, dir))
         .filter((name) => name.endsWith(extension) && readFileSync(resolve(ROOT, dir, name), 'utf8').includes(SKILL_TOKEN))
         .map((name) => name.slice(0, -extension.length))
@@ -361,13 +364,32 @@ test('the refused-shape check catches each refused shape and passes quoted jq te
   ]);
 });
 
-test("the cross-review skill does not copy the reviewer seat's model or effort values", () => {
+// True where the value stands alone, so an adopter's effort `low` is not found inside "below" or "follows", nor a
+// model name inside a longer one, and a value that ends a sentence is found.
+const copiesValue = (text, value) => new RegExp(`(?<![A-Za-z0-9_.-])${escapeRegExp(value)}(?![A-Za-z0-9_-]|\\.[A-Za-z0-9_-])`).test(text);
+
+test('the copied-value check matches a whole value and never a fragment of a longer word', () => {
+  assert.equal(copiesValue('The reviewer runs below the author and follows the card.', 'low'), false);
+  assert.equal(copiesValue('Effort is low', 'low'), true);
+  assert.equal(copiesValue('Effort is `low`', 'low'), true);
+  assert.equal(copiesValue('model_reasoning_effort=low', 'low'), true);
+  assert.equal(copiesValue('Use example-newer-model-mini here.', 'example-newer-model'), false);
+  assert.equal(copiesValue('Use example-older-example-newer-model here.', 'example-newer-model'), false);
+  assert.equal(copiesValue('Use example-newer-model here.', 'example-newer-model'), true);
+  assert.equal(copiesValue('Effort is low.', 'low'), true);
+  assert.equal(copiesValue('Use example-newer-model.', 'example-newer-model'), true);
+  assert.equal(copiesValue('Use example-newer-model. Then stop.', 'example-newer-model'), true);
+  assert.equal(copiesValue('Use example-newer-model.2 here.', 'example-newer-model'), false);
+  assert.equal(copiesValue('Use example-newer-modelo here.', 'example-newer-model'), false);
+});
+
+test("the cross-review skill does not copy the reviewer seat's model or effort values", { skip: without('codex') }, () => {
   const skill = readFileSync(resolve(ROOT, '.agents/skills/cross-review/SKILL.md'), 'utf8');
   const seat = readFileSync(resolve(ROOT, '.codex/agents/reviewer.toml'), 'utf8');
   for (const key of ['model', 'model_reasoning_effort']) {
     const value = seat.match(new RegExp(`^${key} = "([^"]+)"$`, 'm'))?.[1];
     assert.ok(value, `.codex/agents/reviewer.toml must set ${key}`);
-    assert.ok(!skill.includes(value), `cross-review must not copy the reviewer's ${key} value ${value}`);
+    assert.ok(!copiesValue(skill, value), `cross-review must not copy the reviewer's ${key} value ${value}`);
   }
 });
 
@@ -473,16 +495,16 @@ test('npm install activates the git hooks through the prepare script', (t) => {
 });
 
 // The resume skill reads one result as "the hooks are running": a guard hook refusing this command in these words.
-// Both real hooks run, because the words are theirs, and the rule is judged in both kinds of checkout, because the
-// suite runs in only one. Recurring cost: two Node starts.
-test('ANTI-REGRESSION: both git guard hooks refuse the hook check the resume skill names, in the words it reads', () => {
+// Every installed real hook runs, because the words are theirs, and the rule is judged in both kinds of checkout,
+// because the suite runs in only one. Recurring cost: one Node start per installed runtime.
+test('ANTI-REGRESSION: every installed git guard hook refuses the hook check the resume skill names, in the words it reads', () => {
   const HOOK_CHECK = 'git commit --no-verify --dry-run';
   const REFUSAL = 'Blocked: git commit';
   for (const literal of [HOOK_CHECK, REFUSAL]) {
     assert.ok(RESUME.includes(`\`${literal}\``), `the resume skill must name \`${literal}\` on one line`);
   }
   const input = JSON.stringify({ cwd: ROOT, tool_input: { command: HOOK_CHECK } });
-  for (const hook of ['.claude/hooks/block-unsafe-git.mjs', '.codex/hooks/block-unsafe-git.mjs']) {
+  for (const hook of PRESENT.map((runtime) => `.${runtime}/hooks/block-unsafe-git.mjs`)) {
     const run = spawnSync(process.execPath, [resolve(ROOT, hook)], { input, encoding: 'utf8', env: gitEnvironment() });
     assert.equal(run.status, 2, `${hook} must refuse the hook check before git runs: ${run.stderr}`);
     assert.ok(run.stderr.includes(REFUSAL), `${hook} must refuse in the words the skill reads: ${run.stderr}`);
@@ -627,6 +649,7 @@ test('every manifest entry matches the file on disk', () => {
       ...mismatches.map(({ path, expected, actual }) => `  ${path}: recorded ${expected}, found ${actual}`),
       `In an adopter repository, undo the local edit, make the change in the canonical repository (${canonical}), then re-sync with \`node scripts/factory-sync.mjs --from <canonical checkout>\`.`,
       'In the canonical repository, record an intended change with `node scripts/factory-sync.mjs --write`.',
+      'For a seat setting, run `node scripts/factory-sync.mjs --render` and commit the seat files with the manifest.',
     ].join('\n'),
   );
 });
@@ -660,8 +683,10 @@ test('skill copies are byte-identical to their sources and no skill is a symlink
   };
   const agents = under('.agents/skills/');
   const claude = under('.claude/skills/');
-  compare(claude, '.claude/skills/', agents, '.agents/skills/');
-  compare([...agents].filter((rest) => !claude.has(rest)), '.agents/skills/', claude, '.claude/skills/');
+  if (PRESENT.includes('claude')) {
+    compare(claude, '.claude/skills/', agents, '.agents/skills/');
+    compare([...agents].filter((rest) => !claude.has(rest)), '.agents/skills/', claude, '.claude/skills/');
+  }
 
   const skillNames = new Set(entries.filter(({ path }) => path.startsWith('.agents/skills/')).map(({ path }) => path.split('/')[2]));
   for (const { path } of entries) {
@@ -739,7 +764,7 @@ for (const [skill, { roots, files, repositoryLicence }] of Object.entries(UPSTRE
 }
 
 // gitattributes(5): an `eol=lf` rule overrides core.autocrlf, so a hook keeps its LF shebang line on Windows.
-const HOOK_DIRECTORIES = ['.githooks', '.claude/hooks', '.codex/hooks'];
+const HOOK_DIRECTORIES = ['.githooks', ...PRESENT.map((runtime) => `.${runtime}/hooks`)];
 const LF_RULE = '* text eol=lf\n';
 
 test('hook scripts carry the LF rule and the git hooks their run permission', () => {
@@ -805,9 +830,9 @@ const withAncestors = (paths) =>
     return [path, ...parts.slice(1).map((_, index) => `${parts.slice(0, index + 1).join('/')}/`)];
   }));
 
-// A shared file reaches every adopter byte for byte, so a path it names must exist there too. A token that is
-// no path of this repository is a fixture or a placeholder; one that is, and is neither shared nor a declared
-// adopter path, exists only here.
+// A shared file reaches every adopter byte for byte, except the seat setting values an adopter's seat settings file
+// names, so a path it names must exist there too. A token that is no path of this repository is a fixture or a
+// placeholder; one that is, and is neither shared nor a declared adopter path, exists only here.
 test('no shared file names a path only this repository has', () => {
   const listed = spawnSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' });
   assert.equal(listed.status, 0, listed.stderr);
@@ -824,7 +849,7 @@ test('no shared file names a path only this repository has', () => {
   for (const entry of entries) {
     const { path } = entry;
     // Vendored skills and their copies are replaced whole and never edited in place, so this scan skips them.
-    if (vendoredCopy(path)) continue;
+    if (vendoredCopy(path) || !installs(PRESENT, path)) continue;
     let text = readFileSync(resolve(ROOT, path), 'utf8');
     if ('region' in entry) text = regionText(text, path);
     const joined = [...text.matchAll(JOINED_LITERALS)].map(([, run]) =>

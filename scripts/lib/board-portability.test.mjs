@@ -54,7 +54,7 @@ export const WAIT_STATUSES = ['Awaiting push'];
 export const TERMINAL_STATUSES = ['Done'];
 export const ROUTING_FIELD = 'Workstream';
 export const ROUTING_OPTIONS = ['Go-to-market', 'Product', 'Platform'];
-export const EPIC_LABELS = ['type:epic', 'epic'];
+export const KIND_LABELS = { epic: 'epic', feature: 'enhancement', task: 'task', bug: 'bug', docs: 'documentation' };
 export const PARKED_LANE = null;
 `;
 
@@ -92,7 +92,7 @@ export const WAIT_STATUSES = ['Awaiting push'];
 export const TERMINAL_STATUSES = ['Done'];
 export const ROUTING_FIELD = null;
 export const ROUTING_OPTIONS = [];
-export const EPIC_LABELS = ['type:epic', 'epic'];
+export const KIND_LABELS = { epic: 'epic', feature: 'enhancement', task: 'task', bug: 'bug', docs: 'documentation' };
 export const PARKED_LANE = null;
 `;
 
@@ -143,7 +143,7 @@ function recordingGh(rootKey, boardPage, currentValues = { Status: 'Ready' }) {
 async function boardPageFor(root) {
   const { leanBoardPage, leanNode } = await load(root, 'lib/board-fixtures.mjs');
   return leanBoardPage([
-    leanNode({ id: 'PVTI_11', content: { __typename: 'Issue', number: 11, title: 'Adopted card', labels: ['type:task'] }, status: 'Ready', routing: 'Product' }),
+    leanNode({ id: 'PVTI_11', content: { __typename: 'Issue', number: 11, title: 'Adopted card', labels: ['task'] }, status: 'Ready', routing: 'Product' }),
   ]);
 }
 
@@ -281,7 +281,7 @@ test('with no routing field, the publish verifier checks Status only', async (t)
   const { fetchBoard } = await load(root, 'lib/board.mjs');
   const { verifyIssuePublication } = await load(root, 'lib/issue-publish.mjs');
   const { leanBoardPage, leanNode } = await load(root, 'lib/board-fixtures.mjs');
-  const page = leanBoardPage([leanNode({ id: 'PVTI_11', content: { ...issue(11), labels: ['type:task'] }, status: 'Ready' })]);
+  const page = leanBoardPage([leanNode({ id: 'PVTI_11', content: { ...issue(11), labels: ['task'] }, status: 'Ready' })]);
   const { exec } = recordingGh('organization', page);
 
   const lines = verifyIssuePublication(['11'], { fetchBoard, ghExec: exec });
@@ -381,7 +381,7 @@ export const WAIT_STATUSES = ['Awaiting push'];
 export const TERMINAL_STATUSES = ['Done'];
 export const ROUTING_FIELD = null;
 export const ROUTING_OPTIONS = [];
-export const EPIC_LABELS = ['type:epic', 'epic'];
+export const KIND_LABELS = { epic: 'epic', feature: 'enhancement', task: 'task', bug: 'bug', docs: 'documentation' };
 export const PARKED_LANE = { field: 'Lane', option: 'To Sebastiano' };
 `;
 

@@ -1,8 +1,6 @@
 // doc-lint.mjs — pure detection logic for the doc-prose lint gate.
 //
-// Converts three prose-vigilance rules that had lived as by-hand vigilance
-// (CLAUDE.md's directory map + the writing-for-agents "user-invoked" rule +
-// doc-audit's date-stamp stripping) into a deterministic check: a dangling
+// Detects three prose-vigilance violations: a dangling
 // backtick-quoted repo path in prose, a skill instructing the model to fire a
 // DISABLED (user-invoked-only) sibling skill, and a stray date-stamp in an
 // always-loaded doc. I/O lives in the CLI wrapper (scripts/doc-lint.mjs); this
@@ -113,7 +111,7 @@ export function pathExists(trackedSet, ref) {
 // Extract every backtick-quoted token from markdown text that looks like a
 // concrete repo-path reference (not a glob/placeholder pattern like `docs/**`
 // or `src/script/NN-*.js`, which are legal prose, not refs).
-export function extractPathRefs(markdownText) {
+export function extractPathRefs(markdownText, sourcePath = "") {
   const refs = [];
   const lines = markdownText.split("\n");
   for (let i = 0; i < lines.length; i++) {
@@ -122,6 +120,12 @@ export function extractPathRefs(markdownText) {
     const tokens = line.match(/`([^`]+)`/g) || [];
     for (const raw of tokens) {
       let token = raw.slice(1, -1);
+      if (
+        token === "supabase/agent-skills" &&
+        (sourcePath === "docs/AI-WORKFLOW-runtimes.md" ||
+          sourcePath === ".agents/skills/supabase/references/skill-feedback.md")
+      )
+        continue;
       token = token.replace(/\s§[^`]*$/, ""); // strip a trailing " §…" section suffix
       token = token.replace(/:\d+$/, ""); // strip a trailing :NNN line suffix
       if (/[*<>{}|$]/.test(token)) continue; // glob/placeholder marker
@@ -157,7 +161,7 @@ export function vendoredSkillNames(paths) {
 }
 
 // The ONE scan-set resolver shared by the CLI and repo-pass test. Vendored upstream
-// skill bodies and their copies feed only skill metadata, never body scans.
+// SKILL.md bodies and their copies feed only skill metadata; reference files keep body scans.
 // Claude skill copies are byte-identical to their .agents twins (contract-tested),
 // so their bodies classify as nothing and are linted only through the twin.
 export function classifyDocLintPath(rel, vendoredNames = new Set()) {
@@ -337,8 +341,8 @@ export function findIllegalInvocations(skillFiles, disabledNames) {
   return violations;
 }
 
-// Date-stamps read as vigilance debt (the /doc-audit date-stamp rule: strip
-// date-stamps, keep boundary rationale) — advisory only, never blocks.
+// Date-stamps read as vigilance debt: strip date-stamps, keep boundary
+// rationale. Advisory only, never blocks.
 export function findDateStamps(text) {
   const matches = [];
   const lines = text.split("\n");

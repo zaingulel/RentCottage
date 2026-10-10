@@ -23,8 +23,10 @@ import {
   checkMarkdownLinks,
 } from './doc-lint-links.mjs';
 import { buildTrackedSet, pathExists, classifyDocLintPath, vendoredSkillNames } from './doc-lint.mjs';
+import { installs, presentRuntimes } from './runtimes.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const PRESENT = presentRuntimes(ROOT);
 
 test('checkMarkdownLinks: a dead relative Markdown link is reported with its file line and target', () => {
   const md = [
@@ -161,14 +163,14 @@ test('repo-pass: the real repo classified prose files have zero dead Markdown li
   // below pass over nothing. Named mandatory shared surfaces only — a numeric
   // floor would drift with ordinary repo growth; the product's own documents
   // are named in a product-owned test.
-  for (const rel of ['CLAUDE.md', 'AGENTS.md']) {
+  for (const rel of ['CLAUDE.md', 'AGENTS.md'].filter((surface) => installs(PRESENT, surface))) {
     assert.ok(scanFiles.includes(rel), `Markdown-link scan set must include ${rel}`);
   }
 
   const errors = [];
   for (const rel of scanFiles) {
     const text = fs.readFileSync(path.join(ROOT, rel), 'utf8');
-    const dead = checkMarkdownLinks(rel, text, (p) => pathExists(trackedSet, p));
+    const dead = checkMarkdownLinks(rel, text, (p) => pathExists(trackedSet, p) || !installs(PRESENT, p));
     for (const d of dead) errors.push(`${rel}:${d.line} — dead link: ${d.target}`);
   }
 
@@ -192,7 +194,7 @@ const CLI_FIXTURE_SEEDS = {
 function makeCliFixture(files) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-lint-cli-'));
   fs.mkdirSync(path.join(root, 'scripts', 'lib'), { recursive: true });
-  for (const rel of ['scripts/doc-lint.mjs', 'scripts/lib/doc-lint.mjs', 'scripts/lib/doc-lint-links.mjs', 'scripts/lib/doc-lint-citations.mjs']) {
+  for (const rel of ['scripts/doc-lint.mjs', 'scripts/lib/doc-lint.mjs', 'scripts/lib/doc-lint-links.mjs', 'scripts/lib/doc-lint-citations.mjs', 'scripts/lib/runtimes.mjs']) {
     fs.copyFileSync(path.join(ROOT, rel), path.join(root, rel));
   }
   writeFixtureFiles(root, { ...CLI_FIXTURE_SEEDS, ...files });

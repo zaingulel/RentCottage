@@ -73,7 +73,7 @@ test("builder-lite is guarded exactly like builder: a missing required line bloc
 });
 
 test("the real builder template, filled, passes the guard and carries every required line", () => {
-  const prompt = filledTemplate(".claude/templates/builder-handoff.md", {
+  const prompt = filledTemplate(".agents/templates/builder-handoff.md", {
     SLICE_TITLE: "Cycle-time card unavailable state",
     CLAIM: "the card renders the unavailable copy under 30 percent coverage",
     CONSTRUCTION_MODE: "evidence-required",
@@ -175,7 +175,7 @@ test("a handoff with several defects is rejected once, naming every one", () => 
   assert.equal(result.ok, false);
   assert.match(result.reason, /'Slice:'/);
   assert.match(result.reason, /'vibes'/);
-  assert.equal(result.reason.split(".claude/templates/builder-handoff.md").length - 1, 1);
+  assert.equal(result.reason.split(".agents/templates/builder-handoff.md").length - 1, 1);
 
   const twoSlots = withLine(withLine(GOOD_BUILDER, "Stop condition", "Stop condition: {{STOP_CONDITION}}"), "Claim", "Claim: {{CLAIM}}");
   const slots = checkHandoff({ subagent_type: "builder", prompt: twoSlots });

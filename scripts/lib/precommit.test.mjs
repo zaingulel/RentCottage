@@ -12,6 +12,7 @@
 //   9. a product gate at scripts/gates/pre-commit: passing, absent, failing, unavailable, and
 //      non-executable, each with only an unrelated staged change → the gate alone decides
 //  10. a commit staging only the repository profile or a vendored upstream skill → the doc-lint advisory RUNS, never blocks
+//  11. a staged removal of one runtime's seat folder passes only with a STAGED settings file naming the other runtime
 // The product's own gate is tested with the product.
 //
 // Run: node --test scripts/lib/   (or `npm run test:scripts`)
@@ -67,10 +68,12 @@ function withScratchRoot(fn) {
   }
 }
 
-// Copies the REAL agent-definition validator into the fixture repo.
+// Copies the REAL agent-definition validator, and the module it imports, into the fixture repo.
 function armAgentDefinitions(repo) {
   mkdirSync(join(repo, 'scripts', 'lib'), { recursive: true });
-  writeFileSync(join(repo, 'scripts', 'lib', 'check-agents.mjs'), readFileSync(join(LIB_DIR, 'check-agents.mjs'), 'utf8'));
+  for (const file of ['check-agents.mjs', 'runtimes.mjs']) {
+    writeFileSync(join(repo, 'scripts', 'lib', file), readFileSync(join(LIB_DIR, file), 'utf8'));
+  }
   mkdirSync(join(repo, '.claude', 'agents'), { recursive: true });
   mkdirSync(join(repo, '.codex', 'agents'), { recursive: true });
   writeFileSync(join(repo, '.claude', 'agents', 'reviewer.md'), '---\nname: reviewer\ndescription: "Fixture reviewer"\nmodel: opus\n---\nReview.\n');
@@ -267,6 +270,47 @@ test('pre-commit: a smudge filter cannot repair a malformed staged seat for the 
     // Mutation guard: copy with checkout-index again → the filter repairs the copy → exit 0.
     assert.notEqual(r.status, 0, 'a smudge filter must not repair a malformed staged seat for the agent guard');
     assert.match(r.stderr, /explorer\.md: unquoted colon/);
+  });
+});
+
+// Price tag: recurring cost is one scratch repo and five hook runs. Removal condition: retire it when the agent
+// guard leaves pre-commit.
+// Mutation guard: copy the working-tree settings file into the snapshot → the second run exits 0.
+test("ANTI-REGRESSION: pre-commit: a repository commits without the other runtime's seat folder only when its staged settings file names one runtime", () => {
+  withScratchRoot((root) => {
+    const repo = initBaseRepo(root);
+    armAgentDefinitions(repo);
+    const settings = join(repo, '.agents', 'factory-settings.json');
+    mkdirSync(dirname(settings));
+    writeFileSync(settings, '{ "version": 1, "runtimes": ["claude"], "seats": {} }\n');
+    git(repo, ['add', '.agents/factory-settings.json']);
+    git(repo, ['rm', '-q', '.codex/agents/reviewer.toml']);
+    const named = runHook(repo);
+    assert.equal(named.status, 0, `a staged settings file naming Claude must admit the removal of the Codex seat: ${named.stderr}`);
+
+    writeFileSync(settings, '{ "runtimes": ["claude"] }\n');
+    git(repo, ['add', '.agents/factory-settings.json']);
+    const unversioned = runHook(repo);
+    assert.notEqual(unversioned.status, 0, 'a staged settings file the sync refuses must not admit the removal');
+    assert.match(unversioned.stderr, /\.agents\/factory-settings\.json: version: is unsupported/);
+
+    git(repo, ['rm', '-q', '--cached', '.agents/factory-settings.json']);
+    assert.ok(existsSync(settings), 'the settings file must stay in the working tree for this run to prove anything');
+    const unstaged = runHook(repo);
+    assert.notEqual(unstaged.status, 0, 'a settings file that is only in the working tree must not admit the removal');
+    assert.match(unstaged.stderr, /\.codex\/agents: cannot be read/);
+
+    rmSync(settings);
+    const absent = runHook(repo);
+    assert.notEqual(absent.status, 0, 'with no settings file both seat folders are required');
+    assert.match(absent.stderr, /\.codex\/agents: cannot be read/);
+
+    writeFileSync(settings, '{ "version": 1, "runtimes": ["claude"], "seats": {} }\n');
+    git(repo, ['add', '.agents/factory-settings.json']);
+    git(repo, ['rm', '-q', 'scripts/lib/runtimes.mjs']);
+    const unreadable = runHook(repo);
+    assert.notEqual(unreadable.status, 0, 'a staged removal of the module that reads the settings file must not skip the guard');
+    assert.match(unreadable.stderr, /runtimes\.mjs/);
   });
 });
 

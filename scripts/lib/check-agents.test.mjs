@@ -8,7 +8,11 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkAgentSource, checkCodexAgentSource, checkAgentsDir, checkBuilderParity, checkReviewerParity } from './check-agents.mjs';
+import { checkAgentSource, checkCodexAgentSource, checkAgentsDir, checkBuilderParity, checkReviewerParity, checkSeatPolicy } from './check-agents.mjs';
+import { presentRuntimes, SEATS } from './runtimes.mjs';
+
+const PRESENT = presentRuntimes('.');
+const without = (runtime) => !PRESENT.includes(runtime) && `the settings file names no ${runtime} runtime`;
 
 const GOOD_MD = `---
 name: reviewer
@@ -100,57 +104,101 @@ test('checkAgentsDir picks the checker by extension and refuses an unchecked dir
 });
 
 test('the live registries in this repository are clean', () => {
-  assert.deepEqual(checkAgentsDir('.claude/agents'), []);
-  assert.deepEqual(checkAgentsDir('.codex/agents'), []);
+  for (const runtime of PRESENT) assert.deepEqual(checkAgentsDir(SEATS[runtime].directory), []);
 });
 
 test('live runtime seats pin read-only non-writers, writable builders, and Claude plan mode only for planners', () => {
   const readOnly = ['architect', 'explorer', 'plan-reviewer', 'oracle', 'reviewer', 'security-reviewer'];
   const builders = ['builder-lite', 'builder', 'builder-max'];
-  for (const seat of readOnly) {
-    const codex = readFileSync(join('.codex/agents', `${seat}.toml`), 'utf8');
-    assert.match(codex, /^sandbox_mode = "read-only"$/m, `${seat} must be read-only in Codex`);
-  }
-  for (const seat of builders) {
-    const codex = readFileSync(join('.codex/agents', `${seat}.toml`), 'utf8');
-    assert.match(codex, /^sandbox_mode = "workspace-write"$/m, `${seat} must be writable in Codex`);
+  if (PRESENT.includes('codex')) {
+    for (const seat of readOnly) {
+      const codex = readFileSync(join('.codex/agents', `${seat}.toml`), 'utf8');
+      assert.match(codex, /^sandbox_mode = "read-only"$/m, `${seat} must be read-only in Codex`);
+    }
+    for (const seat of builders) {
+      const codex = readFileSync(join('.codex/agents', `${seat}.toml`), 'utf8');
+      assert.match(codex, /^sandbox_mode = "workspace-write"$/m, `${seat} must be writable in Codex`);
+    }
   }
 
-  const claudeSeats = [...readOnly, ...builders];
-  const planMode = new Set(['architect', 'explorer', 'plan-reviewer', 'oracle']);
-  for (const seat of claudeSeats) {
-    const claude = readFileSync(join('.claude/agents', `${seat}.md`), 'utf8');
-    const hasPlan = /^permissionMode: plan$/m.test(claude);
-    assert.equal(hasPlan, planMode.has(seat), `${seat} Claude permissionMode`);
-  }
-});
-
-test('oracle and security-reviewer retain the owner\'s 90-turn cap', () => {
-  for (const seat of ['oracle', 'security-reviewer']) {
-    const claude = readFileSync(join('.claude/agents', `${seat}.md`), 'utf8');
-    assert.match(claude, /^maxTurns: 90$/m, `${seat} turn cap`);
+  if (PRESENT.includes('claude')) {
+    const claudeSeats = [...readOnly, ...builders];
+    const planMode = new Set(['architect', 'explorer', 'plan-reviewer', 'oracle']);
+    for (const seat of claudeSeats) {
+      const claude = readFileSync(join('.claude/agents', `${seat}.md`), 'utf8');
+      const hasPlan = /^permissionMode: plan$/m.test(claude);
+      assert.equal(hasPlan, planMode.has(seat), `${seat} Claude permissionMode`);
+    }
   }
 });
 
-const FABLE_LINE = /^model:[^\S\n]*["']?fable["']?[^\S\n]*$/m;
-const ASTRA_LINE = /^model[^\S\n]*=[^\S\n]*["']gpt-6-astra["'][^\S\n]*$/m;
-
-// Mutation: put `fable` (or `gpt-6-astra`) on another seat, in any spelling the agent check accepts, and this goes red.
-test('the costliest models stay on the seats AGENTS.md names', () => {
-  const seatsWith = (dir, extension, modelLine) => readdirSync(dir)
-    .filter((file) => file.endsWith(extension) && modelLine.test(readFileSync(join(dir, file), 'utf8')))
-    .map((file) => file.slice(0, -extension.length))
-    .sort();
-  assert.deepEqual(seatsWith('.claude/agents', '.md', FABLE_LINE), ['oracle', 'security-reviewer']);
-  assert.deepEqual(seatsWith('.codex/agents', '.toml', ASTRA_LINE), ['architect', 'oracle', 'security-reviewer']);
+// The seat names are written out here from AGENTS.md, never imported, so a change to the module's lists cannot
+// move this expectation. The spellings are the ones the agent check has always had to refuse.
+// Mutation: match only the plain spelling, or skip the check for one runtime, and this goes red.
+test('ANTI-REGRESSION: the costliest model on a seat outside its named seats is reported in every spelling', () => {
   for (const line of ['model:  fable', 'model: fable ', "model: 'fable'", 'model: "fable"', 'model: fable ', 'model: fable\f']) {
-    assert.match(line, FABLE_LINE, line);
+    const problems = checkSeatPolicy('builder.md', `---\nname: builder\n${line}\n---\nBody.\n`);
+    assert.equal(problems.length, 1, line);
+    assert.match(problems[0], /^builder\.md: the costliest Claude model may sit only on the oracle and security-reviewer seats; found /, line);
   }
   for (const line of ["model = 'gpt-6-astra'", 'model="gpt-6-astra"', 'model =  "gpt-6-astra" ', 'model\v="gpt-6-astra"', 'model = "gpt-6-astra"　']) {
-    assert.match(line, ASTRA_LINE, line);
+    const problems = checkSeatPolicy('builder.toml', `name = "builder"\n${line}\nsandbox_mode = "workspace-write"\n`);
+    assert.equal(problems.length, 1, line);
+    assert.match(problems[0], /^builder\.toml: the costliest Codex model may sit only on the architect, oracle and security-reviewer seats; found /, line);
   }
-  assert.doesNotMatch('model: fables', FABLE_LINE);
-  assert.doesNotMatch('model = "gpt-6-astra-mini"', ASTRA_LINE);
+  assert.deepEqual(checkSeatPolicy('builder.md', '---\nname: builder\nmodel: fables\n---\n'), []);
+  assert.deepEqual(checkSeatPolicy('builder.toml', 'model = "gpt-6-astra-mini"\n'), []);
+});
+
+// Mutation: require the costliest model on its named seats, and this goes red.
+test('a seat the costliest model may sit on may hold it or a cheaper known model', () => {
+  for (const seat of ['oracle', 'security-reviewer']) {
+    for (const model of ['fable', 'opus', 'sonnet']) {
+      assert.deepEqual(checkSeatPolicy(`${seat}.md`, `---\nname: ${seat}\nmodel: ${model}\nmaxTurns: 90\n---\nBody.\n`), [], `${seat} ${model}`);
+    }
+  }
+  for (const seat of ['architect', 'oracle', 'security-reviewer']) {
+    for (const model of ['gpt-6-astra', 'gpt-6.1-sol']) {
+      assert.deepEqual(checkSeatPolicy(`${seat}.toml`, `name = "${seat}"\nmodel = "${model}"\n`), [], `${seat} ${model}`);
+    }
+  }
+});
+
+// Mutation: drop the comparison with 90, check only `oracle`, or take the first of two lines, and this goes red.
+test('ANTI-REGRESSION: oracle and security-reviewer are refused a turn limit above 90 or one that is missing or malformed', () => {
+  const seatWith = (seat, limitLines) => `---\nname: ${seat}\nmodel: opus\n${limitLines}---\nBody.\n`;
+  const refused = ['maxTurns: 91\n', 'maxTurns: 150\n', `maxTurns: ${'9'.repeat(400)}\n`, 'maxTurns: 0\n', 'maxTurns: 090\n', '',
+    'maxTurns: "90"\n', 'maxTurns:  90\n', 'maxTurns: 90 # cap\n', 'maxTurns: 60\nmaxTurns: 120\n'];
+  for (const seat of ['oracle', 'security-reviewer']) {
+    for (const limitLines of refused) {
+      const problems = checkSeatPolicy(`${seat}.md`, seatWith(seat, limitLines));
+      assert.equal(problems.length, 1, `${seat} ${JSON.stringify(limitLines)}`);
+      assert.match(problems[0], new RegExp(`^${seat}\\.md: the turn limit of this seat must be one line maxTurns: N with N a whole number from 1 to 90; found `));
+    }
+    for (const limit of [90, 40, 1]) {
+      assert.deepEqual(checkSeatPolicy(`${seat}.md`, seatWith(seat, `maxTurns: ${limit}\n`)), [], `${seat} ${limit}`);
+    }
+  }
+  assert.deepEqual(checkSeatPolicy('builder.md', seatWith('builder', 'maxTurns: 150\n')), []);
+  assert.deepEqual(checkSeatPolicy('oracle.toml', 'name = "oracle"\nmodel = "gpt-6-astra"\n'), []);
+});
+
+// Holds a repository's own seat files to the bound whatever they were overridden to.
+// Mutation: put `model: fable` in the live builder.md and this goes red.
+test('ANTI-REGRESSION: no seat in this repository breaks the seat policy', () => {
+  const read = [];
+  const problems = [];
+  for (const { directory: dir, extension } of PRESENT.map((runtime) => SEATS[runtime])) {
+    for (const file of readdirSync(dir).filter((name) => name.endsWith(extension))) {
+      read.push(file);
+      problems.push(...checkSeatPolicy(file, readFileSync(join(dir, file), 'utf8')));
+    }
+  }
+  const mustRead = { claude: ['oracle.md', 'security-reviewer.md'], codex: ['oracle.toml', 'security-reviewer.toml', 'architect.toml'] };
+  for (const file of PRESENT.flatMap((runtime) => mustRead[runtime])) {
+    assert.ok(read.includes(file), `${file} was not read — an empty directory would prove nothing`);
+  }
+  assert.deepEqual(problems, []);
 });
 
 // The three builder seats share one body from `Workflow:` down. Mutation: drop the parity call from
@@ -170,7 +218,7 @@ test('the builder seats must share one charter from Workflow: down', () => {
   assert.match(checkBuilderParity(dir).join('\n'), /no .Workflow:. line/);
 });
 
-test('the real builder seats share one charter', () => {
+test('the real builder seats share one charter', { skip: without('claude') }, () => {
   assert.deepEqual(checkBuilderParity('.claude/agents'), []);
 });
 
@@ -198,7 +246,7 @@ test('the reviewer charter must match across runtimes, sigil aside', () => {
   }
 });
 
-test('the real reviewer charters match across runtimes', () => {
+test('the real reviewer charters match across runtimes', { skip: without('claude') || without('codex') }, () => {
   assert.deepEqual(checkReviewerParity('.claude/agents', '.codex/agents'), []);
 });
 
@@ -219,6 +267,48 @@ test('the default CLI run refuses diverged reviewer charters', () => {
     const diverged = spawnSync('node', [cli], { cwd: root, encoding: 'utf8' });
     assert.equal(diverged.status, 1);
     assert.match(diverged.stderr, /edit the reviewer charters together/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Price tag: recurring cost is five spawned CLI runs over a one-seat fixture; retire it with the test above.
+// Mutation: choose the folders by which exist on disk and the run with no settings file exits 0.
+test('the default CLI run checks only the runtimes the settings file names, and both when it names none', () => {
+  const cli = join(dirname(fileURLToPath(import.meta.url)), 'check-agents.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'runtimes-cli-'));
+  const run = () => spawnSync('node', [cli], { cwd: root, encoding: 'utf8' });
+  const settings = join(root, '.agents', 'factory-settings.json');
+  const name = (runtimes) => writeFileSync(settings, JSON.stringify({ version: 1, runtimes, seats: {} }));
+  try {
+    mkdirSync(join(root, '.agents'));
+    mkdirSync(join(root, '.claude', 'agents'), { recursive: true });
+    writeFileSync(join(root, '.claude', 'agents', 'reviewer.md'), GOOD_MD);
+    name(['claude']);
+    const claudeOnly = run();
+    assert.equal(claudeOnly.status, 0, claudeOnly.stderr);
+
+    writeFileSync(settings, '{"runtimes":["claude"]}');
+    const unversioned = run();
+    assert.equal(unversioned.status, 1);
+    assert.match(unversioned.stderr, /\.agents\/factory-settings\.json: version: is unsupported/);
+
+    rmSync(settings);
+    const unnamed = run();
+    assert.equal(unnamed.status, 1);
+    assert.match(unnamed.stderr, /\.codex\/agents: cannot be read/);
+
+    rmSync(join(root, '.claude'), { recursive: true });
+    mkdirSync(join(root, '.codex', 'agents'), { recursive: true });
+    writeFileSync(join(root, '.codex', 'agents', 'reviewer.toml'), GOOD_TOML);
+    name(['codex']);
+    const codexOnly = run();
+    assert.equal(codexOnly.status, 0, codexOnly.stderr);
+
+    name([]);
+    const empty = run();
+    assert.equal(empty.status, 1);
+    assert.match(empty.stderr, /\.agents\/factory-settings\.json: runtimes: must be a non-empty array/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

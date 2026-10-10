@@ -50,7 +50,6 @@ const currentRegularAgentDefinitions = globSync(
     ".agents/skills/*/SKILL.md",
     ".agents/templates/*.md",
     ".claude/agents/*.md",
-    ".claude/templates/*.md",
     ".codex/agents/*.toml",
   ],
   { cwd: process.cwd() },
@@ -993,6 +992,41 @@ describe("repository verification command", () => {
     full: { browser: true, database: true, bookingConcurrency: true },
   };
 
+  it("routes the approved Supabase vendor prose without admitting executable or unknown vendor inputs", () => {
+    const prosePaths = [
+      ".agents/upstream/supabase-agent-skills/LICENSE",
+      ".agents/upstream/supabase-agent-skills/supabase/SKILL.md",
+      ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/SKILL.md",
+      ".agents/upstream/supabase-agent-skills/supabase-postgres-best-practices/references/conn-pooling.md",
+    ];
+    for (const path of prosePaths) {
+      expect(classifyChanges([added(path)])).toMatchObject(routes.baseline);
+      for (const [oldMode, newMode, status] of [
+        ["000000", "100755", "A"],
+        ["000000", "120000", "A"],
+        ["100644", "100644", "T"],
+      ]) {
+        expect(
+          classifyChanges([{ path, oldMode, newMode, status }]),
+        ).toMatchObject(routes.full);
+      }
+    }
+
+    for (const path of [
+      ".agents/upstream/unknown-vendor/supabase/SKILL.md",
+      ".agents/upstream/supabase-agent-skills/supabase/vendor.mjs",
+    ]) {
+      expect(classifyChanges([added(path)])).toEqual({ unclassified: [path] });
+    }
+    for (const path of [
+      "scripts/unknown-vendor.mjs",
+      "scripts/verify.mjs",
+      "scripts/verify.test.mjs",
+    ]) {
+      expect(classifyChanges([added(path)])).toMatchObject(routes.full);
+    }
+  });
+
   // The changed path alone decides the route, so these rows need no repository;
   // "selects the route for %s" proves each route's commands end to end.
   it.each([
@@ -1330,6 +1364,7 @@ describe("repository verification command", () => {
     ["an asset", ["docs/product/assets/runtime.json"]],
     ["an agent script", [".agents/templates/runtime.mjs"]],
     ["an agent config", [".agents/templates/runtime.json"]],
+    ["a retired template", [".claude/templates/future-template.md"]],
     ["an agent TypeScript file", [".agents/skills/tool/runtime.ts"]],
     [
       "nested native skill metadata",
@@ -1344,13 +1379,28 @@ describe("repository verification command", () => {
     });
   });
 
+  it("routes only the exact retired builder template deletion to full evidence", () => {
+    const path = ".claude/templates/builder-handoff.md";
+    expect(
+      classifyChanges([
+        { path, status: "D", oldMode: "100644", newMode: "000000" },
+      ]),
+    ).toMatchObject(routes.full);
+    expect(classifyChanges([added(path)])).toEqual({ unclassified: [path] });
+    const futurePath = ".claude/templates/future-template.md";
+    expect(
+      classifyChanges([
+        { path: futurePath, status: "D", oldMode: "100644", newMode: "000000" },
+      ]),
+    ).toEqual({ unclassified: [futurePath] });
+  });
+
   it("keeps every current regular agent definition and future names on baseline evidence", () => {
     const paths = [
       ...currentRegularAgentDefinitions,
       ".agents/skills/future-skill/SKILL.md",
       ".agents/templates/future-template.md",
       ".claude/agents/future-agent.md",
-      ".claude/templates/future-template.md",
       ".codex/agents/future-agent.toml",
     ];
 

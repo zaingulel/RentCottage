@@ -16,15 +16,17 @@
 //   Codex TOML: the restricted project format — simple quoted string fields plus one
 //   opened-and-closed `developer_instructions = """ ... """` block; `name` matches the
 //   filename; `model` from the known set.
-//   Default CLI run: the Claude and Codex reviewer charters match, the skill sigil aside.
-// Which seat carries which model, effort or turn cap is not decided here: the seats the
-// costliest models may sit on and the 90-turn caps are pinned in check-agents.test.mjs.
+//   Default CLI run: the seat folders of the runtimes the settings file names (runtimes.mjs), both when it names
+//   none; where both run, the Claude and Codex reviewer charters match, the skill sigil aside.
+// Which seat may carry the costliest models, and how many turns the oracle and security-reviewer
+// seats may take, is the bound checkSeatPolicy holds; the default run of this file does not apply it.
 //
 // Pure logic exported for scripts/lib/check-agents.test.mjs; CLI at bottom.
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { presentRuntimes, SEATS } from './runtimes.mjs';
 
 const KNOWN_MODELS = ['opus', 'sonnet', 'haiku', 'fable', 'inherit'];
 const KNOWN_CODEX_MODELS = ['gpt-6-astra', 'gpt-6-sol', 'gpt-6.1-sol', 'gpt-6-luna'];
@@ -258,13 +260,62 @@ export function checkAgentsDir(dir) {
   return problems;
 }
 
-// CLI: node scripts/lib/check-agents.mjs [dir ...] — default .claude/agents and .codex/agents.
-// Non-zero on any problem (fail loud).
+// The seat policy: the costliest models sit only on their named seats, and the oracle and security-reviewer
+// seats take at most 90 turns. Every other model, effort or limit is free, so a cheaper model or a lower limit
+// passes. Each line pattern is tested against every line of the file, so no spelling the agent check accepts
+// slips past (trailing space, quotes, a form feed, a no-break or ideographic space).
+const FABLE_LINE = /^model:[^\S\n]*["']?fable["']?[^\S\n]*$/m;
+const ASTRA_LINE = /^model[^\S\n]*=[^\S\n]*["']gpt-6-astra["'][^\S\n]*$/m;
+const FABLE_SEATS = ['oracle', 'security-reviewer'];
+const ASTRA_SEATS = ['architect', 'oracle', 'security-reviewer'];
+const TURN_LIMITED_SEATS = ['oracle', 'security-reviewer'];
+const TURN_LIMIT_LINE = /^maxTurns: (?:[1-9]|[1-8]\d|90)$/;
+
+/** Check one seat file against the seat policy. Returns [] when clean; a name that is no seat file is clean. */
+export function checkSeatPolicy(filename, source) {
+  const file = basename(filename);
+  const isClaude = file.endsWith('.md');
+  if (!isClaude && !file.endsWith('.toml')) return [];
+  const seat = file.slice(0, file.lastIndexOf('.'));
+  const lines = source.split('\n');
+  const problems = [];
+
+  const costliest = isClaude ? FABLE_LINE : ASTRA_LINE;
+  const costliestSeats = isClaude ? FABLE_SEATS : ASTRA_SEATS;
+  const found = lines.filter((line) => costliest.test(line));
+  if (found.length > 0 && !costliestSeats.includes(seat)) {
+    const [runtime, seatList] = isClaude ? ['Claude', 'oracle and security-reviewer'] : ['Codex', 'architect, oracle and security-reviewer'];
+    problems.push(`${filename}: the costliest ${runtime} model may sit only on the ${seatList} seats; found ${JSON.stringify(found)}`);
+  }
+
+  if (isClaude && TURN_LIMITED_SEATS.includes(seat)) {
+    const closing = lines[0] === '---' ? lines.indexOf('---', 1) : -1;
+    const limits = closing === -1 ? [] : lines.slice(1, closing).filter((line) => line.startsWith('maxTurns:'));
+    if (limits.length !== 1 || !TURN_LIMIT_LINE.test(limits[0])) {
+      problems.push(`${filename}: the turn limit of this seat must be one line maxTurns: N with N a whole number from 1 to 90; found ${JSON.stringify(limits)}`);
+    }
+  }
+  return problems;
+}
+
+// CLI: node scripts/lib/check-agents.mjs [dir ...] — default the seat folder of each runtime the settings file of
+// the working directory names. Non-zero on any problem, a settings file that cannot be read among them (fail loud).
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const dirs = process.argv.slice(2);
-  const targets = dirs.length ? dirs : ['.claude/agents', '.codex/agents'];
-  const problems = targets.flatMap((dir) => checkAgentsDir(dir));
-  if (!dirs.length) problems.push(...checkReviewerParity('.claude/agents', '.codex/agents'));
+  const problems = [];
+  let runtimes = [];
+  if (!dirs.length) {
+    try {
+      runtimes = presentRuntimes('.');
+    } catch (error) {
+      problems.push(error.message);
+    }
+  }
+  const targets = dirs.length ? dirs : runtimes.map((runtime) => SEATS[runtime].directory);
+  problems.push(...targets.flatMap((dir) => checkAgentsDir(dir)));
+  if (runtimes.includes('claude') && runtimes.includes('codex')) {
+    problems.push(...checkReviewerParity(SEATS.claude.directory, SEATS.codex.directory));
+  }
   if (problems.length) {
     for (const p of problems) console.error(`✖ ${p}`);
     process.exit(1);

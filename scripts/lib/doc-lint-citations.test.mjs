@@ -19,8 +19,10 @@ import {
   checkHeadingCitations,
 } from './doc-lint-citations.mjs';
 import { classifyDocLintPath } from './doc-lint.mjs';
+import { installs, presentRuntimes } from './runtimes.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const PRESENT = presentRuntimes(ROOT);
 // Hand-written heading sets, never derived from extractManualHeadings, so a
 // broken parser cannot agree with itself.
 const fakeManuals = {
@@ -156,14 +158,15 @@ test('repo-pass: the real repo has zero phantom AGENTS.md or CLAUDE.md citations
     .filter((rel) => fs.existsSync(path.join(ROOT, rel)));
   const scanFiles = tracked.filter((rel) => classifyDocLintPath(rel).pathRefs);
 
-  // CLAUDE.md is `@AGENTS.md` plus Claude-only notes, so a CLAUDE.md citation resolves against both.
-  const claudeText = fs.readFileSync(path.join(ROOT, 'CLAUDE.md'), 'utf8');
+  // CLAUDE.md is `@AGENTS.md` plus Claude-only notes, so a CLAUDE.md citation resolves against both. It is read only
+  // where Claude Code runs.
   const agentsHeadings = extractManualHeadings(fs.readFileSync(path.join(ROOT, 'AGENTS.md'), 'utf8'));
-  assert.match(claudeText, /^@AGENTS\.md\s*$/m, 'CLAUDE.md must import AGENTS.md');
-  const headingsByManual = {
-    'CLAUDE.md': new Set([...extractManualHeadings(claudeText), ...agentsHeadings]),
-    'AGENTS.md': agentsHeadings,
-  };
+  const headingsByManual = { 'AGENTS.md': agentsHeadings };
+  if (installs(PRESENT, 'CLAUDE.md')) {
+    const claudeText = fs.readFileSync(path.join(ROOT, 'CLAUDE.md'), 'utf8');
+    assert.match(claudeText, /^@AGENTS\.md\s*$/m, 'CLAUDE.md must import AGENTS.md');
+    headingsByManual['CLAUDE.md'] = new Set([...extractManualHeadings(claudeText), ...agentsHeadings]);
+  }
   for (const manual of Object.keys(headingsByManual)) {
     assert.ok(
       headingsByManual[manual].has('Coding standards and the executed test bar'),
@@ -176,7 +179,7 @@ test('repo-pass: the real repo has zero phantom AGENTS.md or CLAUDE.md citations
   const citingFilesSeen = new Set();
   for (const rel of scanFiles) {
     const text = fs.readFileSync(path.join(ROOT, rel), 'utf8');
-    const citations = extractHeadingCitations(text);
+    const citations = extractHeadingCitations(text).filter((c) => installs(PRESENT, c.manual));
     citationsSeen += citations.length;
     if (citations.length) citingFilesSeen.add(rel);
     for (const v of checkHeadingCitations(citations, headingsByManual)) {
@@ -210,7 +213,7 @@ const CLI_FIXTURE_SEEDS = {
 function makeCliFixture(files) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-lint-cli-'));
   fs.mkdirSync(path.join(root, 'scripts', 'lib'), { recursive: true });
-  for (const rel of ['scripts/doc-lint.mjs', 'scripts/lib/doc-lint.mjs', 'scripts/lib/doc-lint-links.mjs', 'scripts/lib/doc-lint-citations.mjs']) {
+  for (const rel of ['scripts/doc-lint.mjs', 'scripts/lib/doc-lint.mjs', 'scripts/lib/doc-lint-links.mjs', 'scripts/lib/doc-lint-citations.mjs', 'scripts/lib/runtimes.mjs']) {
     fs.copyFileSync(path.join(ROOT, rel), path.join(root, rel));
   }
   writeFixtureFiles(root, { ...CLI_FIXTURE_SEEDS, ...files });
