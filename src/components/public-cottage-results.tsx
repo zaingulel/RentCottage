@@ -20,6 +20,7 @@ const copy = {
     view: "اعرض البيت",
     back: "تعديل البحث",
     fullDay: "اليوم الكامل",
+    nextDay: "اليوم التالي",
     available: "متاح",
     unavailableOption: "غير متاح",
     noPrice: "السعر غير متاح",
@@ -42,6 +43,7 @@ const copy = {
     view: "کۆتێجەکە ببینە",
     back: "گەڕانەکە بگۆڕە",
     fullDay: "پاکێجی ڕۆژی تەواو",
+    nextDay: "ڕۆژی دواتر",
     available: "بەردەستە",
     unavailableOption: "بەردەست نییە",
     noPrice: "نرخ بەردەست نییە",
@@ -65,6 +67,7 @@ const copy = {
     view: "View cottage",
     back: "Change search",
     fullDay: "Full-day bundle",
+    nextDay: "next day",
     available: "Available",
     unavailableOption: "Unavailable",
     noPrice: "Price unavailable",
@@ -167,9 +170,16 @@ export function PublicCottageResults({
                                   ? messages.fullDay
                                   : unit.name}
                               </span>
-                              <bdi dir="ltr">
-                                {unit.startTime}–{unit.endTime}
-                              </bdi>
+                              <span>
+                                <bdi dir="ltr">
+                                  {unit.startTime}–{unit.endTime}
+                                </bdi>
+                                {(unit.endTime < unit.startTime ||
+                                  (unit.kind === "full-day" &&
+                                    unit.endTime === unit.startTime)) && (
+                                  <> {messages.nextDay}</>
+                                )}
+                              </span>
                               <b>
                                 {unit.priceIqd === null
                                   ? messages.noPrice

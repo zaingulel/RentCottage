@@ -23,6 +23,7 @@ const copy = {
   en: {
     title: "Choose your Booking Period",
     fullDay: "Full-day bundle",
+    nextDay: "next day",
     available: "Available",
     unavailable: "Unavailable",
     noPrice: "Price unavailable",
@@ -39,6 +40,7 @@ const copy = {
   ar: {
     title: "اختر فترة الحجز",
     fullDay: "اليوم الكامل",
+    nextDay: "اليوم التالي",
     available: "متاح",
     unavailable: "غير متاح",
     noPrice: "السعر غير متاح",
@@ -53,6 +55,7 @@ const copy = {
   ckb: {
     title: "ماوەی حجزەکەت هەڵبژێرە",
     fullDay: "پاکێجی ڕۆژی تەواو",
+    nextDay: "ڕۆژی دواتر",
     available: "بەردەستە",
     unavailable: "بەردەست نییە",
     noPrice: "نرخ بەردەست نییە",
@@ -198,9 +201,16 @@ export function CottageBookingPeriodPicker({
                     >
                       {unit.kind === "full-day" ? messages.fullDay : unit.name}
                     </ActionButton>
-                    <bdi dir="ltr">
-                      {unit.startTime}–{unit.endTime}
-                    </bdi>
+                    <span>
+                      <bdi dir="ltr">
+                        {unit.startTime}–{unit.endTime}
+                      </bdi>
+                      {(unit.endTime < unit.startTime ||
+                        (unit.kind === "full-day" &&
+                          unit.endTime === unit.startTime)) && (
+                        <> {messages.nextDay}</>
+                      )}
+                    </span>
                     <b>
                       {unit.priceIqd === null
                         ? messages.noPrice
