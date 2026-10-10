@@ -20,6 +20,15 @@ const reviewId = "11111111-1111-4111-8111-111111111111";
 const laterReviewId = "22222222-2222-4222-8222-222222222222";
 const affectedPublicSlug = "cottage-deadbeefdeadbeefdeadbeefdead0029";
 
+const unfilteredFirstPage = {
+  beforeAt: null,
+  beforeId: null,
+  limit: 50,
+  state: null,
+  from: null,
+  through: null,
+};
+
 function clientWith(data: unknown, error: unknown = null) {
   return { rpc: vi.fn().mockResolvedValue({ data, error }) };
 }
@@ -515,6 +524,8 @@ describe("Supabase Customer review repository", () => {
       status: "success",
       items: [item, repliedItem],
       nextCursor: null,
+      total: 5,
+      stateCounts: { unhidden: 4, hidden: 5 },
     });
     const repository = new SupabaseCustomerReviewRepository(client as never);
 
@@ -523,6 +534,9 @@ describe("Supabase Customer review repository", () => {
         beforeAt: "2026-09-22T00:00:00.000Z",
         beforeId: laterReviewId,
         limit: 50,
+        state: "hidden",
+        from: "2026-09-01",
+        through: "2026-09-21",
       }),
     ).resolves.toEqual({
       status: "success",
@@ -554,6 +568,8 @@ describe("Supabase Customer review repository", () => {
         },
       ],
       nextCursor: null,
+      total: 5,
+      stateCounts: { unhidden: 4, hidden: 5 },
     });
     expect(client.rpc).toHaveBeenCalledWith(
       "list_administrator_customer_reviews",
@@ -561,6 +577,9 @@ describe("Supabase Customer review repository", () => {
         target_before_at: "2026-09-22T00:00:00.000Z",
         target_before_id: laterReviewId,
         target_limit: 50,
+        target_state: "hidden",
+        target_from: "2026-09-01",
+        target_through: "2026-09-21",
       },
     );
 
@@ -570,8 +589,10 @@ describe("Supabase Customer review repository", () => {
           status: "success",
           items: [rejectedItem],
           nextCursor: null,
+          total: 1,
+          stateCounts: { unhidden: 1, hidden: 0 },
         }) as never,
-      ).listAdministrator({ beforeAt: null, beforeId: null, limit: 50 });
+      ).listAdministrator(unfilteredFirstPage);
     await expect(
       list({
         ...repliedItem,
@@ -604,6 +625,88 @@ describe("Supabase Customer review repository", () => {
         status: "unavailable",
       });
     }
+  });
+
+  it("passes unset administrator filters as nulls and refuses a reply without exact counts", async () => {
+    const reply = {
+      status: "success",
+      items: [],
+      nextCursor: null,
+      total: 3,
+      stateCounts: { unhidden: 2, hidden: 1 },
+    };
+    const client = clientWith(reply);
+    await expect(
+      new SupabaseCustomerReviewRepository(client as never).listAdministrator(
+        unfilteredFirstPage,
+      ),
+    ).resolves.toEqual(reply);
+    expect(client.rpc).toHaveBeenCalledWith(
+      "list_administrator_customer_reviews",
+      {
+        target_before_at: null,
+        target_before_id: null,
+        target_limit: 50,
+        target_state: null,
+        target_from: null,
+        target_through: null,
+      },
+    );
+
+    const item = {
+      reviewId,
+      bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+      profileId: "33333333-3333-4333-8333-333333333333",
+      authorUserId: "44444444-4444-4444-8444-444444444444",
+      rating: 2,
+      originalLanguage: "ar",
+      originalBody: "مراجعة",
+      submittedAt: "2026-09-21T09:00:00.000Z",
+      moderationState: "unhidden",
+      hide: null,
+      reply: null,
+    };
+    for (const rejected of [
+      { status: "success", items: [], nextCursor: null },
+      { status: "success", items: [], nextCursor: null, total: 0 },
+      {
+        status: "success",
+        items: [],
+        nextCursor: null,
+        stateCounts: reply.stateCounts,
+      },
+      { ...reply, matched: 0 },
+      { ...reply, total: 0 },
+      { ...reply, total: 4 },
+      { ...reply, total: -1 },
+      { ...reply, total: 1.5 },
+      { ...reply, total: "0" },
+      { ...reply, total: null },
+      { ...reply, items: [item], total: 0 },
+      { ...reply, stateCounts: null },
+      { ...reply, stateCounts: [2, 1] },
+      { ...reply, stateCounts: { unhidden: 2 } },
+      { ...reply, stateCounts: { unhidden: 2, hidden: -1 } },
+      { ...reply, stateCounts: { unhidden: "2", hidden: 1 } },
+      { ...reply, stateCounts: { unhidden: 2, hidden: 1.5 } },
+      { ...reply, stateCounts: { unhidden: 2, hidden: 1, replied: 0 } },
+    ]) {
+      await expect(
+        new SupabaseCustomerReviewRepository(
+          clientWith(rejected) as never,
+        ).listAdministrator(unfilteredFirstPage),
+      ).resolves.toEqual({ status: "unavailable" });
+    }
+    await expect(
+      new SupabaseCustomerReviewRepository(
+        clientWith({ ...reply, total: 3 }) as never,
+      ).listAdministrator({ ...unfilteredFirstPage, state: "hidden" }),
+    ).resolves.toEqual({ status: "unavailable" });
+    await expect(
+      new SupabaseCustomerReviewRepository(
+        clientWith({ ...reply, total: 1 }) as never,
+      ).listAdministrator({ ...unfilteredFirstPage, state: "hidden" }),
+    ).resolves.toMatchObject({ status: "success", total: 1 });
   });
 
   it("validates database review bodies by Unicode code point across every response parser", async () => {
@@ -674,6 +777,8 @@ describe("Supabase Customer review repository", () => {
         },
       ],
       nextCursor: null,
+      total: 1,
+      stateCounts: { unhidden: 1, hidden: 0 },
     });
     const withShortReviewBody = <
       Item extends Readonly<{ originalBody: string }>,
@@ -696,7 +801,7 @@ describe("Supabase Customer review repository", () => {
     const listAdministratorPayload = (payload: unknown) =>
       new SupabaseCustomerReviewRepository(
         clientWith(payload) as never,
-      ).listAdministrator({ beforeAt: null, beforeId: null, limit: 50 });
+      ).listAdministrator(unfilteredFirstPage);
     const listPublic = (originalBody: string) =>
       new SupabaseCustomerReviewRepository(
         clientWith(publicResponse(originalBody)) as never,
@@ -713,7 +818,7 @@ describe("Supabase Customer review repository", () => {
     const listAdministrator = (originalBody: string) =>
       new SupabaseCustomerReviewRepository(
         clientWith(administratorResponse(originalBody)) as never,
-      ).listAdministrator({ beforeAt: null, beforeId: null, limit: 50 });
+      ).listAdministrator(unfilteredFirstPage);
 
     expect(Array.from(acceptedBody)).toHaveLength(2000);
     await expect(listPublic(acceptedBody)).resolves.toEqual(
@@ -906,11 +1011,7 @@ describe("Supabase Customer review repository", () => {
       originalBody: null,
     });
     await request?.getOwn("RC-REQ-0123456789ABCDEF");
-    await request?.listAdministrator({
-      beforeAt: null,
-      beforeId: null,
-      limit: 50,
-    });
+    await request?.listAdministrator(unfilteredFirstPage);
     await request?.hide({ reviewId, reason: "Moderation reason" });
     await request?.getOwnerReview("RC-REQ-0123456789ABCDEF");
     await request?.submitReply({
@@ -960,11 +1061,22 @@ describe("Supabase Customer review repository", () => {
     ).resolves.toEqual({ status: "invalid" });
     await expect(
       repository.listAdministrator({
-        beforeAt: null,
+        ...unfilteredFirstPage,
         beforeId: reviewId,
         limit: 51,
       }),
     ).resolves.toEqual({ status: "invalid" });
+    for (const refused of [
+      { beforeAt: null, beforeId: null, limit: 50 },
+      { ...unfilteredFirstPage, state: "replied" },
+      { ...unfilteredFirstPage, from: "2026-02-30" },
+      { ...unfilteredFirstPage, through: "21/09/2026" },
+      { ...unfilteredFirstPage, from: "2026-09-22", through: "2026-09-21" },
+    ]) {
+      await expect(
+        repository.listAdministrator(refused as never),
+      ).resolves.toEqual({ status: "invalid" });
+    }
     await expect(
       repository.hide({ reviewId: "not-a-uuid", reason: " " }),
     ).resolves.toEqual({ status: "invalid" });
@@ -984,7 +1096,7 @@ describe("Supabase Customer review repository", () => {
       }),
     ).resolves.toEqual({ status: "access-required" });
     await expect(
-      denied.listAdministrator({ beforeAt: null, beforeId: null, limit: 50 }),
+      denied.listAdministrator(unfilteredFirstPage),
     ).resolves.toEqual({ status: "access-required" });
     await expect(
       denied.getOwnerReview("RC-REQ-0123456789ABCDEF"),
@@ -1097,11 +1209,7 @@ describe("Supabase Customer review repository", () => {
       { status: "unavailable" },
     );
     await expect(
-      repository.listAdministrator({
-        beforeAt: null,
-        beforeId: null,
-        limit: 50,
-      }),
+      repository.listAdministrator(unfilteredFirstPage),
     ).resolves.toEqual({ status: "unavailable" });
     await expect(
       repository.hide({ reviewId, reason: "Moderation reason" }),

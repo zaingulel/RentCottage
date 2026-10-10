@@ -49,17 +49,13 @@ export default async function AdministratorPaymentHistoryPage({
       </main>
     );
   }
-  let financial;
-  let financialUnavailable = false;
-  try {
-    financial = await loadBookingFinancialView(
-      reference,
-      "platform_administrator",
-    );
-  } catch (error) {
+  const financial = await loadBookingFinancialView(
+    reference,
+    "platform_administrator",
+  ).catch((error) => {
     unstable_rethrow(error);
-    financialUnavailable = true;
-  }
+    return null;
+  });
   return (
     <main className="owner-application-page payment-history-page">
       <BackofficeNavigation
@@ -70,9 +66,9 @@ export default async function AdministratorPaymentHistoryPage({
       />
       {financial ? (
         <BookingFinancialDetails locale={locale} view={financial} />
-      ) : financialUnavailable ? (
+      ) : (
         <p role="alert">{bookingManagementMessages[locale].unavailableView}</p>
-      ) : null}
+      )}
       <AdministratorPaymentHistoryView
         locale={locale}
         history={result.history}

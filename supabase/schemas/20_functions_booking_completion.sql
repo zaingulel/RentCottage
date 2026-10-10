@@ -216,6 +216,14 @@ begin
 end;
 $$;
 
+CREATE OR REPLACE FUNCTION public.booking_lifecycle_status(target_request_id uuid) RETURNS text
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path='' AS $$
+  select coalesce((select outcome from public.booking_lifecycle_outcomes where booking_request_id=target_request_id),
+    case when exists(select 1 from public.booking_cancellations where booking_request_id=target_request_id) then 'cancelled'
+      when exists(select 1 from public.booking_incidents where booking_request_id=target_request_id) then 'incident_pending'
+      else 'confirmed' end);
+$$;
+
 CREATE OR REPLACE FUNCTION public.get_booking_lifecycle(target_reference text,target_actor_role text) RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
 declare actor uuid:=(select auth.uid()); declare context public.account_contexts; declare request public.booking_requests; declare lifecycle record; declare result jsonb;
@@ -229,7 +237,7 @@ begin
   ) is true then raise exception 'Booking lifecycle is unavailable' using errcode='42501'; end if;
   if not exists(select 1 from public.booking_confirmations where booking_request_id=request.id) then raise exception 'Confirmed booking source is invalid' using errcode='RC409'; end if;
   select * into lifecycle from public.booking_lifecycle_outcomes where booking_request_id=request.id;
-  result:=jsonb_build_object('bookingRequestId',request.id,'status',case when lifecycle.id is not null then lifecycle.outcome when exists(select 1 from public.booking_cancellations where booking_request_id=request.id) then 'cancelled' when exists(select 1 from public.booking_incidents where booking_request_id=request.id) then 'incident_pending' else 'confirmed' end);
+  result:=jsonb_build_object('bookingRequestId',request.id,'status',public.booking_lifecycle_status(request.id));
   if target_actor_role='platform_administrator' then
     result:=result||jsonb_build_object('noShow',case when lifecycle.outcome='no_show' then jsonb_build_object('actorUserId',lifecycle.actor_user_id,'reason',lifecycle.reason,'recordedAt',lifecycle.recorded_at) end);
     result:=result||jsonb_build_object('incidents',(

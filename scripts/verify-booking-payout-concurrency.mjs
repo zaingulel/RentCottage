@@ -170,6 +170,69 @@ try {
     );
 
     seed();
+    const queues = `select jsonb_build_array(${[
+      "requests",
+      "bookings",
+      "refunds",
+      "incidents",
+    ]
+      .map(
+        (queue) =>
+          `public.search_administrator_booking_queue('${queue}',null,null,null,null,null)`,
+      )
+      .join(",")})`;
+    const queueRefund = (command, allocation) =>
+      `${administrator}select public.request_booking_refund_exception('${request}','${command}','Queue concurrency refund','${allocation}');`;
+    harness.runSql(
+      `begin;${queueRefund("90000000-0000-4000-8000-000000004190", '{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}')}commit;`,
+    );
+    const queueReader = harness.startSession(
+      `begin;${administrator}${queues};select 'QUEUE_READ';`,
+    );
+    sessions.push(queueReader);
+    await harness.waitForMarker(queueReader, "QUEUE_READ");
+    const queueWriter = harness.startSession(
+      `begin;
+    select id from public.booking_requests where id='${request}' for update nowait;
+    select id from public.cottage_booking_period_commitments where id='50000000-0000-4000-8000-000000001001' for update nowait;
+    select booking_request_id from public.booking_request_capture_work where booking_request_id='${request}' for update nowait;
+    select id from public.payment_provider_operations where id=(select capture_operation_id from public.booking_confirmations where booking_request_id='${request}') for update nowait;
+    ${queueRefund("90000000-0000-4000-8000-000000004191", '{"bookingPriceFils":10000000,"bookingServiceFeeFils":0}')}select 'QUEUE_REFUND_UNCOMMITTED';`,
+    );
+    sessions.push(queueWriter);
+    await harness.waitForMarker(queueWriter, "QUEUE_REFUND_UNCOMMITTED");
+    const concurrentQueues = harness.startSession(
+      `begin;set local statement_timeout='10s';${administrator}${queues};commit;`,
+      true,
+    );
+    sessions.push(concurrentQueues);
+    await harness.finishSession(concurrentQueues);
+    const beforeRefund = JSON.parse(queueReader.stdout.split("\n")[0]);
+    assert.equal(beforeRefund[2].total, 1);
+    assert.equal(beforeRefund[2].rows.length, 1);
+    assert.deepEqual(
+      JSON.parse(concurrentQueues.stdout),
+      beforeRefund,
+      "queues read committed facts while the refund writer remains open",
+    );
+    await harness.finishSession(queueWriter, { action: "commit" });
+    const afterRefund = JSON.parse(
+      harness.runSql(`begin;${administrator}${queues};commit;`),
+    );
+    assert.equal(afterRefund[2].total, 2);
+    assert.equal(afterRefund[2].rows.length, 2);
+    assert.ok(
+      afterRefund[2].rows.some(
+        (row) => !beforeRefund[2].rows.some((seen) => seen.id === row.id),
+      ),
+      "queues show the committed refund the earlier reader did not return",
+    );
+    await harness.finishSession(queueReader, { action: "rollback" });
+    console.log(
+      "Administrator queues take no request, commitment, capture work or capture lock, return the previous committed facts during an uncommitted refund exception, then show the committed refund.",
+    );
+
+    seed();
     harness.markTimingPhase("setup");
     const secondRequest = "60000000-0000-4000-8000-000000004181";
     // Reuse the genuine capture/completion fixture with distinct booking identities.

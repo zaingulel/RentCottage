@@ -145,6 +145,10 @@ end;
 $seed_function$;
 -- END CANCELLATION FIXTURE
 select no_plan();
+-- The oracle reads the stored intent as the test owner; API roles cannot.
+create function pg_temp.refund_intent_day(target_command_id uuid) returns date language sql security definer as $$
+ select (created_at at time zone 'Asia/Baghdad')::date from public.booking_refund_intents where command_id=target_command_id;
+$$;
 select pg_temp.seed_cancellation_booking('2101-01-01');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
@@ -152,6 +156,10 @@ select throws_ok($$select public.request_booking_refund_exception('60000000-0000
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","aal":"aal2"}',true);
 select lives_ok($$select public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003810','Compensation','{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}')$$,'administrator explicitly reserves price and fee');
+select is(public.search_administrator_booking_queue('refunds',null,null,null,null,null)->>'total','1','refund queue holds the one requested exception');
+select is((public.search_administrator_booking_queue('refunds',null,null,null,null,null)#>'{rows,0}')-array['id','at'],'{"reference":"RC-REQ-0000000000001001","state":"requested","source":"administrator","category":null}'::jsonb,'refund row carries its derived state and source, and no reason or amount');
+select is(public.search_administrator_booking_queue('refunds',null,null,null,null,null)#>>'{stateCounts,requested}','1','refund queue counts the requested exception');
+select is(public.search_administrator_booking_queue('refunds',null,pg_temp.refund_intent_day('90000000-0000-4000-8000-000000003810')+1,null,null,null),'{"queue":"refunds","rows":[],"total":0,"stateCounts":{"requested":0,"processing":0,"succeeded":0,"failed":0,"unknown":0},"nextCursor":null}'::jsonb,'refund queue window starting the day after the request has no rows and zero counts');
 select throws_ok($$select public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003811','Excess','{"bookingPriceFils":80000010,"bookingServiceFeeFils":4000000}')$$,'RC409',null,'pending allocation cannot be spent twice');
 
 select throws_ok($$select public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003810','Changed reason','{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}')$$,'RC409',null,'changed payload cannot reuse the exception command');
@@ -211,6 +219,13 @@ select is((select count(*)::integer from public.booking_notification_events wher
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","aal":"aal2"}',true);
 insert into refund_test_values values('second-intent',public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003813','Second partial','{"bookingPriceFils":20000000,"bookingServiceFeeFils":1000000}')->'intentId');
+select is(public.search_administrator_booking_queue('refunds',null,null,null,null,null)->>'total','2','refund queue holds both exceptions');
+select is(public.search_administrator_booking_queue('refunds',null,null,null,null,null)->'stateCounts','{"requested":1,"processing":0,"succeeded":1,"failed":0,"unknown":0}'::jsonb,'refund queue counts the verified and the requested exception separately');
+select is(public.search_administrator_booking_queue('refunds','succeeded',null,null,null,null)->>'total','1','refund queue filters by derived state');
+select is(public.search_administrator_booking_queue('refunds','succeeded',null,null,null,null)#>>'{rows,0,id}',pg_temp.refund_value('first-intent')#>>'{}','the succeeded refund row is the first intent');
+create temp table refund_queue_after_newest as select public.search_administrator_booking_queue('refunds',null,null,null,(newest.result#>>'{rows,0,at}')::timestamptz,(newest.result#>>'{rows,0,id}')::uuid) result from (select public.search_administrator_booking_queue('refunds',null,null,null,null,null) result) newest;
+select is((select jsonb_array_length(result->'rows') from refund_queue_after_newest),1,'a cursor at the newest refund leaves one older row');
+select is((select result->>'total' from refund_queue_after_newest),'2','the refund total ignores the cursor');
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001001","aal":"aal1"}',true);
 select public.commit_booking_cancellation('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003814','cottage_owner','Unavailable',null,

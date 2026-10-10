@@ -1658,6 +1658,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     "Review submitted Owner Applications",
     "Manage Cottage Profiles",
     "Payment support history",
+    "Booking queues",
     "Records",
   ]);
   await expect

@@ -1384,6 +1384,7 @@ REVOKE ALL ON FUNCTION public.commit_booking_completion_maturity(uuid,text) FROM
 REVOKE ALL ON FUNCTION public.get_booking_no_show_facts(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.commit_booking_no_show(uuid,uuid,text,jsonb) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.record_booking_incident(uuid,uuid,text,text,text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.booking_lifecycle_status(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.get_booking_lifecycle(text,text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.get_booking_completion_eligibility(text,text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.list_due_booking_completions(integer) TO service_role;
@@ -1488,7 +1489,7 @@ REVOKE ALL ON FUNCTION public.reject_customer_review_fact_change() FROM PUBLIC,a
 REVOKE ALL ON FUNCTION public.submit_customer_review(text,integer,public.cottage_profile_source_language,text) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.get_customer_review(text) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.list_public_customer_reviews(text,timestamptz,uuid,integer) FROM PUBLIC,anon,authenticated,service_role;
-REVOKE ALL ON FUNCTION public.list_administrator_customer_reviews(timestamptz,uuid,integer) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.list_administrator_customer_reviews(timestamptz,uuid,integer,text,date,date) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.hide_customer_review(uuid,text) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.submit_customer_review_reply(text,public.cottage_profile_source_language,text) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.get_owner_customer_review(text) FROM PUBLIC,anon,authenticated,service_role;
@@ -1497,7 +1498,7 @@ REVOKE ALL ON FUNCTION public.hide_customer_review_reply(uuid,text) FROM PUBLIC,
 GRANT EXECUTE ON FUNCTION public.submit_customer_review(text,integer,public.cottage_profile_source_language,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_customer_review(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.list_public_customer_reviews(text,timestamptz,uuid,integer) TO anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.list_administrator_customer_reviews(timestamptz,uuid,integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.list_administrator_customer_reviews(timestamptz,uuid,integer,text,date,date) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.hide_customer_review(uuid,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.submit_customer_review_reply(text,public.cottage_profile_source_language,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_owner_customer_review(text) TO authenticated;
@@ -1505,6 +1506,8 @@ GRANT EXECUTE ON FUNCTION public.hide_customer_review_reply(uuid,text) TO authen
 
 REVOKE ALL ON FUNCTION public.search_administrator_records(text,text,text,date,date,uuid,timestamptz,uuid),public.get_administrator_record(text,uuid) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.search_administrator_records(text,text,text,date,date,uuid,timestamptz,uuid),public.get_administrator_record(text,uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.search_administrator_booking_queue(text,text,date,date,timestamptz,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.search_administrator_booking_queue(text,text,date,date,timestamptz,uuid) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.reads_as_coordinate_pair(text) FROM PUBLIC,anon,authenticated,service_role;
 

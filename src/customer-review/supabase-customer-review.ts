@@ -2,10 +2,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
   hasExactKeys,
+  isAdministratorCustomerReviewListInput,
   isBookingRequestReference,
   isCustomerReviewBodyWithinLimit,
   isCustomerReviewLanguage,
-  isCustomerReviewPageInput,
   isCustomerReviewPublicSlug,
   isCustomerReviewTimestamp,
   isCustomerReviewUuid,
@@ -17,11 +17,11 @@ import {
 } from "./customer-review";
 import type {
   AdministratorCustomerReview,
+  AdministratorCustomerReviewListInput,
   AdministratorCustomerReviewListResult,
   AdministratorCustomerReviewReply,
   CustomerReviewCursor,
   CustomerReviewHide,
-  CustomerReviewPageInput,
   HideCustomerReviewInput,
   HideCustomerReviewResult,
   OwnCustomerReviewResult,
@@ -464,14 +464,35 @@ function parseAdministratorReview(
   };
 }
 
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
 function parseAdministratorListResult(
   value: unknown,
+  requestedState: "unhidden" | "hidden" | null,
 ): AdministratorCustomerReviewListResult {
   if (
     !isRecord(value) ||
     value.status !== "success" ||
-    !hasExactKeys(value, ["status", "items", "nextCursor"]) ||
-    !Array.isArray(value.items)
+    !hasExactKeys(value, [
+      "status",
+      "items",
+      "nextCursor",
+      "total",
+      "stateCounts",
+    ]) ||
+    !Array.isArray(value.items) ||
+    !isCount(value.total) ||
+    value.total < value.items.length ||
+    !isRecord(value.stateCounts) ||
+    !hasExactKeys(value.stateCounts, ["unhidden", "hidden"]) ||
+    !isCount(value.stateCounts.unhidden) ||
+    !isCount(value.stateCounts.hidden) ||
+    value.total !==
+      (requestedState === null
+        ? value.stateCounts.unhidden + value.stateCounts.hidden
+        : value.stateCounts[requestedState])
   ) {
     return { status: "unavailable" };
   }
@@ -484,6 +505,11 @@ function parseAdministratorListResult(
     status: "success",
     items: items as AdministratorCustomerReview[],
     nextCursor,
+    total: value.total,
+    stateCounts: {
+      unhidden: value.stateCounts.unhidden,
+      hidden: value.stateCounts.hidden,
+    },
   };
 }
 
@@ -649,9 +675,9 @@ export class SupabaseCustomerReviewRepository {
   }
 
   async listAdministrator(
-    input: CustomerReviewPageInput,
+    input: AdministratorCustomerReviewListInput,
   ): Promise<AdministratorCustomerReviewListResult> {
-    if (!isCustomerReviewPageInput(input)) {
+    if (!isAdministratorCustomerReviewListInput(input)) {
       return { status: "invalid" };
     }
     const response = await callRpc(
@@ -661,6 +687,9 @@ export class SupabaseCustomerReviewRepository {
         target_before_at: input.beforeAt,
         target_before_id: input.beforeId,
         target_limit: input.limit,
+        target_state: input.state,
+        target_from: input.from,
+        target_through: input.through,
       },
     );
     if (!response) {
@@ -676,7 +705,7 @@ export class SupabaseCustomerReviewRepository {
     if (error !== null) {
       return { status: "unavailable" };
     }
-    return parseAdministratorListResult(data);
+    return parseAdministratorListResult(data, input.state);
   }
 
   async hide(

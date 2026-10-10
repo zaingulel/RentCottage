@@ -7,15 +7,21 @@ import {
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import {
   parseAdministratorDetailTarget,
+  parseAdministratorQueueResult,
+  parseAdministratorQueueSearch,
   parseAdministratorRecordDetail,
   parseAdministratorRecordSearch,
   parseAdministratorSearchResult,
+  type AdministratorQueuePage,
   type AdministratorRecordDetail,
   type AdministratorSearchPage,
 } from "./administrator-records";
 
 type SearchOutcome =
   | { status: "ready"; page: AdministratorSearchPage }
+  | { status: "invalid" | "access_required" | "unavailable" };
+type QueueOutcome =
+  | { status: "ready"; page: AdministratorQueuePage }
   | { status: "invalid" | "access_required" | "unavailable" };
 type DetailOutcome =
   | { status: "ready"; record: AdministratorRecordDetail }
@@ -76,6 +82,49 @@ export async function searchAdministratorRecords(
     };
   } catch {
     return unavailable("search_records");
+  }
+}
+
+export async function loadAdministratorQueue(
+  input: unknown,
+): Promise<QueueOutcome> {
+  let access: PlatformAdministratorAccess;
+  try {
+    access = await resolvePlatformAdministratorAccess();
+  } catch {
+    return unavailable("queue_authorization");
+  }
+  if (access !== "allowed") return { status: "access_required" };
+
+  let search: ReturnType<typeof parseAdministratorQueueSearch>;
+  try {
+    search = parseAdministratorQueueSearch(input);
+  } catch {
+    return { status: "invalid" };
+  }
+
+  try {
+    const client = await createRequestSupabaseClient();
+    const result = await client.rpc("search_administrator_booking_queue", {
+      target_queue: search.queue,
+      target_state: search.state,
+      target_from: search.from,
+      target_through: search.through,
+      after_at: search.afterAt,
+      after_id: search.afterId,
+    });
+    if (denied(result.error)) return { status: "access_required" };
+    if (result.error) return unavailable("queue_read");
+    return {
+      status: "ready",
+      page: parseAdministratorQueueResult(
+        result.data,
+        search.queue,
+        search.state,
+      ),
+    };
+  } catch {
+    return unavailable("queue_read");
   }
 }
 

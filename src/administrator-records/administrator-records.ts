@@ -51,6 +51,57 @@ export type AdministratorSearchPage = {
   pendingApprovals: number;
   nextCursor: { at: string; id: string } | null;
 };
+export const administratorQueues = [
+  "requests",
+  "bookings",
+  "refunds",
+  "incidents",
+] as const;
+export type AdministratorQueue = (typeof administratorQueues)[number];
+export const administratorQueueStates = {
+  requests: [
+    "pending",
+    "processing",
+    "payment-required",
+    "capture-processing",
+    "declined",
+    "withdrawn",
+    "expired",
+    "cancelled",
+  ],
+  bookings: [
+    "confirmed",
+    "incident_pending",
+    "completed",
+    "no_show",
+    "cancelled",
+  ],
+  refunds: ["requested", "processing", "succeeded", "failed", "unknown"],
+  incidents: ["incident_pending", "completed", "no_show", "cancelled"],
+} as const;
+export type AdministratorQueueSearch = {
+  queue: AdministratorQueue;
+  state: string | null;
+  from: string | null;
+  through: string | null;
+  afterAt: string | null;
+  afterId: string | null;
+};
+export type AdministratorQueueRow = {
+  id: string;
+  at: string;
+  reference: string;
+  state: string;
+  source: string | null;
+  category: string | null;
+};
+export type AdministratorQueuePage = {
+  queue: AdministratorQueue;
+  rows: AdministratorQueueRow[];
+  total: number;
+  stateCounts: Record<string, number>;
+  nextCursor: { at: string; id: string } | null;
+};
 type Decision = {
   approved: boolean;
   reason: string;
@@ -125,6 +176,7 @@ function date(value: unknown): string {
     throw new Error("Invalid date");
   const [year, month, day] = value.split("-").map(Number);
   if (
+    year < 1 ||
     month < 1 ||
     month > 12 ||
     day < 1 ||
@@ -156,6 +208,36 @@ function phone(value: unknown): string | undefined {
     throw new Error("Invalid masked phone");
   return value;
 }
+
+function exactKeys(raw: Record<string, unknown>, keys: readonly string[]) {
+  const present = Object.keys(raw);
+  if (present.length !== keys.length || !keys.every((k) => present.includes(k)))
+    throw new Error("Invalid record keys");
+}
+function nothing(value: unknown): null {
+  if (value !== null) throw new Error("Invalid record value");
+  return null;
+}
+function filterText(value: unknown): string | null {
+  if (value === undefined || value === "") return null;
+  if (typeof value !== "string") throw new Error("Invalid filter");
+  return value;
+}
+
+const queueSearchKeys = [
+  "queue",
+  "state",
+  "from",
+  "through",
+  "afterAt",
+  "afterId",
+] as const;
+const queueReference = /^RC-REQ-[A-F0-9]{16}$/;
+const refundSources = ["cancellation", "administrator", "dispute"] as const;
+const incidentCategories = {
+  lifecycle: ["safety", "property_damage", "conduct", "other"],
+  cancellation: ["safety", "fraud", "legal", "serious_operational"],
+} as const;
 
 export class UnsupportedAdministratorQueryError extends Error {}
 
@@ -365,4 +447,106 @@ export function parseAdministratorDetailTarget(
   id: unknown,
 ): { kind: AdministratorDetailKind; id: string } {
   return { kind: oneOf(kind, ["account", "approval"]), id: uuid(id) };
+}
+
+export function parseAdministratorQueueSearch(
+  value: unknown,
+): AdministratorQueueSearch {
+  const raw = object(value);
+  if (!Object.keys(raw).every((key) => queueSearchKeys.some((k) => k === key)))
+    throw new Error("Invalid queue filter");
+  const queue = oneOf(filterText(raw.queue) ?? "requests", administratorQueues),
+    state = filterText(raw.state),
+    from = filterText(raw.from),
+    through = filterText(raw.through),
+    afterAt = filterText(raw.afterAt),
+    afterId = filterText(raw.afterId);
+  if (state !== null) oneOf(state, administratorQueueStates[queue]);
+  if (from !== null) date(from);
+  if (through !== null) date(through);
+  if (from !== null && through !== null && from > through)
+    throw new Error("Reversed date range");
+  if ((afterAt === null) !== (afterId === null))
+    throw new Error("Invalid cursor");
+  if (afterAt !== null) timestamp(afterAt);
+  if (afterId !== null) uuid(afterId);
+  return { queue, state, from, through, afterAt, afterId };
+}
+
+function queueRow(
+  value: unknown,
+  queue: AdministratorQueue,
+): AdministratorQueueRow {
+  const row = object(value);
+  exactKeys(row, ["id", "at", "reference", "state", "source", "category"]);
+  if (typeof row.reference !== "string" || !queueReference.test(row.reference))
+    throw new Error("Invalid booking request reference");
+  const projected = {
+    id: uuid(row.id),
+    at: timestamp(row.at),
+    reference: row.reference,
+    state: oneOf(row.state, administratorQueueStates[queue]),
+  };
+  if (queue === "requests" || queue === "bookings")
+    return {
+      ...projected,
+      source: nothing(row.source),
+      category: nothing(row.category),
+    };
+  if (queue === "refunds")
+    return {
+      ...projected,
+      source: oneOf(row.source, refundSources),
+      category: nothing(row.category),
+    };
+  const source = oneOf(row.source, ["lifecycle", "cancellation"] as const);
+  return {
+    ...projected,
+    source,
+    category:
+      source === "cancellation" && row.category === null
+        ? null
+        : oneOf(row.category, incidentCategories[source]),
+  };
+}
+
+export function parseAdministratorQueueResult(
+  value: unknown,
+  queue: AdministratorQueue,
+  requestedState: string | null,
+): AdministratorQueuePage {
+  const raw = object(value);
+  exactKeys(raw, ["queue", "rows", "total", "stateCounts", "nextCursor"]);
+  if (raw.queue !== queue) throw new Error("Wrong queue");
+  if (!Array.isArray(raw.rows) || raw.rows.length > 25)
+    throw new Error("Invalid page");
+  const rows = raw.rows.map((item) => queueRow(item, queue)),
+    total = count(raw.total);
+  if (total < rows.length) throw new Error("Invalid total");
+  const counts = object(raw.stateCounts);
+  exactKeys(counts, administratorQueueStates[queue]);
+  const stateCounts = Object.fromEntries(
+    administratorQueueStates[queue].map((state) => [
+      state,
+      count(counts[state]),
+    ]),
+  );
+  const expectedTotal =
+    requestedState === null
+      ? Object.values(stateCounts).reduce((sum, value) => sum + value, 0)
+      : stateCounts[requestedState];
+  if (
+    total !== expectedTotal ||
+    (requestedState !== null &&
+      rows.some((row) => row.state !== requestedState)) ||
+    new Set(rows.map((row) => row.id.toLowerCase())).size < rows.length
+  )
+    throw new Error("Inconsistent queue page");
+  let nextCursor: AdministratorQueuePage["nextCursor"] = null;
+  if (raw.nextCursor !== null) {
+    const cursor = object(raw.nextCursor);
+    exactKeys(cursor, ["at", "id"]);
+    nextCursor = { at: timestamp(cursor.at), id: uuid(cursor.id) };
+  }
+  return { queue, rows, total, stateCounts, nextCursor };
 }

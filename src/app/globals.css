@@ -497,6 +497,12 @@ input[type="file"].form-control::file-selector-button {
   border-block-end: 1px solid var(--line);
 }
 
+.page > .backoffice-navigation {
+  inline-size: auto;
+  padding-block-start: 0;
+  margin-block-end: var(--space-5);
+}
+
 .backoffice-navigation-links {
   display: flex;
   flex-wrap: wrap;

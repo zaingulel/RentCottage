@@ -1,6 +1,7 @@
 import { ActionLink } from "@/components/interaction-controls";
 import { accessMessages } from "@/i18n/access-messages";
 import { administratorPaymentHistoryMessages } from "@/i18n/administrator-payment-history-messages";
+import { administratorQueuesMessages } from "@/i18n/administrator-queues-messages";
 import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
@@ -9,7 +10,7 @@ type BackofficeNavigationProps = { locale: Locale; nested?: boolean } & (
   | { area: "owner"; current: "cottages" }
   | {
       area: "administrator";
-      current: "owner-applications" | "cottages" | "payments";
+      current: "owner-applications" | "cottages" | "payments" | "queues";
     }
 );
 
@@ -51,6 +52,11 @@ export function BackofficeNavigation({
             key: "payments",
             href: `/${locale}/administrator/payments`,
             label: administratorPaymentHistoryMessages[locale].title,
+          },
+          {
+            key: "queues",
+            href: `/${locale}/administrator/queues`,
+            label: administratorQueuesMessages[locale].title,
           },
           {
             key: "records",
