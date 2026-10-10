@@ -1707,7 +1707,13 @@ test("an approved owner continues the first Cottage Profile and submits a privat
                 outlineStyle: style.outlineStyle,
                 outlineWidth: style.outlineWidth,
                 outlineOffset: style.outlineOffset,
-                outlineContrast: contrast(style.outlineColor, adjacent),
+                outlineContrast:
+                  style.outlineStyle !== "none" &&
+                  style.outlineStyle !== "hidden" &&
+                  Number.parseFloat(style.outlineWidth) > 0 &&
+                  rgb(style.outlineColor).alpha === 1
+                    ? contrast(style.outlineColor, adjacent)
+                    : null,
               };
             });
           });
