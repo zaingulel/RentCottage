@@ -193,6 +193,8 @@ Integrity Core object or concurrency program adds the booking and payment concur
 Worker and Playwright paths the browser group; an unlisted path stops the run until it is listed in
 `scripts/verify.mjs`. Regular non-executable prose from the approved `supabase-agent-skills` vendor uses the
 existing upstream prose baseline route; executable, symlink and file-type changes still select full evidence.
+Deletion of the exact retired `.claude/templates/builder-handoff.md` (git history) path selects full evidence; other
+regular files under that retired directory remain unlisted.
 A further broad run needs a named reason: changed evidence, an invalidated environment or an
 investigated flake. A commit added after the full local check passed is changed evidence only for the checks the
 table below reruns for it, by its rows or by the recorded investigation of a path the table does not cover; an

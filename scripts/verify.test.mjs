@@ -1379,6 +1379,22 @@ describe("repository verification command", () => {
     });
   });
 
+  it("routes only the exact retired builder template deletion to full evidence", () => {
+    const path = ".claude/templates/builder-handoff.md";
+    expect(
+      classifyChanges([
+        { path, status: "D", oldMode: "100644", newMode: "000000" },
+      ]),
+    ).toMatchObject(routes.full);
+    expect(classifyChanges([added(path)])).toEqual({ unclassified: [path] });
+    const futurePath = ".claude/templates/future-template.md";
+    expect(
+      classifyChanges([
+        { path: futurePath, status: "D", oldMode: "100644", newMode: "000000" },
+      ]),
+    ).toEqual({ unclassified: [futurePath] });
+  });
+
   it("keeps every current regular agent definition and future names on baseline evidence", () => {
     const paths = [
       ...currentRegularAgentDefinitions,

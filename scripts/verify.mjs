@@ -571,6 +571,16 @@ export function classifyChanges(changes) {
       );
       continue;
     }
+    if (
+      change.status === "D" &&
+      change.path === ".claude/templates/builder-handoff.md"
+    ) {
+      selectFullRoute(
+        change.path,
+        "retired builder template deletion requires full evidence",
+      );
+      continue;
+    }
     if (isBaselineOnlyPath(change.path)) continue;
     if (/^src\/.+\.test\.tsx?$/.test(change.path)) continue;
     if (fullEvidencePaths.has(change.path)) {
