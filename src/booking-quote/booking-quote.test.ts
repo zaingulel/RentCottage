@@ -92,6 +92,53 @@ describe("Booking Quote", () => {
     ).toBe(false);
   });
 
+  it("accepts dated 24-hour Full-day access without changing independent prices", () => {
+    const items = [
+      {
+        ...fullDay(
+          "2026-08-21",
+          "2026-08-21T09:00:00+03:00",
+          "2026-08-22T09:00:00+03:00",
+        ),
+        priceIqd: 250_000,
+      },
+      {
+        ...fullDay(
+          "2026-08-22",
+          "2026-08-22T09:00:00+03:00",
+          "2026-08-23T09:00:00+03:00",
+        ),
+        priceIqd: 260_000,
+      },
+    ];
+
+    expect(validateQuotedItems(items)).toBe(true);
+    expect(
+      validateQuotedItems([
+        { ...items[0], endsAt: items[0].startsAt, crossesMidnight: false },
+      ]),
+    ).toBe(false);
+    expect(validateQuotedItems([{ ...items[0], crossesMidnight: false }])).toBe(
+      false,
+    );
+    expect(continuousFullDayAccess(items)).toEqual([
+      {
+        fromServiceDay: "2026-08-21",
+        toServiceDay: "2026-08-22",
+        startsAt: "2026-08-21T09:00:00+03:00",
+        endsAt: "2026-08-23T09:00:00+03:00",
+      },
+    ]);
+    expect(bookingQuoteTotals(items.map((item) => item.priceIqd))).toEqual({
+      bookingPriceIqd: 510_000,
+      serviceFeeIqd: 5_000,
+      customerTotalIqd: 515_000,
+      commissionRateBasisPoints: 1_000,
+      commissionAmountFils: 51_000_000,
+    });
+    expect(items.map((item) => item.priceIqd)).toEqual([250_000, 260_000]);
+  });
+
   it("merges only consecutive full-day access into one continuous range", () => {
     expect(
       continuousFullDayAccess([

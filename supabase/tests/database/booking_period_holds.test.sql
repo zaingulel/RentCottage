@@ -1,6 +1,6 @@
 begin;
 
-select plan(36);
+select plan(38);
 
 select has_table(
   'public', 'cottage_booking_period_commitments',
@@ -651,6 +651,140 @@ select throws_ok(
   'the service rejects an owner booking their own cottage'
 );
 reset role;
+
+insert into public.owner_application_cottage_profiles (
+  id, owner_user_id, name, governorate, approximate_location, exact_address,
+  capacity, bedrooms, bathrooms, amenities, source_language, description,
+  house_rules, status
+) values (
+  '30000000-0000-4000-8000-000000003104',
+  '00000000-0000-0000-0000-000000003101',
+  '24-hour Hold Cottage', 'Baghdad', 'Karrada', 'Private address',
+  8, 3, 2, array['pool'], 'en', 'Description', 'Rules', 'draft'
+);
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000003101","role":"authenticated","aal":"aal1"}',
+  true
+);
+select public.replace_cottage_shift_schedule(
+  '30000000-0000-4000-8000-000000003104', 0,
+  '[{"name":"Morning","startTime":"09:00","endTime":"15:00"},
+    {"name":"Evening","startTime":"17:00","endTime":"09:00"}]'
+);
+reset role;
+insert into public.cottage_profile_source_revisions (
+  id, profile_id, owner_user_id, source_language, description, house_rules, revision
+) values (
+  '63000000-0000-4000-8000-000000003104',
+  '30000000-0000-4000-8000-000000003104',
+  '00000000-0000-0000-0000-000000003101',
+  'en', 'Description', 'Rules', 1
+);
+insert into public.cottage_profile_review_cycles (
+  id, profile_id, owner_user_id, source_revision_id, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities,
+  cycle_number, state, decided_at
+) values (
+  '64000000-0000-4000-8000-000000003104',
+  '30000000-0000-4000-8000-000000003104',
+  '00000000-0000-0000-0000-000000003101',
+  '63000000-0000-4000-8000-000000003104',
+  '24-hour Hold Cottage', 'Baghdad', 'Karrada', 8, 3, 2,
+  array['pool'], 1, 'approved', now()
+);
+insert into public.cottage_profile_localized_revisions (
+  id, review_cycle_id, locale, revision, origin, description, house_rules
+) values (
+  '65000000-0000-4000-8000-000000003104',
+  '64000000-0000-4000-8000-000000003104',
+  'en', 1, 'owner_source', 'Description', 'Rules'
+);
+insert into public.cottage_profile_publication_decisions (
+  review_cycle_id, administrator_user_id, approved, reason
+) values (
+  '64000000-0000-4000-8000-000000003104',
+  '00000000-0000-0000-0000-000000003103',
+  true, 'Approved fixture'
+);
+insert into public.cottage_publication_snapshots (
+  id, profile_id, review_cycle_id, publication_number, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities
+) values (
+  '66000000-0000-4000-8000-000000003104',
+  '30000000-0000-4000-8000-000000003104',
+  '64000000-0000-4000-8000-000000003104',
+  1, '24-hour Hold Cottage', 'Baghdad', 'Karrada', 8, 3, 2, array['pool']
+);
+insert into public.cottage_publication_localizations (
+  publication_id, locale, localized_revision_id, description, house_rules
+) values (
+  '66000000-0000-4000-8000-000000003104',
+  'en', '65000000-0000-4000-8000-000000003104', 'Description', 'Rules'
+);
+update public.owner_application_cottage_profiles
+set current_publication_id = '66000000-0000-4000-8000-000000003104'
+where id = '30000000-0000-4000-8000-000000003104';
+
+insert into public.cottage_inventory_standard_prices (
+  schedule_revision_id, unit_kind, unit_id, price_iqd
+)
+select schedules.id, 'shift'::public.cottage_inventory_unit_kind, shifts.id,
+  case shifts.position when 1 then 100000 else 110000 end
+from public.cottage_shift_schedule_revisions schedules
+join public.cottage_shifts shifts on shifts.schedule_revision_id = schedules.id
+where schedules.profile_id = '30000000-0000-4000-8000-000000003104'
+union all
+select id, 'full_day_bundle'::public.cottage_inventory_unit_kind, full_day_bundle_id, 190000
+from public.cottage_shift_schedule_revisions
+where profile_id = '30000000-0000-4000-8000-000000003104';
+insert into public.cottage_inventory_availability (
+  schedule_revision_id, unit_kind, unit_id, service_day, state
+)
+select prices.schedule_revision_id, prices.unit_kind, prices.unit_id,
+  '2099-08-23'::date, 'open'
+from public.cottage_inventory_standard_prices prices
+join public.cottage_shift_schedule_revisions schedules
+  on schedules.id = prices.schedule_revision_id
+where schedules.profile_id = '30000000-0000-4000-8000-000000003104';
+
+set local role service_role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+create temporary table full_day_hold (result jsonb);
+select lives_ok(
+  $$insert into full_day_hold
+  select public.create_pending_booking_period_hold(
+  '00000000-0000-0000-0000-000000003102',
+  '30000000-0000-4000-8000-000000003104',
+  'RC-FULL-DAY-24H-3104',
+  '{"from":"2099-08-23","to":"2099-08-23","guests":4,"selections":[{"serviceDay":"2099-08-23","kind":"full-day"}]}'::jsonb
+)$$,
+  'a 24-hour Full-day hold is accepted through the service boundary'
+);
+reset role;
+select results_eq(
+  $$select lower(access_range), upper(access_range),
+      (select result ->> 'status' from full_day_hold),
+      (select (result ->> 'bookingPriceIqd')::bigint from full_day_hold),
+      (select array_agg(occupancies.shift_id order by occupancies.shift_id)
+        from public.cottage_booking_period_occupancies occupancies
+        where occupancies.booking_period_commitment_id = periods.id)
+        = (select array_agg(shifts.id order by shifts.id)
+          from public.cottage_shifts shifts
+          where shifts.schedule_revision_id = periods.schedule_revision_id),
+      (select count(*) from public.cottage_booking_period_occupancies occupancies
+        where occupancies.booking_period_commitment_id = periods.id)
+    from public.cottage_booking_period_commitments periods
+    cross join lateral unnest(periods.access_ranges) access_range
+    where periods.commitment_reference = 'RC-FULL-DAY-24H-3104'$$,
+  $$values (
+    '2099-08-23 06:00:00+00'::timestamptz,
+    '2099-08-24 06:00:00+00'::timestamptz,
+    'pending_hold'::text, 190000::bigint, true, 2::bigint
+  )$$,
+  'a 24-hour Full-day hold has nonempty access and both components'
+);
 
 select * from finish();
 rollback;

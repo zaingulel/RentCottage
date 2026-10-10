@@ -125,6 +125,61 @@ describe("CottageBookingPeriodPicker", () => {
     replace.mockReset();
   });
 
+  it("marks cross-midnight and 24-hour Full-day endings in every locale", () => {
+    const cases = [
+      [inventory[0], "08:00–14:00", false],
+      [
+        { ...inventory[0], startTime: "17:00", endTime: "02:00" },
+        "17:00–02:00",
+        true,
+      ],
+      [inventory[2], "08:00–23:00", false],
+      [
+        { ...inventory[2], startTime: "09:00", endTime: "02:00" },
+        "09:00–02:00",
+        true,
+      ],
+      [
+        { ...inventory[2], startTime: "09:00", endTime: "09:00" },
+        "09:00–09:00",
+        true,
+      ],
+      [
+        { ...inventory[0], startTime: "09:00", endTime: "09:00" },
+        "09:00–09:00",
+        false,
+      ],
+    ] as const;
+    for (const [locale, nextDay] of [
+      ["en", "next day"],
+      ["ar", "اليوم التالي"],
+      ["ckb", "ڕۆژی دواتر"],
+    ] as const) {
+      for (const [unit, clock, endsNextDay] of cases) {
+        const { unmount } = render(
+          <CottageBookingPeriodPicker
+            locale={locale}
+            slug="garden-house"
+            query={query}
+            inventory={[unit]}
+          />,
+        );
+        const row = screen.getByRole("listitem");
+        const times = within(row).getByText(clock);
+        expect(times).toBeVisible();
+        expect(times.tagName).toBe("BDI");
+        expect(times).toHaveAttribute("dir", "ltr");
+        expect(times.textContent).toBe(clock);
+        if (endsNextDay) {
+          expect(row).toHaveTextContent(`${clock} ${nextDay}`);
+        } else {
+          expect(row).not.toHaveTextContent(nextDay);
+        }
+        unmount();
+      }
+    }
+  });
+
   it("keeps no selection until the customer chooses every Service Day", async () => {
     const user = userEvent.setup();
     render(<ProfileNavigation />);

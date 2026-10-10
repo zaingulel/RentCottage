@@ -311,6 +311,7 @@ its own; the block it sits in sets the space around it.
 - Focus is a visible gold outline: `2px` with a `2px` offset on `.action`, `.action-link`, `.form-control`, the
   `.choice-control` mark and the `.disclosure` summary, and `3px` with a `3px` offset on any other focused button,
   input, select, textarea or link.
+- Within .cottage-shift-schedule-form, action buttons, form controls and choice-control marks use --green for the existing 2px focus outline with 2px offset; other shared focus treatment remains unchanged.
 - The `prefers-reduced-motion: reduce` rule turns off transitions and smooth scrolling.
 - `.action`, `.action-link`, `.action-regular`, `.form-control`, `.choice-control` and the `.disclosure` summary
   are at least `2.75rem` tall; of the shared controls only `.action-compact` (`2.25rem`) and the inline

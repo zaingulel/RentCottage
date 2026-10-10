@@ -58,7 +58,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(304);
+select plan(308);
 
 select has_function(
   'public', 'prepare_booking_request_submission', array['uuid', 'uuid', 'jsonb'],
@@ -5644,6 +5644,266 @@ select throws_ok(
   'RC204', null,
   'a Booking Snapshot cannot be changed after submission'
 );
+
+insert into auth.users (id, aud, role, phone, phone_confirmed_at)
+values (
+  '00000000-0000-0000-0000-000000003206', 'authenticated', 'authenticated',
+  '+9647500003206', now()
+);
+insert into public.account_contexts (user_id, role, owner_approval_state)
+values ('00000000-0000-0000-0000-000000003206', 'customer', null);
+
+insert into public.owner_application_cottage_profiles (
+  id, owner_user_id, name, governorate, approximate_location, exact_address,
+  capacity, bedrooms, bathrooms, amenities, source_language, description,
+  house_rules, status
+) values (
+  '30000000-0000-4000-8000-000000003206',
+  '00000000-0000-0000-0000-000000003201',
+  '24-hour Claim Cottage', 'Baghdad', 'Karrada', 'Private address',
+  8, 3, 2, array['pool'], 'en', 'Description', 'Rules', 'draft'
+);
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000003201","role":"authenticated","aal":"aal1"}',
+  true
+);
+select public.replace_cottage_shift_schedule(
+  '30000000-0000-4000-8000-000000003206', 0,
+  '[{"name":"Morning","startTime":"09:00","endTime":"15:00"},
+    {"name":"Evening","startTime":"17:00","endTime":"09:00"}]'
+);
+reset role;
+insert into public.cottage_profile_source_revisions (
+  id, profile_id, owner_user_id, source_language, description, house_rules, revision
+) values (
+  '63000000-0000-4000-8000-000000003206',
+  '30000000-0000-4000-8000-000000003206',
+  '00000000-0000-0000-0000-000000003201',
+  'en', 'Description', 'Rules', 1
+);
+insert into public.cottage_profile_review_cycles (
+  id, profile_id, owner_user_id, source_revision_id, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities,
+  cycle_number, state, decided_at
+) values (
+  '64000000-0000-4000-8000-000000003206',
+  '30000000-0000-4000-8000-000000003206',
+  '00000000-0000-0000-0000-000000003201',
+  '63000000-0000-4000-8000-000000003206',
+  '24-hour Claim Cottage', 'Baghdad', 'Karrada', 8, 3, 2,
+  array['pool'], 1, 'approved', now()
+);
+insert into public.cottage_profile_localized_revisions (
+  id, review_cycle_id, locale, revision, origin, description, house_rules
+) values (
+  '65000000-0000-4000-8000-000000003206',
+  '64000000-0000-4000-8000-000000003206',
+  'en', 1, 'owner_source', 'Description', 'Rules'
+);
+insert into public.cottage_profile_publication_decisions (
+  review_cycle_id, administrator_user_id, approved, reason
+) values (
+  '64000000-0000-4000-8000-000000003206',
+  '00000000-0000-0000-0000-000000003203',
+  true, 'Approved fixture'
+);
+insert into public.cottage_publication_snapshots (
+  id, profile_id, review_cycle_id, publication_number, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities
+) values (
+  '66000000-0000-4000-8000-000000003206',
+  '30000000-0000-4000-8000-000000003206',
+  '64000000-0000-4000-8000-000000003206',
+  1, '24-hour Claim Cottage', 'Baghdad', 'Karrada', 8, 3, 2, array['pool']
+);
+insert into public.cottage_publication_localizations (
+  publication_id, locale, localized_revision_id, description, house_rules
+) values (
+  '66000000-0000-4000-8000-000000003206',
+  'en', '65000000-0000-4000-8000-000000003206', 'Description', 'Rules'
+);
+update public.owner_application_cottage_profiles
+set current_publication_id = '66000000-0000-4000-8000-000000003206'
+where id = '30000000-0000-4000-8000-000000003206';
+
+insert into public.cottage_inventory_standard_prices (
+  schedule_revision_id, unit_kind, unit_id, price_iqd
+)
+select schedules.id, 'shift'::public.cottage_inventory_unit_kind, shifts.id,
+  case shifts.position when 1 then 100000 else 110000 end
+from public.cottage_shift_schedule_revisions schedules
+join public.cottage_shifts shifts on shifts.schedule_revision_id = schedules.id
+where schedules.profile_id = '30000000-0000-4000-8000-000000003206'
+union all
+select id, 'full_day_bundle'::public.cottage_inventory_unit_kind, full_day_bundle_id, 190000
+from public.cottage_shift_schedule_revisions
+where profile_id = '30000000-0000-4000-8000-000000003206';
+insert into public.cottage_inventory_availability (
+  schedule_revision_id, unit_kind, unit_id, service_day, state
+)
+select prices.schedule_revision_id, prices.unit_kind, prices.unit_id,
+  '2099-08-23'::date, 'open'
+from public.cottage_inventory_standard_prices prices
+join public.cottage_shift_schedule_revisions schedules
+  on schedules.id = prices.schedule_revision_id
+where schedules.profile_id = '30000000-0000-4000-8000-000000003206';
+
+insert into public.cottage_inventory_availability (
+  schedule_revision_id, unit_kind, unit_id, service_day, state
+)
+select schedule_revision_id, unit_kind, unit_id, '2099-08-24'::date, 'open'
+from public.cottage_inventory_standard_prices
+where schedule_revision_id = '60000000-0000-4000-8000-000000003201';
+
+create temporary table full_day_submission_fixture as
+select
+  '{"from":"2099-08-23","to":"2099-08-23","guests":4,"selections":[{"serviceDay":"2099-08-23","kind":"full-day"}]}'::jsonb as search,
+  public.get_public_booking_quote_with_fingerprint(
+    'en', 'cottage-30000000000040008000000000003206',
+    '{"from":"2099-08-23","to":"2099-08-23","guests":4,"selections":[{"serviceDay":"2099-08-23","kind":"full-day"}]}'::jsonb
+  ) as quote;
+grant select on full_day_submission_fixture to service_role;
+set local role service_role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+create temporary table full_day_conversation as
+select public.create_messaging_conversation(
+  '00000000-0000-0000-0000-000000003206',
+  '30000000-0000-4000-8000-000000003206',
+  '36000000-0000-4000-8000-000000003206'
+) result;
+reset role;
+create temporary table full_day_submission as
+select jsonb_set(
+  submission || jsonb_build_object(
+    'publicSlug', 'cottage-30000000000040008000000000003206',
+    'discoveryQuery', fixture.search,
+    'quoteFingerprint', fixture.quote ->> 'quoteFingerprint',
+    'contentVersion', fixture.quote -> 'contentVersion',
+    'termsVersion', fixture.quote ->> 'termsVersion',
+    'bookingPriceIqd', 190000,
+    'serviceFeeIqd', 5000,
+    'customerTotalIqd', 195000,
+    'firstStartsAt', fixture.quote -> 'items' -> 0 ->> 'startsAt',
+    'conversationId', conversation.result ->> 'conversationId'
+  ),
+  '{intent,conversationId}', to_jsonb(conversation.result ->> 'conversationId')
+) submission
+from valid_submission
+cross join full_day_submission_fixture fixture
+cross join full_day_conversation conversation;
+grant select on full_day_submission to service_role;
+set local role service_role;
+create temporary table full_day_prepared_submission as
+select public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003206',
+  '11111111-1111-4111-8111-111111113206',
+  (select submission from full_day_submission)
+) as result;
+select is(
+  (select result ->> 'status' from full_day_prepared_submission), 'ready',
+  'a 24-hour Full-day production quote prepares a submission before authorization'
+);
+reset role;
+
+-- Fictional pending-payment input; no provider authorization is executed.
+create temporary table full_day_pending_payment as
+select jsonb_build_object(
+  'paymentLifecycleId', result ->> 'paymentLifecycleId',
+  'currency', 'IQD',
+  'bookingPriceFils', 190000000,
+  'bookingServiceFeeFils', 5000000,
+  'customerTotalFils', 195000000,
+  'authorization', jsonb_build_object(
+    'paymentLifecycleId', result ->> 'paymentLifecycleId',
+    'kind', 'authorization',
+    'logicalOperationId', (result ->> 'paymentLifecycleId') || ':authorization',
+    'attemptId', (result ->> 'paymentLifecycleId') || ':authorization:attempt-1',
+    'status', 'pending',
+    'amountFils', 195000000,
+    'providerRequestId', null,
+    'providerReference', null,
+    'movementReference', null,
+    'reconciliationRequired', false,
+    'retrySafe', false
+  ),
+  'capture', null,
+  'release', null,
+  'refunds', jsonb_build_array(),
+  'financials', jsonb_build_object(
+    'refundedBookingPriceFils', 0,
+    'refundedBookingServiceFeeFils', 0,
+    'remainingBookingPriceFils', 190000000,
+    'remainingBookingServiceFeeFils', 5000000,
+    'marketplaceCommissionFils', 19000000,
+    'ownerEntitlementFils', 171000000
+  ),
+  'payout', jsonb_build_object(
+    'status', 'not_eligible', 'eligibleFils', 171000000,
+    'paidFils', 0, 'providerFeeFils', 0, 'providerReserveFils', 0,
+    'recoveryExposureFils', 0, 'recoveryBalanceFils', 0,
+    'automaticOwnerDebitFils', 0, 'paidWhileBlocked', false,
+    'settlement', null
+  ),
+  'holds', jsonb_build_object('administrator', false, 'dispute', false),
+  'dispute', null,
+  'audits', jsonb_build_array(),
+  'movements', jsonb_build_array()
+) as snapshot
+from full_day_prepared_submission;
+grant select on full_day_pending_payment to service_role;
+create temporary table full_day_authorization_claim (result jsonb);
+grant select, insert on full_day_authorization_claim to service_role;
+set local role service_role;
+select lives_ok(
+  $$insert into full_day_authorization_claim
+    select public.begin_booking_request_authorization_claim(
+      (select (result ->> 'attemptId')::uuid from full_day_prepared_submission),
+      (select snapshot from full_day_pending_payment),
+      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+    )$$,
+  'a 24-hour Full-day authorization claim is accepted through the production boundary'
+);
+reset role;
+select results_eq(
+  $$select lower(access_range), upper(access_range),
+      (select result ->> 'status' from full_day_authorization_claim),
+      claims.amount_fils,
+      (select price_iqd from public.booking_request_authorization_claim_items items
+        where items.claim_id = claims.id),
+      (select array_agg(occupancies.shift_id order by occupancies.shift_id)
+        from public.booking_request_authorization_claim_occupancies occupancies
+        where occupancies.claim_id = claims.id)
+        = (select array_agg(shifts.id order by shifts.id)
+          from public.cottage_shifts shifts
+          where shifts.schedule_revision_id = claims.schedule_revision_id),
+      (select count(*) from public.booking_request_authorization_claim_occupancies occupancies
+        where occupancies.claim_id = claims.id)
+    from public.booking_request_authorization_claims claims
+    cross join lateral unnest(claims.access_ranges) access_range
+    where claims.attempt_id = (
+      select (result ->> 'attemptId')::uuid from full_day_prepared_submission
+    )$$,
+  $$values (
+    '2099-08-23 06:00:00+00'::timestamptz,
+    '2099-08-24 06:00:00+00'::timestamptz,
+    'ready'::text, 195000000::bigint, 190000::bigint, true, 2::bigint
+  )$$,
+  'a 24-hour Full-day authorization claim persists next-day access and both components'
+);
+set local role service_role;
+select throws_ok(
+  $$select public.create_pending_booking_period_hold(
+    '00000000-0000-0000-0000-000000003206',
+    '30000000-0000-4000-8000-000000003201',
+    'RC-FULL-DAY-CLAIM-CONFLICT-3206',
+    '{"from":"2099-08-24","to":"2099-08-24","guests":4,"selections":[{"serviceDay":"2099-08-24","kind":"shift","position":1}]}'::jsonb
+  )$$,
+  'RC409', null,
+  'a 24-hour Full-day authorization claim blocks overlapping access'
+);
+reset role;
 
 select * from finish();
 rollback;

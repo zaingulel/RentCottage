@@ -133,11 +133,14 @@ downgrade it. An asserted-but-unexecuted mutation is a review finding.
 
 `supabase/schemas/` declares the complete public schema in dependency order: extensions, types, tables by domain,
 functions by domain, constraints, indexes, triggers, policies, privileges and the realtime publication.
-`supabase/config.toml` lists the files in `schema_paths`. `supabase/migrations/` stays the applied history and is
-never edited after it ships.
+`supabase/config.toml` lists the files in `[db.migrations]` `schema_paths` and sets
+`[experimental.pgdelta]` `declarative_schema_path = "./schemas"` for native declarative sync. The latter path
+is relative to `supabase/`; without it, the installed CLI looks for a database directory beneath `supabase/`.
+`supabase/migrations/` stays the applied history and is never edited after it ships.
 
 To change a function, view, table, index or constraint: edit the object in its schema file, start the local
-database, run `npx supabase db diff -f <change-name>`, read the generated migration so it contains only the
+database, discover the installed CLI command with `--help`, run
+`npx supabase db schema declarative sync -f <change-name> --no-apply`, read the generated migration so it contains only the
 intended objects, then commit the schema edit and the migration together. Row Level Security policies, triggers,
 grants and data changes are hand-written migrations, because the diff engine does not track every privilege and
 policy change; mirror each into the matching schema file so the declaration stays complete. When regenerating an
@@ -146,8 +149,11 @@ move under [ADR 0002](adr/0002-database-integrity-application-orchestration.md) 
 keeps its Integrity Core in the declaration and migration, proves outcome selection with Vitest at the
 application-service seam and keeps the real PostgreSQL observers for what stays in the database.
 
-The unpartitioned local database group runs `supabase db diff` before the SQL tests and fails on any drift between
-the declared schema and the migration chain. Hosted verification runs the drift check in `booking-request` before
+After generation, run a fresh `npx supabase db schema declarative sync --no-apply --no-cache` comparison
+and inspect that it proposes no further schema changes. This compares the declared schema with the migration
+chain. On the installed CLI, `supabase db diff` compares its requested database and migration endpoints;
+its receipt alone does not prove declaration parity. The unpartitioned local database group retains that
+`supabase db diff` check before the SQL tests and fails on drift between those endpoints. Hosted verification runs the drift check in `booking-request` before
 its fixtures, alongside request and lifecycle concurrency; `database-core` runs the SQL tests and the remaining
 core checks. Capture and payment-required expiry keep their separate portions. Two declarations keep their exact
 wording for that baseline to stay empty: the migrations

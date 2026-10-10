@@ -242,6 +242,8 @@ begin
     target_ends_at := (
       selection_day + target_end_time
       + case when target_end_time < target_start_time
+          or (target_unit_kind = 'full_day_bundle'::public.cottage_inventory_unit_kind
+            and target_end_time = target_start_time)
         then interval '1 day' else interval '0 days' end
     ) at time zone 'Asia/Baghdad';
     if target_unit_kind = 'full_day_bundle'::public.cottage_inventory_unit_kind
@@ -2313,7 +2315,10 @@ begin
     target_starts_at := (selection_day + target_start_time) at time zone 'Asia/Baghdad';
     target_ends_at := (
       selection_day + target_end_time
-      + case when target_end_time < target_start_time then interval '1 day' else interval '0 days' end
+      + case when target_end_time < target_start_time
+          or (target_unit_kind = 'full_day_bundle'::public.cottage_inventory_unit_kind
+            and target_end_time = target_start_time)
+        then interval '1 day' else interval '0 days' end
     ) at time zone 'Asia/Baghdad';
     if target_unit_kind = 'full_day_bundle'::public.cottage_inventory_unit_kind
       and exists (
@@ -5866,13 +5871,19 @@ begin
       (item.value ->> 'serviceDay')::date
         + case
             when (item.value ->> 'endTime')::time
-              < (item.value ->> 'startTime')::time then 1
+              < (item.value ->> 'startTime')::time
+              or (item.value ->> 'kind' = 'full-day'
+                and (item.value ->> 'endTime')::time
+                  = (item.value ->> 'startTime')::time) then 1
             else 0
           end,
       'YYYY-MM-DD'
     ) || 'T' || (item.value ->> 'endTime') || ':00+03:00',
     'crossesMidnight', (item.value ->> 'endTime')::time
-      < (item.value ->> 'startTime')::time,
+      < (item.value ->> 'startTime')::time
+      or (item.value ->> 'kind' = 'full-day'
+        and (item.value ->> 'endTime')::time
+          = (item.value ->> 'startTime')::time),
     'priceIqd', (item.value ->> 'priceIqd')::bigint
   )) order by item.ordinality)
   into quoted_items

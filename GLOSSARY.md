@@ -77,11 +77,11 @@ The cottage owner's required acceptance of the applicable marketplace terms duri
 _Avoid_: Implied owner consent, current owner terms
 
 **Cottage Shift**:
-One of two or three fixed bookable periods in a cottage's recurring shift schedule, with a name and start and end times. Customers select offered shifts rather than entering arbitrary times.
+One of exactly two fixed bookable periods in a new cottage Shift Schedule, identified as Morning or Evening with owner-defined start and end times and an optional local display name. Customers select offered shifts rather than entering arbitrary times; historical schedules and booking records retain their original two or three shifts and names.
 _Avoid_: Overnight slot, hourly booking, arbitrary time range
 
 **Shift Schedule**:
-The recurring set of two or three non-overlapping cottage shifts defined by a cottage owner for one cottage. Owners choose any non-bookable turnaround gaps needed between shifts; the marketplace does not impose a minimum. Availability and pricing may vary by service day, but shift times do not. Schedule changes apply prospectively and never alter pending or confirmed booking records.
+The recurring set of exactly two non-overlapping Cottage Shifts in a new schedule, Morning then Evening in start-time order, with no marketplace-wide hours or minimum turnaround gap. Availability and pricing may vary by Service Day while shift times remain fixed; schedule changes apply prospectively and preserve historical schedules and pending or confirmed booking snapshots.
 _Avoid_: Date-specific operating hours, marketplace-wide schedule
 
 **Booking Period**:
@@ -89,7 +89,7 @@ One or more cottage shifts at the same cottage across one or more consecutive se
 _Avoid_: Stay, separate shift bookings, arbitrary time range
 
 **Full-Day Bundle**:
-A separately priced booking option containing every cottage shift offered for one service day. It gives continuous access from the first shift's start through the last shift's end; consecutive full-day bundles merge into continuous access across the intervening overnight gaps. Booking it blocks every component shift, and booking any component shift makes the bundle unavailable.
+A separately priced booking option containing every Cottage Shift offered for one Service Day, with continuous access from the first shift's start through the last shift's end, including all gaps; consecutive bundles include the intervening overnight gaps. Its duration follows those times rather than always being 24 hours, with equal bundle start and end times meaning the next day; booking it blocks every component shift, and booking any component shift makes the bundle unavailable.
 _Avoid_: Sum of shift prices, independent overlapping shift
 
 **Marketplace Time**:

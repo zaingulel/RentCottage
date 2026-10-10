@@ -983,7 +983,9 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     });
     await inventory.scrollIntoViewIfNeeded();
     await expectScene(inventory);
-    await expect(page.getByLabel("Shift 1 standard price")).toHaveValue(/\d+/);
+    await expect(
+      page.getByLabel("Morning: Morning standard price"),
+    ).toHaveValue(/\d+/);
     const loadAvailability = page
       .locator("form")
       .filter({ has: page.getByRole("button", { name: "Load availability" }) });
@@ -999,9 +1001,9 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
       }),
     );
     for (const label of [
-      "Shift 1 operational state",
-      "Shift 2 operational state",
-      "Full-Day Bundle operational state",
+      "Morning: Morning operational state",
+      "Evening: Evening operational state",
+      "Full-day operational state",
     ]) {
       await expect(page.getByLabel(label)).toHaveValue("open");
     }
@@ -1418,14 +1420,14 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
       }),
     );
     const confirmedMorning = page.locator(
-      'output[aria-label="Shift 1 operational state"]',
+      'output[aria-label="Morning: Morning operational state"]',
     );
     await expect(confirmedMorning).toHaveText("Confirmed booking");
     await confirmedMorning.scrollIntoViewIfNeeded();
     await expectScene(confirmedMorning);
     await expect(
       page.getByRole("combobox", {
-        name: "Shift 1 operational state",
+        name: "Morning: Morning operational state",
         exact: true,
       }),
     ).toHaveCount(0);

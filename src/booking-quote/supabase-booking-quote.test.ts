@@ -86,6 +86,61 @@ describe("Supabase Booking Quote", () => {
     );
   });
 
+  it("accepts a next-day 24-hour quote and rejects contradictory endpoints", async () => {
+    const fullDayQuery = {
+      ...query,
+      selections: [{ serviceDay: "2026-08-21", kind: "full-day" as const }],
+    };
+    const item = {
+      serviceDay: "2026-08-21",
+      kind: "full-day",
+      displayName: "Full-day bundle",
+      startsAt: "2026-08-21T09:00:00+03:00",
+      endsAt: "2026-08-22T09:00:00+03:00",
+      crossesMidnight: true,
+      priceIqd: 250_000,
+    };
+    const fullDayResponse = {
+      ...response,
+      items: [item],
+      bookingPriceIqd: 250_000,
+      customerTotalIqd: 255_000,
+    };
+    const client = clientReturning(fullDayResponse);
+
+    await expect(
+      new SupabaseBookingQuote(client).load("en", slug, fullDayQuery),
+    ).resolves.toEqual({
+      status: "quoted",
+      quote: expect.objectContaining({
+        items: [item],
+        bookingPriceIqd: 250_000,
+        serviceFeeIqd: 5_000,
+        customerTotalIqd: 255_000,
+      }),
+    });
+    expect(client.rpc).toHaveBeenCalledWith(
+      "get_public_booking_quote_with_fingerprint",
+      {
+        target_locale: "en",
+        target_slug: slug,
+        requested_search: fullDayQuery,
+      },
+    );
+
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const contradictory of [
+      { ...item, endsAt: item.startsAt, crossesMidnight: false },
+      { ...item, crossesMidnight: false },
+    ]) {
+      await expect(
+        new SupabaseBookingQuote(
+          clientReturning({ ...fullDayResponse, items: [contradictory] }),
+        ).load("en", slug, fullDayQuery),
+      ).resolves.toEqual({ status: "unavailable" });
+    }
+  });
+
   it.each([
     { ...response, exactAddress: "private" },
     { ...response, bookingPriceIqd: 1 },

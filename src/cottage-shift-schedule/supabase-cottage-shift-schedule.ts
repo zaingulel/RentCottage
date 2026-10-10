@@ -193,6 +193,10 @@ export class SupabaseCottageShiftScheduleRepository implements CottageShiftSched
       },
     );
     assertSuccess(error);
-    return parseSchedule(data, input.profileId);
+    const schedule = parseSchedule(data, input.profileId);
+    if (schedule.shifts.length !== 2) {
+      throw new Error("Shift Schedule provider data is invalid");
+    }
+    return schedule;
   }
 }

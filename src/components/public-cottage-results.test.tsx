@@ -43,6 +43,54 @@ const cottage = {
 };
 
 describe("PublicCottageResults", () => {
+  it("marks cross-midnight and 24-hour Full-day endings in every locale", () => {
+    const cases = [
+      [cottage.inventory[0], "09:00–15:00", false],
+      [
+        { ...cottage.inventory[0], startTime: "17:00", endTime: "02:00" },
+        "17:00–02:00",
+        true,
+      ],
+      [cottage.inventory[1], "09:00–23:00", false],
+      [{ ...cottage.inventory[1], endTime: "02:00" }, "09:00–02:00", true],
+      [{ ...cottage.inventory[1], endTime: "09:00" }, "09:00–09:00", true],
+      [{ ...cottage.inventory[0], endTime: "09:00" }, "09:00–09:00", false],
+    ] as const;
+    for (const [locale, nextDay] of [
+      ["en", "next day"],
+      ["ar", "اليوم التالي"],
+      ["ckb", "ڕۆژی دواتر"],
+    ] as const) {
+      for (const [unit, clock, endsNextDay] of cases) {
+        const { unmount } = render(
+          <PublicCottageResults
+            locale={locale}
+            result={{
+              status: "loaded",
+              cottages: [{ ...cottage, inventory: [unit] }],
+              nextAfter: null,
+            }}
+            query={query}
+            after={null}
+            queryString=""
+          />,
+        );
+        const row = screen.getByRole("listitem");
+        const times = within(row).getByText(clock);
+        expect(times).toBeVisible();
+        expect(times.tagName).toBe("BDI");
+        expect(times).toHaveAttribute("dir", "ltr");
+        expect(times.textContent).toBe(clock);
+        if (endsNextDay) {
+          expect(row).toHaveTextContent(`${clock} ${nextDay}`);
+        } else {
+          expect(row).not.toHaveTextContent(nextDay);
+        }
+        unmount();
+      }
+    }
+  });
+
   it("renders individual price rows and a button-styled action", () => {
     render(
       <PublicCottageResults

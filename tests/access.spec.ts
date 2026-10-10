@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { cottageShiftScheduleMessages } from "../src/i18n/cottage-shift-schedule-messages";
 import { openHeaderPanel } from "./fixtures/site-header";
 import { createHmac } from "node:crypto";
 import { createRequire } from "node:module";
@@ -1432,33 +1433,368 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     page.getByRole("status").filter({ hasText: "Private draft saved." }),
   ).toBeVisible();
 
-  await page.getByLabel("Shift 1 name").fill("Morning");
-  await page.getByLabel("Shift 1 start time").fill("08:00");
-  await page.getByLabel("Shift 1 end time").fill("13:00");
-  await page.getByLabel("Shift 2 name").fill("Afternoon");
-  await page.getByLabel("Shift 2 start time").fill("12:00");
-  await page.getByLabel("Shift 2 end time").fill("16:00");
-  await page.getByRole("button", { name: "Save Shift Schedule" }).click();
-  await expect(
-    page.getByText(
-      "These recurring shifts overlap. Touching endpoints are allowed.",
-    ),
-  ).toBeVisible();
+  const profilePath = new URL(page.url()).pathname.replace(/^\/en/, "");
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    const copy = cottageShiftScheduleMessages[locale];
+    await page.goto(`/${locale}${profilePath}`);
+    await expect(page.locator("html")).toHaveAttribute(
+      "dir",
+      locale === "en" ? "ltr" : "rtl",
+    );
+    const scheduleForm = page.locator("form.cottage-shift-schedule-form");
+    const morning = scheduleForm.getByRole("group", {
+      name: copy.morning,
+      exact: true,
+    });
+    const evening = scheduleForm.getByRole("group", {
+      name: copy.evening,
+      exact: true,
+    });
+    const morningStart = morning.getByLabel(copy.startTime, { exact: true });
+    const morningEnd = morning.getByLabel(copy.endTime, { exact: true });
+    const eveningStart = evening.getByLabel(copy.startTime, { exact: true });
+    const eveningEnd = evening.getByLabel(copy.endTime, { exact: true });
+    const fullDay = scheduleForm.getByRole("status", {
+      name: copy.fullDayAccess,
+      exact: true,
+    });
+    const confirmation = scheduleForm.getByRole("checkbox", {
+      name: copy.confirmedTimes,
+      exact: true,
+    });
+    const save = scheduleForm.getByRole("button", {
+      name: copy.save,
+      exact: true,
+    });
+    await expect(morningStart).toBeEnabled();
+    await expect(eveningEnd).toBeEnabled();
+    await expect(scheduleForm.getByRole("group")).toHaveCount(2);
+    await expect(morning).toBeVisible();
+    await expect(evening).toBeVisible();
+    await expect
+      .poll(async () => {
+        const morningBox = await morning.boundingBox();
+        const eveningBox = await evening.boundingBox();
+        if (!morningBox || !eveningBox) return false;
+        return testInfo.project.name === "mobile"
+          ? eveningBox.y >= morningBox.y + morningBox.height
+          : Math.abs(morningBox.y - eveningBox.y) < 1 &&
+              Math.abs(morningBox.width - eveningBox.width) < 1 &&
+              (locale === "en"
+                ? morningBox.x < eveningBox.x
+                : morningBox.x > eveningBox.x);
+      })
+      .toBe(true);
 
-  await page.getByLabel("Shift 1 name").fill("Evening");
-  await page.getByLabel("Shift 1 start time").fill("18:00");
-  await page.getByLabel("Shift 1 end time").fill("02:00");
-  await page.getByLabel("Shift 2 name").fill("Morning");
-  await page.getByLabel("Shift 2 start time").fill("08:00");
-  await page.getByLabel("Shift 2 end time").fill("12:00");
-  await page.getByRole("button", { name: "Save Shift Schedule" }).click();
-  await expect(
-    page.getByText("Shift Schedule saved as a new revision."),
-  ).toBeVisible();
-  await page.reload();
-  await expect(page.getByLabel("Shift 1 name")).toHaveValue("Morning");
-  await expect(page.getByLabel("Shift 2 name")).toHaveValue("Evening");
-  await expect(page.getByText("08:00 → 02:00 (next day)")).toBeVisible();
+    await morning.getByLabel(copy.localName, { exact: true }).fill("Morning");
+    await evening.getByLabel(copy.localName, { exact: true }).fill("Evening");
+    for (const field of [morningStart, morningEnd, eveningStart, eveningEnd]) {
+      await field.fill("");
+    }
+    await save.click();
+    await expect(fullDay).toContainText(copy.invalid);
+    await expect(fullDay).toContainText(copy.fullDayEmpty);
+    await expect(fullDay.locator("strong")).toHaveCount(0);
+    await expect(confirmation).toHaveCount(0);
+    await expect(morningStart).toBeFocused();
+    await expect(morningStart).toHaveAttribute("aria-invalid", "true");
+    const invalidControls = await scheduleForm
+      .locator("input[type=time]")
+      .evaluateAll((fields) =>
+        fields.map((field) => {
+          const style = getComputedStyle(field);
+          const rect = field.getBoundingClientRect();
+          return {
+            invalid: field.getAttribute("aria-invalid"),
+            color: style.color,
+            background: style.backgroundColor,
+            border: style.borderColor,
+            borderWidth: style.borderWidth,
+            width: rect.width,
+            height: rect.height,
+          };
+        }),
+      );
+    await testInfo.attach(`${locale}-schedule-invalid-controls`, {
+      body: JSON.stringify(invalidControls, null, 2),
+      contentType: "application/json",
+    });
+    expect(invalidControls).toHaveLength(4);
+    for (const control of invalidControls) {
+      expect(control.invalid).toBe("true");
+      expect(control.width).toBeGreaterThanOrEqual(24);
+      expect(control.height).toBeGreaterThanOrEqual(24);
+    }
+
+    await morningStart.fill("09:00");
+    await morningEnd.fill("15:00");
+    await eveningStart.fill("14:00");
+    await eveningEnd.fill("02:00");
+    await save.click();
+    await expect(fullDay).toContainText(copy.overlap);
+    await expect(fullDay.locator("strong")).toHaveCount(0);
+    await expect(confirmation).toHaveCount(0);
+
+    // The ordered groups never sort reversed input into a valid schedule.
+    await morningStart.fill("18:00");
+    await morningEnd.fill("02:00");
+    await eveningStart.fill("08:00");
+    await eveningEnd.fill("12:00");
+    await save.click();
+    await expect(fullDay).toContainText(copy.startOrder);
+    await expect(eveningStart).toHaveAttribute("aria-invalid", "true");
+    await expect(fullDay.locator("strong")).toHaveCount(0);
+    await expect(confirmation).toHaveCount(0);
+
+    await morningStart.fill("09:00");
+    await morningEnd.fill("09:00");
+    await eveningStart.fill("17:00");
+    await eveningEnd.fill("02:00");
+    await expect(fullDay).toContainText(copy.invalid);
+    await morningEnd.fill("15:00");
+    await eveningEnd.fill("17:00");
+    await expect(fullDay).toContainText(copy.invalid);
+    await eveningEnd.fill("02:00");
+    await expect(fullDay.locator("strong")).toHaveText(
+      copy.accessRange.replace("{start}", "09:00").replace("{end}", "02:00") +
+        ` ${copy.nextDay}`,
+    );
+    await expect(fullDay).toContainText(
+      copy.includingGap.replace("{start}", "15:00").replace("{end}", "17:00"),
+    );
+    await expect(fullDay).toContainText(copy.fullDayBetweenShifts);
+    await expect(
+      scheduleForm.getByText(copy.clockFormat, { exact: true }),
+    ).toBeVisible();
+    await expect(
+      scheduleForm.locator('bdi[dir="ltr"]').filter({ hasText: /^UTC\+3$/ }),
+    ).toBeVisible();
+    await expect(
+      morning.locator('bdi[dir="auto"]').filter({ hasText: /^Morning$/ }),
+    ).toBeVisible();
+    await expect(fullDay.locator('strong bdi[dir="ltr"]')).toHaveText([
+      "09:00",
+      "02:00",
+    ]);
+
+    await confirmation.check();
+    await eveningStart.fill("15:00");
+    await expect(confirmation).not.toBeChecked();
+    await expect(fullDay.locator("strong")).toHaveText(
+      copy.accessRange.replace("{start}", "09:00").replace("{end}", "02:00") +
+        ` ${copy.nextDay}`,
+    );
+    await expect(fullDay.locator("dd > span")).toHaveCount(0);
+    await confirmation.check();
+    await eveningStart.fill("17:00");
+    await eveningEnd.fill("09:00");
+    await expect(confirmation).not.toBeChecked();
+    await expect(fullDay.locator("strong")).toHaveText(
+      copy.accessRange.replace("{start}", "09:00").replace("{end}", "09:00") +
+        ` ${copy.nextDay}`,
+    );
+    await expect(fullDay.locator('strong bdi[dir="ltr"]')).toHaveText([
+      "09:00",
+      "09:00",
+    ]);
+
+    await test.step("enabled schedule confirmation has a visible focus indicator with at least 3:1 contrast", async () => {
+      for (const state of ["normal", "error", "focus"] as const) {
+        await expect(confirmation).toBeEnabled();
+        if (state === "error") {
+          await save.click();
+          await expect(confirmation).toHaveAttribute("aria-invalid", "true");
+          await expect(fullDay).toContainText(copy.requiredConfirmation);
+        }
+        if (state === "focus") {
+          await save.focus();
+          await page.keyboard.press("Shift+Tab");
+          await expect(confirmation).toBeFocused();
+          await expect(confirmation).toHaveJSProperty("disabled", false);
+          expect(
+            await confirmation.evaluate((control) =>
+              control.matches(":focus-visible"),
+            ),
+          ).toBe(true);
+        }
+        const measurements = await scheduleForm
+          .locator('input:not([type="hidden"]), button')
+          .evaluateAll((controls) => {
+            function rgb(value: string) {
+              const match = value.match(
+                /^rgba?\((\d+(?:\.\d+)?), (\d+(?:\.\d+)?), (\d+(?:\.\d+)?)(?:, (\d+(?:\.\d+)?))?\)$/,
+              );
+              if (!match)
+                throw new Error(`Unresolved rendered sRGB color: ${value}`);
+              return {
+                channels: [
+                  Number(match[1]),
+                  Number(match[2]),
+                  Number(match[3]),
+                ],
+                alpha: match[4] === undefined ? 1 : Number(match[4]),
+              };
+            }
+            function opaqueSurface(element: Element | null): string {
+              for (
+                let ancestor = element;
+                ancestor;
+                ancestor = ancestor.parentElement
+              ) {
+                const style = getComputedStyle(ancestor);
+                if (style.backgroundImage !== "none")
+                  throw new Error(
+                    "Adjacent surface has an unresolved background image",
+                  );
+                const color = rgb(style.backgroundColor);
+                if (color.alpha === 1) return style.backgroundColor;
+                if (color.alpha !== 0)
+                  throw new Error(
+                    "Adjacent surface has an unresolved translucent background",
+                  );
+              }
+              throw new Error(
+                "No opaque adjacent surface for schedule control",
+              );
+            }
+            function luminance(value: string) {
+              const color = rgb(value);
+              if (color.alpha !== 1)
+                throw new Error(`Contrast color is translucent: ${value}`);
+              const linear = color.channels.map((channel) => {
+                const srgb = channel / 255;
+                return srgb <= 0.04045
+                  ? srgb / 12.92
+                  : ((srgb + 0.055) / 1.055) ** 2.4;
+              });
+              return (
+                0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+              );
+            }
+            function contrast(first: string, second: string) {
+              const values = [luminance(first), luminance(second)];
+              return (
+                (Math.max(...values) + 0.05) / (Math.min(...values) + 0.05)
+              );
+            }
+            return controls.map((control) => {
+              const style = getComputedStyle(control);
+              const adjacent = opaqueSurface(control.parentElement);
+              const background = opaqueSurface(control);
+              const target = control.matches('input[type="checkbox"]')
+                ? control.parentElement
+                : control;
+              if (!target) throw new Error("Schedule control has no target");
+              const rect = target.getBoundingClientRect();
+              return {
+                name: control.getAttribute("name") ?? control.textContent,
+                enabled: !control.matches(":disabled"),
+                invalid: control.getAttribute("aria-invalid"),
+                focusVisible: control.matches(":focus-visible"),
+                width: rect.width,
+                height: rect.height,
+                foreground: style.color,
+                background,
+                adjacent,
+                textContrast: contrast(style.color, background),
+                border: style.borderTopColor,
+                borderWidth: style.borderTopWidth,
+                borderContrast:
+                  rgb(style.borderTopColor).alpha === 1
+                    ? contrast(style.borderTopColor, adjacent)
+                    : null,
+                outline: style.outlineColor,
+                outlineStyle: style.outlineStyle,
+                outlineWidth: style.outlineWidth,
+                outlineOffset: style.outlineOffset,
+                outlineContrast:
+                  style.outlineStyle !== "none" &&
+                  style.outlineStyle !== "hidden" &&
+                  Number.parseFloat(style.outlineWidth) > 0 &&
+                  rgb(style.outlineColor).alpha === 1
+                    ? contrast(style.outlineColor, adjacent)
+                    : null,
+              };
+            });
+          });
+        await testInfo.attach(`${locale}-schedule-${state}-controls`, {
+          body: JSON.stringify(measurements, null, 2),
+          contentType: "application/json",
+        });
+        expect(measurements).toHaveLength(8);
+        for (const control of measurements) {
+          expect(control.enabled).toBe(true);
+          expect(control.width).toBeGreaterThanOrEqual(24);
+          expect(control.height).toBeGreaterThanOrEqual(24);
+        }
+        if (state === "focus") {
+          const focused = measurements.find(
+            (control) => control.name === "confirmedTimes",
+          );
+          if (!focused)
+            throw new Error("Enabled confirmation was not measured");
+          expect(focused.focusVisible).toBe(true);
+          expect(focused.outlineStyle).toBe("solid");
+          expect(focused.outlineWidth).toBe("2px");
+          expect(focused.outlineOffset).toBe("2px");
+          expect(focused.outlineContrast).toBeGreaterThanOrEqual(3);
+          if (
+            (locale === "en" && testInfo.project.name === "desktop") ||
+            (locale === "ar" && testInfo.project.name === "mobile")
+          ) {
+            await testInfo.attach(
+              `${locale}-${testInfo.project.name}-schedule-focus`,
+              {
+                body: await scheduleForm.screenshot(),
+                contentType: "image/png",
+              },
+            );
+          }
+        }
+      }
+    });
+
+    await page.keyboard.press("Space");
+    await expect(confirmation).toBeChecked();
+    await save.click();
+    await expect(
+      scheduleForm.getByRole("status").filter({ hasText: copy.saved }),
+    ).toBeVisible();
+    await expect(confirmation).not.toBeChecked();
+    await page.reload();
+    await expect(morningStart).toHaveValue("09:00");
+    await expect(morningEnd).toHaveValue("15:00");
+    await expect(eveningStart).toHaveValue("17:00");
+    await expect(eveningEnd).toHaveValue("09:00");
+    await expect(fullDay.locator("strong")).toContainText(copy.nextDay);
+    await expect(confirmation).not.toBeChecked();
+    await eveningEnd.fill("02:00");
+    await expect(confirmation).not.toBeChecked();
+    await confirmation.check();
+    await morning.getByLabel(copy.localName, { exact: true }).fill("Morning ");
+    await expect(confirmation).not.toBeChecked();
+    await confirmation.check();
+    await save.click();
+    await expect(
+      scheduleForm.getByRole("status").filter({ hasText: copy.saved }),
+    ).toBeVisible();
+    await expect(confirmation).not.toBeChecked();
+    await eveningStart.fill("15:00");
+    await confirmation.check();
+    await save.click();
+    await expect(
+      scheduleForm.getByRole("status").filter({ hasText: copy.saved }),
+    ).toBeVisible();
+    await expect(confirmation).not.toBeChecked();
+    await page.reload();
+    await expect(eveningStart).toHaveValue("15:00");
+    await expect(eveningEnd).toHaveValue("02:00");
+    await expect(fullDay.locator("strong")).toHaveText(
+      copy.accessRange.replace("{start}", "09:00").replace("{end}", "02:00") +
+        ` ${copy.nextDay}`,
+    );
+  }
+  await page.goto(`/en${profilePath}`);
 
   await page.getByLabel("Choose cottage photo").setInputFiles({
     name: "shaqlawa-orchard-cottage.png",
@@ -1494,7 +1830,6 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     ["Save private draft", "Upload photo", "Submit for content approval"],
     testInfo.project.name,
   );
-  const profilePath = new URL(page.url()).pathname.replace(/^\/en/, "");
   for (const [locale, direction, heading, sectionNames, actionNames] of [
     [
       "ar",
@@ -1528,8 +1863,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
     await expect(
       page.getByRole("heading", {
-        name:
-          locale === "ar" ? "جدول المناوبات اليومية" : "خشتەی شیفتە ڕۆژانەکان",
+        name: cottageShiftScheduleMessages[locale].title,
       }),
     ).toBeVisible();
     await expectCottageProfileSectionTitlesAligned(page, sectionNames);
@@ -1546,10 +1880,14 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     .click();
   await expect(page.getByText("Submitted for content approval")).toBeVisible();
   await expect(page.getByLabel("Cottage name")).toBeDisabled();
-  await expect(page.getByLabel("Shift 1 name")).toBeDisabled();
   await expect(
-    page.getByRole("button", { name: "Save Shift Schedule" }),
-  ).toHaveCount(0);
+    page
+      .getByRole("group", { name: "Morning", exact: true })
+      .getByLabel("Local name (optional)", { exact: true }),
+  ).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save schedule" })).toHaveCount(
+    0,
+  );
   await expect(
     page.getByRole("heading", { name: "Preserved submitted owner source" }),
   ).toBeVisible();
@@ -1593,6 +1931,42 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     await expect(page.getByRole("heading", { name: title })).toBeVisible();
     await expect(page.getByText(status, { exact: true })).toBeVisible();
     await expect(page.getByText(disabled)).toBeVisible();
+    const scheduleCopy = cottageShiftScheduleMessages[locale];
+    const submittedSchedule = page.locator("form.cottage-shift-schedule-form");
+    await expect(
+      page.getByText(scheduleCopy.readOnly, { exact: true }),
+    ).toBeVisible();
+    await expect(
+      submittedSchedule
+        .getByRole("group", { name: scheduleCopy.morning, exact: true })
+        .getByLabel(scheduleCopy.startTime, { exact: true }),
+    ).toBeDisabled();
+    await expect(
+      submittedSchedule
+        .getByRole("group", { name: scheduleCopy.evening, exact: true })
+        .getByLabel(scheduleCopy.endTime, { exact: true }),
+    ).toBeDisabled();
+    await expect(
+      submittedSchedule.getByRole("button", {
+        name: scheduleCopy.save,
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(
+      submittedSchedule.getByRole("checkbox", {
+        name: scheduleCopy.confirmedTimes,
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(
+      submittedSchedule
+        .getByRole("status", { name: scheduleCopy.fullDayAccess, exact: true })
+        .locator("strong"),
+    ).toHaveText(
+      scheduleCopy.accessRange
+        .replace("{start}", "09:00")
+        .replace("{end}", "02:00") + ` ${scheduleCopy.nextDay}`,
+    );
   }
 });
 
