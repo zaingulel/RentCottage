@@ -161,7 +161,7 @@ export function vendoredSkillNames(paths) {
 }
 
 // The ONE scan-set resolver shared by the CLI and repo-pass test. Vendored upstream
-// skill bodies and their copies feed only skill metadata, never body scans.
+// SKILL.md bodies and their copies feed only skill metadata; reference files keep body scans.
 // Claude skill copies are byte-identical to their .agents twins (contract-tested),
 // so their bodies classify as nothing and are linted only through the twin.
 export function classifyDocLintPath(rel, vendoredNames = new Set()) {

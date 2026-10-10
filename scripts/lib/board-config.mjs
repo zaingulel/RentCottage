@@ -42,6 +42,7 @@ export const ROUTING_OPTIONS = ['Go-to-market', 'Product', 'Platform'];
 // has no parked lane.
 export const PARKED_LANE = null;
 
+// Kind labels use the vocabulary in docs/ISSUE-TRACKER.md.
 export const KIND_LABELS = {
   epic: 'type:epic',
   feature: 'type:feature',
@@ -49,4 +50,3 @@ export const KIND_LABELS = {
   bug: 'type:bug',
   docs: 'type:docs',
 };
-

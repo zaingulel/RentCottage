@@ -50,7 +50,6 @@ const currentRegularAgentDefinitions = globSync(
     ".agents/skills/*/SKILL.md",
     ".agents/templates/*.md",
     ".claude/agents/*.md",
-    ".claude/templates/*.md",
     ".codex/agents/*.toml",
   ],
   { cwd: process.cwd() },
@@ -1365,6 +1364,7 @@ describe("repository verification command", () => {
     ["an asset", ["docs/product/assets/runtime.json"]],
     ["an agent script", [".agents/templates/runtime.mjs"]],
     ["an agent config", [".agents/templates/runtime.json"]],
+    ["a retired template", [".claude/templates/future-template.md"]],
     ["an agent TypeScript file", [".agents/skills/tool/runtime.ts"]],
     [
       "nested native skill metadata",
@@ -1385,7 +1385,6 @@ describe("repository verification command", () => {
       ".agents/skills/future-skill/SKILL.md",
       ".agents/templates/future-template.md",
       ".claude/agents/future-agent.md",
-      ".claude/templates/future-template.md",
       ".codex/agents/future-agent.toml",
     ];
 

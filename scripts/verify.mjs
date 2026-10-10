@@ -258,7 +258,7 @@ function isBaselineOnlyPath(path) {
     ) ||
     /^\.(?:agents|claude)\/skills\/[^/]+\/LICENSE\.txt$/i.test(path) ||
     /^\.claude\/skills\/[^/]+\/(?:.+\.md|agents\/openai\.yaml)$/i.test(path) ||
-    /^\.claude\/(?:agents|templates)\/.+\.md$/i.test(path) ||
+    /^\.claude\/agents\/.+\.md$/i.test(path) ||
     /^\.codex\/agents\/[^/]+\.toml$/i.test(path) ||
     /^docs\/.+\.(?:avif|docx|gif|html|jpe?g|md|png|svg|webp)$/i.test(path)
   );

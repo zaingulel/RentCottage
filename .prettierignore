@@ -24,7 +24,6 @@ GLOSSARY.md
 .claude/hooks/
 .claude/settings.json
 .claude/skills/
-.claude/templates/
 .codex/agents/
 .codex/hooks/
 .codex/hooks.json
