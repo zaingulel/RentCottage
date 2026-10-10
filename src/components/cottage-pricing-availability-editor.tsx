@@ -16,6 +16,10 @@ import type {
 } from "@/cottage-inventory/cottage-inventory";
 import type { CottageShiftSchedule } from "@/cottage-shift-schedule/cottage-shift-schedule";
 import { cottagePricingAvailabilityMessages } from "@/i18n/cottage-pricing-availability-messages";
+import {
+  cottageShiftScheduleMessages,
+  type Copy as ScheduleCopy,
+} from "@/i18n/cottage-shift-schedule-messages";
 import { directionFor, type Locale } from "@/i18n/routing";
 
 const idle: CottageInventoryActionState = { status: "idle" };
@@ -31,26 +35,77 @@ type InventoryUnit = {
   id: string;
   kind: CottageInventoryUnitKind;
   label: string;
+  identity: string;
+  localName?: string;
+  startTime: string;
+  endTime: string;
+  crossesMidnight: boolean;
 };
 
 function unitsFor(
   schedule: CottageShiftSchedule | null,
-  shiftLabel: string,
-  bundleLabel: string,
+  copy: ScheduleCopy,
 ): InventoryUnit[] {
   if (!schedule) return [];
   return [
-    ...schedule.shifts.map((shift, index) => ({
-      id: shift.id,
-      kind: "shift" as const,
-      label: `${shiftLabel} ${index + 1}`,
-    })),
+    ...schedule.shifts.map((shift) => {
+      const identity =
+        shift.position === 1
+          ? copy.morning
+          : shift.position === 2
+            ? copy.evening
+            : `${copy.shift} ${shift.position}`;
+      return {
+        id: shift.id,
+        kind: "shift" as const,
+        label: `${identity}: ${shift.name}`,
+        identity,
+        localName: shift.name,
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+        crossesMidnight: shift.crossesMidnight,
+      };
+    }),
     {
       id: schedule.fullDayBundleId,
       kind: "full_day_bundle" as const,
-      label: bundleLabel,
+      label: copy.fullDay,
+      identity: copy.fullDay,
+      startTime: schedule.fullDayStartTime,
+      endTime: schedule.fullDayEndTime,
+      crossesMidnight: schedule.fullDayCrossesMidnight,
     },
   ];
+}
+
+function accessRange(copy: ScheduleCopy, unit: InventoryUnit) {
+  return (
+    <>
+      {copy.accessRange.split(/(\{start\}|\{end\})/).map((part, index) =>
+        part === "{start}" || part === "{end}" ? (
+          <bdi dir="ltr" key={index}>
+            {part === "{start}" ? unit.startTime : unit.endTime}
+          </bdi>
+        ) : (
+          part
+        ),
+      )}{" "}
+      ({unit.crossesMidnight ? copy.nextDay : copy.sameDay})
+    </>
+  );
+}
+
+function unitName(unit: InventoryUnit) {
+  return (
+    <>
+      {unit.identity}
+      {unit.localName !== undefined ? (
+        <>
+          : <bdi dir="auto">{unit.localName}</bdi>
+        </>
+      ) : null}
+    </>
+  );
 }
 
 function feedback(
@@ -94,15 +149,8 @@ export function CottagePricingAvailabilityEditor({
       loadCottageInventoryAvailabilityAction,
       availabilityLoadIdle,
     );
-  const units = unitsFor(
-    schedule,
-    locale === "en" ? "Shift" : locale === "ar" ? "المناوبة" : "شیفت",
-    locale === "en"
-      ? "Full-Day Bundle"
-      : locale === "ar"
-        ? "باقة اليوم الكامل"
-        : "پاکێجی ڕۆژی تەواو",
-  );
+  const scheduleCopy = cottageShiftScheduleMessages[locale];
+  const units = unitsFor(schedule, scheduleCopy);
   const direction = directionFor(locale);
   const priceFeedback = feedback(pricingState, copy);
   const availabilityFeedback = feedback(availabilityState, copy);
@@ -168,6 +216,12 @@ export function CottagePricingAvailabilityEditor({
         <p className="cottage-pricing-availability-notice">{copy.noSchedule}</p>
       ) : (
         <>
+          <div className="cottage-pricing-availability-notice">
+            <p>{scheduleCopy.iraqTimeZone}</p>
+            <p>{scheduleCopy.clockFormat}</p>
+            <p>{scheduleCopy.independentPrices}</p>
+            <p>{scheduleCopy.reset}</p>
+          </div>
           {!pricingHydrated ? (
             <p className="cottage-pricing-availability-notice" role="alert">
               {copy.unavailable}
@@ -220,8 +274,33 @@ export function CottagePricingAvailabilityEditor({
                           className="cottage-inventory-unit-title"
                           id={unitTitleId}
                         >
-                          {unit.label}
+                          {unitName(unit)}
                         </h3>
+                        {unit.kind === "full_day_bundle" ? (
+                          <div className="cottage-pricing-availability-notice">
+                            <dl className="fact-list">
+                              <div>
+                                <dt>{scheduleCopy.fullDayAccess}</dt>
+                                <dd>
+                                  <strong className="cottage-inventory-unit-title">
+                                    {accessRange(scheduleCopy, unit)}
+                                  </strong>
+                                </dd>
+                              </div>
+                              <div>
+                                <dt>{scheduleCopy.fullDay}</dt>
+                                <dd>{scheduleCopy.fullDayIncludes}</dd>
+                              </div>
+                              <div>
+                                <dt>{scheduleCopy.betweenShifts}</dt>
+                                <dd>{scheduleCopy.fullDayBetweenShifts}</dd>
+                              </div>
+                            </dl>
+                            <p>{scheduleCopy.cleaning}</p>
+                          </div>
+                        ) : (
+                          <p>{accessRange(scheduleCopy, unit)}</p>
+                        )}
                         <input type="hidden" name="unitId" value={unit.id} />
                         <input
                           type="hidden"
@@ -540,7 +619,7 @@ export function CottagePricingAvailabilityEditor({
                           key={`${unit.kind}:${unit.id}`}
                         >
                           <span>
-                            {unit.label} {copy.state}
+                            {unitName(unit)} {copy.state}
                           </span>
                           {state.editable ? (
                             <>
@@ -622,7 +701,7 @@ export function CottagePricingAvailabilityEditor({
                         key={`${unit.kind}:${unit.id}`}
                       >
                         <span>
-                          {unit.label} {copy.state}
+                          {unitName(unit)} {copy.state}
                         </span>
                         <output aria-label={`${unit.label} ${copy.state}`}>
                           {stateLabel(state.calendarState)}

@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CottageShiftSchedule } from "@/cottage-shift-schedule/cottage-shift-schedule";
 import type { CottageInventoryOwnerEditorState } from "@/cottage-inventory/cottage-inventory";
 import { cottagePricingAvailabilityMessages } from "@/i18n/cottage-pricing-availability-messages";
+import { cottageShiftScheduleMessages } from "@/i18n/cottage-shift-schedule-messages";
 
 vi.mock("server-only", () => ({}));
 const { loadAvailability, saveAvailability, savePricing } = vi.hoisted(() => ({
@@ -112,6 +113,197 @@ const roundTripPricingAfterOverride: CottageInventoryOwnerEditorState = {
 describe("Cottage Pricing and Availability editor", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it.each([
+    {
+      locale: "en",
+      morning: "Morning",
+      evening: "Evening",
+      fullDay: "Full-day",
+      morningRange: "09:00 to 15:00 (same day)",
+      eveningRange: "17:00 to 02:00 (next day)",
+      fullDayRange: "09:00 to 02:00 (next day)",
+    },
+    {
+      locale: "ar",
+      morning: "الفترة الصباحية",
+      evening: "الفترة المسائية",
+      fullDay: "حجز اليوم الكامل",
+      morningRange: "من 09:00 إلى 15:00 (في اليوم نفسه)",
+      eveningRange: "من 17:00 إلى 02:00 (اليوم التالي)",
+      fullDayRange: "من 09:00 إلى 02:00 (اليوم التالي)",
+    },
+    {
+      locale: "ckb",
+      morning: "ماوەی بەیانی",
+      evening: "ماوەی ئێوارە",
+      fullDay: "حجزکردنی تەواوی ڕۆژ",
+      morningRange: "لە 09:00 تا 15:00 (لە هەمان ڕۆژدا)",
+      eveningRange: "لە 17:00 تا 02:00 (ڕۆژی دواتر)",
+      fullDayRange: "لە 09:00 تا 02:00 (ڕۆژی دواتر)",
+    },
+  ] as const)(
+    "owner pricing identifies the saved shifts and independent Full-day price",
+    async ({
+      locale,
+      morning,
+      evening,
+      fullDay,
+      morningRange,
+      eveningRange,
+      fullDayRange,
+    }) => {
+      const copy = cottagePricingAvailabilityMessages[locale];
+      const scheduleCopy = cottageShiftScheduleMessages[locale];
+      const savedSchedule: CottageShiftSchedule = {
+        ...schedule,
+        shifts: [
+          {
+            ...schedule.shifts[0]!,
+            name: "صباح AM <img src=x onerror=alert(1)>",
+            startTime: "09:00",
+            endTime: "15:00",
+          },
+          {
+            ...schedule.shifts[1]!,
+            name: "ئێوارە PM <script>alert(2)</script>",
+            startTime: "17:00",
+            endTime: "02:00",
+            crossesMidnight: true,
+          },
+        ],
+        fullDayStartTime: "09:00",
+        fullDayEndTime: "02:00",
+        fullDayCrossesMidnight: true,
+      };
+      savePricing.mockResolvedValue({ status: "saved" });
+      const user = userEvent.setup();
+      const view = render(
+        <CottagePricingAvailabilityEditor
+          locale={locale}
+          profileId={savedSchedule.profileId}
+          schedule={savedSchedule}
+          pricing={pricing}
+          editable
+          canOpen
+        />,
+      );
+
+      expect(screen.getByRole("region")).toHaveAttribute(
+        "dir",
+        locale === "en" ? "ltr" : "rtl",
+      );
+      const morningGroup = screen.getByRole("group", {
+        name: `${morning}: ${savedSchedule.shifts[0]!.name}`,
+      });
+      const eveningGroup = screen.getByRole("group", {
+        name: `${evening}: ${savedSchedule.shifts[1]!.name}`,
+      });
+      const fullDayGroup = screen.getByRole("group", { name: fullDay });
+      expect(
+        within(morningGroup).getByText(
+          (_, element) =>
+            element?.tagName === "P" && element.textContent === morningRange,
+        ),
+      ).toBeVisible();
+      expect(
+        within(eveningGroup).getByText(
+          (_, element) =>
+            element?.tagName === "P" && element.textContent === eveningRange,
+        ),
+      ).toBeVisible();
+      expect(
+        within(fullDayGroup).getByText(
+          (_, element) =>
+            element?.tagName === "STRONG" &&
+            element.textContent === fullDayRange,
+        ),
+      ).toBeVisible();
+      expect(
+        within(fullDayGroup).getByText(scheduleCopy.fullDayIncludes),
+      ).toBeVisible();
+      expect(
+        within(fullDayGroup).getByText(scheduleCopy.fullDayBetweenShifts),
+      ).toBeVisible();
+      expect(screen.getByText(scheduleCopy.independentPrices)).toBeVisible();
+      expect(screen.getByText(scheduleCopy.reset)).toBeVisible();
+      expect(screen.getByText(scheduleCopy.iraqTimeZone)).toBeVisible();
+      expect(screen.getByText(scheduleCopy.clockFormat)).toBeVisible();
+      for (const shift of savedSchedule.shifts) {
+        const name = screen.getByText(shift.name, { selector: "bdi" });
+        expect(name).toHaveAttribute("dir", "auto");
+      }
+      for (const clock of fullDayGroup.querySelectorAll("bdi")) {
+        expect(clock).toHaveAttribute("dir", "ltr");
+      }
+      expect(view.container.querySelector("img, script")).toBeNull();
+      expect(within(morningGroup).getAllByRole("spinbutton")[0]).toHaveValue(
+        125000,
+      );
+      expect(within(eveningGroup).getAllByRole("spinbutton")[0]).toHaveValue(
+        115000,
+      );
+      const bundlePrice = within(fullDayGroup).getAllByRole("spinbutton")[0]!;
+      expect(bundlePrice).toHaveValue(220000);
+      await user.clear(bundlePrice);
+      await user.type(bundlePrice, "230000");
+      expect(bundlePrice).toHaveValue(230000);
+      await user.click(
+        screen.getByRole("button", { name: copy.savePrices as string }),
+      );
+      await waitFor(() => expect(savePricing).toHaveBeenCalledTimes(1));
+      const submission = savePricing.mock.calls[0]?.[1] as FormData;
+      expect(submission.get("scheduleRevisionId")).toBe(
+        schedule.scheduleRevisionId,
+      );
+      expect(submission.getAll("unitId")).toEqual([
+        schedule.shifts[0]!.id,
+        schedule.shifts[1]!.id,
+        schedule.fullDayBundleId,
+      ]);
+      expect(submission.getAll("unitKind")).toEqual([
+        "shift",
+        "shift",
+        "full_day_bundle",
+      ]);
+      expect(submission.getAll("standardPriceIqd")).toEqual([
+        "125000",
+        "115000",
+        "230000",
+      ]);
+      expect(submission.getAll("weekday")).toEqual(["4", "", "", ""]);
+      expect(submission.getAll("weekdayPriceIqd")).toEqual([
+        "160000",
+        "",
+        "",
+        "",
+      ]);
+      expect(submission.getAll("weekdayUnitId")).toEqual([
+        schedule.shifts[0]!.id,
+        schedule.shifts[0]!.id,
+        schedule.shifts[1]!.id,
+        schedule.fullDayBundleId,
+      ]);
+      expect(submission.getAll("serviceDay")).toEqual([
+        "2099-08-27",
+        "",
+        "",
+        "",
+      ]);
+      expect(submission.getAll("datePriceIqd")).toEqual(["180000", "", "", ""]);
+      expect(submission.getAll("dateUnitId")).toEqual([
+        schedule.shifts[0]!.id,
+        schedule.shifts[0]!.id,
+        schedule.shifts[1]!.id,
+        schedule.fullDayBundleId,
+      ]);
+      expect(await screen.findByRole("status")).toHaveTextContent(
+        copy.saved as string,
+      );
+      expect(saveAvailability).not.toHaveBeenCalled();
+      expect(loadAvailability).not.toHaveBeenCalled();
+    },
+  );
+
   it("Sorani standard-price inputs have a natural accessible name", () => {
     render(
       <CottagePricingAvailabilityEditor
@@ -126,7 +318,7 @@ describe("Cottage Pricing and Availability editor", () => {
 
     expect(
       screen.getByRole("spinbutton", {
-        name: "نرخی ستاندارد بە دیناری عێراقی بۆ شیفت 1",
+        name: "نرخی ستاندارد بە دیناری عێراقی بۆ ماوەی بەیانی: Morning",
       }),
     ).toBeEnabled();
     expect(screen.getByRole("region")).toHaveAttribute("dir", "rtl");
@@ -149,7 +341,9 @@ describe("Cottage Pricing and Availability editor", () => {
     ).toBeVisible();
     expect(screen.getByRole("region")).toHaveAttribute("dir", "rtl");
     expect(
-      screen.getByLabelText("سعر المناوبة 1 القياسي بالدينار العراقي"),
+      screen.getByLabelText(
+        "سعر الفترة الصباحية: Morning القياسي بالدينار العراقي",
+      ),
     ).toBeEnabled();
     expect(screen.getByRole("button", { name: "حفظ الأسعار" })).toBeEnabled();
     expect(
@@ -316,8 +510,12 @@ describe("Cottage Pricing and Availability editor", () => {
     );
 
     expect(screen.getAllByText("Pricing and availability")).toHaveLength(1);
-    expect(screen.getAllByText("Shift 1")).toHaveLength(1);
-    expect(screen.getAllByText("Full-Day Bundle")).toHaveLength(1);
+    expect(
+      screen.getAllByRole("heading", { name: "Morning: Morning" }),
+    ).toHaveLength(1);
+    expect(screen.getAllByRole("heading", { name: "Full-day" })).toHaveLength(
+      1,
+    );
     expect(screen.getAllByText("Standard price in IQD")).toHaveLength(3);
   });
 
@@ -342,17 +540,19 @@ describe("Cottage Pricing and Availability editor", () => {
     ).toHaveLength(1);
 
     const addWeekday = screen.getByLabelText(
-      "Add weekday override for Shift 1",
+      "Add weekday override for Morning: Morning",
     );
     const addDate = screen.getByLabelText(
-      "Add specific-date override for Shift 1",
+      "Add specific-date override for Morning: Morning",
     );
     expect(addWeekday.closest("details")).not.toHaveAttribute("open");
     expect(addDate.closest("details")).not.toHaveAttribute("open");
 
     await user.click(addWeekday);
     expect(addWeekday.closest("details")).toHaveAttribute("open");
-    expect(screen.getByLabelText("Shift 1 new weekday override")).toBeVisible();
+    expect(
+      screen.getByLabelText("Morning: Morning new weekday override"),
+    ).toBeVisible();
   });
 
   it("keeps price configuration available while the editor is read-only", () => {
@@ -368,7 +568,7 @@ describe("Cottage Pricing and Availability editor", () => {
     );
 
     expect(
-      screen.getByLabelText("Shift 1 standard price in IQD"),
+      screen.getByLabelText("Morning: Morning standard price in IQD"),
     ).toBeDisabled();
     expect(
       screen.queryByRole("button", { name: "Save prices" }),
@@ -426,10 +626,10 @@ describe("Cottage Pricing and Availability editor", () => {
     await user.click(screen.getByRole("button", { name: "Load availability" }));
 
     expect(
-      await screen.findByLabelText("Shift 1 operational state"),
+      await screen.findByLabelText("Morning: Morning operational state"),
     ).toHaveTextContent("Pending hold");
     expect(
-      screen.getByLabelText("Shift 2 operational state"),
+      screen.getByLabelText("Evening: Evening operational state"),
     ).toHaveTextContent("Confirmed booking");
     expect(
       screen.getByText("RC-REQUEST-2601", { selector: "bdi" }).closest("span"),
@@ -438,11 +638,11 @@ describe("Cottage Pricing and Availability editor", () => {
       screen.getByText("RC-BOOKING-2601", { selector: "bdi" }).closest("span"),
     ).toHaveTextContent("Booking reference: RC-BOOKING-2601");
     expect(
-      screen.getByLabelText("Full-Day Bundle operational state"),
+      screen.getByLabelText("Full-day operational state"),
     ).toHaveTextContent("Unavailable because a component Shift is committed");
-    expect(screen.getByLabelText("Shift 1 operational state")).not.toHaveRole(
-      "combobox",
-    );
+    expect(
+      screen.getByLabelText("Morning: Morning operational state"),
+    ).not.toHaveRole("combobox");
     expect(
       screen.queryByRole("button", { name: "Save availability" }),
     ).not.toBeInTheDocument();
@@ -461,23 +661,27 @@ describe("Cottage Pricing and Availability editor", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Shift 1 standard price in IQD")).toHaveValue(
-      125000,
-    );
-    expect(screen.getByLabelText("Shift 1 weekday override")).toHaveValue("4");
     expect(
-      screen.getByLabelText("Shift 1 weekday override standard price in IQD"),
-    ).toHaveValue(160000);
-    expect(screen.getByLabelText("Shift 1 specific-date override")).toHaveValue(
-      "2099-08-27",
-    );
+      screen.getByLabelText("Morning: Morning standard price in IQD"),
+    ).toHaveValue(125000);
+    expect(
+      screen.getByLabelText("Morning: Morning weekday override"),
+    ).toHaveValue("4");
     expect(
       screen.getByLabelText(
-        "Shift 1 specific-date override standard price in IQD",
+        "Morning: Morning weekday override standard price in IQD",
+      ),
+    ).toHaveValue(160000);
+    expect(
+      screen.getByLabelText("Morning: Morning specific-date override"),
+    ).toHaveValue("2099-08-27");
+    expect(
+      screen.getByLabelText(
+        "Morning: Morning specific-date override standard price in IQD",
       ),
     ).toHaveValue(180000);
     expect(
-      screen.queryByLabelText("Shift 1 operational state"),
+      screen.queryByLabelText("Morning: Morning operational state"),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Save availability" }),
@@ -498,27 +702,29 @@ describe("Cottage Pricing and Availability editor", () => {
       />,
     );
 
-    await user.click(screen.getByLabelText("Add weekday override for Shift 1"));
+    await user.click(
+      screen.getByLabelText("Add weekday override for Morning: Morning"),
+    );
     await user.selectOptions(
-      screen.getByLabelText("Shift 1 new weekday override"),
+      screen.getByLabelText("Morning: Morning new weekday override"),
       "4",
     );
     await user.type(
       screen.getByLabelText(
-        "Shift 1 new weekday override standard price in IQD",
+        "Morning: Morning new weekday override standard price in IQD",
       ),
       "110000",
     );
     await user.click(
-      screen.getByLabelText("Add specific-date override for Shift 1"),
+      screen.getByLabelText("Add specific-date override for Morning: Morning"),
     );
     await user.type(
-      screen.getByLabelText("Shift 1 new specific-date override"),
+      screen.getByLabelText("Morning: Morning new specific-date override"),
       "2099-08-20",
     );
     await user.type(
       screen.getByLabelText(
-        "Shift 1 new specific-date override standard price in IQD",
+        "Morning: Morning new specific-date override standard price in IQD",
       ),
       "125000",
     );
@@ -536,29 +742,33 @@ describe("Cottage Pricing and Availability editor", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Shift 1 standard price in IQD")).toHaveValue(
-      100000,
-    );
-    expect(screen.getByLabelText("Shift 1 weekday override")).toHaveValue("4");
     expect(
-      screen.getByLabelText("Shift 1 weekday override standard price in IQD"),
+      screen.getByLabelText("Morning: Morning standard price in IQD"),
+    ).toHaveValue(100000);
+    expect(
+      screen.getByLabelText("Morning: Morning weekday override"),
+    ).toHaveValue("4");
+    expect(
+      screen.getByLabelText(
+        "Morning: Morning weekday override standard price in IQD",
+      ),
     ).toHaveValue(110000);
     expect(
       screen
-        .getByLabelText("Add weekday override for Shift 1")
+        .getByLabelText("Add weekday override for Morning: Morning")
         .closest("details"),
     ).not.toHaveAttribute("open");
-    expect(screen.getByLabelText("Shift 1 specific-date override")).toHaveValue(
-      "2099-08-20",
-    );
+    expect(
+      screen.getByLabelText("Morning: Morning specific-date override"),
+    ).toHaveValue("2099-08-20");
     expect(
       screen.getByLabelText(
-        "Shift 1 specific-date override standard price in IQD",
+        "Morning: Morning specific-date override standard price in IQD",
       ),
     ).toHaveValue(125000);
     expect(
       screen
-        .getByLabelText("Add specific-date override for Shift 1")
+        .getByLabelText("Add specific-date override for Morning: Morning")
         .closest("details"),
     ).not.toHaveAttribute("open");
 
@@ -633,14 +843,14 @@ describe("Cottage Pricing and Availability editor", () => {
     await user.click(screen.getByRole("button", { name: "Load availability" }));
 
     expect(
-      await screen.findByLabelText("Shift 1 operational state"),
+      await screen.findByLabelText("Morning: Morning operational state"),
     ).toHaveValue("private_blocked");
-    expect(screen.getByLabelText("Shift 2 operational state")).toHaveValue(
-      "open",
-    );
     expect(
-      screen.getByLabelText("Full-Day Bundle operational state"),
-    ).toHaveValue("closed");
+      screen.getByLabelText("Evening: Evening operational state"),
+    ).toHaveValue("open");
+    expect(screen.getByLabelText("Full-day operational state")).toHaveValue(
+      "closed",
+    );
     expect(
       screen.getByRole("button", { name: "Save availability" }),
     ).toBeEnabled();
