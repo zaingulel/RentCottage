@@ -13,8 +13,9 @@ async function requestDiscovery() {
 export async function searchPublicCottages(
   locale: Locale,
   query: CottageDiscoveryQuery,
+  after: string | null,
 ) {
-  return (await requestDiscovery()).search(locale, query);
+  return (await requestDiscovery()).search(locale, query, after);
 }
 
 export async function loadPublicCottageFacets(locale: Locale) {

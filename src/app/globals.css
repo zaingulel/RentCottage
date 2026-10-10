@@ -1063,7 +1063,8 @@ html[lang="ckb"] .page-title {
 
 .results-header,
 .results-intro,
-.results-grid {
+.results-grid,
+.results-paging {
   width: min(71.25rem, calc(100% - 2.25rem));
   margin-inline: auto;
 }
@@ -1151,6 +1152,14 @@ html[lang="ckb"] .page-title {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
   gap: var(--space-5);
+}
+
+.results-paging {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-block-start: var(--space-5);
 }
 
 .results-grid article {

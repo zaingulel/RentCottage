@@ -235,11 +235,11 @@ describe("CottageDiscoveryForm booking period picker", () => {
     const submitButton = screen.getByRole("button", {
       name: "Search available cottages",
     });
-    chooseDates(dateLabels.en, "2099-01-01", "2100-02-05");
+    chooseDates(dateLabels.en, "2099-01-01", "2099-02-01");
     await user.click(submitButton);
     expect(
       screen.getByText(
-        "Check your dates and guest count. Choose a range of at most 400 days.",
+        "Check your dates and guest count. Choose a range of at most 31 days.",
       ),
     ).toHaveAttribute("role", "alert");
     expect(push).not.toHaveBeenCalled();

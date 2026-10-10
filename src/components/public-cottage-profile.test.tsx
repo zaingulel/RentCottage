@@ -61,7 +61,7 @@ describe("PublicCottageProfileView", () => {
           selections: [],
           amenities: [],
         }}
-        queryString="from=2026-09-22&to=2026-09-23&guests=4"
+        resultsQueryString="from=2026-09-22&to=2026-09-23&guests=4"
       />,
     );
     const sidebar = screen.getByRole("complementary");
@@ -129,7 +129,7 @@ describe("PublicCottageProfileView", () => {
           locale={locale}
           query={query}
           result={{ status: "loaded", cottage }}
-          queryString=""
+          resultsQueryString=""
         />,
       );
       expect(screen.getByRole("heading", { name: title })).toBeVisible();
@@ -149,7 +149,7 @@ describe("PublicCottageProfileView", () => {
         locale="ckb"
         result={{ status: "unavailable" }}
         query={null}
-        queryString=""
+        resultsQueryString=""
       />,
     );
     expect(screen.getByRole("alert")).toHaveTextContent(
@@ -159,5 +159,48 @@ describe("PublicCottageProfileView", () => {
       screen.getByRole("link", { name: "گەڕانەوە بۆ ئەنجامەکان" }),
     ).toHaveAttribute("href", "/ckb/results?");
     expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
+  describe("cottage links keep the results position", () => {
+    it("the back link returns to the results position", () => {
+      render(
+        <PublicCottageProfileView
+          locale="en"
+          result={{ status: "loaded", cottage }}
+          query={{
+            from: "2026-09-22",
+            to: "2026-09-22",
+            guests: 4,
+            selections: [
+              {
+                serviceDay: "2026-09-22",
+                kind: "shift" as const,
+                position: 1 as const,
+              },
+            ],
+            amenities: [],
+          }}
+          resultsQueryString="from=2026-09-22&to=2026-09-22&selection=2026-09-22%3Ashift%3A1&guests=4&after=cottage-0123456789abcdef0123456789abcdef"
+        />,
+      );
+      expect(
+        screen.getByRole("link", { name: "Back to results" }),
+      ).toHaveAttribute(
+        "href",
+        "/en/results?from=2026-09-22&to=2026-09-22&selection=2026-09-22%3Ashift%3A1&guests=4&after=cottage-0123456789abcdef0123456789abcdef",
+      );
+      expect(
+        screen.getByRole("link", { name: "Get exact quote" }),
+      ).toHaveAttribute(
+        "href",
+        "/en/request/garden-house?from=2026-09-22&to=2026-09-22&selection=2026-09-22%3Ashift%3A1&guests=4",
+      );
+      expect(
+        screen.getByRole("link", { name: "Message this cottage" }),
+      ).toHaveAttribute(
+        "href",
+        "/en/messages?cottage=garden-house&from=2026-09-22&to=2026-09-22&selection=2026-09-22%3Ashift%3A1&guests=4",
+      );
+    });
   });
 });

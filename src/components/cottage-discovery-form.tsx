@@ -39,7 +39,7 @@ const copy = {
     timesHint:
       "تتبع أرقام الفترات جدول كل بيت؛ وتختلف الأوقات. تحقق من أوقات البيت قبل الاختيار.",
     invalidRange:
-      "تحقق من التواريخ وعدد الضيوف. اختر نطاقًا لا يتجاوز 400 يوم.",
+      "تحقق من التواريخ وعدد الضيوف. اختر نطاقًا لا يتجاوز 31 يومًا.",
     all: "الكل",
     unavailable: "تعذر تحميل خيارات البحث الآن.",
   },
@@ -62,7 +62,7 @@ const copy = {
     timesHint:
       "ژمارەی شیفتەکان بە خشتەی هەر کۆتێجێکە؛ کاتەکان جیاوازن. پێش هەڵبژاردن کاتەکانی کۆتێجەکە بپشکنە.",
     invalidRange:
-      "بەروارەکان و ژمارەی میوان بپشکنە. ماوەیەک هەڵبژێرە کە لە 400 ڕۆژ زیاتر نەبێت.",
+      "بەروارەکان و ژمارەی میوان بپشکنە. ماوەیەک هەڵبژێرە کە لە 31 ڕۆژ زیاتر نەبێت.",
     all: "هەموو",
     unavailable: "ئێستا ناتوانرێت هەڵبژاردەکانی گەڕان باربکرێن.",
   },
@@ -85,7 +85,7 @@ const copy = {
     timesHint:
       "Shift numbers follow each cottage’s schedule; times vary. Check the cottage’s times before choosing.",
     invalidRange:
-      "Check your dates and guest count. Choose a range of at most 400 days.",
+      "Check your dates and guest count. Choose a range of at most 31 days.",
     all: "All",
     unavailable: "Search choices could not be loaded right now.",
   },
@@ -114,7 +114,7 @@ function serviceDays(from: string, to: string) {
   const days: string[] = [];
   const cursor = new Date(`${from}T00:00:00Z`);
   const last = new Date(`${to}T00:00:00Z`);
-  while (cursor <= last && days.length < 400) {
+  while (cursor <= last && days.length < 31) {
     days.push(cursor.toISOString().slice(0, 10));
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }

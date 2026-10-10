@@ -3,7 +3,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { cottageProfileAmenities } from "@/cottage-profile/cottage-profile";
 import type { Locale } from "@/i18n/routing";
 
-import type { CottageDiscoveryQuery } from "./discovery-query";
+import {
+  publicCottageSlugPattern,
+  type CottageDiscoveryQuery,
+} from "./discovery-query";
 
 export interface PublicCottageSummary {
   slug: string;
@@ -35,7 +38,11 @@ export interface PublicCottageProfile extends PublicCottageSummary {
 }
 
 export type CottageDiscoveryResult =
-  | { status: "loaded"; cottages: PublicCottageSummary[] }
+  | {
+      status: "loaded";
+      cottages: PublicCottageSummary[];
+      nextAfter: string | null;
+    }
   | { status: "unavailable" };
 
 export type CottageDiscoveryProfileResult =
@@ -87,9 +94,10 @@ const inventoryShiftKeys = new Set([
 const inventoryFullDayKeys = new Set(
   [...inventoryShiftKeys].filter((key) => key !== "position"),
 );
+const searchPageKeys = new Set(["items", "nextCursor"]);
+const searchPageSize = 12;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const publicSlugPattern = /^cottage-[0-9a-f]{32}$/;
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 const serviceDayPattern = /^\d{4}-\d{2}-\d{2}$/;
 const knownAmenities = new Set<string>(cottageProfileAmenities);
@@ -149,7 +157,7 @@ function inventoryFrom(
   value: unknown,
   query: CottageDiscoveryQuery,
 ): PublicCottageInventoryUnit[] | undefined {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 1600)
+  if (!Array.isArray(value) || value.length === 0 || value.length > 124)
     return undefined;
   const byDay = new Map<string, PublicCottageInventoryUnit[]>();
   let previousKey = "";
@@ -234,7 +242,7 @@ function summaryFrom(
   const inventory = inventoryFrom(input.inventory, query);
   if (
     typeof input.slug !== "string" ||
-    !publicSlugPattern.test(input.slug) ||
+    !publicCottageSlugPattern.test(input.slug) ||
     !nonEmptyText(input.name) ||
     !nonEmptyText(input.governorate) ||
     !nonEmptyText(input.approximateLocation) ||
@@ -269,7 +277,7 @@ function profileFrom(
   const inventory = inventoryFrom(input.inventory, query);
   if (
     typeof input.slug !== "string" ||
-    !publicSlugPattern.test(input.slug) ||
+    !publicCottageSlugPattern.test(input.slug) ||
     !nonEmptyText(input.name) ||
     !nonEmptyText(input.governorate) ||
     !nonEmptyText(input.approximateLocation) ||
@@ -362,24 +370,38 @@ export class SupabaseCottageDiscovery {
   async search(
     locale: Locale,
     query: CottageDiscoveryQuery,
+    after: string | null,
   ): Promise<CottageDiscoveryResult> {
     const { data, error } = await this.client.rpc("search_public_cottages", {
       target_locale: locale,
       requested_search: query,
+      target_after_slug: after,
+      target_limit: searchPageSize,
     });
     if (error) return unavailable("search", "provider-error");
-    if (!Array.isArray(data))
+    if (!exactObject(data, searchPageKeys))
       return unavailable("search", "invalid-provider-data");
-    const cottages = data.map((cottage) => summaryFrom(cottage, query));
-    if (
-      cottages.some((cottage) => cottage === undefined) ||
-      new Set(cottages.map((cottage) => cottage?.slug)).size !== cottages.length
-    ) {
+    const page = data as Record<string, unknown>;
+    if (!Array.isArray(page.items) || page.items.length > searchPageSize)
       return unavailable("search", "invalid-provider-data");
+    const cottages: PublicCottageSummary[] = [];
+    let previousSlug = after ?? "";
+    for (const item of page.items) {
+      const cottage = summaryFrom(item, query);
+      if (!cottage || cottage.slug <= previousSlug)
+        return unavailable("search", "invalid-provider-data");
+      previousSlug = cottage.slug;
+      cottages.push(cottage);
     }
+    if (
+      page.nextCursor !== null &&
+      !(cottages.length === searchPageSize && page.nextCursor === previousSlug)
+    )
+      return unavailable("search", "invalid-provider-data");
     return {
       status: "loaded",
-      cottages: cottages as PublicCottageSummary[],
+      cottages,
+      nextAfter: page.nextCursor as string | null,
     };
   }
 

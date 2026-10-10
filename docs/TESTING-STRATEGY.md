@@ -159,6 +159,22 @@ Supabase CLI to 2.114.0, and that resolution must not move until
 `20260908120000_booking_request_payment_history.sql` wraps its `lock table` in a transaction: newer releases apply
 migrations statement by statement and refuse that lock. Install with `npm ci`, which honours the lockfile.
 
+## Public search performance evidence
+
+Public Cottage Search carries a performance budget that is measured, never asserted: no test holds a timing
+assertion. The budget, at 1,000 Published Cottages on the local Supabase database: a representative search of
+two Service Days executes in the database within 200 ms, and every accepted search, up to 31 Service Days with
+93 selections, within half the `anon` role's statement timeout, because that timeout is where a valid search
+becomes an error. Re-measure when a change touches `search_public_cottages`, a function it calls, an index on a
+table those read, or an accepted search limit. Use native commands only: in one transaction that rolls back,
+seed the cottages with the publication recipe in `supabase/tests/database/cottage_discovery.test.sql`, run
+`analyze`, then as `anon` run `explain (analyze, buffers)` on each shape three times and take the median; read
+the function's own plan by preparing its statement and explaining its execution; take response size from
+`octet_length`. The shapes are a first page, a continued page and a search nothing further matches at the
+representative size, and a first page and a search nothing further matches at the largest accepted size. The
+pull request body records the plans, execution times, buffers and response sizes; a shape over budget stops the
+change and goes to the owner with those figures.
+
 ## The loop
 
 Focused checks run while building and between review rounds, each through

@@ -4,9 +4,10 @@ import { PublicCottageResults } from "@/components/public-cottage-results";
 import { InvalidCottageSearch } from "@/components/invalid-cottage-search";
 import { SiteFooter } from "@/components/site-footer";
 import {
-  parseCottageDiscoveryQuery,
+  parseCottageResultsQuery,
   preserveRawCottageDiscoveryQuery,
   serializeCottageDiscoveryQuery,
+  serializeCottageResultsQuery,
 } from "@/cottage-discovery/discovery-query";
 import { searchPublicCottages } from "@/cottage-discovery/request-cottage-discovery";
 import { isLocale } from "@/i18n/routing";
@@ -21,7 +22,7 @@ export default async function ResultsPage({
   const { locale } = await params;
   const query = await searchParams;
   if (!isLocale(locale)) notFound();
-  const parsed = parseCottageDiscoveryQuery(query);
+  const parsed = parseCottageResultsQuery(query);
   if (parsed.status === "invalid") {
     const queryString = preserveRawCottageDiscoveryQuery(query);
     return (
@@ -31,8 +32,12 @@ export default async function ResultsPage({
       </>
     );
   }
-  const result = await searchPublicCottages(locale, parsed.query);
+  const result = await searchPublicCottages(locale, parsed.query, parsed.after);
   const queryString = serializeCottageDiscoveryQuery(parsed.query);
+  const resultsQueryString = serializeCottageResultsQuery(
+    parsed.query,
+    parsed.after,
+  );
   return (
     <>
       <PublicCottageResults
@@ -40,8 +45,13 @@ export default async function ResultsPage({
         result={result}
         query={parsed.query}
         queryString={queryString}
+        after={parsed.after}
       />
-      <SiteFooter locale={locale} path="/results" queryString={queryString} />
+      <SiteFooter
+        locale={locale}
+        path="/results"
+        queryString={resultsQueryString}
+      />
     </>
   );
 }

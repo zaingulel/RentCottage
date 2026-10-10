@@ -23,8 +23,13 @@ export type CottageDiscoveryQueryResult =
   | { status: "loaded"; query: CottageDiscoveryQuery }
   | { status: "invalid" };
 
+export type CottageResultsQueryResult =
+  | { status: "loaded"; query: CottageDiscoveryQuery; after: string | null }
+  | { status: "invalid" };
+
 type RawQuery = Record<string, string | string[] | undefined>;
 
+export const publicCottageSlugPattern = /^cottage-[0-9a-f]{32}$/;
 const serviceDayPattern = /^\d{4}-\d{2}-\d{2}$/;
 const selectionPattern = /^(\d{4}-\d{2}-\d{2}):(shift):([1-3])$/;
 const fullDayPattern = /^(\d{4}-\d{2}-\d{2}):full-day$/;
@@ -38,7 +43,7 @@ const acceptedKeys = new Set([
   "area",
   "amenity",
 ]);
-const maximumDefensiveServiceDays = 400;
+const maximumDefensiveServiceDays = 31;
 const maximumDefensiveSelections = maximumDefensiveServiceDays * 3;
 
 function scalar(value: string | string[] | undefined): string | undefined {
@@ -178,6 +183,22 @@ export function parseCottageDiscoveryQuery(
   };
 }
 
+export function parseCottageResultsQuery(
+  input: RawQuery,
+): CottageResultsQueryResult {
+  const { after, ...search } = input;
+  if (
+    after !== undefined &&
+    (typeof after !== "string" || !publicCottageSlugPattern.test(after))
+  ) {
+    return { status: "invalid" };
+  }
+  const parsed = parseCottageDiscoveryQuery(search);
+  return parsed.status === "loaded"
+    ? { status: "loaded", query: parsed.query, after: after ?? null }
+    : parsed;
+}
+
 export function hasCompleteCottageBookingSelection(
   query: CottageDiscoveryQuery,
 ): boolean {
@@ -208,6 +229,15 @@ export function serializeCottageDiscoveryQuery(
   if (query.governorate) params.set("governorate", query.governorate);
   if (query.area) params.set("area", query.area);
   for (const amenity of query.amenities) params.append("amenity", amenity);
+  return params.toString();
+}
+
+export function serializeCottageResultsQuery(
+  query: CottageDiscoveryQuery,
+  after: string | null,
+): string {
+  const params = new URLSearchParams(serializeCottageDiscoveryQuery(query));
+  if (after) params.set("after", after);
   return params.toString();
 }
 

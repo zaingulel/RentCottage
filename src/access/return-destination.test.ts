@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  serializeCottageResultsQuery,
+  type CottageDiscoverySelection,
+} from "@/cottage-discovery/discovery-query";
+import {
   accessLanguageHref,
   administratorAccessHref,
   administratorAccessLanguageHref,
@@ -106,6 +110,61 @@ describe("account return destinations", () => {
   ])("preserves permitted context %s", (destination) => {
     expect(safeReturnDestination("en", destination)).toBe(destination);
   });
+  it("returns to a continued results page and refuses a continuation anywhere else", () => {
+    const slug = "cottage-0123456789abcdef0123456789abcdef";
+    const after = "cottage-50000000000040008000000000000018";
+    const dayOnly = "from=2030-01-12&to=2030-01-13&guests=4";
+    const search = `${dayOnly}&selection=2030-01-12:shift:1`;
+    for (const filters of [dayOnly, search]) {
+      const destination = `/en/results?${filters}&after=${slug}`;
+      expect(safeReturnDestination("en", destination)).toBe(destination);
+    }
+    for (const invalidAfter of [
+      "after=",
+      "after=cottage-0123456789abcdef0123456789abcde",
+      "after=cottage-0123456789ABCDEF0123456789ABCDEF",
+      "after=river-house",
+      `after=${slug}&after=${slug}`,
+    ]) {
+      expect(
+        safeReturnDestination("en", `/en/results?${search}&${invalidAfter}`),
+      ).toBe("/en/bookings");
+    }
+    expect(safeReturnDestination("en", `/en/results?after=${slug}`)).toBe(
+      "/en/bookings",
+    );
+    for (const route of [`quote/${slug}`, `request/${slug}`, "messages"]) {
+      const context = route === "messages" ? `cottage=${slug}&` : "";
+      expect(
+        safeReturnDestination(
+          "en",
+          `/en/${route}?${context}${search}&selection=2030-01-13:full-day&after=${slug}`,
+        ),
+      ).toBe("/en/bookings");
+    }
+
+    const selections: CottageDiscoverySelection[] = [];
+    for (let offset = 0; offset < 31; offset += 1) {
+      const serviceDay = new Date(Date.UTC(2100, 0, 7 + offset))
+        .toISOString()
+        .slice(0, 10);
+      for (const position of [1, 2, 3] as const) {
+        selections.push({ serviceDay, kind: "shift", position });
+      }
+    }
+    const largest = `/en/results?${serializeCottageResultsQuery(
+      {
+        from: "2100-01-07",
+        to: "2100-02-06",
+        selections,
+        guests: 4,
+        amenities: [],
+      },
+      after,
+    )}`;
+    expect(selections).toHaveLength(93);
+    expect(safeReturnDestination("en", largest)).toBe(largest);
+  });
   it.each(untrustedDestinations)(
     "rejects untrusted destination %s",
     (destination) => {
@@ -124,6 +183,47 @@ describe("account return destinations", () => {
       );
     },
   );
+});
+
+describe("a cottage page results position", () => {
+  const slug = "cottage-0123456789abcdef0123456789abcdef";
+  const after = "cottage-50000000000040008000000000000018";
+  const search =
+    "from=2030-01-12&to=2030-01-13&guests=4&selection=2030-01-12:shift:1&selection=2030-01-13:full-day";
+
+  it("accepts a cottage destination carrying one valid after", () => {
+    const destination = `/en/cottages/${slug}?${search}&after=${after}`;
+    expect(safeReturnDestination("en", destination)).toBe(destination);
+  });
+  it("falls back for a cottage destination with a malformed after", () => {
+    expect(
+      safeReturnDestination(
+        "en",
+        `/en/cottages/${slug}?${search}&after=river-house`,
+      ),
+    ).toBe("/en/bookings");
+  });
+  it("falls back for a cottage destination with a repeated after", () => {
+    expect(
+      safeReturnDestination(
+        "en",
+        `/en/cottages/${slug}?${search}&after=${after}&after=${after}`,
+      ),
+    ).toBe("/en/bookings");
+  });
+  it("falls back for a quote destination carrying after", () => {
+    expect(
+      safeReturnDestination("en", `/en/quote/${slug}?${search}&after=${after}`),
+    ).toBe("/en/bookings");
+  });
+  it("falls back for a request destination carrying after", () => {
+    expect(
+      safeReturnDestination(
+        "en",
+        `/en/request/${slug}?${search}&after=${after}`,
+      ),
+    ).toBe("/en/bookings");
+  });
 });
 
 describe("administrator return destinations", () => {
