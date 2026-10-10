@@ -44,7 +44,7 @@ export type CottageShiftScheduleSaveResult =
   | { status: "saved"; schedule: CottageShiftSchedule }
   | { status: "invalid"; fields: string[] }
   | { status: "overlap" }
-  | { status: "conflict" | "denied" | "unavailable" };
+  | { status: "conflict" | "committed" | "denied" | "unavailable" };
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -55,23 +55,31 @@ function minutes(time: string): number {
   return Number(hours) * 60 + Number(minute);
 }
 
-function withFullDay(
-  schedule: StoredCottageShiftSchedule,
-): CottageShiftSchedule {
-  const first = schedule.shifts[0];
+function fullDayCoverage(
+  shifts: Array<Pick<CottageShift, "startTime" | "endTime">>,
+) {
+  const first = shifts[0];
   const greatestEnd = Math.max(
-    ...schedule.shifts.map((shift) => {
+    ...shifts.map((shift) => {
       const start = minutes(shift.startTime);
       const end = minutes(shift.endTime);
       return end < start ? end + 1440 : end;
     }),
   );
   return {
-    ...schedule,
-    fullDayShiftIds: schedule.shifts.map(({ id }) => id),
     fullDayStartTime: first.startTime,
     fullDayEndTime: `${String(Math.floor((greatestEnd % 1440) / 60)).padStart(2, "0")}:${String(greatestEnd % 60).padStart(2, "0")}`,
     fullDayCrossesMidnight: greatestEnd >= 1440,
+  };
+}
+
+function withFullDay(
+  schedule: StoredCottageShiftSchedule,
+): CottageShiftSchedule {
+  return {
+    ...schedule,
+    fullDayShiftIds: schedule.shifts.map(({ id }) => id),
+    ...fullDayCoverage(schedule.shifts),
   };
 }
 
@@ -93,17 +101,21 @@ function mapFailure(error: unknown): "conflict" | "denied" | "unavailable" {
   return "unavailable";
 }
 
-function parseInput(
-  value: unknown,
-):
-  | { status: "valid"; shifts: Array<Omit<CottageShift, "id">> }
+export function readCottageShiftSchedule(value: unknown):
+  | {
+      status: "valid";
+      shifts: Array<Omit<CottageShift, "id">>;
+      fullDayStartTime: string;
+      fullDayEndTime: string;
+      fullDayCrossesMidnight: boolean;
+    }
   | { status: "invalid"; fields: string[] }
   | { status: "overlap" } {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { status: "invalid", fields: ["schedule"] };
   }
   const rawShifts = (value as Record<string, unknown>).shifts;
-  if (!Array.isArray(rawShifts) || ![2, 3].includes(rawShifts.length)) {
+  if (!Array.isArray(rawShifts) || rawShifts.length !== 2) {
     return { status: "invalid", fields: ["shifts"] };
   }
   const parsed = rawShifts.map((value, index) => {
@@ -133,15 +145,16 @@ function parseInput(
   });
   if (invalid.length > 0) return { status: "invalid", fields: invalid };
 
-  const shifts = parsed
-    .sort((left, right) => left.startTime.localeCompare(right.startTime))
-    .map((shift, index) => ({
-      name: shift.name,
-      startTime: shift.startTime,
-      endTime: shift.endTime,
-      position: index + 1,
-      crossesMidnight: minutes(shift.endTime) < minutes(shift.startTime),
-    }));
+  if (parsed[0].startTime >= parsed[1].startTime) {
+    return { status: "invalid", fields: ["shifts.1.startTime"] };
+  }
+  const shifts = parsed.map((shift, index) => ({
+    name: shift.name,
+    startTime: shift.startTime,
+    endTime: shift.endTime,
+    position: index + 1,
+    crossesMidnight: minutes(shift.endTime) < minutes(shift.startTime),
+  }));
   const intervals = shifts.map((shift) => {
     const start = minutes(shift.startTime);
     const end = minutes(shift.endTime);
@@ -163,7 +176,7 @@ function parseInput(
       }
     }
   }
-  return { status: "valid", shifts };
+  return { status: "valid", shifts, ...fullDayCoverage(shifts) };
 }
 
 export function createCottageShiftSchedule(
@@ -199,7 +212,7 @@ export function createCottageShiftSchedule(
       ) {
         return { status: "invalid", fields: ["schedule"] };
       }
-      const parsed = parseInput(input);
+      const parsed = readCottageShiftSchedule(input);
       if (parsed.status !== "valid") return parsed;
       try {
         const schedule = await repository.save({
@@ -209,7 +222,10 @@ export function createCottageShiftSchedule(
         });
         return { status: "saved", schedule: withFullDay(schedule) };
       } catch (error) {
-        return { status: mapFailure(error) };
+        return {
+          status:
+            providerCode(error) === "RC204" ? "committed" : mapFailure(error),
+        };
       }
     },
   };

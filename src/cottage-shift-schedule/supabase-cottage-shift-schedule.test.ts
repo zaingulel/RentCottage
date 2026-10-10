@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 
+import { createCottageShiftSchedule } from "./cottage-shift-schedule";
 import { SupabaseCottageShiftScheduleRepository } from "./supabase-cottage-shift-schedule";
 
 const profileId = "70000000-0000-4000-8000-000000000001";
@@ -62,78 +63,188 @@ describe("Supabase Cottage Shift Schedule adapter", () => {
   });
 
   it("loads the profile pointer and its complete current revision through RLS reads", async () => {
-    const revisionId = "91000000-0000-4000-8000-000000000001";
-    const maybeSingleProfile = vi.fn().mockResolvedValue({
-      data: { current_shift_schedule_id: revisionId },
-      error: null,
-    });
-    const maybeSingleRevision = vi.fn().mockResolvedValue({
-      data: {
-        id: revisionId,
-        profile_id: profileId,
+    for (const shiftCount of [2, 3]) {
+      const revisionId = "91000000-0000-4000-8000-000000000001";
+      const maybeSingleProfile = vi.fn().mockResolvedValue({
+        data: { current_shift_schedule_id: revisionId },
+        error: null,
+      });
+      const maybeSingleRevision = vi.fn().mockResolvedValue({
+        data: {
+          id: revisionId,
+          profile_id: profileId,
+          revision: 3,
+          full_day_bundle_id: "90000000-0000-4000-8000-000000000001",
+        },
+        error: null,
+      });
+      const shifts = [
+        {
+          id: "80000000-0000-4000-8000-000000000001",
+          schedule_revision_id: revisionId,
+          position: 1,
+          name: "Morning",
+          start_time: "08:00:00",
+          end_time: "12:00:00",
+        },
+        {
+          id: "80000000-0000-4000-8000-000000000002",
+          schedule_revision_id: revisionId,
+          position: shiftCount,
+          name: "Evening",
+          start_time: "18:00:00",
+          end_time: "02:00:00",
+        },
+      ];
+      if (shiftCount === 3) {
+        shifts.splice(1, 0, {
+          id: "80000000-0000-4000-8000-000000000003",
+          schedule_revision_id: revisionId,
+          position: 2,
+          name: "Afternoon",
+          start_time: "13:00:00",
+          end_time: "17:00:00",
+        });
+      }
+      const client = {
+        from: vi.fn((table: string) => ({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue(
+              table === "owner_application_cottage_profiles"
+                ? { maybeSingle: maybeSingleProfile }
+                : table === "cottage_shift_schedule_revisions"
+                  ? { maybeSingle: maybeSingleRevision }
+                  : {
+                      order: vi
+                        .fn()
+                        .mockResolvedValue({ data: shifts, error: null }),
+                    },
+            ),
+          }),
+        })),
+        rpc: vi.fn(),
+      } as unknown as SupabaseClient;
+
+      await expect(
+        new SupabaseCottageShiftScheduleRepository(client).loadCurrent(
+          profileId,
+        ),
+      ).resolves.toMatchObject({
+        profileId,
+        scheduleRevisionId: revisionId,
         revision: 3,
-        full_day_bundle_id: "90000000-0000-4000-8000-000000000001",
-      },
-      error: null,
+        shifts: [
+          {
+            name: "Morning",
+            startTime: "08:00",
+            endTime: "12:00",
+            position: 1,
+            crossesMidnight: false,
+          },
+          ...(shiftCount === 3
+            ? [
+                {
+                  name: "Afternoon",
+                  startTime: "13:00",
+                  endTime: "17:00",
+                  position: 2,
+                  crossesMidnight: false,
+                },
+              ]
+            : []),
+          {
+            name: "Evening",
+            startTime: "18:00",
+            endTime: "02:00",
+            position: shiftCount,
+            crossesMidnight: true,
+          },
+        ],
+      });
+    }
+  });
+
+  it("preserves RC204 as committed on save while load stays unavailable", async () => {
+    const error = { code: "RC204", message: "schedule is committed" };
+    const repository = new SupabaseCottageShiftScheduleRepository({
+      rpc: vi.fn().mockResolvedValue({ data: null, error }),
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error }),
+          }),
+        }),
+      }),
+    } as unknown as SupabaseClient);
+    const service = createCottageShiftSchedule(repository);
+
+    await expect(
+      service.save(profileId, 0, {
+        shifts: [
+          { name: "Morning", startTime: "09:00", endTime: "15:00" },
+          { name: "Evening", startTime: "17:00", endTime: "02:00" },
+        ],
+      }),
+    ).resolves.toEqual({ status: "committed" });
+    await expect(service.loadCurrent(profileId)).resolves.toEqual({
+      status: "unavailable",
     });
+  });
+
+  it("rejects a three-shift save response", async () => {
     const shifts = [
       {
         id: "80000000-0000-4000-8000-000000000001",
-        schedule_revision_id: revisionId,
-        position: 1,
         name: "Morning",
-        start_time: "08:00:00",
-        end_time: "12:00:00",
+        startTime: "08:00",
+        endTime: "12:00",
+        position: 1,
+        crossesMidnight: false,
       },
       {
         id: "80000000-0000-4000-8000-000000000002",
-        schedule_revision_id: revisionId,
+        name: "Afternoon",
+        startTime: "13:00",
+        endTime: "17:00",
         position: 2,
+        crossesMidnight: false,
+      },
+      {
+        id: "80000000-0000-4000-8000-000000000003",
         name: "Evening",
-        start_time: "18:00:00",
-        end_time: "02:00:00",
+        startTime: "18:00",
+        endTime: "22:00",
+        position: 3,
+        crossesMidnight: false,
       },
     ];
-    const client = {
-      from: vi.fn((table: string) => ({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue(
-            table === "owner_application_cottage_profiles"
-              ? { maybeSingle: maybeSingleProfile }
-              : table === "cottage_shift_schedule_revisions"
-                ? { maybeSingle: maybeSingleRevision }
-                : {
-                    order: vi
-                      .fn()
-                      .mockResolvedValue({ data: shifts, error: null }),
-                  },
-          ),
-        }),
-      })),
-      rpc: vi.fn(),
-    } as unknown as SupabaseClient;
+    const repository = new SupabaseCottageShiftScheduleRepository({
+      rpc: vi.fn().mockResolvedValue({
+        data: {
+          profileId,
+          revision: 1,
+          fullDayBundleId: "90000000-0000-4000-8000-000000000001",
+          shifts,
+        },
+        error: null,
+      }),
+    } as unknown as SupabaseClient);
 
     await expect(
-      new SupabaseCottageShiftScheduleRepository(client).loadCurrent(profileId),
-    ).resolves.toMatchObject({
-      profileId,
-      scheduleRevisionId: revisionId,
-      revision: 3,
-      shifts: [
-        {
-          name: "Morning",
-          startTime: "08:00",
-          endTime: "12:00",
-          crossesMidnight: false,
-        },
-        {
-          name: "Evening",
-          startTime: "18:00",
-          endTime: "02:00",
-          crossesMidnight: true,
-        },
-      ],
-    });
+      repository.save({
+        profileId,
+        expectedRevision: 0,
+        shifts: shifts
+          .slice(0, 2)
+          .map(({ name, startTime, endTime, position, crossesMidnight }) => ({
+            name,
+            startTime,
+            endTime,
+            position,
+            crossesMidnight,
+          })),
+      }),
+    ).rejects.toThrow("Shift Schedule provider data is invalid");
   });
 
   it("rejects a saved schedule returned for a different Cottage Profile", async () => {
