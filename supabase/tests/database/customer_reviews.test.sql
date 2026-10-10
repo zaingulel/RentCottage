@@ -855,7 +855,7 @@ rollback to savepoint review_whitespace_submission;
 reset role;
 savepoint review_whitespace_control;
 select is((select count(*)::integer from public.customer_reviews),0,
-  'review control starts without a stored row');
+  'NULL review control starts without a stored row');
 set local role authenticated;
 select lives_ok(
   $$insert into review_whitespace_observations
@@ -871,10 +871,9 @@ select ok(
   'NULL review text preserves its admission and storage contract'
 );
 rollback to savepoint review_whitespace_control;
-reset role;
 savepoint review_whitespace_control;
 select is((select count(*)::integer from public.customer_reviews),0,
-  'review control starts without a stored row');
+  'empty review control starts without a stored row');
 set local role authenticated;
 select lives_ok(
   $$insert into review_whitespace_observations
@@ -890,10 +889,9 @@ select ok(
   'empty review text preserves its admission and storage contract'
 );
 rollback to savepoint review_whitespace_control;
-reset role;
 savepoint review_whitespace_control;
 select is((select count(*)::integer from public.customer_reviews),0,
-  'review control starts without a stored row');
+  'spaces review control starts without a stored row');
 set local role authenticated;
 select lives_ok(
   $$insert into review_whitespace_observations
@@ -909,10 +907,9 @@ select ok(
   'spaces review text preserves its admission and storage contract'
 );
 rollback to savepoint review_whitespace_control;
-reset role;
 savepoint review_whitespace_control;
 select is((select count(*)::integer from public.customer_reviews),0,
-  'review control starts without a stored row');
+  'mixed whitespace review control starts without a stored row');
 set local role authenticated;
 select lives_ok(
   $$insert into review_whitespace_observations
@@ -928,10 +925,9 @@ select ok(
   'mixed whitespace review text preserves its admission and storage contract'
 );
 rollback to savepoint review_whitespace_control;
-reset role;
 savepoint review_whitespace_control;
 select is((select count(*)::integer from public.customer_reviews),0,
-  'review control starts without a stored row');
+  'surrounded nonblank review control starts without a stored row');
 set local role authenticated;
 select lives_ok(
   $$insert into review_whitespace_observations
@@ -947,10 +943,9 @@ select ok(
   'surrounded nonblank review text preserves its admission and storage contract'
 );
 rollback to savepoint review_whitespace_control;
-reset role;
 savepoint review_whitespace_control;
 select is((select count(*)::integer from public.customer_reviews),0,
-  'review control starts without a stored row');
+  '2000-character nonblank review control starts without a stored row');
 set local role authenticated;
 select lives_ok(
   $$insert into review_whitespace_observations
@@ -966,10 +961,9 @@ select ok(
   '2000-character nonblank review text preserves its admission and storage contract'
 );
 rollback to savepoint review_whitespace_control;
-reset role;
 savepoint review_whitespace_control;
 select is((select count(*)::integer from public.customer_reviews),0,
-  'review control starts without a stored row');
+  '2000-character whitespace review control starts without a stored row');
 set local role authenticated;
 select lives_ok(
   $$insert into review_whitespace_observations
@@ -985,10 +979,9 @@ select ok(
   '2000-character whitespace review text preserves its admission and storage contract'
 );
 rollback to savepoint review_whitespace_control;
-reset role;
 savepoint review_whitespace_control;
 select is((select count(*)::integer from public.customer_reviews),0,
-  'review control starts without a stored row');
+  '2001-character whitespace review control starts without a stored row');
 set local role authenticated;
 select lives_ok(
   $$insert into review_whitespace_observations
@@ -1003,7 +996,6 @@ select ok(
   '2001-character whitespace review text preserves its admission and storage contract'
 );
 rollback to savepoint review_whitespace_control;
-reset role;
 savepoint direct_review_whitespace;
 select is((select count(*)::integer from public.customer_reviews),0,
   'direct whitespace review starts without a review');
@@ -2010,14 +2002,14 @@ values(
   'cottage-deadbeefdeadbeefdeadbeefdead1001','paused'
 );
 set local role authenticated;
-create temp table review_hide_whitespace_observations(value jsonb);
+create temp table review_hide_whitespace_observations(name text,value jsonb);
 savepoint review_hide_whitespace;
 reset role;
 select is((select count(*)::integer from public.customer_review_hides),0,
   'whitespace hide starts without a moderation row');
 set local role authenticated;
 select lives_ok(
-  $$insert into review_hide_whitespace_observations
+  $$insert into review_hide_whitespace_observations(value)
     select public.hide_customer_review(
       ((select value from own_review_expected)->>'reviewId')::uuid,E'\n\t')$$,
   'whitespace hide returns without a constraint exception'
@@ -2033,86 +2025,41 @@ rollback to savepoint review_hide_whitespace;
 reset role;
 savepoint review_hide_whitespace_control;
 select is((select count(*)::integer from public.customer_review_hides),0,
-  'hide control starts without a stored row');
+  'refused hide controls start without a stored row');
 set local role authenticated;
 select lives_ok(
-  $$insert into review_hide_whitespace_observations
-    select public.hide_customer_review(
-      ((select value from own_review_expected)->>'reviewId')::uuid,null)$$,
-  'NULL hide control returns without a constraint exception'
+  $$insert into review_hide_whitespace_observations(name,value)
+    select 'invalid hide: NULL',public.hide_customer_review(
+      ((select value from own_review_expected)->>'reviewId')::uuid,null)
+    union all
+    select 'invalid hide: empty',public.hide_customer_review(
+      ((select value from own_review_expected)->>'reviewId')::uuid,'')
+    union all
+    select 'invalid hide: spaces',public.hide_customer_review(
+      ((select value from own_review_expected)->>'reviewId')::uuid,'   ')
+    union all
+    select 'invalid hide: mixed whitespace',public.hide_customer_review(
+      ((select value from own_review_expected)->>'reviewId')::uuid,E' \r\n\t ')
+    union all
+    select 'invalid hide: trimmed 2001 characters',public.hide_customer_review(
+      ((select value from own_review_expected)->>'reviewId')::uuid,' ' || repeat('x',2001) || ' ')$$,
+  'refused hide controls return without a constraint exception'
 );
 reset role;
 select ok(
-  (select count(*)=1 and bool_and(value->>'status'='invalid')
+  (select count(*)=5 and count(distinct name)=5
+    and bool_and(value IS NOT DISTINCT FROM '{"status":"invalid"}'::jsonb)
     from review_hide_whitespace_observations)
   and (select count(*)=0 from public.customer_review_hides),
-  'NULL hide reason preserves its admission and storage contract'
+  'blank and oversized hide controls are invalid and store nothing'
 );
 rollback to savepoint review_hide_whitespace_control;
-reset role;
 savepoint review_hide_whitespace_control;
 select is((select count(*)::integer from public.customer_review_hides),0,
-  'hide control starts without a stored row');
+  'surrounded nonblank hide control starts without a stored row');
 set local role authenticated;
 select lives_ok(
-  $$insert into review_hide_whitespace_observations
-    select public.hide_customer_review(
-      ((select value from own_review_expected)->>'reviewId')::uuid,'')$$,
-  'empty hide control returns without a constraint exception'
-);
-reset role;
-select ok(
-  (select count(*)=1 and bool_and(value->>'status'='invalid')
-    from review_hide_whitespace_observations)
-  and (select count(*)=0 from public.customer_review_hides),
-  'empty hide reason preserves its admission and storage contract'
-);
-rollback to savepoint review_hide_whitespace_control;
-reset role;
-savepoint review_hide_whitespace_control;
-select is((select count(*)::integer from public.customer_review_hides),0,
-  'hide control starts without a stored row');
-set local role authenticated;
-select lives_ok(
-  $$insert into review_hide_whitespace_observations
-    select public.hide_customer_review(
-      ((select value from own_review_expected)->>'reviewId')::uuid,'   ')$$,
-  'spaces hide control returns without a constraint exception'
-);
-reset role;
-select ok(
-  (select count(*)=1 and bool_and(value->>'status'='invalid')
-    from review_hide_whitespace_observations)
-  and (select count(*)=0 from public.customer_review_hides),
-  'spaces hide reason preserves its admission and storage contract'
-);
-rollback to savepoint review_hide_whitespace_control;
-reset role;
-savepoint review_hide_whitespace_control;
-select is((select count(*)::integer from public.customer_review_hides),0,
-  'hide control starts without a stored row');
-set local role authenticated;
-select lives_ok(
-  $$insert into review_hide_whitespace_observations
-    select public.hide_customer_review(
-      ((select value from own_review_expected)->>'reviewId')::uuid,E' \r\n\t ')$$,
-  'mixed whitespace hide control returns without a constraint exception'
-);
-reset role;
-select ok(
-  (select count(*)=1 and bool_and(value->>'status'='invalid')
-    from review_hide_whitespace_observations)
-  and (select count(*)=0 from public.customer_review_hides),
-  'mixed whitespace hide reason preserves its admission and storage contract'
-);
-rollback to savepoint review_hide_whitespace_control;
-reset role;
-savepoint review_hide_whitespace_control;
-select is((select count(*)::integer from public.customer_review_hides),0,
-  'hide control starts without a stored row');
-set local role authenticated;
-select lives_ok(
-  $$insert into review_hide_whitespace_observations
+  $$insert into review_hide_whitespace_observations(value)
     select public.hide_customer_review(
       ((select value from own_review_expected)->>'reviewId')::uuid,E' \nReason\t ')$$,
   'surrounded nonblank hide control returns without a constraint exception'
@@ -2126,13 +2073,12 @@ select ok(
   'surrounded nonblank hide reason preserves its admission and storage contract'
 );
 rollback to savepoint review_hide_whitespace_control;
-reset role;
 savepoint review_hide_whitespace_control;
 select is((select count(*)::integer from public.customer_review_hides),0,
-  'hide control starts without a stored row');
+  'trimmed 2000-character hide control starts without a stored row');
 set local role authenticated;
 select lives_ok(
-  $$insert into review_hide_whitespace_observations
+  $$insert into review_hide_whitespace_observations(value)
     select public.hide_customer_review(
       ((select value from own_review_expected)->>'reviewId')::uuid,' ' || repeat('x',2000) || ' ')$$,
   'trimmed 2000-character hide control returns without a constraint exception'
@@ -2146,26 +2092,6 @@ select ok(
   'trimmed 2000-character hide reason preserves its admission and storage contract'
 );
 rollback to savepoint review_hide_whitespace_control;
-reset role;
-savepoint review_hide_whitespace_control;
-select is((select count(*)::integer from public.customer_review_hides),0,
-  'hide control starts without a stored row');
-set local role authenticated;
-select lives_ok(
-  $$insert into review_hide_whitespace_observations
-    select public.hide_customer_review(
-      ((select value from own_review_expected)->>'reviewId')::uuid,' ' || repeat('x',2001) || ' ')$$,
-  'trimmed 2001-character hide control returns without a constraint exception'
-);
-reset role;
-select ok(
-  (select count(*)=1 and bool_and(value->>'status'='invalid')
-    from review_hide_whitespace_observations)
-  and (select count(*)=0 from public.customer_review_hides),
-  'trimmed 2001-character hide reason preserves its admission and storage contract'
-);
-rollback to savepoint review_hide_whitespace_control;
-reset role;
 savepoint direct_review_hide_whitespace;
 select is((select count(*)::integer from public.customer_review_hides),0,
   'direct whitespace hide starts without a moderation row');
