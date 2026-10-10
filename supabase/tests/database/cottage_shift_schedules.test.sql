@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(39);
+select plan(55);
 
 select ok(
   lower(pg_get_functiondef(
@@ -68,7 +68,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 select lives_ok(
   $$select public.replace_cottage_shift_schedule(
     '30000000-0000-4000-8000-000000002501', 0,
-    '[{"name":"Evening","startTime":"18:00","endTime":"02:00"},{"name":"Morning","startTime":"08:00","endTime":"12:00"}]'
+    '[{"name":"Morning","startTime":"08:00","endTime":"12:00"},{"name":"Evening","startTime":"18:00","endTime":"02:00"}]'
   )$$,
   'an approved owner atomically saves the first Shift Schedule'
 );
@@ -77,7 +77,7 @@ select is((select count(*) from public.cottage_shift_schedule_revisions), 1::big
 select results_eq(
   $$select name from public.cottage_shifts order by position$$,
   $$values ('Morning'::text), ('Evening'::text)$$,
-  'the database persists Cottage Shifts in canonical local start-time order'
+  'the database persists Morning and Evening in input order'
 );
 select results_eq(
   $$select name, end_time < start_time from public.cottage_shifts order by position$$,
@@ -99,7 +99,7 @@ where revisions.profile_id = '30000000-0000-4000-8000-000000002501'
 select lives_ok(
   $$select public.replace_cottage_shift_schedule(
     '30000000-0000-4000-8000-000000002501', 1,
-    '[{"name":"Night","startTime":"23:00","endTime":"01:00"},{"name":"Early","startTime":"01:00","endTime":"04:00"}]'
+    '[{"name":"Early","startTime":"01:00","endTime":"04:00"},{"name":"Night","startTime":"23:00","endTime":"01:00"}]'
   )$$,
   'half-open Cottage Shifts may touch at an endpoint across midnight'
 );
@@ -195,7 +195,7 @@ select is((select count(*) from public.cottage_shift_schedule_revisions), 2::big
 select throws_ok(
   $$select public.replace_cottage_shift_schedule(
     '30000000-0000-4000-8000-000000002501', 2,
-    '[{"name":"Prior night","startTime":"23:00","endTime":"02:00"},{"name":"Today early","startTime":"01:00","endTime":"04:00"}]'
+    '[{"name":"Today early","startTime":"01:00","endTime":"04:00"},{"name":"Prior night","startTime":"23:00","endTime":"02:00"}]'
   )$$,
   'RC207', null,
   'yesterday cross-midnight occupancy cannot overlap today early occupancy'
@@ -209,16 +209,137 @@ select throws_ok(
   )$$,
   'RC207', null, 'same-day Cottage Shift overlap is rejected'
 );
-select lives_ok(
+create temporary table schedule_before_invalid on commit drop as
+select current_shift_schedule_id
+from public.owner_application_cottage_profiles
+where id = '30000000-0000-4000-8000-000000002501';
+
+select throws_ok(
   $$select public.replace_cottage_shift_schedule(
     '30000000-0000-4000-8000-000000002501', 2,
     '[{"name":"Same","startTime":"06:00","endTime":"09:00"},{"name":"Same","startTime":"12:00","endTime":"15:00"},{"name":"Late","startTime":"20:00","endTime":"23:00"}]'
   )$$,
+  'RC205', null, 'new schedules require exactly two ordered shifts'
+);
+select throws_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    'null'
+  )$$,
+  'RC205', null, 'JSON null is not a new Shift Schedule'
+);
+select throws_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    null
+  )$$,
+  'RC205', null, 'SQL null is not a new Shift Schedule'
+);
+select throws_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    '42'
+  )$$,
+  'RC205', null, 'a scalar is not a new Shift Schedule'
+);
+select throws_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    '[]'
+  )$$,
+  'RC205', null, 'an empty new Shift Schedule is rejected'
+);
+select throws_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    '[{"name":"Morning","startTime":"08:00","endTime":"12:00"}]'
+  )$$,
+  'RC205', null, 'a missing Evening row is rejected'
+);
+select throws_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    '[null,{"name":"Evening","startTime":"18:00","endTime":"22:00"}]'
+  )$$,
+  'RC205', null, 'a null Cottage Shift is rejected'
+);
+select throws_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    '[42,{"name":"Evening","startTime":"18:00","endTime":"22:00"}]'
+  )$$,
+  'RC205', null, 'a scalar Cottage Shift is rejected'
+);
+select throws_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    '[{"name":42,"startTime":"08:00","endTime":"12:00"},{"name":"Evening","startTime":"18:00","endTime":"22:00"}]'
+  )$$,
+  'RC205', null, 'a numeric Cottage Shift name is rejected'
+);
+select throws_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    '[{"name":"Morning","startTime":800,"endTime":"12:00"},{"name":"Evening","startTime":"18:00","endTime":"22:00"}]'
+  )$$,
+  'RC205', null, 'a numeric Cottage Shift start time is rejected'
+);
+select throws_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    '[{"name":"Morning","startTime":"08:00","endTime":1200},{"name":"Evening","startTime":"18:00","endTime":"22:00"}]'
+  )$$,
+  'RC205', null, 'a numeric Cottage Shift end time is rejected'
+);
+select throws_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    '[{"name":"Morning","startTime":"8:00","endTime":"12:00"},{"name":"Evening","startTime":"18:00","endTime":"22:00"}]'
+  )$$,
+  'RC205', null, 'a malformed Cottage Shift clock is rejected'
+);
+select throws_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    '[{"name":"Morning","startTime":"08:00","endTime":"08:00"},{"name":"Evening","startTime":"18:00","endTime":"22:00"}]'
+  )$$,
+  'RC205', null, 'equal Cottage Shift endpoints are rejected'
+);
+select throws_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    '[{"name":"Evening","startTime":"18:00","endTime":"22:00"},{"name":"Morning","startTime":"08:00","endTime":"12:00"}]'
+  )$$,
+  'RC205', null, 'reversed Morning and Evening starts are rejected'
+);
+select throws_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    '[{"name":"Morning","startTime":"08:00","endTime":"12:00"},{ "name":"Evening","startTime":"08:00","endTime":"14:00"}]'
+  )$$,
+  'RC205', null, 'equal Morning and Evening starts are rejected'
+);
+select results_eq(
+  $$select
+    (select count(*) from public.cottage_shift_schedule_revisions),
+    (select count(*) from public.cottage_shifts),
+    current_shift_schedule_id
+    from public.owner_application_cottage_profiles
+    where id = '30000000-0000-4000-8000-000000002501'$$,
+  $$select 2::bigint, 4::bigint, current_shift_schedule_id
+    from schedule_before_invalid$$,
+  'invalid new schedules leave revision and pointer unchanged'
+);
+select lives_ok(
+  $$select public.replace_cottage_shift_schedule(
+    '30000000-0000-4000-8000-000000002501', 2,
+    '[{"name":"Same","startTime":"06:00","endTime":"09:00"},{"name":"Same","startTime":"12:00","endTime":"15:00"}]'
+  )$$,
   'arbitrary turnaround gaps and duplicate shift names are allowed'
 );
 select is((select count(*) from public.cottage_shifts where schedule_revision_id =
-  (select id from public.cottage_shift_schedule_revisions where revision = 3)), 3::bigint,
-  'a valid schedule may contain exactly three Cottage Shifts');
+  (select id from public.cottage_shift_schedule_revisions where revision = 3)), 2::bigint,
+  'a valid new schedule contains exactly two Cottage Shifts');
 
 select is((select count(*) from public.cottage_shift_schedule_revisions), 3::bigint,
   'the owning Cottage Owner reads all own schedule revisions through RLS');

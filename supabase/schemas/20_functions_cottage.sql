@@ -2293,9 +2293,12 @@ begin
     raise exception 'A non-negative Shift Schedule revision is required'
       using errcode = '22023';
   end if;
-  if jsonb_typeof(requested_shifts) <> 'array'
-    or jsonb_array_length(requested_shifts) not between 2 and 3 then
-    raise exception 'A Shift Schedule requires exactly two or three Cottage Shifts'
+  if jsonb_typeof(requested_shifts) is distinct from 'array' then
+    raise exception 'A Shift Schedule requires exactly two Cottage Shifts'
+      using errcode = 'RC205';
+  end if;
+  if jsonb_array_length(requested_shifts) <> 2 then
+    raise exception 'A Shift Schedule requires exactly two Cottage Shifts'
       using errcode = 'RC205';
   end if;
   if not exists (
@@ -2337,7 +2340,10 @@ begin
 
   for requested_shift in select value from jsonb_array_elements(requested_shifts)
   loop
-    if jsonb_typeof(requested_shift) <> 'object' then
+    if jsonb_typeof(requested_shift) is distinct from 'object'
+      or jsonb_typeof(requested_shift -> 'name') is distinct from 'string'
+      or jsonb_typeof(requested_shift -> 'startTime') is distinct from 'string'
+      or jsonb_typeof(requested_shift -> 'endTime') is distinct from 'string' then
       raise exception 'The Cottage Shift is invalid' using errcode = 'RC205';
     end if;
     requested_name := btrim(coalesce(requested_shift ->> 'name', ''));
@@ -2354,6 +2360,10 @@ begin
     requested_ends := array_append(requested_ends, requested_end_text::time);
   end loop;
 
+  if requested_starts[1] >= requested_starts[2] then
+    raise exception 'Morning must start before Evening' using errcode = 'RC205';
+  end if;
+
   insert into public.cottage_shift_schedule_revisions (profile_id, revision)
   values (profile.id, coalesce(current_revision.revision, 0) + 1)
   returning * into saved_revision;
@@ -2367,11 +2377,11 @@ begin
   insert into public.cottage_shifts (
     schedule_revision_id, position, name, start_time, end_time
   )
-  select saved_revision.id, row_number() over (order by requested.start_time)::smallint,
+  select saved_revision.id, requested.position::smallint,
     requested.name, requested.start_time, requested.end_time
-  from unnest(requested_names, requested_starts, requested_ends)
-    as requested(name, start_time, end_time)
-  order by requested.start_time;
+  from unnest(requested_names, requested_starts, requested_ends) with ordinality
+    as requested(name, start_time, end_time, position)
+  order by requested.position;
 
   perform set_config(
     'rentcottage.shift_schedule_write_revision_id', '', true
