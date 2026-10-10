@@ -4,7 +4,7 @@
     "zaingulel/flow-metrics-dashboard",
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "b9966e225ddeb965b8cbcd38229a589438d4a5c9",
+  "syncedFrom": "2a51a76965b02c356eca4b5e9718e3fc0c2a2ba7",
   "entries": [
     {
       "path": ".agents/skills/accessibility-review/SKILL.md",
@@ -712,7 +712,7 @@
     {
       "path": "AGENTS.md",
       "region": "factory-shared",
-      "sha256": "9a5cf5d87e814334ad3ed59885e86d3812b2a31569273c615995f4b40e07cdf0"
+      "sha256": "729b71859dbf09efd04663016fe07c9611f04d5c304ddc9fe8191c29769a7fce"
     },
     {
       "path": "CLAUDE.md",

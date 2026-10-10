@@ -29,6 +29,15 @@ local `main` as [Update local main](.agents/skills/closeout/SKILL.md#update-loca
 Each job gets one worktree and all of the job's work happens inside it, never a worktree inside another job worktree;
 the `resume` skill says where it lives and how the session enters it on each runtime.
 
+When using the bundled PostgreSQL examples, apply two caveats. In `security-rls-performance`, the policy's calling role
+needs `EXECUTE` on `private.is_team_member(bigint)` after the revocations: grant it only to intended policy callers,
+such as `authenticated` when that is the policy's intended role. Keep the non-exposed schema, identity check and
+restricted search path; retain revocations for `PUBLIC` and roles that do not need the helper, including unrelated
+anonymous or service roles. [`SECURITY DEFINER`](https://www.postgresql.org/docs/16/sql-createfunction.html) changes
+execution privileges, not permission to call. In `schema-constraints`, scope both the check-constraint and foreign-key
+existence queries by `conname` and `conrelid`: schema-qualify the target table in `ALTER TABLE` and resolve that same
+name through `regclass`. [Constraint names alone are not unique](https://www.postgresql.org/docs/17/catalog-pg-constraint.html).
+
 The session that talks to the owner coordinates: it plans the cards that need no architect, hands every edit to a
 builder seat, settles reviews, and delivers; it never builds. Residual judgment that would make a handoff
 unreliable is resolved in the plan or the slice is split smaller. In every session, job or not, discovery wider
