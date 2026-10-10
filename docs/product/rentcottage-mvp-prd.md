@@ -1,9 +1,9 @@
 # RentCottage MVP Product Agreement
 
-**Status:** Approved for MVP delivery planning
-**Updated:** 4 August 2026
-**Client approver:** Yasir Kurkdji
+**Status:** Current implementation contract with owner-approved amendments
 **Delivery lead:** Zain El-Abidin Abo Gulel
+
+The [original client-approved agreement](RentCottage-MVP-PRD.docx) preserves the client approval and its attribution. This Markdown document is the current implementation contract. Its two-shift amendment follows the owner-accepted [#264 decision](https://github.com/zaingulel/RentCottage/issues/264) and [owner setup design](../design/owner-shift-schedule.md); it does not record a further client approval.
 
 ## 1. What we are agreeing to build
 
@@ -185,21 +185,8 @@ These are launch gates, not missing product decisions:
 
 ## 10. Sign-off
 
-By signing or providing written approval, the client confirms that this document clearly describes the RentCottage MVP to be built. The work may be completed in smaller stages, but every stage must preserve these outcomes and exclusions.
+The original client sign-off, including the approver, written approval reference and completed checklist, is preserved in the [original client-approved agreement](RentCottage-MVP-PRD.docx).
 
-**Approved by:** Yasir Kurkdji
-**Role:** Client and decision owner
-**Date:** 4 August 2026
-**Signature or written approval reference:** Written approval confirmed by Zain El-Abidin Abo Gulel after Yasir's review
+The current implementation contract and its owner-approved amendments are identified at the top of this document. Those amendments do not record a further client approval.
 
-### Sign-off checklist
-
-- [x] The product, users and nationwide scope are correct.
-- [x] The shift and request-to-book journeys are correct.
-- [x] The customer service fee, owner commission and payment flow are correct.
-- [x] The cancellation and refund rules are correct.
-- [x] Owner applications, checks and document handling are correct.
-- [x] Messaging, contact protection, reviews and translation are correct.
-- [x] The basic administrator and owner tools are sufficient for the MVP.
-- [x] The exclusions and remaining launch gates are understood.
-- [x] This Product Agreement is approved for MVP delivery planning.
+The work may be completed in smaller stages, but every stage must preserve these outcomes and exclusions.

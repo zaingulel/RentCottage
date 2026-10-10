@@ -6,9 +6,6 @@ const en = {
   readOnly:
     "This schedule can be edited only while the cottage profile is a draft and your owner account is approved. Existing booking requests and confirmed bookings keep their original times.",
   shift: "Shift",
-  required: "Required",
-  optional: "Optional",
-  name: "name",
   startTime: "Starts",
   endTime: "Ends",
   morning: "Morning",
@@ -34,9 +31,8 @@ const en = {
   fullDayBetweenShifts: "Customers may remain between the two shifts.",
   consecutiveDays: "Consecutive days",
   consecutiveDaysAccess:
-    "Full-day bookings for {firstDay} and {lastDay} give continuous access from {start} to {end}, including overnight gaps.",
+    "Full-day bookings on consecutive days give continuous access, including overnight gaps.",
   nextDay: "next day",
-  prices: "Prices",
   independentPrices:
     "Set the Full-day price separately from individual shift prices. Saving the schedule does not save prices or open availability.",
   reset:
@@ -47,6 +43,8 @@ const en = {
   saved: "Shift Schedule saved.",
   invalid:
     "Enter exactly two complete shifts with different start and end times.",
+  startOrder:
+    "Morning must start before Evening. Change one of the start times.",
   overlap: "These recurring shifts overlap. Touching endpoints are allowed.",
   conflict: "This schedule changed elsewhere. Reload before saving again.",
   committed:
@@ -66,9 +64,6 @@ const ar: Copy = {
   readOnly:
     "يمكن تعديل الجدول فقط عندما يكون ملف الكوخ مسودة ويكون حساب المالك معتمداً. تحتفظ طلبات الحجز والحجوزات المؤكدة بأوقاتها الأصلية.",
   shift: "المناوبة",
-  required: "مطلوبة",
-  optional: "اختيارية",
-  name: "الاسم",
   startTime: "يبدأ",
   endTime: "ينتهي",
   morning: "الفترة الصباحية",
@@ -94,9 +89,8 @@ const ar: Copy = {
   fullDayBetweenShifts: "يمكن للعملاء البقاء بين الفترتين.",
   consecutiveDays: "أيام متتالية",
   consecutiveDaysAccess:
-    "حجز اليوم الكامل ليومي {firstDay} و{lastDay} يتيح البقاء المتواصل من {start} إلى {end}، بما في ذلك الفواصل الليلية.",
+    "توفّر حجوزات اليوم الكامل لأيام متتالية وصولًا متواصلًا، بما في ذلك الفواصل الليلية.",
   nextDay: "اليوم التالي",
-  prices: "الأسعار",
   independentPrices:
     "حدّد سعر اليوم الكامل بشكل مستقل عن أسعار الفترات المنفردة. حفظ الجدول لا يحفظ الأسعار ولا يفتح الأوقات للحجز.",
   reset:
@@ -107,6 +101,8 @@ const ar: Copy = {
   save: "حفظ الجدول",
   saved: "حُفظ جدول المناوبات.",
   invalid: "أدخل مناوبتين مكتملتين بأوقات بدء وانتهاء مختلفة.",
+  startOrder:
+    "يجب أن تبدأ الفترة الصباحية قبل الفترة المسائية. غيّر أحد وقتَي البدء.",
   overlap: "هذه المناوبات المتكررة متداخلة. يُسمح بتلامس نقاط النهاية.",
   conflict: "تغيّر الجدول في مكان آخر. أعد تحميل الصفحة قبل الحفظ مرة أخرى.",
   committed:
@@ -123,9 +119,6 @@ const ckb: Copy = {
   readOnly:
     "تەنها کاتێک دەتوانیت خشتەکە دەستکاری بکەیت کە پرۆفایلی کۆخەکە ڕەشنووس بێت و هەژماری خاوەنەکە پەسەند کرابێت. داواکارییەکانی حجز و حجزە پشتڕاستکراوەکان کاتە ڕەسەنەکانیان دەپارێزن.",
   shift: "شیفت",
-  required: "پێویست",
-  optional: "ئارەزوومەندانە",
-  name: "ناو",
   startTime: "دەست پێ دەکات",
   endTime: "کۆتایی دێت",
   morning: "ماوەی بەیانی",
@@ -153,9 +146,8 @@ const ckb: Copy = {
   fullDayBetweenShifts: "کڕیاران دەتوانن لە نێوان هەردوو ماوەکەدا بمێننەوە.",
   consecutiveDays: "ڕۆژە بەردەوامەکان",
   consecutiveDaysAccess:
-    "حجزکردنی تەواوی ڕۆژ بۆ {firstDay} و {lastDay} مافی مانەوەی بەردەوام دەدات لە {start} تا {end}، لەگەڵ بۆشاییەکانی شەو.",
+    "حجزکردنی تەواوی ڕۆژ بۆ ڕۆژە بەردەوامەکان دەستگەیشتنی بەردەوام دەدات، بۆشاییەکانی شەویش دەگرێتەوە.",
   nextDay: "ڕۆژی دواتر",
-  prices: "نرخەکان",
   independentPrices:
     "نرخی تەواوی ڕۆژ بە شێوەی سەربەخۆ لە نرخی هەر ماوەیەک دیاری بکە. پاشەکەوتکردنی خشتە نرخەکان پاشەکەوت ناکات و کاتەکان بۆ حجز ناکاتەوە.",
   reset:
@@ -166,6 +158,8 @@ const ckb: Copy = {
   save: "پاشەکەوتکردنی خشتە",
   saved: "خشتەی شیفتەکان پاشەکەوت کرا.",
   invalid: "دوو شیفتی تەواو بە کاتی دەستپێک و کۆتایی جیاواز بنووسە.",
+  startOrder:
+    "دەبێت ماوەی بەیانی پێش ماوەی ئێوارە دەست پێ بکات. یەکێک لە کاتەکانی دەستپێک بگۆڕە.",
   overlap:
     "ئەم شیفتە دووبارەبووانە بەسەر یەکدا دەکەون. پێکگەیشتنی خاڵی کۆتایی ڕێگەپێدراوە.",
   conflict:

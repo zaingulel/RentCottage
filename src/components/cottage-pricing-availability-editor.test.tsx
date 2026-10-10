@@ -113,6 +113,111 @@ const roundTripPricingAfterOverride: CottageInventoryOwnerEditorState = {
 describe("Cottage Pricing and Availability editor", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("historical three-shift pricing preserves all units without two-shift claims", async () => {
+    const hostileName = 'Dawn <img src=x onerror="alert(1)">';
+    const thirdId = "72000000-0000-4000-8000-000000000003";
+    const historicalSchedule: CottageShiftSchedule = {
+      ...schedule,
+      shifts: [
+        {
+          ...schedule.shifts[0]!,
+          name: hostileName,
+          startTime: "06:00",
+          endTime: "09:00",
+        },
+        {
+          ...schedule.shifts[1]!,
+          name: "Afternoon",
+          startTime: "12:00",
+          endTime: "15:00",
+        },
+        {
+          ...schedule.shifts[1]!,
+          id: thirdId,
+          name: "Late",
+          position: 3,
+          startTime: "20:00",
+          endTime: "23:00",
+        },
+      ],
+      fullDayShiftIds: [...schedule.fullDayShiftIds, thirdId],
+      fullDayStartTime: "06:00",
+      fullDayEndTime: "23:00",
+    };
+    const historicalPricing: CottageInventoryOwnerEditorState = {
+      ...pricing,
+      units: [
+        pricing.units[0]!,
+        pricing.units[1]!,
+        {
+          ...pricing.units[1]!,
+          id: thirdId,
+          standardPriceIqd: 135000,
+        },
+        pricing.units[2]!,
+      ],
+    };
+    savePricing.mockResolvedValue({ status: "saved" });
+    const user = userEvent.setup();
+    const view = render(
+      <CottagePricingAvailabilityEditor
+        locale="en"
+        profileId={schedule.profileId}
+        schedule={historicalSchedule}
+        pricing={historicalPricing}
+        editable
+        canOpen
+      />,
+    );
+
+    expect(
+      within(screen.getByRole("group", { name: "Pricing and availability" }))
+        .getAllByRole("heading", { level: 3 }),
+    ).toHaveLength(4);
+    for (const [name, range, price] of [
+      [`Shift 1: ${hostileName}`, "06:00 to 09:00 (same day)", 125000],
+      ["Shift 2: Afternoon", "12:00 to 15:00 (same day)", 115000],
+      ["Shift 3: Late", "20:00 to 23:00 (same day)", 135000],
+      ["Full-day", "06:00 to 23:00 (same day)", 220000],
+    ] as const) {
+      const card = screen.getByRole("group", { name });
+      expect(card).toHaveTextContent(range);
+      expect(within(card).getAllByRole("spinbutton")[0]).toHaveValue(price);
+      for (const clock of card.querySelectorAll('bdi[dir="ltr"]')) {
+        expect(clock).toBeVisible();
+      }
+    }
+    expect(screen.getByText(hostileName, { selector: "bdi" })).toHaveAttribute(
+      "dir",
+      "auto",
+    );
+    expect(view.container.querySelector("img, script")).toBeNull();
+    expect(
+      screen.queryByText(cottageShiftScheduleMessages.en.fullDayIncludes),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(cottageShiftScheduleMessages.en.fullDayBetweenShifts),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Load availability" }),
+    ).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Save prices" }));
+    await waitFor(() => expect(savePricing).toHaveBeenCalledTimes(1));
+    const submission = savePricing.mock.calls[0]?.[1] as FormData;
+    expect(submission.getAll("unitId")).toEqual([
+      schedule.shifts[0]!.id,
+      schedule.shifts[1]!.id,
+      thirdId,
+      schedule.fullDayBundleId,
+    ]);
+    expect(submission.getAll("standardPriceIqd")).toEqual([
+      "125000",
+      "115000",
+      "135000",
+      "220000",
+    ]);
+  });
+
   it.each([
     {
       locale: "en",

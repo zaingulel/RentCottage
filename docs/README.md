@@ -27,5 +27,5 @@ each document is set out in [DOC-SWEEP.md](DOC-SWEEP.md); the day-after triage i
 | `discovery/` | record | Client discovery and design exploration written before implementation. |
 | [design/owner-shift-schedule.md](design/owner-shift-schedule.md) | reference | The accepted two-shift owner setup, continuous Full-day access, editing limits, migration admission and validation limitations. |
 | [design/visual-audit-2026-10.md](design/visual-audit-2026-10.md) | record | Dated visual audit of the running product on 4 October 2026: ranked findings with screenshots, each linked to the issue that owns it. Not maintained. |
-| `product/` | reference | The approved product agreement with the client and its assets. |
+| `product/` | reference | Current Markdown implementation contract, original client-approved Word snapshot and product assets. |
 | `research/` | record | Research notes behind product and engineering decisions, each with its date and status. |

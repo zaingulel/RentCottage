@@ -100,6 +100,10 @@ describe("Cottage Shift Schedule editor", () => {
     expect(access).toHaveTextContent(
       "Customers may remain between the two shifts.",
     );
+    expect(access).toHaveTextContent("Consecutive days");
+    expect(access).toHaveTextContent(
+      "Full-day bookings on consecutive days give continuous access, including overnight gaps.",
+    );
     expect(
       screen.getByText(/All times are Iraq local time/).closest("p"),
     ).toHaveTextContent("UTC+3");
@@ -130,6 +134,43 @@ describe("Cottage Shift Schedule editor", () => {
     changeTime("Evening", "Starts", "16:00");
     expect(access).not.toHaveTextContent("including the");
     expect(access).toHaveTextContent("10:00 to 10:00 next day");
+  });
+
+  it("reversed and equal starts explain Morning before Evening", () => {
+    renderEditor();
+    const access = screen.getByRole("status", { name: "Full-day access" });
+    const orderError =
+      "Morning must start before Evening. Change one of the start times.";
+    changeTime("Morning", "Starts", "18:00");
+    for (const eveningStart of ["08:00", "18:00"]) {
+      changeTime("Evening", "Starts", eveningStart);
+      expect(access).toHaveTextContent(orderError);
+      expect(access).toHaveTextContent(
+        "Complete both shifts to see Full-day access.",
+      );
+      expect(access).not.toHaveTextContent("08:00 to 02:00");
+      expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
+      expect(shiftField("Evening", "Starts")).toHaveFocus();
+      expect(shiftField("Evening", "Starts")).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      );
+      expect(
+        document.getElementById(
+          shiftField("Evening", "Starts").getAttribute("aria-describedby")!,
+        ),
+      ).toBe(access);
+      expect(saveCottageShiftScheduleAction).not.toHaveBeenCalled();
+    }
+    changeTime("Evening", "Starts", "");
+    expect(access).not.toHaveTextContent(orderError);
+    expect(access).toHaveTextContent(
+      "Enter exactly two complete shifts with different start and end times.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
+    expect(shiftField("Evening", "Starts")).toHaveFocus();
+    expect(saveCottageShiftScheduleAction).not.toHaveBeenCalled();
   });
 
   it("invalid draft never shows saved Full-day access", () => {

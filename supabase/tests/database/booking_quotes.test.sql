@@ -262,23 +262,12 @@ from public.owner_application_cottage_profiles profiles
 join public.cottage_shift_schedule_revisions schedules
   on schedules.id = profiles.current_shift_schedule_id
 where profiles.id = '30000000-0000-4000-8000-000000002903';
-insert into public.cottage_inventory_date_price_overrides (
-  schedule_revision_id, unit_kind, unit_id, service_day, price_iqd
-)
-select profiles.current_shift_schedule_id,
-  'full_day_bundle'::public.cottage_inventory_unit_kind,
-  schedules.full_day_bundle_id, '2099-08-22', 260000
-from public.owner_application_cottage_profiles profiles
-join public.cottage_shift_schedule_revisions schedules
-  on schedules.id = profiles.current_shift_schedule_id
-where profiles.id = '30000000-0000-4000-8000-000000002903';
 insert into public.cottage_inventory_availability (
   schedule_revision_id, unit_kind, unit_id, service_day, state
 )
 select prices.schedule_revision_id, prices.unit_kind, prices.unit_id,
-  service_days.value, 'open'::public.cottage_inventory_availability_state
+  '2099-08-21', 'open'::public.cottage_inventory_availability_state
 from public.cottage_inventory_standard_prices prices
-cross join (values ('2099-08-21'::date), ('2099-08-22'::date)) service_days(value)
 where prices.schedule_revision_id = (
   select current_shift_schedule_id
   from public.owner_application_cottage_profiles

@@ -1541,7 +1541,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     await eveningStart.fill("08:00");
     await eveningEnd.fill("12:00");
     await save.click();
-    await expect(fullDay).toContainText(copy.invalid);
+    await expect(fullDay).toContainText(copy.startOrder);
     await expect(eveningStart).toHaveAttribute("aria-invalid", "true");
     await expect(fullDay.locator("strong")).toHaveCount(0);
     await expect(confirmation).toHaveCount(0);

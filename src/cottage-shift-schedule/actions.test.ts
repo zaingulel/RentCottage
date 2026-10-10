@@ -239,6 +239,21 @@ describe("Cottage Shift Schedule action", () => {
     );
   });
 
+  it("preserves service invalid fields without blaming the profile", async () => {
+    save.mockResolvedValue({
+      status: "invalid",
+      fields: ["shifts.1.startTime", "schedule", "unmatchedField"],
+    });
+    await expect(
+      saveCottageShiftScheduleAction({ status: "idle" }, confirmedForm()),
+    ).resolves.toEqual({
+      status: "invalid",
+      fields: ["shiftStartTime.1", "schedule", "unmatchedField"],
+    });
+    expect(save).toHaveBeenCalledOnce();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
   it("preserves a committed refusal without reporting saved", async () => {
     save.mockResolvedValue({ status: "committed" });
     await expect(

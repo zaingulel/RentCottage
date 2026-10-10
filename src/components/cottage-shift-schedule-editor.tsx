@@ -13,6 +13,7 @@ import {
 import { cottageShiftScheduleMessages } from "@/i18n/cottage-shift-schedule-messages";
 import type { Locale } from "@/i18n/routing";
 
+import { CottageAccessRange } from "./cottage-access-range";
 import {
   ActionButton,
   ActionFeedback,
@@ -21,26 +22,6 @@ import {
 } from "./interaction-controls";
 
 const idle: CottageShiftScheduleActionState = { status: "idle" };
-
-function AccessRange({
-  template,
-  start,
-  end,
-}: {
-  template: string;
-  start: string;
-  end: string;
-}) {
-  return template.split(/(\{start\}|\{end\})/).map((part, index) =>
-    part === "{start}" || part === "{end}" ? (
-      <bdi dir="ltr" key={index}>
-        {part === "{start}" ? start : end}
-      </bdi>
-    ) : (
-      part
-    ),
-  );
-}
 
 export function CottageShiftScheduleEditor({
   locale,
@@ -112,7 +93,12 @@ export function CottageShiftScheduleEditor({
     reading.status === "overlap"
       ? copy.overlap
       : reading.status === "invalid" && (hasTimes || attempted)
-        ? copy.invalid
+        ? reading.fields.length === 1 &&
+          reading.fields[0] === "shifts.1.startTime" &&
+          draft.every((shift) => shift.startTime && shift.endTime) &&
+          draft[0].startTime >= draft[1].startTime
+          ? copy.startOrder
+          : copy.invalid
         : attempted && !confirmed
           ? copy.requiredConfirmation
           : null;
@@ -239,7 +225,7 @@ export function CottageShiftScheduleEditor({
                       copy.eveningAccess
                     )}
                     {": "}
-                    <AccessRange
+                    <CottageAccessRange
                       template={copy.accessRange}
                       start={shift.startTime}
                       end={shift.endTime}
@@ -268,7 +254,7 @@ export function CottageShiftScheduleEditor({
                   <dt>{copy.fullDayAccess}</dt>
                   <dd>
                     <strong>
-                      <AccessRange
+                      <CottageAccessRange
                         template={copy.accessRange}
                         start={coverage.fullDayStartTime}
                         end={coverage.fullDayEndTime}
@@ -279,7 +265,7 @@ export function CottageShiftScheduleEditor({
                     </strong>
                     {!legacy && draft[0].endTime !== draft[1].startTime ? (
                       <span>
-                        <AccessRange
+                        <CottageAccessRange
                           template={copy.includingGap}
                           start={draft[0].endTime}
                           end={draft[1].startTime}
@@ -292,6 +278,12 @@ export function CottageShiftScheduleEditor({
                   <div>
                     <dt>{copy.betweenShifts}</dt>
                     <dd>{copy.fullDayBetweenShifts}</dd>
+                  </div>
+                ) : null}
+                {!legacy ? (
+                  <div>
+                    <dt>{copy.consecutiveDays}</dt>
+                    <dd>{copy.consecutiveDaysAccess}</dd>
                   </div>
                 ) : null}
               </dl>

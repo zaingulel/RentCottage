@@ -22,6 +22,8 @@ import {
 } from "@/i18n/cottage-shift-schedule-messages";
 import { directionFor, type Locale } from "@/i18n/routing";
 
+import { CottageAccessRange } from "./cottage-access-range";
+
 const idle: CottageInventoryActionState = { status: "idle" };
 const availabilityLoadIdle: CottageInventoryAvailabilityLoadActionState = {
   status: "idle",
@@ -47,10 +49,12 @@ function unitsFor(
   copy: ScheduleCopy,
 ): InventoryUnit[] {
   if (!schedule) return [];
+  const legacy = schedule.shifts.length === 3;
   return [
     ...schedule.shifts.map((shift) => {
-      const identity =
-        shift.position === 1
+      const identity = legacy
+        ? `${copy.shift} ${shift.position}`
+        : shift.position === 1
           ? copy.morning
           : shift.position === 2
             ? copy.evening
@@ -81,15 +85,11 @@ function unitsFor(
 function accessRange(copy: ScheduleCopy, unit: InventoryUnit) {
   return (
     <>
-      {copy.accessRange.split(/(\{start\}|\{end\})/).map((part, index) =>
-        part === "{start}" || part === "{end}" ? (
-          <bdi dir="ltr" key={index}>
-            {part === "{start}" ? unit.startTime : unit.endTime}
-          </bdi>
-        ) : (
-          part
-        ),
-      )}{" "}
+      <CottageAccessRange
+        template={copy.accessRange}
+        start={unit.startTime}
+        end={unit.endTime}
+      />{" "}
       ({unit.crossesMidnight ? copy.nextDay : copy.sameDay})
     </>
   );
@@ -150,6 +150,7 @@ export function CottagePricingAvailabilityEditor({
       availabilityLoadIdle,
     );
   const scheduleCopy = cottageShiftScheduleMessages[locale];
+  const legacy = schedule?.shifts.length === 3;
   const units = unitsFor(schedule, scheduleCopy);
   const direction = directionFor(locale);
   const priceFeedback = feedback(pricingState, copy);
@@ -287,14 +288,18 @@ export function CottagePricingAvailabilityEditor({
                                   </strong>
                                 </dd>
                               </div>
-                              <div>
-                                <dt>{scheduleCopy.fullDay}</dt>
-                                <dd>{scheduleCopy.fullDayIncludes}</dd>
-                              </div>
-                              <div>
-                                <dt>{scheduleCopy.betweenShifts}</dt>
-                                <dd>{scheduleCopy.fullDayBetweenShifts}</dd>
-                              </div>
+                              {!legacy ? (
+                                <>
+                                  <div>
+                                    <dt>{scheduleCopy.fullDay}</dt>
+                                    <dd>{scheduleCopy.fullDayIncludes}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>{scheduleCopy.betweenShifts}</dt>
+                                    <dd>{scheduleCopy.fullDayBetweenShifts}</dd>
+                                  </div>
+                                </>
+                              ) : null}
                             </dl>
                             <p>{scheduleCopy.cleaning}</p>
                           </div>
