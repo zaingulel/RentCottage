@@ -11,7 +11,7 @@ RentCottage will be a mobile-friendly marketplace where customers can discover a
 
 Cottage owners can apply directly by creating a private first cottage page and uploading their evidence. RentCottage checks and approves each owner and cottage before it becomes public.
 
-The first release is a web application in Arabic, Sorani Kurdish and English. It supports the Iraqi norm of booking a day as two or three fixed shifts, several shifts together, or a full-day option.
+The first release is a web application in Arabic, Sorani Kurdish and English. New cottage schedules offer exactly two fixed shifts, Morning and Evening with owner-defined times, which customers can book individually or as a separately priced full-day option.
 
 ## 2. The service at a glance
 
@@ -23,7 +23,7 @@ The first release is a web application in Arabic, Sorani Kurdish and English. It
 | Owner access | Apply directly with a private first cottage page and evidence, then wait for approval |
 | Booking | Request to book; the owner accepts or declines |
 | Payment | Customer authorises the full total before requesting; payment is collected automatically after owner acceptance |
-| Cottage schedule | Two or three fixed shifts per day, multiple shifts, or a separately priced full day |
+| Cottage schedule | Exactly two shifts in new schedules, Morning then Evening with custom times, plus a separately priced continuous full day |
 | Customer fee | Proposed fixed IQD 5,000 booking service fee, shown separately and validated before launch |
 | Owner commission | 10% of the cottage booking price |
 | Cancellation policy | One policy for all cottages |
@@ -66,7 +66,11 @@ Each capability combines the user need with the acceptance checks for this agree
 
 | User story | Agreed acceptance |
 |---|---|
-| **As a cottage owner**<br>**I want** to control my shifts, prices and future availability<br>**So that** RentCottage reflects how my cottage operates | Each cottage has two or three fixed daily shifts. A shift may cross midnight and belongs to the date it starts. The owner can price each shift and a full-day option differently, with weekday and specific-date prices. New cottages start closed. The owner opens future shifts or blocks them for private use. Changes never rewrite submitted requests or confirmed bookings. |
+| **As a cottage owner**<br>**I want** to control my shifts, prices and future availability<br>**So that** RentCottage reflects how my cottage operates | Each new schedule has exactly two fixed daily shifts, Morning then Evening, with Morning starting earlier and no universal hour limits. Each group keeps its translated identity beside an optional local name; the existing stored name is preserved as original-text fallback. A shift may cross midnight and belongs to the date it starts; equal individual start and end times are invalid. The owner sets each shift's price and an independent full-day price, with weekday and specific-date overrides. Full-day gives continuous access from Morning's start through Evening's final end, including the gap between shifts; equal bundle endpoints mean the following day, giving 24 hours. Cleaning gaps are optional and never interrupt full-day access. New cottages start closed. The owner opens future shifts or blocks them for private use. Changes never rewrite submitted requests or confirmed bookings. |
+
+Schedule editing requires an approved Cottage Owner and a draft Cottage Profile. Active inventory commitments or payment authorization claims can block replacement even in a draft. Saving a new schedule requires prices and availability to be configured again; previous settings are not copied and the new shifts do not open automatically. The accepted entry, confirmation and editing design is specified in [Owner shift schedule](../design/owner-shift-schedule.md).
+
+Historical two- or three-shift schedules remain readable, and existing Booking Requests and Confirmed Bookings retain their original purchased coverage, names, prices, payment facts and policy snapshots. New schedule meaning applies prospectively. Migration admission stops on any existing three-shift revision, including historical revisions, without remapping, deleting or rewriting rows; this refusal does not narrow historical readers.
 
 ### E. Request a booking and secure payment
 
