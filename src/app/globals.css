@@ -2080,13 +2080,11 @@ a:focus-visible {
 }
 
 .cottage-shift-schedule-form,
-.cottage-shift-schedule-form > fieldset,
 .cottage-shift-row {
   display: grid;
   gap: var(--space-4);
 }
 
-.cottage-shift-schedule-form > fieldset,
 .cottage-shift-row {
   min-inline-size: 0;
   margin: 0;
@@ -2096,16 +2094,16 @@ a:focus-visible {
 
 .cottage-shift-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
 }
 
 .cottage-shift-row {
   align-content: start;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: var(--surface-field);
-  padding: var(--space-4);
+  background: var(--card);
+  padding: var(--space-5);
 }
 
 .cottage-shift-row legend,
@@ -2121,13 +2119,10 @@ a:focus-visible {
   font-weight: 700;
 }
 
-.cottage-shift-row input {
-  inline-size: 100%;
-  min-block-size: 2.75rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--surface-bright);
-  padding: var(--space-3);
+.cottage-shift-schedule-form .action:focus-visible,
+.cottage-shift-schedule-form .form-control:focus-visible,
+.cottage-shift-schedule-form .choice-control > input:focus-visible {
+  outline-color: var(--green);
 }
 
 .cottage-shift-guidance {
@@ -2137,13 +2132,15 @@ a:focus-visible {
 }
 
 .cottage-full-day-summary {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
+  display: grid;
   gap: var(--space-3);
-  border-inline-start: 0.3rem solid var(--gold);
+  border-radius: var(--radius-card);
   background: var(--surface-notice);
   padding: var(--space-4);
+}
+
+.cottage-full-day-summary p {
+  margin: 0;
 }
 
 .cottage-shift-schedule-form > button {
