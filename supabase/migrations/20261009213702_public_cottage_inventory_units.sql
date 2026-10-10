@@ -99,6 +99,4 @@ CREATE FUNCTION public.public_cottage_inventory_units (
   from unit_days;
 $function$;
 
-REVOKE ALL ON FUNCTION public.public_cottage_inventory_units(uuid, date, date) FROM PUBLIC;
-
 REVOKE ALL ON FUNCTION public.public_cottage_inventory_units(uuid, date, date) FROM PUBLIC, anon, authenticated, service_role;
