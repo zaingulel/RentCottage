@@ -186,9 +186,7 @@ describe("Cottage Profile owner detail page", () => {
       screen.queryByRole("link", { name: "Back to cottages" }),
     ).not.toBeInTheDocument();
     expect(screen.getByLabelText("Cottage name")).toBeEnabled();
-    expect(
-      screen.getByRole("button", { name: "Save Shift Schedule" }),
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Save schedule" })).toBeEnabled();
   });
 
   it("keeps price setup editable during review while publication opening stays blocked", async () => {
@@ -211,7 +209,7 @@ describe("Cottage Profile owner detail page", () => {
 
     expect(screen.getByLabelText("Cottage name")).toBeDisabled();
     expect(
-      screen.getByLabelText("Shift 1 standard price in IQD"),
+      screen.getByLabelText("Morning: Morning standard price in IQD"),
     ).toBeEnabled();
     expect(
       screen.getByText(/configure prices before publication/i),
@@ -231,7 +229,7 @@ describe("Cottage Profile owner detail page", () => {
 
     expect(screen.getByLabelText("Cottage name")).toBeDisabled();
     expect(
-      screen.getByLabelText("Shift 1 standard price in IQD"),
+      screen.getByLabelText("Morning: Morning standard price in IQD"),
     ).toBeDisabled();
     expect(
       screen.queryByRole("button", { name: "Save availability" }),
@@ -251,7 +249,7 @@ describe("Cottage Profile owner detail page", () => {
 
     expect(screen.getByLabelText("Cottage name")).toBeDisabled();
     expect(
-      screen.getByLabelText("Shift 1 standard price in IQD"),
+      screen.getByLabelText("Morning: Morning standard price in IQD"),
     ).toBeDisabled();
     expect(
       screen.queryByRole("button", { name: "Save availability" }),
