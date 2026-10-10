@@ -355,10 +355,10 @@ test('issue-publish: fails an issue with no kind label, naming the issue and the
     () => verify(['475', '476', '477'], { board: boardWithLabels(476, []) }),
     { message: `requested issue #476 needs exactly one kind label (${KIND_NAMES}) but has 0 (labels found: none)` },
   );
-  // A `type:` label is not a kind, so an issue carrying only one states none.
+  // A prefixed kind label is not a kind.
   assert.throws(
-    () => verify(['475', '476', '477'], { board: boardWithLabels(476, ['type:task', 'area:board']) }),
-    { message: `requested issue #476 needs exactly one kind label (${KIND_NAMES}) but has 0 (labels found: type:task, area:board)` },
+    () => verify(['475', '476', '477'], { board: boardWithLabels(476, [`x:${KIND_LABELS.task}`, 'area:board']) }),
+    { message: `requested issue #476 needs exactly one kind label (${KIND_NAMES}) but has 0 (labels found: x:${KIND_LABELS.task}, area:board)` },
   );
 
   // Through the real board parser and the command: the labels the check reads are the ones

@@ -4,7 +4,7 @@
     "zaingulel/flow-metrics-dashboard",
     "zaingulel/RentCottage"
   ],
-  "syncedFrom": "0069f4d502b89f3780dca0159c8b42592efdd671",
+  "syncedFrom": "b9966e225ddeb965b8cbcd38229a589438d4a5c9",
   "entries": [
     {
       "path": ".agents/skills/accessibility-review/SKILL.md",
@@ -801,7 +801,7 @@
     },
     {
       "path": "scripts/lib/board-rules.test.mjs",
-      "sha256": "a40b7649039da8b547f62ba24a87d6ebe1ae99f6ebdf345ac38a0c4a5f29a2fe"
+      "sha256": "e3188e573fbf8f3a2af1e42919034da97e049b0c6007a19d81cd93d703eee68c"
     },
     {
       "path": "scripts/lib/board.mjs",
@@ -897,7 +897,7 @@
     },
     {
       "path": "scripts/lib/issue-publish.test.mjs",
-      "sha256": "2105835057530f445c659bc8a54f869f5afc2aa7760868ab6636a842205435dd"
+      "sha256": "75f6f90198ed34a66053a444197ac7031ef9a8a2c74802334faf347c5c728451"
     },
     {
       "path": "scripts/lib/merge-watch.mjs",

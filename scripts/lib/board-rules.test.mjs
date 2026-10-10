@@ -462,7 +462,7 @@ test('the pickable, terminal and wait columns are board-config\'s, and Awaiting 
 test('isEpic: true for the configured epic kind label alone, false for any other label', () => {
   assert.equal(isEpic({ labels: [KIND_LABELS.epic] }), true);
   assert.equal(isEpic({ labels: ['area:ui', KIND_LABELS.epic] }), true);
-  assert.equal(isEpic({ labels: ['type:epic'] }), false);
+  assert.equal(isEpic({ labels: [`x:${KIND_LABELS.epic}`] }), false);
   assert.equal(isEpic({ labels: [KIND_LABELS.feature] }), false);
   assert.equal(isEpic({ labels: [] }), false);
 });
