@@ -1,5 +1,5 @@
 begin;
-select plan(23);
+select plan(24);
 
 select is(
   (select prosecdef from pg_proc where oid =
@@ -158,6 +158,131 @@ where prices.schedule_revision_id = (
   select current_shift_schedule_id
   from public.owner_application_cottage_profiles
   where id = '30000000-0000-4000-8000-000000002901'
+);
+
+insert into auth.users (id, aud, role, phone, phone_confirmed_at)
+values (
+  '00000000-0000-0000-0000-000000002903', 'authenticated', 'authenticated',
+  '+9647500002903', now()
+);
+insert into public.account_contexts (user_id, role, owner_approval_state)
+values ('00000000-0000-0000-0000-000000002903', 'cottage_owner', 'approved');
+insert into public.owner_application_cottage_profiles (
+  id, owner_user_id, name, governorate, approximate_location, exact_address,
+  capacity, bedrooms, bathrooms, amenities, source_language, description,
+  house_rules, status
+) values (
+  '30000000-0000-4000-8000-000000002903',
+  '00000000-0000-0000-0000-000000002903',
+  '24-hour Quote Cottage', 'Baghdad', 'Karrada', 'Private Quote address',
+  8, 3, 2, array['pool'], 'en', 'Approved Quote description',
+  'Approved Quote rules', 'draft'
+);
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000002903","role":"authenticated","aal":"aal1"}',
+  true
+);
+select public.replace_cottage_shift_schedule(
+  '30000000-0000-4000-8000-000000002903', 0,
+  '[{"name":"Morning","startTime":"09:00","endTime":"15:00"},
+    {"name":"Evening","startTime":"17:00","endTime":"09:00"}]'
+);
+reset role;
+insert into public.cottage_profile_source_revisions (
+  id, profile_id, owner_user_id, source_language, description, house_rules, revision
+) values (
+  '31000000-0000-4000-8000-000000002903',
+  '30000000-0000-4000-8000-000000002903',
+  '00000000-0000-0000-0000-000000002903',
+  'en', 'Approved Quote description', 'Approved Quote rules', 1
+);
+insert into public.cottage_profile_review_cycles (
+  id, profile_id, owner_user_id, source_revision_id, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities,
+  cycle_number, state, decided_at
+) values (
+  '32000000-0000-4000-8000-000000002903',
+  '30000000-0000-4000-8000-000000002903',
+  '00000000-0000-0000-0000-000000002903',
+  '31000000-0000-4000-8000-000000002903',
+  '24-hour Quote Cottage', 'Baghdad', 'Karrada', 8, 3, 2, array['pool'],
+  1, 'approved', now()
+);
+insert into public.cottage_profile_localized_revisions (
+  id, review_cycle_id, locale, revision, origin, description, house_rules
+) values (
+  '33000000-0000-4000-8000-000000002903',
+  '32000000-0000-4000-8000-000000002903',
+  'en', 1, 'owner_source', 'Approved Quote description', 'Approved Quote rules'
+);
+insert into public.cottage_profile_publication_decisions (
+  review_cycle_id, administrator_user_id, approved, reason
+) values (
+  '32000000-0000-4000-8000-000000002903',
+  '00000000-0000-0000-0000-000000002902', true,
+  'Private Quote moderation reason'
+);
+insert into public.cottage_publication_snapshots (
+  id, profile_id, review_cycle_id, publication_number, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities
+) values (
+  '34000000-0000-4000-8000-000000002903',
+  '30000000-0000-4000-8000-000000002903',
+  '32000000-0000-4000-8000-000000002903', 1,
+  '24-hour Quote Cottage', 'Baghdad', 'Karrada', 8, 3, 2, array['pool']
+);
+insert into public.cottage_publication_localizations (
+  publication_id, locale, localized_revision_id, description, house_rules
+) values (
+  '34000000-0000-4000-8000-000000002903', 'en',
+  '33000000-0000-4000-8000-000000002903',
+  'Approved Quote description', 'Approved Quote rules'
+);
+update public.owner_application_cottage_profiles
+set current_publication_id = '34000000-0000-4000-8000-000000002903'
+where id = '30000000-0000-4000-8000-000000002903';
+
+insert into public.cottage_inventory_standard_prices (
+  schedule_revision_id, unit_kind, unit_id, price_iqd
+)
+select profiles.current_shift_schedule_id,
+  'shift'::public.cottage_inventory_unit_kind, shifts.id,
+  case shifts.position when 1 then 100000 else 110000 end
+from public.owner_application_cottage_profiles profiles
+join public.cottage_shifts shifts
+  on shifts.schedule_revision_id = profiles.current_shift_schedule_id
+where profiles.id = '30000000-0000-4000-8000-000000002903'
+union all
+select profiles.current_shift_schedule_id,
+  'full_day_bundle'::public.cottage_inventory_unit_kind,
+  schedules.full_day_bundle_id, 250000
+from public.owner_application_cottage_profiles profiles
+join public.cottage_shift_schedule_revisions schedules
+  on schedules.id = profiles.current_shift_schedule_id
+where profiles.id = '30000000-0000-4000-8000-000000002903';
+insert into public.cottage_inventory_date_price_overrides (
+  schedule_revision_id, unit_kind, unit_id, service_day, price_iqd
+)
+select profiles.current_shift_schedule_id,
+  'full_day_bundle'::public.cottage_inventory_unit_kind,
+  schedules.full_day_bundle_id, '2099-08-22', 260000
+from public.owner_application_cottage_profiles profiles
+join public.cottage_shift_schedule_revisions schedules
+  on schedules.id = profiles.current_shift_schedule_id
+where profiles.id = '30000000-0000-4000-8000-000000002903';
+insert into public.cottage_inventory_availability (
+  schedule_revision_id, unit_kind, unit_id, service_day, state
+)
+select prices.schedule_revision_id, prices.unit_kind, prices.unit_id,
+  service_days.value, 'open'::public.cottage_inventory_availability_state
+from public.cottage_inventory_standard_prices prices
+cross join (values ('2099-08-21'::date), ('2099-08-22'::date)) service_days(value)
+where prices.schedule_revision_id = (
+  select current_shift_schedule_id
+  from public.owner_application_cottage_profiles
+  where id = '30000000-0000-4000-8000-000000002903'
 );
 
 set local role anon;
@@ -342,6 +467,34 @@ select is(
     where table_schema = 'public' and table_name like '%booking_quote%'),
   0::bigint,
   'Booking Quotes have no anonymous persistence table'
+);
+
+select results_eq(
+  $$select quote ->> 'status', jsonb_array_length(quote -> 'items'),
+      item ->> 'kind', item ->> 'startsAt', item ->> 'endsAt',
+      (item ->> 'crossesMidnight')::boolean,
+      (item ->> 'priceIqd')::bigint,
+      (item ->> 'startsAt')::timestamptz,
+      (item ->> 'endsAt')::timestamptz,
+      (item ->> 'endsAt')::timestamptz - (item ->> 'startsAt')::timestamptz,
+      (select count(*) from public.cottage_shifts shifts
+        join public.owner_application_cottage_profiles profiles
+          on profiles.current_shift_schedule_id = shifts.schedule_revision_id
+        where profiles.id = '30000000-0000-4000-8000-000000002903')
+    from (select public.get_public_booking_quote(
+      'en', 'cottage-30000000000040008000000000002903',
+      '{"from":"2099-08-21","to":"2099-08-21","guests":4,
+        "amenities":[],"selections":[
+          {"serviceDay":"2099-08-21","kind":"full-day"}
+        ]}'::jsonb
+    ) quote) result
+    cross join lateral jsonb_array_elements(quote -> 'items') item$$,
+  $$values ('quoted'::text, 1, 'full-day'::text,
+    '2099-08-21T09:00:00+03:00'::text, '2099-08-22T09:00:00+03:00'::text,
+    true, 250000::bigint,
+    '2099-08-21 06:00:00+00'::timestamptz, '2099-08-22 06:00:00+00'::timestamptz,
+    interval '24 hours', 2::bigint)$$,
+  'a 24-hour Full-day quote ends on the next Service Day'
 );
 
 select * from finish();

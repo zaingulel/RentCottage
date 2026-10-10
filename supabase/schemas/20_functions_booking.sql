@@ -5866,13 +5866,19 @@ begin
       (item.value ->> 'serviceDay')::date
         + case
             when (item.value ->> 'endTime')::time
-              < (item.value ->> 'startTime')::time then 1
+              < (item.value ->> 'startTime')::time
+              or (item.value ->> 'kind' = 'full-day'
+                and (item.value ->> 'endTime')::time
+                  = (item.value ->> 'startTime')::time) then 1
             else 0
           end,
       'YYYY-MM-DD'
     ) || 'T' || (item.value ->> 'endTime') || ':00+03:00',
     'crossesMidnight', (item.value ->> 'endTime')::time
-      < (item.value ->> 'startTime')::time,
+      < (item.value ->> 'startTime')::time
+      or (item.value ->> 'kind' = 'full-day'
+        and (item.value ->> 'endTime')::time
+          = (item.value ->> 'startTime')::time),
     'priceIqd', (item.value ->> 'priceIqd')::bigint
   )) order by item.ordinality)
   into quoted_items
