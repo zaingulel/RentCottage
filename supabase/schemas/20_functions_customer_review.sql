@@ -72,7 +72,7 @@ begin
   end if;
 
   admitted_body:=case
-    when char_length(btrim(coalesce(target_original_body,'')))=0 then null
+    when coalesce(target_original_body,'') !~ '\S' then null
     else target_original_body
   end;
   if not public.contact_protection_text_is_safe(coalesce(admitted_body,'')) then
@@ -227,7 +227,8 @@ begin
   end if;
   if target_review_id is null
     or target_reason is null
-    or char_length(btrim(target_reason)) not between 1 and 2000
+    or target_reason !~ '\S'
+    or char_length(btrim(target_reason)) > 2000
   then
     return jsonb_build_object('status','invalid');
   end if;

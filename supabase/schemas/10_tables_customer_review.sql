@@ -11,9 +11,7 @@ CREATE TABLE IF NOT EXISTS public.customer_reviews (
   CONSTRAINT customer_reviews_rating_check CHECK (rating BETWEEN 1 AND 5),
   CONSTRAINT customer_reviews_original_body_check CHECK (
     original_body IS NULL
-    OR char_length(original_body) >= 1
-      AND char_length(original_body) <= 2000
-      AND char_length(btrim(original_body)) >= 1
+    OR (char_length(original_body) <= 2000 AND original_body ~ '\S')
   )
 );
 
@@ -25,7 +23,7 @@ CREATE TABLE IF NOT EXISTS public.customer_review_hides (
   reason text NOT NULL,
   hidden_at timestamptz DEFAULT clock_timestamp() NOT NULL,
   CONSTRAINT customer_review_hides_reason_check CHECK (
-    char_length(btrim(reason)) BETWEEN 1 AND 2000
+    reason ~ '\S' AND char_length(btrim(reason)) <= 2000
   )
 );
 
