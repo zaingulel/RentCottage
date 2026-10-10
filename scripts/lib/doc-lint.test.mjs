@@ -136,7 +136,7 @@ test("classifyDocLintPath: Codex prose surfaces join path/date scans; a skill bo
     skillMeta: false,
   });
   assert.equal(
-    classifyDocLintPath(".agents/skills/doc-audit/SKILL.md").illegalInvocations,
+    classifyDocLintPath(".agents/skills/example/SKILL.md").illegalInvocations,
     true,
   );
 });
@@ -162,7 +162,7 @@ test("classifyDocLintPath: Claude prose surfaces join the path and date scans on
   // The retired commands directory and the symlinked skills directory classify as nothing:
   // git lists a symlinked skill as the link entry itself, never as a SKILL.md beneath it.
   for (const rel of [
-    ".claude/commands/doc-audit.md",
+    ".claude/commands/example.md",
     ".claude/skills/resume/SKILL.md",
     ".claude/skills/resume",
   ]) {
@@ -469,7 +469,7 @@ test("findIllegalInvocations: a path-embedded slash never false-matches as an in
   const files = [
     {
       path: "b.md",
-      text: "---\nname: b\ndescription: ok.\n---\n\nRun `.claude/commands/doc-audit.md` through the linter.\n",
+      text: "---\nname: b\ndescription: ok.\n---\n\nRun `.claude/commands/example.md` through the linter.\n",
     },
   ];
   assert.deepEqual(findIllegalInvocations(files, ["resume"]), []);

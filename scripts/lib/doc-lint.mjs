@@ -1,8 +1,6 @@
 // doc-lint.mjs — pure detection logic for the doc-prose lint gate.
 //
-// Converts three prose-vigilance rules that had lived as by-hand vigilance
-// (CLAUDE.md's directory map + the writing-for-agents "user-invoked" rule +
-// doc-audit's date-stamp stripping) into a deterministic check: a dangling
+// Detects three prose-vigilance violations: a dangling
 // backtick-quoted repo path in prose, a skill instructing the model to fire a
 // DISABLED (user-invoked-only) sibling skill, and a stray date-stamp in an
 // always-loaded doc. I/O lives in the CLI wrapper (scripts/doc-lint.mjs); this
@@ -337,8 +335,8 @@ export function findIllegalInvocations(skillFiles, disabledNames) {
   return violations;
 }
 
-// Date-stamps read as vigilance debt (the /doc-audit date-stamp rule: strip
-// date-stamps, keep boundary rationale) — advisory only, never blocks.
+// Date-stamps read as vigilance debt: strip date-stamps, keep boundary
+// rationale. Advisory only, never blocks.
 export function findDateStamps(text) {
   const matches = [];
   const lines = text.split("\n");
