@@ -98,7 +98,6 @@ function parseTranslations(
         "targetLanguage",
         "translatedBody",
       ]) ||
-      typeof entry.translationId !== "string" ||
       !isCustomerReviewUuid(entry.translationId) ||
       !isCustomerReviewLanguage(entry.targetLanguage) ||
       !isCustomerReviewTranslationBody(entry.translatedBody)
@@ -634,7 +633,6 @@ function parseTranslationReportCursor(
     isRecord(value) &&
     hasExactKeys(value, ["reportedAt", "reportId"]) &&
     isCustomerReviewTimestamp(value.reportedAt) &&
-    typeof value.reportId === "string" &&
     isCustomerReviewUuid(value.reportId)
   ) {
     return { reportedAt: value.reportedAt, reportId: value.reportId };
@@ -664,7 +662,6 @@ function parseTranslationReport(
       "promptVersion",
       "reportedAt",
     ]) ||
-    typeof value.reportId !== "string" ||
     !isCustomerReviewUuid(value.reportId) ||
     !isBookingRequestReference(value.bookingRequestReference) ||
     (value.subject !== "review" && value.subject !== "reply") ||

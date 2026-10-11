@@ -66,5 +66,11 @@ export default async function AdministratorTranslationReportsPage({
       }
     }
   }
-  return <CustomerReviewTranslationReports locale={locale} result={result} />;
+  return (
+    <CustomerReviewTranslationReports
+      locale={locale}
+      result={result}
+      continued={cursor !== null}
+    />
+  );
 }

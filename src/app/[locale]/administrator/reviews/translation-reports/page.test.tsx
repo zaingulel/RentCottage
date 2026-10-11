@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -148,6 +148,25 @@ describe("AdministratorTranslationReportsPage", () => {
       ...cursor,
       limit: 20,
     });
+  });
+
+  it("tells the reports list when the page is a continued one", async () => {
+    resolveAccount.mockResolvedValue(administrator);
+    listTranslationReports.mockResolvedValue({
+      status: "success",
+      items: [],
+      nextCursor: null,
+    });
+
+    render(await open(cursor));
+    expect(screen.getByRole("link", { name: /First reports/ })).toHaveAttribute(
+      "href",
+      "/en/administrator/reviews/translation-reports",
+    );
+    cleanup();
+
+    render(await open());
+    expect(screen.queryByRole("link", { name: /First reports/ })).toBeNull();
   });
 
   it("keeps SQL assurance decisive when the reader refuses an administrator", async () => {

@@ -37,7 +37,6 @@ function parseTranslated(
   if (
     value.status === "translated" &&
     hasExactKeys(value, ["status", "translationId", "translatedBody"]) &&
-    typeof value.translationId === "string" &&
     isCustomerReviewUuid(value.translationId) &&
     isCustomerReviewTranslationBody(value.translatedBody)
   ) {
@@ -116,7 +115,6 @@ function parseReport(value: unknown): ReviewTranslationReportResult {
   if (
     value.status === "reported" &&
     hasExactKeys(value, ["status", "reportId"]) &&
-    typeof value.reportId === "string" &&
     isCustomerReviewUuid(value.reportId)
   ) {
     return { status: "reported", reportId: value.reportId };

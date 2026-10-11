@@ -39,9 +39,14 @@ const success = (
 function renderReports(
   result: CustomerReviewTranslationReportListResult,
   locale: "en" | "ar" | "ckb" = "en",
+  continued = false,
 ) {
   return render(
-    <CustomerReviewTranslationReports locale={locale} result={result} />,
+    <CustomerReviewTranslationReports
+      locale={locale}
+      result={result}
+      continued={continued}
+    />,
   );
 }
 
@@ -210,6 +215,55 @@ describe("CustomerReviewTranslationReports", () => {
 
     renderReports(success([report]));
     expect(screen.queryByRole("link", { name: next })).toBeNull();
+  });
+
+  it("a continued page links back to the first reports, before the next link when more exist", () => {
+    const cursor = {
+      reportedAt: "2026-10-12T10:00:00.000Z",
+      reportId: "33333333-3333-4333-8333-333333333333",
+    };
+    renderReports(success([report], cursor), "en", true);
+
+    const nav = screen.getByRole("navigation", {
+      name: customerReviewMessages.en.translationReportsTitle,
+    });
+    expect(nav).toHaveClass("results-paging");
+    const [first, next] = within(nav).getAllByRole("link");
+    expect(first).toHaveTextContent(
+      customerReviewMessages.en.translationReportsFirst,
+    );
+    expect(first).toHaveAttribute(
+      "href",
+      "/en/administrator/reviews/translation-reports",
+    );
+    expect(next).toHaveTextContent(administratorRecordsMessages.en.next);
+  });
+
+  it("a continued page with no more reports still links back to the first reports", () => {
+    renderReports(success([]), "en", true);
+
+    const nav = screen.getByRole("navigation", {
+      name: customerReviewMessages.en.translationReportsTitle,
+    });
+    expect(within(nav).getAllByRole("link")).toHaveLength(1);
+    expect(
+      within(nav).getByRole("link", {
+        name: customerReviewMessages.en.translationReportsFirst,
+      }),
+    ).toHaveAttribute("href", "/en/administrator/reviews/translation-reports");
+    expect(
+      screen.getByText(customerReviewMessages.en.translationReportsEmpty),
+    ).toBeVisible();
+  });
+
+  it("the first page with no more reports draws no paging navigation", () => {
+    renderReports(success([report]));
+
+    expect(
+      screen.queryByRole("navigation", {
+        name: customerReviewMessages.en.translationReportsTitle,
+      }),
+    ).toBeNull();
   });
 
   it("sends an account without administrator access to recovery and shows no report", () => {

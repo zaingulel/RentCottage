@@ -244,7 +244,7 @@ describe("CustomerReviewTranslation", () => {
     ],
     [
       { status: "access-required" },
-      "Sign in to translate or report a translation",
+      "Translating and reporting need a signed-in account with a verified phone number.",
     ],
   ])(
     "keeps the original and says so when translating answers %j",
@@ -294,11 +294,14 @@ describe("CustomerReviewTranslation", () => {
   });
 
   it.each([
-    [{ status: "unavailable" }, "The report was not sent. Try again."],
-    [{ status: "not-found" }, "The report was not sent. Try again."],
+    [
+      { status: "unavailable" },
+      "The report could not be confirmed. Try again.",
+    ],
+    [{ status: "not-found" }, "The report could not be confirmed. Try again."],
     [
       { status: "access-required" },
-      "Sign in to translate or report a translation",
+      "Translating and reporting need a signed-in account with a verified phone number.",
     ],
   ])(
     "keeps the translation and the Report control when reporting answers %j",
@@ -319,7 +322,7 @@ describe("CustomerReviewTranslation", () => {
     },
   );
 
-  it("keeps the translation and says the report was not sent when the report action throws", async () => {
+  it("keeps the translation and says the report could not be confirmed when the report action throws", async () => {
     report.mockRejectedValue(new Error("network"));
     const user = userEvent.setup();
     render(island({ translation: stored, canAct: true }));
@@ -329,7 +332,7 @@ describe("CustomerReviewTranslation", () => {
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The report was not sent. Try again.",
+      "The report could not be confirmed. Try again.",
     );
   });
 

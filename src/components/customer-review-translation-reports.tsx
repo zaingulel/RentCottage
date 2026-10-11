@@ -67,9 +67,11 @@ function ReportCard({
 export function CustomerReviewTranslationReports({
   locale,
   result,
+  continued,
 }: {
   locale: Locale;
   result: CustomerReviewTranslationReportListResult;
+  continued: boolean;
 }) {
   const copy = customerReviewMessages[locale];
   const moderationHref = `/${locale}/administrator/reviews`;
@@ -120,21 +122,34 @@ export function CustomerReviewTranslationReports({
           ))}
         </div>
       )}
-      {result.nextCursor ? (
+      {continued || result.nextCursor ? (
         <nav
           className="results-paging"
           aria-label={copy.translationReportsTitle}
         >
-          <ActionLink
-            kind="secondary"
-            width="content"
-            href={`${moderationHref}/translation-reports?${new URLSearchParams({
-              beforeAt: result.nextCursor.reportedAt,
-              beforeId: result.nextCursor.reportId,
-            })}`}
-          >
-            {administratorRecordsMessages[locale].next}
-          </ActionLink>
+          {continued ? (
+            <ActionLink
+              kind="secondary"
+              width="content"
+              href={`${moderationHref}/translation-reports`}
+            >
+              {copy.translationReportsFirst}
+            </ActionLink>
+          ) : null}
+          {result.nextCursor ? (
+            <ActionLink
+              kind="secondary"
+              width="content"
+              href={`${moderationHref}/translation-reports?${new URLSearchParams(
+                {
+                  beforeAt: result.nextCursor.reportedAt,
+                  beforeId: result.nextCursor.reportId,
+                },
+              )}`}
+            >
+              {administratorRecordsMessages[locale].next}
+            </ActionLink>
+          ) : null}
         </nav>
       ) : null}
     </main>

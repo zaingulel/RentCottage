@@ -78,7 +78,7 @@ export function CustomerReviewTranslation({
         kind: "error",
         text:
           result.status === "access-required"
-            ? copy.translationSignIn
+            ? copy.translationAccessRequired
             : copy.translationUnavailable,
       });
     }
@@ -99,7 +99,7 @@ export function CustomerReviewTranslation({
         kind: "error",
         text:
           result.status === "access-required"
-            ? copy.translationSignIn
+            ? copy.translationAccessRequired
             : copy.translationReportFailed,
       });
     }
