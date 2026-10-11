@@ -21,6 +21,9 @@
 // each seat setting its repository overrides, in the nested form of the settings file's `seats` and naming only
 // seat files the same manifest lists.
 //
+// Only the canonical's manifest holds `adopters`, the repositories that carry a copy. Every reader takes a manifest
+// without it and holds one that is present to an array of "owner/repo" names; nothing is decided by the list.
+//
 // A tree's settings file may name the runtimes it runs; runtimes.mjs says which entry belongs to which runtime. An
 // entry of a runtime the settings file leaves out is left out of the tree: every manifest keeps every entry, a sync
 // writes only the entries of the named runtimes, and the path of a left-out entry must hold nothing. A tree with no
@@ -55,11 +58,13 @@
 // running the sync, never the fetched commit's, and no file of the fetched commit is executed or imported, so a
 // default this copy does not know stops nothing and a named value it does not know is refused. It then writes each
 // file the target installs with the commit's bytes and mode, a seat the settings file names with the named values in place of the
-// commit's, and each region between the target's own markers, and records the commit's manifest, with the target's
+// commit's, and each region between the target's own markers, and records the commit's entries under the target's
 // canonical, plus `syncedFrom`, the fetched commit, and, when the settings file names any, `seatDefaults`, the
-// commit's value of each setting it replaced. It never writes or removes the settings file, and a `seatDefaults`
-// in the fetched manifest is never applied or copied. On a target that does not honour file modes the sync stages
-// the file entries it writes, because the index is the only place such a checkout can hold the executable bit.
+// commit's value of each setting it replaced. It never records the commit's `adopters`, so the target's manifest
+// names the canonical and no other adopter, and a list an earlier sync left there is gone. It never writes or
+// removes the settings file, and a `seatDefaults` in the fetched manifest is never applied or copied. On a target
+// that does not honour file modes the sync stages the file entries it writes, because the index is the only place
+// such a checkout can hold the executable bit.
 //
 // A retired entry is one the target's committed manifest lists at a path the fetched manifest does not. The target
 // must be clean at every retired path too, and before any write the sync removes each retired file it can prove: a
@@ -87,14 +92,15 @@
 // lines is refused by name and never overwritten, and whose named values give it no problem those shared bytes do
 // not have. A recorded default of a seat whose runtime the settings file leaves out is skipped, its file neither
 // read nor written, and dropped from the record. It then writes each seat whose bytes change, keeping its mode, and rewrites the manifest only when its
-// bytes change: every top-level key it held in the order it held them, `syncedFrom` among them, with `seatDefaults`
-// directly before `entries` and left out when no seat is overridden. It returns the seats it wrote and whether it
-// rewrote the manifest, so a settings file whose values equal the shared defaults, which changes the manifest alone,
-// is told from a run that wrote nothing. A second run writes nothing.
+// bytes change: every top-level key it held in the order it held them, `syncedFrom` and any `adopters` an earlier
+// sync left among them, which only a sync removes, with `seatDefaults` directly before `entries` and left out when
+// no seat is overridden. It returns the seats it wrote and whether it rewrote the manifest, so a settings file whose
+// values equal the shared defaults, which changes the manifest alone, is told from a run that wrote nothing. A second
+// run writes nothing.
 //
 // checkLag compares this repository's manifest on disk with the canonical's manifest on main, never
 // the working-tree files (local file drift is the workflow contract test's job). It ignores `syncedFrom` and
-// compares `canonical`, `adopters` and each entry by path: only on main is "missing here", only here is "no
+// `adopters` and compares `canonical` and each entry by path: only on main is "missing here", only here is "no
 // longer shared", and a different kind, hash or executable bit is "changed", one line each, sorted by
 // path. The state is 'in-sync' only when nothing differs, 'drifted' when something does, and 'unknown', with its
 // cause, whenever the answer cannot be known: no or a malformed local manifest, a failed fetch, or a canonical
@@ -186,11 +192,12 @@ function parseManifest(text, label) {
   const { canonical, adopters, entries } = manifest ?? {};
   if (
     !REPOSITORY.test(canonical) ||
-    !Array.isArray(adopters) ||
-    !adopters.every((adopter) => REPOSITORY.test(adopter)) ||
-    !Array.isArray(entries)
+    !Array.isArray(entries) ||
+    (adopters !== undefined && !(Array.isArray(adopters) && adopters.every((adopter) => REPOSITORY.test(adopter))))
   ) {
-    throw new Error(`malformed ${label}: it must hold canonical "owner/repo", adopters ["owner/repo", ...] and entries [...]`);
+    throw new Error(
+      `malformed ${label}: it must hold canonical "owner/repo" and entries [...], and adopters, where it holds any, as ["owner/repo", ...]`,
+    );
   }
   entries.forEach(checkEntry);
   // Keyed by each path folded: files maps the key to its path, directories maps each folded ancestor directory to a
@@ -695,7 +702,6 @@ export function syncInto({ source, target, canonical: requested, fetchMain }) {
   const seatDefaults = seatsRecord(new Map([...seats].map(([path, { replaced }]) => [path, replaced])));
   const record = {
     canonical,
-    adopters: manifest.adopters,
     syncedFrom: fetched,
     ...(seats.size > 0 ? { seatDefaults } : {}),
     entries: manifest.entries,
@@ -785,9 +791,6 @@ export function checkLag({ root, fetchCanonicalManifest }) {
 
   const differences = [];
   if (local.canonical !== remote.canonical) differences.push(`canonical: ${local.canonical} here, ${remote.canonical} on main`);
-  if (local.adopters.join(', ') !== remote.adopters.join(', ')) {
-    differences.push(`adopters: ${local.adopters.join(', ')} here, ${remote.adopters.join(', ')} on main`);
-  }
   const [here, there] = [local, remote].map(({ entries }) => new Map(entries.map((entry) => [entry.path, entry])));
   for (const path of [...new Set([...here.keys(), ...there.keys()])].sort()) {
     if (!here.has(path)) differences.push(`${path}: missing here`);

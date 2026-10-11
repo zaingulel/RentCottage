@@ -86,7 +86,7 @@ Every rule this file does not hold in full has one home:
 |---|---|
 | What is true of this repository alone: its product, where its own facts live, its grounding authorities and its Conventions table | `.agents/REPOSITORY.md` |
 | Reusing instruction text already read | The [`resume`](.agents/skills/resume/SKILL.md) skill, "Before intake" |
-| Which builder seat a slice goes to; the machinery admissions, the friction route and how machinery leaves; what a plan carries for a change to how the interface looks, and who decides where the `frontend-design` skill and the design system disagree | [`resume`](.agents/skills/resume/SKILL.md), "4. Plan" |
+| Which builder seat a slice goes to; the machinery admissions, the friction route and how machinery leaves; what a plan carries for a change to how the interface looks, and who decides where the `frontend-design` skill and the design system disagree; and the steps of plan approval where a repository has turned it on: how the setting is read, how the plan is presented and revised, and what a resumed session does | [`resume`](.agents/skills/resume/SKILL.md), "4. Plan" |
 | Each runtime's exact form for waiting on a helper or a long command | [`resume`](.agents/skills/resume/SKILL.md), "5. Build" |
 | The two questions that choose a review tier, the three tiers, the guard rule, what a setting-only seat change is, the cross-family route, its single-family form in a repository that runs one runtime, and its substitution when the other family's seat cannot be reached, when `security-reviewer` runs, when Greptile runs, how visual work is driven and how many views it needs, and the accessibility audit of visual work with the minimum target size it holds | [`resume`](.agents/skills/resume/SKILL.md), "6. Verify and review" |
 | Every other Greptile rule: the pool it is metered from, the allowance lookup, how each thread is settled before the draft is marked ready, whether a review still stands after a rebase, and the provider-unavailability exception | The [`greptile`](.agents/skills/greptile/SKILL.md) skill |
@@ -107,6 +107,13 @@ Every rule this file does not hold in full has one home:
 2. **Push authorisation** is one yes to the filled pull request body and its screenshot, and any owner
    instruction to push is that yes. It covers the whole deliver sequence in the `resume` skill, push to
    auto-squash merge, with no fresh yes inside it. `closeout` follows the merge unasked.
+3. **Plan approval** is optional and off unless the repository's settings file holds `"planApproval": true`; a
+   repository with no settings file, no such key or `false` goes from plan to build with no owner step. Where it
+   is on, it is one yes to the completed plan as presented, given before anything is built, and any owner
+   instruction to build that plan is that yes; silence and elapsed time never are. A change the owner asks for
+   is made and the plan presented again before that yes. The plan is presented after any plan review the card
+   requires, which stays the agents' own review and no part of this gate, and both gates above keep their
+   meaning. The `resume` skill owns the steps under "4. Plan".
 
 A material change to the approved outcome, product meaning, or a trade-off goes back to the owner as a
 plain-language decision before it is built; a parser, state machine, or framework the outcome did not name is

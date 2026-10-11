@@ -9,9 +9,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { installs, presentRuntimes, readRuntimes, RUNTIMES, runtimeOf, SEATS, SETTINGS_PATH } from './runtimes.mjs';
+import { installs, presentRuntimes, readRuntimes, readSettingsHeader, RUNTIMES, runtimeOf, SEATS, SETTINGS_PATH } from './runtimes.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const RECOVERY = 'if a newer copy of the shared workflow admits this, undo the edit, run the sync that installs that copy, then make the edit again';
 
 test('the runtimes and their seat folders are fixed', () => {
   assert.deepEqual(RUNTIMES, ['claude', 'codex']);
@@ -95,17 +96,30 @@ test('the settings file names the runtimes present: no file means both, and an u
   };
   assert.deepEqual(presentRuntimes(tree(undefined)), ['claude', 'codex']);
   assert.deepEqual(presentRuntimes(tree('{"version":1,"runtimes":["codex"],"seats":{}}')), ['codex']);
-  const recovery = 'if a newer copy of the shared workflow admits this, undo the edit, run the sync that installs that copy, then make the edit again';
   const refused = [
     ['{', 'is not valid JSON'],
     ['null', 'file: must hold one JSON object; found null'],
     ['[]', 'file: must hold one JSON object; found []'],
-    ['{"runtimes":["claude"]}', `version: is unsupported by this copy of the sync (only 1); found undefined; ${recovery}`],
-    ['{"version":2,"runtimes":["claude"],"seats":{}}', `version: is unsupported by this copy of the sync (only 1); found 2; ${recovery}`],
-    ['{"version":1,"runtimes":["claude"],"seats":{},"extra":1}', `file: holds a key besides version, runtimes and seats; found "extra"; ${recovery}`],
+    ['{"runtimes":["claude"]}', `version: is unsupported by this copy of the sync (only 1); found undefined; ${RECOVERY}`],
+    ['{"version":2,"runtimes":["claude"],"seats":{}}', `version: is unsupported by this copy of the sync (only 1); found 2; ${RECOVERY}`],
+    ['{"version":1,"runtimes":["claude"],"seats":{},"extra":1}', `file: holds a key besides version, runtimes, seats and planApproval; found "extra"; ${RECOVERY}`],
   ];
   for (const [text, message] of refused) {
     assert.throws(() => presentRuntimes(tree(text)), { message: `.agents/factory-settings.json: ${message}` }, text);
+  }
+});
+
+test('planApproval: true or false is admitted, no key is valid, and any other value or top-level key is still refused by name', () => {
+  const header = (extra) => readSettingsHeader(JSON.stringify({ version: 1, ...extra }), 'settings.json');
+  for (const extra of [{}, { planApproval: true }, { planApproval: false }]) {
+    assert.deepEqual(header(extra).runtimes, ['claude', 'codex'], JSON.stringify(extra));
+  }
+  assert.deepEqual(header({ planApproval: true, runtimes: ['codex'] }).runtimes, ['codex']);
+  for (const [value, found] of [['true', '"true"'], [1, '1'], [0, '0'], [null, 'null'], [[], '[]'], [{}, '{}']]) {
+    assert.throws(() => header({ planApproval: value }), { message: `settings.json: planApproval: must be true or false; found ${found}` });
+  }
+  for (const key of ['PlanApproval', 'plan_approval', 'planApprovals']) {
+    assert.throws(() => header({ [key]: true }), { message: `settings.json: file: holds a key besides version, runtimes, seats and planApproval; found "${key}"; ${RECOVERY}` });
   }
 });
 

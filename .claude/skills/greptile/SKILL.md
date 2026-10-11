@@ -65,7 +65,7 @@ only CI reruns.
 
 ## The shared pool
 
-Greptile is metered from one pool shared by the canonical repository and every adopter the manifest lists: one
+Greptile is metered from one pool shared by the canonical repository and every adopter: one
 organisation, one developer seat, the credits its plan includes per billing period plus any overage a paid plan allows.
 There is no per-repository split; the tiers ration the pool, every adopter spends from it, and once it is exhausted
 every adopter records `UNAVAILABLE` until the period resets. So the shape of the rule is one shared policy, and a change
