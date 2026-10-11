@@ -137,7 +137,7 @@ function expectFact(section: string, label: string, amount: string) {
     label,
   );
   expect(fact.tagName).toBe("DT");
-  expect(fact.nextElementSibling).toHaveTextContent(amount);
+  expect(fact.nextElementSibling?.textContent).toBe(amount);
 }
 
 const labelledAmounts = [
@@ -291,7 +291,11 @@ describe("AdministratorBookingMoney", () => {
       ],
     ]);
     expect(rows[0]).toHaveTextContent("Completed");
-    expect(rows[0]).toHaveTextContent("Customer Total: IQD 105,000");
+    expect(
+      within(rows[0])
+        .getByText(/Customer Total:/)
+        .querySelector("bdi")?.textContent,
+    ).toBe("IQD 105,000");
   });
 
   it("lists refund and payout record identifiers inside the booking disclosure", () => {
@@ -312,8 +316,8 @@ describe("AdministratorBookingMoney", () => {
     ).toBeInTheDocument();
     expect(
       within(disclosure).getByText("Owner share after refunds")
-        .nextElementSibling,
-    ).toHaveTextContent("IQD 81,000");
+        .nextElementSibling?.textContent,
+    ).toBe("IQD 81,000");
   });
 
   it("asks to narrow the filter when too many bookings match", () => {

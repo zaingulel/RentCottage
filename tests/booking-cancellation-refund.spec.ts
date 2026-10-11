@@ -521,6 +521,7 @@ test.describe("retained cancellation and refund controls", () => {
     );
     const money = bookingRow.locator("details");
     await money.getByText(totals.bookingMoney, { exact: true }).click();
+    const figures = money.locator("dl").first();
     for (const [label, amount] of [
       [totals.bookingPrice, "IQD 110,000"],
       [totals.bookingServiceFees, "IQD 5,000"],
@@ -532,7 +533,11 @@ test.describe("retained cancellation and refund controls", () => {
       [totals.paidPayouts, "IQD 99,000"],
       [totals.unpaidPayouts, "IQD 0"],
     ])
-      await expect(money).toContainText(`${label}${amount}`);
+      await expect(
+        figures
+          .getByText(label, { exact: true })
+          .locator("xpath=following-sibling::dd[1]"),
+      ).toHaveText(amount);
     await bookingRow
       .getByRole("link", { name: reference, exact: true })
       .click();

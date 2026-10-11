@@ -28,11 +28,11 @@ const confirmedAt = (n: number) =>
     .toISOString()
     .replace(".000Z", ".123456+00:00");
 
-// Price 100,000 IQD and fee 5,000 IQD, paid out at 90,000 IQD, then 10,000 IQD of price refunded.
+// Price 100,000 IQD and fee 5,000 IQD, paid out at 90,000 IQD, then 10,000 IQD of price and 2,000 IQD of fee refunded.
 const paidThenRefunded: OwnerBookingEarningsFacts = {
   status: "captured",
   captured: { bookingPriceFils: 100_000_000, bookingServiceFeeFils: 5_000_000 },
-  refunded: { bookingPriceFils: 10_000_000, bookingServiceFeeFils: 0 },
+  refunded: { bookingPriceFils: 10_000_000, bookingServiceFeeFils: 2_000_000 },
   reserved: zero,
   obligation: zero,
   marketplaceCommissionRateBasisPoints: 1_000,
@@ -40,7 +40,10 @@ const paidThenRefunded: OwnerBookingEarningsFacts = {
   refunds: [
     {
       state: "succeeded",
-      allocation: { bookingPriceFils: 10_000_000, bookingServiceFeeFils: 0 },
+      allocation: {
+        bookingPriceFils: 10_000_000,
+        bookingServiceFeeFils: 2_000_000,
+      },
     },
   ],
   maturity,
@@ -67,7 +70,7 @@ const paidRefundRecord = {
   source: "administrator",
   state: "succeeded",
   bookingPriceFils: 10_000_000,
-  bookingServiceFeeFils: 0,
+  bookingServiceFeeFils: 2_000_000,
   requestedAt: "2026-10-02T09:00:00.000001+00:00",
 } as const;
 const eligibleEarnings: OwnerBookingEarningsFacts = {
@@ -82,12 +85,15 @@ const eligibleEarnings: OwnerBookingEarningsFacts = {
 const pendingRefundEarnings: OwnerBookingEarningsFacts = {
   ...eligibleEarnings,
   captured: { bookingPriceFils: 50_000_000, bookingServiceFeeFils: 2_000_000 },
-  reserved: { bookingPriceFils: 5_000_000, bookingServiceFeeFils: 0 },
+  reserved: { bookingPriceFils: 5_000_000, bookingServiceFeeFils: 500_000 },
   marketplaceCommissionAmountFils: 5_000_000,
   refunds: [
     {
       state: "requested",
-      allocation: { bookingPriceFils: 5_000_000, bookingServiceFeeFils: 0 },
+      allocation: {
+        bookingPriceFils: 5_000_000,
+        bookingServiceFeeFils: 500_000,
+      },
     },
   ],
 };
@@ -115,7 +121,7 @@ describe("administrator booking money derivation", () => {
         customerTotalFils: 105_000_000,
         commissionAtCaptureFils: 10_000_000,
         refundedBookingPriceFils: 10_000_000,
-        refundedBookingServiceFeeFils: 0,
+        refundedBookingServiceFeeFils: 2_000_000,
         pendingRefundFils: 0,
         commissionAfterRefundsFils: 9_000_000,
         ownerShareAtCaptureFils: 90_000_000,
@@ -195,6 +201,7 @@ describe("administrator booking money derivation", () => {
               id: uuid(902),
               state: "requested",
               bookingPriceFils: 5_000_000,
+              bookingServiceFeeFils: 500_000,
             },
           ],
           settlementIntentId: null,
@@ -212,8 +219,8 @@ describe("administrator booking money derivation", () => {
         customerTotalFils: 178_000_000,
         commissionAtCaptureFils: 17_000_000,
         refundedBookingPriceFils: 10_000_000,
-        refundedBookingServiceFeeFils: 0,
-        pendingRefundFils: 5_000_000,
+        refundedBookingServiceFeeFils: 2_000_000,
+        pendingRefundFils: 5_500_000,
         commissionAfterRefundsFils: 16_000_000,
         ownerShareAtCaptureFils: 153_000_000,
         ownerShareAfterRefundsFils: 144_000_000,
