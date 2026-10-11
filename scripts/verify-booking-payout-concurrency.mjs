@@ -171,16 +171,15 @@ try {
 
     seed();
     const queues = `select jsonb_build_array(${[
-      "requests",
-      "bookings",
-      "refunds",
-      "incidents",
-    ]
-      .map(
+      ...["requests", "bookings", "refunds", "incidents"].map(
         (queue) =>
           `public.search_administrator_booking_queue('${queue}',null,null,null,null,null)`,
-      )
-      .join(",")})`;
+      ),
+      "public.list_administrator_booking_money(null,null,null)",
+    ].join(",")})`;
+    const moneyRefundRecords = (read) =>
+      read[4].bookings.find((booking) => booking.bookingRequestId === request)
+        .refundRecords;
     const queueRefund = (command, allocation) =>
       `${administrator}select public.request_booking_refund_exception('${request}','${command}','Queue concurrency refund','${allocation}');`;
     harness.runSql(
@@ -227,9 +226,18 @@ try {
       ),
       "queues show the committed refund the earlier reader did not return",
     );
+    assert.ok(
+      moneyRefundRecords(afterRefund).some(
+        (record) =>
+          !moneyRefundRecords(beforeRefund).some(
+            (seen) => seen.id === record.id,
+          ),
+      ),
+      "booking money lists the committed refund the earlier reader did not return",
+    );
     await harness.finishSession(queueReader, { action: "rollback" });
     console.log(
-      "Administrator queues take no request, commitment, capture work or capture lock, return the previous committed facts during an uncommitted refund exception, then show the committed refund.",
+      "Administrator queues and booking money take no request, commitment, capture work or capture lock, return the previous committed facts during an uncommitted refund exception, then show the committed refund.",
     );
 
     seed();

@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(79);
+select plan(92);
 
 -- BEGIN ADMINISTRATOR RECORDS FIXTURE
 -- Fictional reserved 250 namespace. The local transaction rolls every row back.
@@ -280,5 +280,36 @@ select throws_ok($$select public.search_administrator_booking_queue('requests',n
 select throws_ok($$select public.search_administrator_booking_queue('requests',null,null,null,now(),null)$$,'22023',null,'partial booking queue cursor is denied');
 reset role;
 select is((select array[provolatile::text,prosecdef::text] from pg_proc where oid='public.search_administrator_booking_queue(text,text,date,date,timestamptz,uuid)'::regprocedure),array['s','true'],'booking queue reader is a stable privileged read');
+select set_config('request.jwt.claims','{"sub":"25000000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal2"}',true);
+set local role authenticated;
+select throws_ok($$select public.list_administrator_booking_money(null,null,null)$$,'42501',null,'booking money reader refuses every caller except an AAL2 Platform Administrator');
+reset role;
+select set_config('request.jwt.claims','{"sub":"25000000-0000-4000-8000-000000000101","role":"authenticated","aal":"aal2"}',true);
+set local role authenticated;
+select throws_ok($$select public.list_administrator_booking_money(null,null,null)$$,'42501',null,'booking money reader refuses every caller except an AAL2 Platform Administrator');
+reset role;
+select set_config('request.jwt.claims','{"sub":"25000000-0000-4000-8000-000000000201","role":"authenticated","aal":"aal1"}',true);
+set local role authenticated;
+select throws_ok($$select public.list_administrator_booking_money(null,null,null)$$,'42501',null,'booking money reader refuses every caller except an AAL2 Platform Administrator');
+reset role;
+select set_config('request.jwt.claims','{"sub":"25000000-0000-4000-8000-000000000202","role":"authenticated","aal":"aal2"}',true);
+set local role authenticated;
+select throws_ok($$select public.list_administrator_booking_money(null,null,null)$$,'42501',null,'booking money reader refuses every caller except an AAL2 Platform Administrator');
+reset role;
+select set_config('request.jwt.claims','{"sub":"25000000-0000-4000-8000-000000000201","role":"authenticated","aal":"aal2"}',true);
+set local role anon;
+select throws_ok($$select public.list_administrator_booking_money(null,null,null)$$,'42501',null,'booking money reader refuses every caller except an AAL2 Platform Administrator');
+reset role;
+select ok(not has_function_privilege('anon','public.list_administrator_booking_money(text,date,date)','EXECUTE'),'anonymous role cannot execute the booking money reader');
+select ok(not has_function_privilege('service_role','public.list_administrator_booking_money(text,date,date)','EXECUTE'),'service role cannot execute the booking money reader');
+select ok(has_function_privilege('authenticated','public.list_administrator_booking_money(text,date,date)','EXECUTE'),'authenticated role reaches the booking money reader and its AAL2 gate');
+select ok(not has_function_privilege('anon','public.administrator_booking_money_facts(text,date,date,integer)','EXECUTE') and not has_function_privilege('authenticated','public.administrator_booking_money_facts(text,date,date,integer)','EXECUTE') and not has_function_privilege('service_role','public.administrator_booking_money_facts(text,date,date,integer)','EXECUTE'),'no API role can execute the shared booking money facts');
+select set_config('request.jwt.claims','{"sub":"25000000-0000-4000-8000-000000000201","role":"authenticated","aal":"aal2"}',true);
+set local role authenticated;
+select throws_ok($$select public.list_administrator_booking_money('succeeded',null,null)$$,'22023',null,'a refund state is not a booking money status');
+select throws_ok($$select public.list_administrator_booking_money(null,'2026-09-02','2026-09-01')$$,'22023',null,'reverse booking money date range is denied');
+select is(public.list_administrator_booking_money(null,'1990-01-01','1990-01-01'),'{"status":"ready","bookings":[],"missingPaymentEvidence":[]}'::jsonb,'administrator AAL2 reads an empty booking money selection as ready');
+reset role;
+select is((select array[provolatile::text,prosecdef::text] from pg_proc where oid='public.list_administrator_booking_money(text,date,date)'::regprocedure),array['s','true'],'booking money reader is a stable privileged read');
 select * from finish();
 rollback;
