@@ -180,6 +180,35 @@ describe("CottageBookingPeriodPicker", () => {
     }
   });
 
+  it("shows a state only on an option that cannot be chosen", () => {
+    render(<ProfileNavigation />);
+    const rows = within(
+      screen.getByRole("group", { name: "Sat, Jan 12" }),
+    ).getAllByRole("listitem");
+    expect(rows).toHaveLength(3);
+    expect(screen.queryByText("Available")).toBeNull();
+    expect(within(rows[0]).queryByText("Unavailable")).toBeNull();
+    expect(within(rows[1]).getByText("Unavailable")).toBeVisible();
+    expect(within(rows[2]).getByText("Unavailable")).toBeVisible();
+  });
+
+  it("never shows a word for a total in the picker in any launch language", () => {
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      const { container, unmount } = render(
+        <CottageBookingPeriodPicker
+          locale={locale}
+          slug="garden-house"
+          query={query}
+          inventory={inventory}
+        />,
+      );
+      expect(container).not.toHaveTextContent(/total/i);
+      expect(container).not.toHaveTextContent("إجمالي");
+      expect(container).not.toHaveTextContent("کۆی گشتی");
+      unmount();
+    }
+  });
+
   it("keeps no selection until the customer chooses every Service Day", async () => {
     const user = userEvent.setup();
     render(<ProfileNavigation />);

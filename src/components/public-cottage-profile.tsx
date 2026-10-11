@@ -1,5 +1,4 @@
 import Image from "next/image";
-import Link from "next/link";
 
 import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
 import type { CottageDiscoveryProfileResult } from "@/cottage-discovery/supabase-cottage-discovery";
@@ -7,6 +6,7 @@ import { publicCottageAmenityName } from "@/i18n/public-cottage-amenities";
 import type { Locale } from "@/i18n/routing";
 import { customerReviewMessages } from "@/i18n/customer-review-messages";
 import { CottageBookingPeriodPicker } from "./cottage-booking-period-picker";
+import { ActionLink } from "./interaction-controls";
 
 const copy = {
   ar: {
@@ -55,22 +55,33 @@ export function PublicCottageProfileView({
   const messages = copy[locale];
   if (result.status !== "loaded" || query === null)
     return (
-      <main className="results-page">
-        <header className="results-header">
-          <Link href={`/${locale}/results?${resultsQueryString}`}>
+      <main className="results-page page">
+        <header className="page-heading">
+          <ActionLink
+            kind="text"
+            href={`/${locale}/results?${resultsQueryString}`}
+          >
             {messages.back}
-          </Link>
+          </ActionLink>
         </header>
         <p role="alert">{messages.unavailable}</p>
       </main>
     );
   const cottage = result.cottage;
   return (
-    <main className="profile-page">
-      <header className="results-header">
-        <Link href={`/${locale}/results?${resultsQueryString}`}>
+    <main className="profile-page page">
+      <header className="page-heading profile-heading">
+        <ActionLink
+          kind="text"
+          href={`/${locale}/results?${resultsQueryString}`}
+        >
           {messages.back}
-        </Link>
+        </ActionLink>
+        <h1 className="page-title">{cottage.name}</h1>
+        <p>
+          {messages.location}: {cottage.approximateLocation},{" "}
+          {cottage.governorate}
+        </p>
       </header>
       <div className="profile-layout">
         <div>
@@ -91,14 +102,7 @@ export function PublicCottageProfileView({
               ))}
             </section>
           ) : null}
-          <header className="profile-heading">
-            <h1>{cottage.name}</h1>
-            <p>
-              {messages.location}: {cottage.approximateLocation},{" "}
-              {cottage.governorate}
-            </p>
-          </header>
-          <dl className="profile-facts">
+          <dl className="fact-list">
             <div>
               <dt>{messages.capacity}</dt>
               <dd>
@@ -116,7 +120,7 @@ export function PublicCottageProfileView({
             <p>{cottage.description}</p>
           </section>
           <section className="profile-section">
-            <h2>{messages.amenities}</h2>
+            <h2 className="section-title">{messages.amenities}</h2>
             <ul>
               {cottage.amenities.map((amenity) => (
                 <li key={amenity}>
@@ -126,13 +130,16 @@ export function PublicCottageProfileView({
             </ul>
           </section>
           <section className="profile-section">
-            <h2>{messages.rules}</h2>
+            <h2 className="section-title">{messages.rules}</h2>
             <p>{cottage.houseRules}</p>
           </section>
           <section className="profile-section">
-            <Link href={`/${locale}/cottages/${cottage.slug}/reviews`}>
+            <ActionLink
+              kind="text"
+              href={`/${locale}/cottages/${cottage.slug}/reviews`}
+            >
               {customerReviewMessages[locale].publicLink}
-            </Link>
+            </ActionLink>
           </section>
         </div>
         <aside className="booking-summary">

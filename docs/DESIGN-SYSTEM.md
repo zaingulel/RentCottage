@@ -126,14 +126,13 @@ A stylesheet may write these as literals:
   - `.retreat-copy { padding-block: 11rem 8.5rem }`
   - `.retreat-copy { padding-block-end: 7.5rem }`
   - `.retreat-search { margin-block-start: -4rem }`
-- Six display heading size declarations larger than the largest step. Each stays until its screen is moved onto the
+- Five display heading size declarations larger than the largest step. Each stays until its screen is moved onto the
   page template, when a page title takes the style under Page template and its entry is removed here; a heading
   that is not a page title, as the home page hero headline and section headings are, keeps its entry until a rule
   in this document replaces it:
   - `.retreat-copy h1 { font-size: clamp(2.5rem, 6vw, 4.4rem) }`
   - `.retreat-copy h1 { font-size: clamp(2.25rem, 12vw, 3.3rem) }`
   - `.results-intro h1 { font-size: clamp(2.6rem, 6vw, 4.5rem) }`
-  - `.profile-heading h1 { font-size: clamp(2.5rem, 6vw, 4rem) }`
   - `.access-required-card h1 { font-size: clamp(2.2rem, 6vw, 3.5rem) }`
   - `.trusted-copy h2 { font-size: clamp(2rem, 4vw, 3rem) }`
 
@@ -245,7 +244,8 @@ Anything else is a token.
   Missing choices are corrected only through an explicit `ActionButton`; changed availability uses
   `ActionFeedback`. Results reuse `.result-shifts` inside named `.result-service-day` groups. Each option there is a
   row of two aligned lines: its name over its time at the start edge, and its price over its availability text at
-  the end edge, with a selected filter's `span.status-badge` on its own line under the row. Times use
+  the end edge, with a selected filter's `span.status-badge` on its own line under the row. The picker on the
+  cottage page uses the same row, and shows the state text only on an option that cannot be chosen. Times use
   `<bdi dir="ltr">` in every locale.
 - Progress steps: `BookingRequestProgress` in
   [booking-request-progress.tsx](../src/components/booking-request-progress.tsx) renders an
