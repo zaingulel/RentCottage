@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   reportCustomerReviewTranslation,
@@ -48,6 +48,17 @@ export function CustomerReviewTranslation({
   const [reported, setReported] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>();
   const { pending, run } = useExclusiveAction();
+  const actions = useRef<HTMLDivElement>(null);
+  const restoreFocus = useRef(false);
+
+  // A pending button is disabled and a reported one leaves the page, and either drops focus to the body.
+  useEffect(() => {
+    if (pending || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    actions.current?.querySelector("button")?.focus();
+  }, [pending]);
 
   const current = shown ?? translation;
   const showingTranslation = current !== undefined && !showOriginal;
@@ -119,7 +130,15 @@ export function CustomerReviewTranslation({
         {showingTranslation ? current.translatedBody : originalBody}
       </p>
       {primary ? (
-        <div className={styles.translationActions}>
+        <div
+          ref={actions}
+          className={styles.translationActions}
+          onClickCapture={(event) => {
+            restoreFocus.current = event.currentTarget.contains(
+              document.activeElement,
+            );
+          }}
+        >
           <ActionButton
             kind="secondary"
             size="compact"

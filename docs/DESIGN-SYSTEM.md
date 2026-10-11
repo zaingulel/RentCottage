@@ -256,8 +256,9 @@ Anything else is a token.
 - Automatic translation: generated text sits under `p.translation-label`, which names it in `--ink-translation`, in
   one paragraph that carries the reader's `lang` and the `dir` from `directionFor(locale)` while it shows the
   translation and the original's own `lang` and direction while it shows the original. One compact secondary
-  `ActionButton` switches between the two and keeps its place, so focus stays on it; a second reports the
-  translation on screen and `ActionFeedback` answers it. When no translation can be produced the original stays and
+  `ActionButton` switches between the two and keeps its place, so focus stays on it, and once Translate or Report
+  settles focus returns to it when the pending or removed button dropped it; a second reports the translation on
+  screen and `ActionFeedback` answers it. When no translation can be produced the original stays and
   `ActionFeedback` says so. [customer-review-translation.tsx](../src/components/customer-review-translation.tsx) is
   the pattern; the conversation in `messaging-conversation.tsx` keeps its own rules until it is moved onto it.
 - A new button, link-styled action, form field, checkbox, radio button, option group, disclosure or submit

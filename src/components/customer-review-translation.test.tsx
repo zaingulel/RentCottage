@@ -186,6 +186,49 @@ describe("CustomerReviewTranslation", () => {
     expect(first).toHaveFocus();
   });
 
+  it("returns focus to the switching button when the reported translation's Report button leaves the page", async () => {
+    const user = userEvent.setup();
+    render(island({ translation: stored, canAct: true }));
+
+    screen.getByRole("button", { name: "Report poor translation" }).focus();
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Translation reported.",
+    );
+    expect(screen.getByRole("button", { name: "View original" })).toHaveFocus();
+  });
+
+  it("leaves focus where the reader moved it while a translation was pending", async () => {
+    let finish: (value: unknown) => void = () => {};
+    translate.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <>
+        {island({ canAct: true })}
+        <button type="button">Elsewhere</button>
+      </>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Translate" }));
+    const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+    elsewhere.focus();
+    finish({
+      status: "translated",
+      translationId,
+      translatedBody: "A quiet place",
+    });
+
+    expect(
+      await screen.findByRole("button", { name: "View original" }),
+    ).toBeEnabled();
+    expect(elsewhere).toHaveFocus();
+  });
+
   it.each([
     [
       { status: "unavailable" },
