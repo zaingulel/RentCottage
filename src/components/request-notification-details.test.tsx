@@ -95,12 +95,12 @@ it.each(["en", "ar", "ckb"] as const)(
     expect(container.querySelector('input[name="receiptId"]')).toBeNull();
     if (locale === "en")
       for (const label of [
-        "Queued",
-        "Delivery processing",
+        "Waiting to be sent",
+        "Being sent",
         "Delivery failed",
         "Delivery outcome uncertain; checking",
         "Delivered",
-        "Delivery withheld because this notice is no longer eligible",
+        "Not sent because it no longer applies",
       ])
         expect(screen.getByText(label, { exact: true })).toBeVisible();
   },
@@ -125,9 +125,9 @@ it.each(["en", "ar", "ckb"] as const)(
 );
 
 it.each([
-  ["en", "Request notification delivery"],
-  ["ar", "تسليم إشعارات الطلب"],
-  ["ckb", "گەیاندنی ئاگادارکردنەوەی داواکاری"],
+  ["en", "Notifications about this request"],
+  ["ar", "إشعارات هذا الطلب"],
+  ["ckb", "ئاگادارکردنەوەکانی ئەم داواکارییە"],
 ] as const)(
   "%s shows no delivery heading when an available delivery has no notices",
   (locale, title) => {

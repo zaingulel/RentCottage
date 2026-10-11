@@ -716,9 +716,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
           ).toBeVisible();
           for (const surface of [customerView, ownerView]) {
             const deliveryTitle = {
-              en: "Request notification delivery",
-              ar: "تسليم إشعارات الطلب",
-              ckb: "گەیاندنی ئاگادارکردنەوەی داواکاری",
+              en: "Notifications about this request",
+              ar: "إشعارات هذا الطلب",
+              ckb: "ئاگادارکردنەوەکانی ئەم داواکارییە",
             }[copy.locale];
             const requestDelivery = surface.getByRole("region", {
               name: deliveryTitle,

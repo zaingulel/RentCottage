@@ -22,7 +22,8 @@ export function MessagingBookingLink({
   const [pending, startTransition] = useTransition();
   const [failed, setFailed] = useState(false);
   return (
-    <div className="request-follow-up">
+    <section className="request-follow-up" aria-label={copy.inbox}>
+      <h2 className="section-title">{copy.inbox}</h2>
       <ActionButton
         kind="secondary"
         size="regular"
@@ -44,6 +45,6 @@ export function MessagingBookingLink({
         {copy.open}
       </ActionButton>
       {failed ? <p role="status">{copy.unavailable}</p> : null}
-    </div>
+    </section>
   );
 }
