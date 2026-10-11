@@ -326,11 +326,43 @@ branch. Two issues may run in parallel only when their files are disjoint.
   job that removes a friction another way deletes the machinery that friction admitted, and a card that rewrites a
   testing strategy, a coding standard or the workflow text of `AGENTS.md` lists the machinery it keeps and settles keep,
   shrink or delete for each.
+- **Plan approval (optional owner gate).** `AGENTS.md` owns what this gate is and what turns it on, under "Owner
+  gates"; these are its steps, taken once the plan is complete and every finding of any plan review is settled.
+  - **Read the setting on the fetched `main`,** never from the files of the job, so a job cannot switch its own
+    gate off. `git ls-tree --full-tree --name-only origin/main -- .agents/factory-settings.json` prints the path
+    where the repository has a settings file, whatever folder it is run from, and
+    `git show origin/main:.agents/factory-settings.json` then prints that file. The gate is off where the first
+    command exits 0 and prints nothing, or where the file is one JSON object that holds no `planApproval` key or
+    holds `false`: go on to "5. Build" with no owner step. It is on where the file holds `"planApproval": true`. A
+    command that fails, a file that is not one JSON object, any other value, or a key spelt nearly like it leaves
+    the gate unknown, which is never off: build nothing and tell the owner what the commands printed.
+  - **Present the plan, then stop.** Save the plan, the architect's or the session's own short plan, beside the
+    work log as `.claude/worklog/<branch>-plan.md`. Tell the owner in plain language what will be built slice by
+    slice, what each slice proves and what is left out; where a plan review ran, which seat reviewed the plan and
+    how each finding was settled; and where the full plan is. Then ask whether to build it and end the turn. The
+    card stays in `In progress`.
+  - **A pause before the yes is local.** Nothing tracked has changed and the saved plan is not tracked, so
+    `handoff` has nothing to commit or publish, and no commit is made only to park a plan. The job branch, the
+    claim on the card and the saved plan stay on this machine as they are.
+  - **Until the yes, nothing is built:** no builder is dispatched and no tracked file is changed for the card.
+    Discovery, planning and the plan review need no approval. A question from the owner is answered and the plan
+    is asked about again; an answer to another question, a card comment, the work log and a commit on the job
+    branch are never that yes.
+  - **A change the owner asks for** is made by the seat that wrote the plan, and the changed plan is presented
+    again in the same form, naming what changed, before the session waits again. On a card whose plan needed a
+    plan review, the changed plan is reviewed again first.
+  - **A resumed session** reads the setting again. Where anything is left to build it starts with no approval,
+    because an earlier session's yes does not carry over: it presents the plan as it stands and what is already
+    built, planning again where the plan file is not on this machine, and waits.
+  - **After the yes** the build runs as "5. Build" says. A later change to the plan goes back to the owner only
+    where `AGENTS.md` sends a material change back.
 
 ## 5. Build
 
 - Every edit goes to `builder-lite`, `builder`, or `builder-max` through `.agents/templates/builder-handoff.md`;
   the session never builds (AGENTS.md, Runtime notes). Builders never run the full suite, never commit.
+- Where the repository has turned plan approval on, no builder is dispatched before the owner's yes to the plan in
+  this session; "4. Plan" owns the steps under **Plan approval**.
 - Commit on the job branch after every green slice. Uncommitted files survive a crash but not a stray checkout,
   and the next session reads the branch, not the worktree, to see what was already green. A local commit needs
   no authorisation; only the push does. Commit green work before any stop, handoff, replan or split proposal as

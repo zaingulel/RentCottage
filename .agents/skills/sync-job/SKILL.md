@@ -22,13 +22,25 @@ change merged after the run, or whose evidence the job cannot show, stays open.
 
 **How shared files are kept.** The manifest's `canonical` repository authors each shared file under `src/` and keeps an
 installed copy at its root in the same commit, fingerprinted with `node scripts/factory-sync.mjs --write`; a test in its
-suite refuses a difference. Each repository in `adopters` holds a copy pinned at the commit its manifest records as
-`syncedFrom`. A shared file edited without its manifest hash following fails the contract test; `--write` refreshes the
-hashes, and only in the canonical repository. Shared files are real files, never symlinks, since a symlink reaches a
-Windows checkout as plain text: a skill lives in `.agents/skills/` and is copied whole to `.claude/skills/`, and each
-hook directory carries its own `.gitattributes` so hooks keep LF endings wherever line endings are converted; the
-contract test fails on a symlink, a copy that differs from its source, or a missing rule. A git hook's run permission is
-its committed file mode.
+suite refuses a difference. Each adopter holds a copy pinned at the commit its manifest records as `syncedFrom`. Only
+the canonical repository's manifest holds `adopters`, the list of them: a sync writes an adopter's manifest without that
+list and removes one an earlier sync left there, so an adopter's manifest names the canonical repository and no other
+adopter, and `--check` does not compare the list. A shared file edited without its manifest hash following fails the
+contract test; `--write` refreshes the hashes, and only in the canonical repository. Shared files are real files, never
+symlinks, since a symlink reaches a Windows checkout as plain text: a skill lives in `.agents/skills/` and is copied
+whole to `.claude/skills/`, and each hook directory carries its own `.gitattributes` so hooks keep LF endings wherever
+line endings are converted; the contract test fails on a symlink, a copy that differs from its source, or a missing
+rule. A git hook's run permission is its committed file mode.
+
+**When a run leaves `adopters` behind.** The adopter's own copy of the tool runs the sync, before the run replaces it,
+so a copy that writes `adopters` leaves the canonical's list in the adopter's manifest, where it can name adopters that
+manifest never held. A sync job publishes no commit that holds the list. Where a run leaves it, record
+`git rev-parse HEAD` as `<before-sync>`, then commit the run's result locally, since a sync refuses a target with
+uncommitted changes at shared paths; run the sync again in the same job, which the copy just installed runs and which
+removes the list, and commit that result too; then squash the two commits with `git reset --soft <before-sync>` and
+`git commit`. Nothing is pushed, a handoff's push included, while a commit the job added, any commit after
+`<before-sync>`, holds `adopters` in the manifest, and a job that cannot remove the list stops there and goes back to
+the owner.
 
 **How a repository overrides a seat.** Each seat file's setting lines, as the canonical repository ships them, are
 the defaults: a model, an effort and a turn limit in a Claude seat file, and a model and an effort in a Codex seat

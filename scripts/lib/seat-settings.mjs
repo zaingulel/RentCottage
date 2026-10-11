@@ -14,9 +14,9 @@
 //   if a newer copy of the shared workflow admits this, undo the edit, run the sync that installs that copy, then make the edit again
 //
 //  1. The file is a regular file reached through no symlinked directory, read without following a symlink,
-//     holding one JSON object with the keys `version` and `seats` and, optionally, `runtimes`. `version` is exactly
-//     1; any other version is refused as unsupported by this copy, with the recovery. Another key is refused with
-//     the recovery.
+//     holding one JSON object with the keys `version` and `seats` and, optionally, `runtimes` and `planApproval`.
+//     `version` is exactly 1; any other version is refused as unsupported by this copy, with the recovery. Another
+//     key is refused with the recovery.
 //  2. `seats` is an object whose only keys are `claude` and `codex`, each an object from seat name to an object of
 //     settings. Own keys only. An empty object means no override. Another runtime key is refused with the recovery.
 //  3. A seat name matches ^[\w-]+$ and must be a seat file the manifest lists for that runtime. A name is only ever
@@ -38,10 +38,13 @@
 //     own entries. A seatDefaults record obeys rules 2 to 5 and names only seat files the same manifest lists.
 //  9. `runtimes`, when present, is a non-empty array naming `claude`, `codex` or both, each once; with no key both
 //     runtimes are present. Anything else is refused. A seat named under a runtime the list leaves out is refused.
+// 10. `planApproval`, when present, is `true` or `false`; with no key, as with `false`, the owner's plan approval
+//     is off. Anything else is refused. No script acts on the value: the session reads it, as the `resume` skill
+//     says under "4. Plan".
 //
-// The JSON half of rule 1 and the list half of rule 9 are readSettingsHeader (runtimes.mjs), which parseSettings
-// calls; rules 2, 4, 5 and the seat half of rule 9 are parseSettings and seatsByPath; 6 is substituteSeatSettings; 7 is
-// overrideProblems. The file half of rule 1, rule 3 and rule 8 belong to the sync.
+// The JSON half of rule 1, the list half of rule 9 and rule 10 are readSettingsHeader (runtimes.mjs), which
+// parseSettings calls; rules 2, 4, 5 and the seat half of rule 9 are parseSettings and seatsByPath; 6 is
+// substituteSeatSettings; 7 is overrideProblems. The file half of rule 1, rule 3 and rule 8 belong to the sync.
 
 import { checkAgentSource, checkCodexAgentSource, checkSeatPolicy } from './check-agents.mjs';
 import { isRecord, readSettingsHeader, refusal, RUNTIMES } from './runtimes.mjs';

@@ -26,6 +26,8 @@ flowchart TD
     WP --> WT[Worktree on its own branch, card to In progress]
     WT --> PL[Plan: architect or the session, plan review where the card requires one]
     PL --> BD[Build in bounded slices, evidence through scripts/run-log.mjs]
+    PL -.->|only where the repository turns plan approval on| AP[Plan approval: the owner says yes to the completed plan]
+    AP -.-> BD
     BD --> VR[Verify: visual work driven and shown, plus any gate the Surfaces table names]
     VR --> RV[Fresh review of the final tree, repair, one pass scoped to the repair]
     RV --> PA[Push authorisation: card to Awaiting push, owner reads the PR body and screenshot]
@@ -40,11 +42,11 @@ flowchart TD
 ```
 
 The diagram shows the whole path from a card to a merged commit, including the branch where a qualifying change
-goes straight to `main`.
+goes straight to `main`. The dotted pair is taken only where the repository has turned plan approval on.
 
 In words: a card in Ready is picked by the owner, gets a worktree on its own branch and moves to In progress. It
 is planned by an architect or by the session, with a plan review where the card requires one;
-[the `resume` skill](../.agents/skills/resume/SKILL.md) owns that rule under "4. Plan". It is then built in
+[the `resume` skill](../.agents/skills/resume/SKILL.md) owns that rule under "4. Plan". Where the repository has turned plan approval on, the owner then approves the completed plan before anything is built. It is then built in
 bounded slices with recorded evidence, verified, and given a fresh review of the final tree with repairs. At push
 authorisation the card moves to Awaiting push and the owner reads the pull request body. On the owner's yes a
 draft pull request opens and the card moves to In review; a change at the sign-off tier first settles an external
@@ -64,7 +66,7 @@ whose every path qualifies skips the pull request, is pushed straight to `main`,
   identify which continuation bodies matter, and the captured details serve selection and planning. Once every
   read has returned the session rechecks the verifier checkout: movement or conflicting facts invalidate
   affected evidence. These reduce hand-composed commands and serial waits while retaining freshness, complete
-  recommendations, claims, triage authority and both owner gates; they establish no total agent-latency
+  recommendations, claims, triage authority and the owner gates; they establish no total agent-latency
   guarantee.
 - **Isolation.** Every issue gets its own git worktree on its own branch, so two issues in two terminals never
   share a working file. A runtime's own subagent worktree is not that worktree: it branches from `main` rather
@@ -76,6 +78,11 @@ whose every path qualifies skips the pull request, is pushed straight to `main`,
   runtime, the commands that create it, the slice branch name, the claim format and what happens to an In
   progress card with nothing behind it are in [the `resume` skill](../.agents/skills/resume/SKILL.md) under
   "1. Find where things stand" and "3. Start the job".
+- **Plan approval, where the repository turns it on.** The completed plan is presented to the owner after any plan
+  review the card requires, and nothing is built until the owner says yes; a change the owner asks for is made and
+  the plan presented again. The gate is off unless the repository's settings file turns it on, and no guard holds
+  it: it is instructed. [`AGENTS.md`](../AGENTS.md) owns the gate under "Owner gates", and
+  [the `resume` skill](../.agents/skills/resume/SKILL.md) owns the steps under "4. Plan".
 - **Evidence during the build.** Every executed check runs through a logger that writes its real outcome, so the
   pull request body quotes what a script wrote, not what an agent remembers;
   [The evidence bar](AI-WORKFLOW-evidence.md) explains the log. Every green slice is committed on the job branch,
@@ -123,8 +130,8 @@ whose every path qualifies skips the pull request, is pushed straight to `main`,
   still stands after a rebase, and when an attempt counts as unavailable.
 - [The `closeout` skill](../.agents/skills/closeout/SKILL.md): every step after the merge, and under "Leftover rule"
   what a leftover is and what each outcome of investigating one allows.
-- [`AGENTS.md`](../AGENTS.md) under "Owner gates": what work-pick and push authorisation approve, and the cleanup
-  rule.
+- [`AGENTS.md`](../AGENTS.md) under "Owner gates": what work-pick, push authorisation and the optional plan approval approve, and the
+  cleanup rule.
 - [`AGENTS.md`](../AGENTS.md) under "Review and visual verification": the one fresh review before the pull request
   opens, and the visual check.
 - [`AGENTS.md`](../AGENTS.md) under "Publication and machinery": the pull request route and the direct route.
@@ -138,6 +145,11 @@ whose every path qualifies skips the pull request, is pushed straight to `main`,
 
 - **A session stops mid-build.** Every green slice is already committed on the job branch, so at most the slice in
   progress is lost.
+- **A session stops while a plan awaits the owner's approval.** Nothing has been built, so nothing is handed off:
+  the job branch, the claim on the card and the saved plan stay on the machine that made them. A session that
+  continues the job there presents the plan and asks again, and an approval given to an earlier session does not
+  carry over ([the `resume` skill](../.agents/skills/resume/SKILL.md), under "4. Plan"). From another machine the
+  card is the In progress card with no branch or pull request behind it, below.
 - **A reviewer cannot be reached.** [The `resume` skill](../.agents/skills/resume/SKILL.md) owns the substitution
   route and the declaration it requires, under "6. Verify and review".
 - **Two repair rounds still produce true findings.** [The `resume` skill](../.agents/skills/resume/SKILL.md)

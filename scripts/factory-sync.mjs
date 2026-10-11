@@ -10,9 +10,9 @@
 //                                           # adopter: copy every entry from a canonical checkout
 //
 // --write refuses to run unless the repository's `origin` remote is github.com/<the manifest's canonical>,
-// in https or ssh form, so an adopter can never bless its own local drift. It keeps `canonical`, `adopters`
-// and the entry order, and writes 2-space-indented JSON with a trailing newline, so an unchanged tree
-// rewrites identical bytes.
+// in https or ssh form, so an adopter can never bless its own local drift. It refuses a manifest that holds no
+// `adopters`: the canonical's manifest is that list's one home. It keeps `canonical`, `adopters` and the entry
+// order, and writes 2-space-indented JSON with a trailing newline, so an unchanged tree rewrites identical bytes.
 //
 // --from fetches the source's origin main, then syncs into --into (default: this repository) under the
 // contract in scripts/lib/factory-sync.mjs: every check runs before any write, so a refusal writes nothing.
@@ -78,6 +78,11 @@ function write() {
     );
   }
   const { canonical, adopters } = manifest;
+  if (adopters === undefined) {
+    throw new Error(
+      `refusing to --write: ${MANIFEST_PATH} holds no adopters list; the canonical repository's manifest is its one home, so restore it and record again`,
+    );
+  }
   const entries = computeEntries(root, manifest);
   writeFileSync(join(root, MANIFEST_PATH), `${JSON.stringify({ canonical, adopters, entries }, null, 2)}\n`);
   console.log(`factory-sync: recorded ${entries.length} entries in ${MANIFEST_PATH}`);

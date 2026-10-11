@@ -249,6 +249,26 @@ test('a missing, unparsable or malformed manifest fails loudly by name', (t) => 
   }
 });
 
+test('a manifest with no adopters list is read and one whose adopters list is malformed is refused by name', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'factory-sync-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, '.agents'));
+  const manifest = join(root, '.agents', 'factory-manifest.json');
+  const base = { canonical: 'example-owner/example-repo', entries: [] };
+  writeFileSync(manifest, JSON.stringify(base));
+  assert.equal(readManifest(root).adopters, undefined);
+  writeFileSync(manifest, JSON.stringify({ ...base, adopters: [] }));
+  assert.deepEqual(readManifest(root).adopters, []);
+  for (const adopters of [null, 'example-owner/adopter', ['no-slash'], [42], {}]) {
+    writeFileSync(manifest, JSON.stringify({ ...base, adopters }));
+    assert.throws(
+      () => readManifest(root),
+      /malformed \.agents\/factory-manifest\.json: it must hold canonical "owner\/repo" and entries/,
+      JSON.stringify(adopters),
+    );
+  }
+});
+
 test('a manifest that lists one path twice is refused, naming the path', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'factory-sync-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -586,6 +606,19 @@ test('--write in the canonical repository records every entry deterministically'
   assert.equal(manifestBytes(root), expected, 'a second --write over unchanged files must yield identical bytes');
 });
 
+test('--write refuses a canonical manifest that holds no adopters list and leaves it untouched', (t) => {
+  const root = staleRepository(t, 'https://github.com/example-owner/example-repo.git');
+  writeFileSync(
+    join(root, MANIFEST),
+    JSON.stringify({ canonical: 'example-owner/example-repo', entries: [{ path: 'docs/a.txt', sha256: ZERO_SHA256 }] }),
+  );
+  const before = manifestBytes(root);
+  const run = runCli(root, '--write');
+  assert.equal(run.status, 1, run.stderr);
+  assert.match(run.stderr, /^factory-sync: refusing to --write: \.agents\/factory-manifest\.json holds no adopters list/);
+  assert.equal(manifestBytes(root), before, 'a refused --write must leave the manifest untouched');
+});
+
 const CANONICAL = 'example-owner/example-repo';
 const CANONICAL_URL = `https://github.com/${CANONICAL}`;
 const ADOPTER_URL = 'https://github.com/example-owner/adopter';
@@ -663,7 +696,7 @@ function syncFixture(t) {
   if (FILE_SYMLINKS) link(target, 'docs/a.txt', '../../outside/secret.txt');
   else put(target, 'docs/a.txt', 'outside\n');
   put(target, 'scripts/run.sh', '#!/bin/sh\necho v1\n');
-  put(target, MANIFEST, JSON.stringify({ canonical: CANONICAL, adopters: [], entries: [] }));
+  put(target, MANIFEST, JSON.stringify({ canonical: CANONICAL, entries: [] }));
   commitAll(target);
 
   const fetchMain = (root) => git(root, 'rev-parse', 'refs/heads/main');
@@ -698,7 +731,7 @@ function assertRefused(fixture, cause, options) {
 
 // Commits the whole target with a manifest that lists entries, as the sync that last shared them recorded them.
 function listInTarget(fixture, entries) {
-  put(fixture.target, MANIFEST, JSON.stringify({ canonical: CANONICAL, adopters: [], entries }));
+  put(fixture.target, MANIFEST, JSON.stringify({ canonical: CANONICAL, entries }));
   commitAll(fixture.target);
 }
 
@@ -719,10 +752,25 @@ test('a sync writes every shared file and region into the adopter and records th
   else assert.equal(lstatSync(at('scripts/run.sh')).mode & 0o777, 0o755, 'the executable bit must follow the source');
   assert.deepEqual(snapshot(fixture.outside), outsideBefore, 'the file the old symlink pointed at must be untouched');
 
-  const { canonical, adopters, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
+  const { canonical, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
   const syncedFrom = git(fixture.source, 'rev-parse', 'HEAD');
-  assert.equal(readFileSync(at(MANIFEST), 'utf8'), `${JSON.stringify({ canonical, adopters, syncedFrom, entries }, null, 2)}\n`);
+  assert.equal(readFileSync(at(MANIFEST), 'utf8'), `${JSON.stringify({ canonical, syncedFrom, entries }, null, 2)}\n`);
   assert.deepEqual(verifyManifest(fixture.target), []);
+});
+
+test('ANTI-REGRESSION: a sync writes no adopters list into the adopter manifest and removes one an earlier sync left there', (t) => {
+  const fixture = syncFixture(t);
+  put(fixture.target, MANIFEST, JSON.stringify({ canonical: CANONICAL, adopters: ['example-owner/adopter', 'example-owner/private-adopter'], entries: [] }));
+  commitAll(fixture.target);
+
+  fixture.sync();
+
+  const { canonical, adopters, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
+  assert.deepEqual(adopters, ['example-owner/adopter'], 'the canonical manifest must hold a list for the sync to leave behind');
+  const syncedFrom = git(fixture.source, 'rev-parse', 'HEAD');
+  const text = readFileSync(join(fixture.target, MANIFEST), 'utf8');
+  assert.equal(text, `${JSON.stringify({ canonical, syncedFrom, entries }, null, 2)}\n`);
+  assert.equal('adopters' in JSON.parse(text), false);
 });
 
 // A sync fixture whose source also shares the given seat files, keyed by path.
@@ -767,10 +815,10 @@ test('a sync applies the seat settings of the adopter to the fetched bytes and r
   );
   assert.equal(readFileSync(at(SETTINGS), 'utf8'), settingsBefore, 'a sync must never write the settings file');
 
-  const { canonical, adopters, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
+  const { canonical, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
   const syncedFrom = git(fixture.source, 'rev-parse', 'HEAD');
   const seatDefaults = { claude: { oracle: { model: 'fable', maxTurns: 90 } }, codex: { reviewer: { model_reasoning_effort: 'medium' } } };
-  assert.equal(readFileSync(at(MANIFEST), 'utf8'), `${JSON.stringify({ canonical, adopters, syncedFrom, seatDefaults, entries }, null, 2)}\n`);
+  assert.equal(readFileSync(at(MANIFEST), 'utf8'), `${JSON.stringify({ canonical, syncedFrom, seatDefaults, entries }, null, 2)}\n`);
   assert.deepEqual(verifyManifest(fixture.target), []);
 });
 
@@ -904,10 +952,10 @@ test('a sync into a target that names one runtime writes only that runtime\'s fi
     assert.equal(readFileSync(at(written), 'utf8'), shipped, runtime);
     assert.equal(readFileSync(at('docs/a.txt'), 'utf8'), 'hello v2\n', runtime);
     assert.equal(existsSync(at(leftOut)), false, `${leftOut} belongs to a runtime the target does not name`);
-    const { canonical, adopters, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
+    const { canonical, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
     assert.deepEqual(entries.map(({ path }) => path), ['AGENTS.md', 'docs/a.txt', 'scripts/run.sh', ORACLE_MD, REVIEWER_TOML]);
     const syncedFrom = git(fixture.source, 'rev-parse', 'HEAD');
-    assert.equal(readFileSync(at(MANIFEST), 'utf8'), `${JSON.stringify({ canonical, adopters, syncedFrom, entries }, null, 2)}\n`, runtime);
+    assert.equal(readFileSync(at(MANIFEST), 'utf8'), `${JSON.stringify({ canonical, syncedFrom, entries }, null, 2)}\n`, runtime);
     assert.deepEqual(verifyManifest(fixture.target), [], runtime);
   }
 });
@@ -1129,10 +1177,10 @@ test('render after a sync that applied no settings applies them and keeps the re
     readFileSync(join(fixture.target, BUILDER_MD), 'utf8'),
     '---\nname: builder\ndescription: "Fixture builder"\nmodel: sonnet\neffort: high\nmaxTurns: 60\n---\nDo the work.\n',
   );
-  const { canonical, adopters, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
+  const { canonical, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
   const syncedFrom = git(fixture.source, 'rev-parse', 'HEAD');
   const seatDefaults = { claude: { builder: { effort: 'medium' } } };
-  assert.equal(manifestBytes(fixture.target), `${JSON.stringify({ canonical, adopters, syncedFrom, seatDefaults, entries }, null, 2)}\n`);
+  assert.equal(manifestBytes(fixture.target), `${JSON.stringify({ canonical, syncedFrom, seatDefaults, entries }, null, 2)}\n`);
   assert.deepEqual(verifyManifest(fixture.target), []);
 });
 
@@ -1778,6 +1826,8 @@ function lag(t, local, fetchCanonicalManifest) {
 const remote = (manifest) => () => JSON.stringify(manifest);
 const withEntries = (entries) => ({ ...LAG_MANIFEST, entries });
 const [A, REGION] = LAG_MANIFEST.entries;
+// An adopter's own manifest: a sync writes no adopters list into it.
+const ADOPTER_MANIFEST = { canonical: CANONICAL, syncedFrom: 'abc123', entries: LAG_MANIFEST.entries };
 
 test('a local manifest matching the canonical main, apart from syncedFrom, is in sync', (t) => {
   const asked = [];
@@ -1789,16 +1839,17 @@ test('a local manifest matching the canonical main, apart from syncedFrom, is in
   assert.deepEqual(asked, [CANONICAL]);
 });
 
+test('a local manifest with no adopters list or a different one is in sync with a canonical main that holds one', (t) => {
+  const listed = { ...LAG_MANIFEST, adopters: ['example-owner/adopter', 'example-owner/other'] };
+  assert.deepEqual(lag(t, ADOPTER_MANIFEST, remote(listed)), { state: 'in-sync', differences: [], cause: null });
+  assert.deepEqual(lag(t, LAG_MANIFEST, remote(listed)), { state: 'in-sync', differences: [], cause: null });
+});
+
 for (const [name, canonicalMain, differences] of [
   ['a changed hash', withEntries([{ ...A, sha256: ZERO_SHA256 }, REGION]), ['a.txt: changed']],
   ['a changed executable bit', withEntries([{ ...A, executable: true }, REGION]), ['a.txt: changed']],
   ['an entry missing here', withEntries([A, REGION, { path: 'docs/new.md', sha256: HELLO_SHA256 }]), ['docs/new.md: missing here']],
   ['an entry no longer shared', withEntries([REGION]), ['a.txt: no longer shared']],
-  [
-    'a different adopters list',
-    { ...LAG_MANIFEST, adopters: ['example-owner/adopter', 'example-owner/other'] },
-    ['adopters: example-owner/adopter here, example-owner/adopter, example-owner/other on main'],
-  ],
   [
     'a different canonical',
     { ...LAG_MANIFEST, canonical: 'example-owner/renamed' },
@@ -1811,7 +1862,7 @@ for (const [name, canonicalMain, differences] of [
   ],
 ]) {
   test(`${name} is reported as drifted`, (t) => {
-    assert.deepEqual(lag(t, LAG_MANIFEST, remote(canonicalMain)), { state: 'drifted', differences, cause: null });
+    assert.deepEqual(lag(t, ADOPTER_MANIFEST, remote(canonicalMain)), { state: 'drifted', differences, cause: null });
   });
 }
 

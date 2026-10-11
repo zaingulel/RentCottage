@@ -1,10 +1,6 @@
 {
   "canonical": "zaingulel/fabraik",
-  "adopters": [
-    "zaingulel/flow-metrics-dashboard",
-    "zaingulel/RentCottage"
-  ],
-  "syncedFrom": "b8a78e6483a9f1559c850013a6af6aff7767d1b8",
+  "syncedFrom": "120e9d60214d705cc90b205ee76a2cb5153c9ec6",
   "entries": [
     {
       "path": ".agents/skills/accessibility-review/SKILL.md",
@@ -64,7 +60,7 @@
     },
     {
       "path": ".agents/skills/greptile/SKILL.md",
-      "sha256": "cf3ca94d51d38ba34f461f1847168c9201b815548287f24878d8def5c9679735"
+      "sha256": "f9a9a0ccee62c030d068b89cf42bbd5740a393dc37150bafc48839ba69cbef1f"
     },
     {
       "path": ".agents/skills/grill-me/SKILL.md",
@@ -144,7 +140,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "b8d8491615a56f9eee4df48d59695655eec3eb385437b67e1358f4c5f2aa5789"
+      "sha256": "20bf372b074c630d507a229581069c1dd03fcfb70b5354ea04d6f5b0abe1dee0"
     },
     {
       "path": ".agents/skills/retro/SKILL.md",
@@ -156,7 +152,7 @@
     },
     {
       "path": ".agents/skills/sync-job/SKILL.md",
-      "sha256": "1cfc493286477381025074e4df5f72fe9b5077950e91d6685c095e6d982d972a"
+      "sha256": "e621b7bcb3ef8d4f40e56116ebdb704db917bbb888bfeb3655c189c74fa916ba"
     },
     {
       "path": ".agents/skills/tdd/SKILL.md",
@@ -484,7 +480,7 @@
     },
     {
       "path": ".claude/skills/greptile/SKILL.md",
-      "sha256": "cf3ca94d51d38ba34f461f1847168c9201b815548287f24878d8def5c9679735"
+      "sha256": "f9a9a0ccee62c030d068b89cf42bbd5740a393dc37150bafc48839ba69cbef1f"
     },
     {
       "path": ".claude/skills/grill-me/SKILL.md",
@@ -564,7 +560,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "b8d8491615a56f9eee4df48d59695655eec3eb385437b67e1358f4c5f2aa5789"
+      "sha256": "20bf372b074c630d507a229581069c1dd03fcfb70b5354ea04d6f5b0abe1dee0"
     },
     {
       "path": ".claude/skills/retro/SKILL.md",
@@ -576,7 +572,7 @@
     },
     {
       "path": ".claude/skills/sync-job/SKILL.md",
-      "sha256": "1cfc493286477381025074e4df5f72fe9b5077950e91d6685c095e6d982d972a"
+      "sha256": "e621b7bcb3ef8d4f40e56116ebdb704db917bbb888bfeb3655c189c74fa916ba"
     },
     {
       "path": ".claude/skills/tdd/SKILL.md",
@@ -712,7 +708,7 @@
     {
       "path": "AGENTS.md",
       "region": "factory-shared",
-      "sha256": "a441a1a7e111b1a2a5b4fcb6ac20fd5fdde207dc97e315bfe73d99fb6412a418"
+      "sha256": "49efece19019e5acc81f29075bbcd6dcfdf79996e55bf5ac56da151db48698f8"
     },
     {
       "path": "CLAUDE.md",
@@ -732,7 +728,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW-job.md",
-      "sha256": "689af3812dd93a874d6b4c2383d836e361ab6a85b2baa4bdba7a6382192f6792"
+      "sha256": "593c574c6cf6b6eab37ae95db54c309600fbb57ef7557d52e42d6410c7f08abf"
     },
     {
       "path": "docs/AI-WORKFLOW-runtimes.md",
@@ -744,7 +740,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW.md",
-      "sha256": "47000dfe50adbbb30784fb88c749b07eac413bc03f8f64a000da6cfea9ccee0d"
+      "sha256": "2429c8779a3618c7397450ee5911ce158dfcd775d1bab658931ac2ca6750fa49"
     },
     {
       "path": "docs/WEEKLY-RETRO.md",
@@ -765,7 +761,7 @@
     },
     {
       "path": "scripts/factory-sync.mjs",
-      "sha256": "cd16b47275a888022568f5c7d5a2b556881df713b78de4f4182fb2b035cd2ebe"
+      "sha256": "1d9722327525cba3498c144191eb4ccaa0b9ffaebdee595a6d32808a85a834cb"
     },
     {
       "path": "scripts/lib/board-add.mjs",
@@ -865,11 +861,11 @@
     },
     {
       "path": "scripts/lib/factory-sync.mjs",
-      "sha256": "5ced8a07d79ec711a33196b03c78510e5988e9a81b24aea191de1b65ac2cb1bf"
+      "sha256": "c4e5d3ba09602a2559050e5a45bec3c9c1fd697ddd43fa616cf910e2fe2d5f09"
     },
     {
       "path": "scripts/lib/factory-sync.test.mjs",
-      "sha256": "10d3d6d0d8cc59457fb8244c95becce882388cde399e49e0e6673ec8481ae80e"
+      "sha256": "dd0e6d059f23a6248f57c6127b8ca4f01d369be746b40ecb953fee8d48c9e061"
     },
     {
       "path": "scripts/lib/fake-gh.mjs",
@@ -929,19 +925,19 @@
     },
     {
       "path": "scripts/lib/runtimes.mjs",
-      "sha256": "e43aee3a80ddf79f21f3a911b80b9dd87622c479122da488d29f10e94550cd6e"
+      "sha256": "0e6a1189ba04e2f2dfd0dc8bb940ba56c2f263b98fee346f5569270970d06eab"
     },
     {
       "path": "scripts/lib/runtimes.test.mjs",
-      "sha256": "3b4facfec06a22e8ee5c0d46550fcfdcd59102eee409018441ca5b36394cd84f"
+      "sha256": "ea68e9884cfb9ba066959eaf6c055efdfc6b8a0bea355e67c9ab0836a0e4410b"
     },
     {
       "path": "scripts/lib/seat-settings.mjs",
-      "sha256": "b1691b6714b16c52713d57bfa1082b99e6610fdf9e3e19dfeb27382b3a40c3d1"
+      "sha256": "43861660d47be03a4302789f36b66e8b37b67dc3087661930d71f5e2c1e7df09"
     },
     {
       "path": "scripts/lib/seat-settings.test.mjs",
-      "sha256": "f3f5702286b157af3e780817fe23a662f53461ee1325e8ab7ca6a0176f775b8a"
+      "sha256": "85d5d9fea72d94b0a21b7a22871d00cab1da4da9d3be031208bba65ad23178c2"
     },
     {
       "path": "scripts/lib/settings-policy.test.mjs",
@@ -985,7 +981,7 @@
     },
     {
       "path": "scripts/lib/workflow-contract.test.mjs",
-      "sha256": "f9bd0dfa4f2a5580153485263093b0f14fef98b76e51ba76764aface6abb275d"
+      "sha256": "a4b932f3b8766419ba95f32e210947c16698336ddb9558fd52879261fb7e0442"
     },
     {
       "path": "scripts/merge-watch.mjs",

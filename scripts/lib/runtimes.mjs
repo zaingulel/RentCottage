@@ -90,7 +90,7 @@ export function checkContained(root, path) {
   }
 }
 
-/** The settings file's parsed object and the runtimes it names, once its top-level shape holds: one JSON object, version 1, no key besides version, runtimes and seats, a valid `runtimes` value. Throws a refusal naming `label`. */
+/** The settings file's parsed object and the runtimes it names, once its top-level shape holds: one JSON object, version 1, no key besides version, runtimes, seats and planApproval, a valid `runtimes` value, a `planApproval` that is true or false when present. Throws a refusal naming `label`. */
 export function readSettingsHeader(text, label) {
   let settings;
   try {
@@ -101,8 +101,9 @@ export function readSettingsHeader(text, label) {
   if (!isRecord(settings)) throw refusal(label, 'file', 'must hold one JSON object', settings);
   if (settings.version !== 1) throw refusal(label, 'version', 'is unsupported by this copy of the sync (only 1)', settings.version, true);
   for (const key of Object.keys(settings)) {
-    if (key !== 'version' && key !== 'runtimes' && key !== 'seats') throw refusal(label, 'file', 'holds a key besides version, runtimes and seats', key, true);
+    if (key !== 'version' && key !== 'runtimes' && key !== 'seats' && key !== 'planApproval') throw refusal(label, 'file', 'holds a key besides version, runtimes, seats and planApproval', key, true);
   }
+  if (settings.planApproval !== undefined && typeof settings.planApproval !== 'boolean') throw refusal(label, 'planApproval', 'must be true or false', settings.planApproval);
   return { settings, runtimes: readRuntimes(settings.runtimes, label) };
 }
 

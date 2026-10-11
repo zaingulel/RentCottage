@@ -1,8 +1,9 @@
 # The software factory
 
 This repository is built by AI agents under a workflow the owner steers from two decisions: what to build, and
-whether a finished change may ship. Everything between those two decisions is done by agents, checked by
-tests and reviews the agents cannot skip, and recorded where the owner can read it without reading code.
+whether a finished change may ship. A repository may turn on a third: whether the completed plan may be built.
+Everything else between those decisions is done by agents, checked by tests and reviews the agents cannot skip, and
+recorded where the owner can read it without reading code.
 
 These pages explain that workflow to someone who has never opened the repository: what the pieces are, how a change
 moves through them, what is enforced by a machine and what is only instructed by a sentence, and which parts transfer to
@@ -14,8 +15,8 @@ or a command another document owns, and where a page and its owner disagree, the
 
 ## The map
 
-The owner reads pull request descriptions and screenshots, not diffs. The workflow therefore puts exactly two
-decisions in front of the owner and phrases both in plain language.
+The owner reads pull request descriptions and screenshots, not diffs. The workflow therefore puts two
+decisions in front of the owner, and a third only where the repository has turned plan approval on, and phrases each in plain language.
 
 ```mermaid
 flowchart TB
@@ -23,6 +24,7 @@ flowchart TB
         O1["Bring an idea"]
         O2["Agree the breakdown into cards"]
         O3["Work-pick: pick one card"]
+        O6["Plan approval: one yes to the completed plan, only where the repository turns it on"]
         O4["Decide, only if the outcome or a trade-off changed"]
         O5["Push authorisation: one yes to the pull request body and its screenshot"]
     end
@@ -49,22 +51,25 @@ flowchart TB
     A7 --> A8
     A4 -.-> O4
     O4 -.-> A4
+    A3 -.-> O6
+    O6 -.-> A4
 ```
 
 The diagram shows the owner's side beside the agents' side of one piece of work, from an idea to a merged change. Solid
-arrows are the usual path; the dotted pair is taken only when the approved outcome or a trade-off changes during the
-build.
+arrows are the usual path. One dotted pair is taken only where the repository has turned plan approval on, the other
+only when the approved outcome or a trade-off changes during the build.
 
 In words: the owner brings an idea. The agents interview the owner, write the spec and propose cards, and the owner
 agrees the breakdown into cards. The agents report which cards are startable and the owner picks one: that pick is
 work-pick, the first of the two decisions. The agents then plan, build in bounded slices, verify and review, and write
 the pull request body. The owner reads that body, with a screenshot where the change is visual, and says yes: that is
-push authorisation, the second decision. The agents deliver and close out without asking again. Only if the approved
-outcome or a trade-off changes during the build does a question go back to the owner in between. A change the
+push authorisation, the second decision. The agents deliver and close out without asking again. In between, a question goes
+back to the owner in two cases only: where the repository has turned plan approval on, the agents present the completed
+plan and build nothing until the owner says yes; and where the approved outcome or a trade-off changes during the build. A change the
 repository's own gate admits whole goes straight to `main` on the same yes, with no pull request.
 
-The two decisions are named work-pick and push authorisation. [`AGENTS.md`](../AGENTS.md) owns what each approves, what
-goes back to the owner in between, and the approval a destructive action still needs, under "Owner gates". Underneath
+The two decisions are named work-pick and push authorisation, and the optional third plan approval.
+[`AGENTS.md`](../AGENTS.md) owns what each approves, what turns the third on, what goes back to the owner in between, and the approval a destructive action still needs, under "Owner gates". Underneath
 this path every job runs in its own worktree, every check logs its exit code, and a short list of machine guards holds
 what a sentence could not; [The life of one change](AI-WORKFLOW-job.md) follows it stage by stage.
 
@@ -93,7 +98,7 @@ Eight things hold in every repository that carries the workflow, and they are wh
 
 1. One contract file every runtime the repository runs reads, with skills for the steps and hooks for what must never
    happen.
-2. Two human gates, phrased for a reader of prose: what to build, and whether the finished change may ship.
+2. Two human gates, phrased for a reader of prose: what to build, and whether the finished change may ship; and a third each repository may turn on: whether the completed plan may be built.
 3. One worktree per issue, and one draft pull request for every change that does not qualify for the direct route to
    `main`; a job's pull request is merged only by the platform's own auto-merge.
 4. Seats with narrow charters, bounded handoffs through a template, and judgment settled in the plan rather than

@@ -320,6 +320,11 @@ test('the resume, cross-review and to-issues skills give only command shapes an 
   }
 });
 
+test('ANTI-REGRESSION: the resume skill reads the plan approval setting with a command whose answer does not depend on the current folder', () => {
+  const reads = RESUME.match(/git ls-tree[^`\n]*factory-settings\.json/g) ?? [];
+  assert.deepEqual(reads, ['git ls-tree --full-tree --name-only origin/main -- .agents/factory-settings.json']);
+});
+
 test('the refused-shape check catches each refused shape and passes quoted jq text', () => {
   const cases = [
     ['echo "$(git branch --show-current)"', ['command substitution']],
