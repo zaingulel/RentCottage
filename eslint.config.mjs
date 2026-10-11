@@ -42,6 +42,8 @@ export default defineConfig([
     ".wrangler/**",
     "test-results/**",
     "playwright-report/**",
+    "supabase/.temp/**",
+    "supabase/.branches/**",
     "cloudflare-env.d.ts",
   ]),
 ]);
