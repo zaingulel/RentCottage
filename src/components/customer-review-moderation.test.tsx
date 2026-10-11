@@ -382,6 +382,43 @@ describe("CustomerReviewModeration", () => {
     },
   );
 
+  it.each(["en", "ar", "ckb"] as const)(
+    "links to the %s translation reports only on the confirmed moderation list",
+    (locale) => {
+      const link = {
+        name: customerReviewMessages[locale].translationReportsLink,
+      };
+      const { unmount } = render(
+        <CustomerReviewModeration
+          locale={locale}
+          filters={noFilters}
+          result={{
+            status: "success",
+            items: [],
+            nextCursor: null,
+            total: 0,
+            stateCounts: { unhidden: 0, hidden: 0 },
+          }}
+        />,
+      );
+
+      expect(screen.getByRole("link", link)).toHaveAttribute(
+        "href",
+        `/${locale}/administrator/reviews/translation-reports`,
+      );
+      unmount();
+
+      render(
+        <CustomerReviewModeration
+          locale={locale}
+          filters={noFilters}
+          result={{ status: "access-required" }}
+        />,
+      );
+      expect(screen.queryByRole("link", link)).toBeNull();
+    },
+  );
+
   describe("filters", () => {
     const filters = {
       state: "hidden",
