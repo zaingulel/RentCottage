@@ -171,11 +171,14 @@ create function pg_temp.source_history() returns jsonb language sql as $$
  'observations',(select jsonb_agg(to_jsonb(o) order by id) from public.payment_provider_observations o),
  'paymentHistory',(select jsonb_agg(to_jsonb(h) order by id) from public.booking_request_payment_history h));
 $$;
-select plan(46);
+select plan(63);
 select pg_temp.seed_completion_booking((clock_timestamp() at time zone 'Asia/Baghdad')::date-3);
 create temp table settlement_values(key text primary key,value jsonb);
 grant all on settlement_values to authenticated,service_role;
 create function pg_temp.settlement_value(key text) returns jsonb language sql as $$select value from settlement_values where settlement_values.key=$1$$;
+create function pg_temp.money_row(target_state text,target_day date) returns jsonb language sql as $$
+ select booking from jsonb_array_elements(public.list_administrator_booking_money(target_state,target_day,target_day)->'bookings') booking where booking->>'bookingRequestId'='60000000-0000-4000-8000-000000001001';
+$$;
 select pg_temp.actor('10000000-0000-4000-8000-000000003801','aal2');
 set local role authenticated;
 select throws_ok($$select public.request_booking_settlement('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000002280','Settlement review','stale',90000000)$$,'RC409',null,'date alone cannot create a settlement without authoritative maturity');
@@ -287,6 +290,29 @@ rollback to failed_later_refund;
 select pg_temp.payment_fixture_result(pg_temp.settlement_value('refundAdmission'),'succeeded');
 select is(public.get_booking_settlement_facts('60000000-0000-4000-8000-000000001001')->'recovery','{"status":"paid","ownerEntitlementFils":81000000,"paidFils":90000000,"paidWhileBlocked":true,"recoveryExposureFils":90000000,"recoveryBalanceFils":9000000,"automaticOwnerDebitFils":0}'::jsonb,'verified 10m price refund changes balance to 9m while preserving paid/exposure 90m and zero debit');
 reset role;
+-- 21:30 UTC is 00:30 the next day in Baghdad, so a reader that cut days in UTC would miss the booking on 13 September.
+set local session_replication_role=replica;
+update public.booking_confirmations set confirmed_at='2026-09-12 21:30:00+00' where booking_request_id='60000000-0000-4000-8000-000000001001';
+set local session_replication_role=origin;
+set local role authenticated;
+select ok((select queue->'nextCursor'='null'::jsonb and queue->'rows' @> '[{"id":"60000000-0000-4000-8000-000000001001"}]'::jsonb from public.search_administrator_booking_queue('bookings',null,'2026-09-13','2026-09-13',null,null) queue),'the bookings queue for the pinned Baghdad day holds the fixture booking on one page');
+select is((select array_agg(booking->>'bookingRequestId' order by booking->>'bookingRequestId') from jsonb_array_elements(public.list_administrator_booking_money(null,'2026-09-13','2026-09-13')->'bookings') booking),
+  (select array_agg(queued->>'id' order by queued->>'id') from jsonb_array_elements(public.search_administrator_booking_queue('bookings',null,'2026-09-13','2026-09-13',null,null)->'rows') queued),'booking money reader lists exactly the Confirmed Bookings of the bookings queue');
+select is(jsonb_array_length(public.list_administrator_booking_money(null,'2026-09-13','2026-09-13')->'bookings'),(public.search_administrator_booking_queue('bookings',null,'2026-09-13','2026-09-13',null,null)->>'total')::integer,'booking money reader returns as many bookings as the bookings queue counts');
+select is((select jsonb_build_array(money#>'{earnings,captured,bookingPriceFils}',money#>'{earnings,captured,bookingServiceFeeFils}',money#>'{earnings,refunded,bookingPriceFils}',money#>'{earnings,refunded,bookingServiceFeeFils}',money#>'{earnings,settlement,receipt,paidFils}',money#>'{earnings,recovery,recoveryBalanceFils}') from pg_temp.money_row(null,'2026-09-13') money),
+  '[100000000,5000000,10000000,0,90000000,9000000]'::jsonb,'booking money reader carries the captured 100m and 5m, the refunded 10m, the paid 90m and the 9m to recover');
+select is((select jsonb_agg(record-'requestedAt') from jsonb_array_elements(pg_temp.money_row(null,'2026-09-13')->'refundRecords') record),
+  jsonb_build_array(jsonb_build_object('id',pg_temp.settlement_value('refundIntent')->'intentId','source','administrator','state','succeeded','bookingPriceFils',10000000,'bookingServiceFeeFils',0)),'booking money reader lists the one refund record by its identifier');
+select is(pg_temp.money_row(null,'2026-09-13')->'settlementIntentId',pg_temp.settlement_value('intent')->'intentId','booking money reader names the Owner Payout record');
+select isnt(pg_temp.money_row(null,'2026-09-13')->>'state','no_show','the fixture booking is not a no-show');
+select is(pg_temp.money_row(pg_temp.money_row(null,'2026-09-13')->>'state','2026-09-13')->>'reference','RC-REQ-0000000000001001','booking money reader keeps the booking under its own lifecycle status');
+select is(pg_temp.money_row('no_show','2026-09-13'),null::jsonb,'booking money reader drops the booking under another lifecycle status');
+select is(pg_temp.money_row(null,'2026-09-13')->>'confirmedAt','2026-09-12T21:30:00.000000+00:00','booking money reader places a 00:30 Baghdad confirmation on its Baghdad day');
+select is(pg_temp.money_row(null,'2026-09-12'),null::jsonb,'booking money reader keeps that confirmation out of the preceding Baghdad day');
+select ok(public.list_administrator_booking_money(null,'2026-09-13','2026-09-13')::text !~ 'PRIVATE ADDRESS|PRIVATE DIRECTIONS|\+9647[0-9]{10}|@|"(exactAddress|privateDirections|email|phone|objectPath|storagePath|signedUrl|documentId)"|Private address|Fictional Customer|\+9647500001|Later compensation|Settlement review|"(reason|actorUserId)"',
+  'booking money reader exposes no private contact, address or document field');
+reset role;
+select is(public.administrator_booking_money_facts(null,'2026-09-13','2026-09-13',0),'{"status":"too_many","limit":0}'::jsonb,'booking money reader refuses a selection above its limit');
 savepoint equal_recording_times;
 set local session_replication_role=replica;
 update public.booking_request_payment_history set received_at='2026-09-12T12:00:00Z',recorded_at='2026-09-12T12:00:00Z' where operation_kind in ('refund','settlement');
@@ -295,12 +321,35 @@ set local session_replication_role=origin;
 set local role service_role;
 select is(public.get_booking_settlement_facts('60000000-0000-4000-8000-000000001001')#>>'{recovery,recoveryBalanceFils}','9000000','same-time observations retain serialized settlement/refund ordering');
 reset role;
+savepoint missing_payment_prerequisites;
+set local session_replication_role=replica;
+delete from public.booking_request_capture_work where booking_request_id='60000000-0000-4000-8000-000000001001';
+set local session_replication_role=origin;
+set local role authenticated;
+select is((select jsonb_build_array(money->'missingPaymentEvidence',pg_temp.money_row(null,'2026-09-13')) from public.list_administrator_booking_money(null,'2026-09-13','2026-09-13') money),
+  '[[{"bookingRequestId":"60000000-0000-4000-8000-000000001001","reference":"RC-REQ-0000000000001001","confirmedAt":"2026-09-12T21:30:00.000000+00:00"}],null]'::jsonb,'booking money reader names a confirmation whose payment prerequisites are missing');
+reset role;
+rollback to missing_payment_prerequisites;
+savepoint unconfirmed_payment;
+set local session_replication_role=replica;
+update public.booking_request_capture_work set state='queued',lease_generation=0,lease_token=null,lease_expires_at=null,outcome=null,completed_at=null where booking_request_id='60000000-0000-4000-8000-000000001001';
+set local session_replication_role=origin;
+select is((select public.booking_request_payment_status(requests) from public.booking_requests requests where id='60000000-0000-4000-8000-000000001001'),'capture-processing','the fixture request now has a non-null payment status other than paid-confirmed');
+set local role authenticated;
+select is((select jsonb_build_array(money->'missingPaymentEvidence',pg_temp.money_row(null,'2026-09-13')) from public.list_administrator_booking_money(null,'2026-09-13','2026-09-13') money),
+  '[[{"bookingRequestId":"60000000-0000-4000-8000-000000001001","reference":"RC-REQ-0000000000001001","confirmedAt":"2026-09-12T21:30:00.000000+00:00"}],null]'::jsonb,'booking money reader names a confirmation whose payment is not confirmed');
+reset role;
+rollback to unconfirmed_payment;
 savepoint missing_context;
 set local session_replication_role=replica;
 delete from public.booking_settlement_receipts;
 set local session_replication_role=origin;
 set local role service_role;
 select is(public.get_booking_settlement_facts('60000000-0000-4000-8000-000000001001')->'recovery','{"status":"unavailable"}'::jsonb,'historical success without immutable recording context is unavailable, never a zero balance');
+reset role;
+set local role authenticated;
+select is((select jsonb_build_array(money->'earnings',money#>'{refundRecords,0,id}',money->'settlementIntentId') from pg_temp.money_row(null,'2026-09-13') money),
+  jsonb_build_array('{"status":"unavailable"}'::jsonb,pg_temp.settlement_value('refundIntent')->'intentId',pg_temp.settlement_value('intent')->'intentId'),'booking money reader keeps a booking with missing evidence and marks it unavailable');
 reset role;
 insert into settlement_values select 'savedSuccess',result from public.payment_provider_observations where operation_id=(pg_temp.settlement_value('admission')->>'operationId')::uuid;
 set local role service_role;

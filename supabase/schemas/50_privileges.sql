@@ -1528,6 +1528,8 @@ REVOKE ALL ON FUNCTION public.search_administrator_records(text,text,text,date,d
 GRANT EXECUTE ON FUNCTION public.search_administrator_records(text,text,text,date,date,uuid,timestamptz,uuid),public.get_administrator_record(text,uuid) TO authenticated;
 REVOKE ALL ON FUNCTION public.search_administrator_booking_queue(text,text,date,date,timestamptz,uuid) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.search_administrator_booking_queue(text,text,date,date,timestamptz,uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.administrator_booking_money_facts(text,date,date,integer),public.list_administrator_booking_money(text,date,date) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.list_administrator_booking_money(text,date,date) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.reads_as_coordinate_pair(text) FROM PUBLIC,anon,authenticated,service_role;
 

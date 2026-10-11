@@ -3,6 +3,7 @@ import { accessMessages } from "@/i18n/access-messages";
 import { administratorPaymentHistoryMessages } from "@/i18n/administrator-payment-history-messages";
 import { administratorQueuesMessages } from "@/i18n/administrator-queues-messages";
 import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
+import { administratorTotalsMessages } from "@/i18n/administrator-totals-messages";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
 
@@ -10,7 +11,12 @@ type BackofficeNavigationProps = { locale: Locale; nested?: boolean } & (
   | { area: "owner"; current: "cottages" }
   | {
       area: "administrator";
-      current: "owner-applications" | "cottages" | "payments" | "queues";
+      current:
+        | "owner-applications"
+        | "cottages"
+        | "payments"
+        | "queues"
+        | "totals";
     }
 );
 
@@ -57,6 +63,11 @@ export function BackofficeNavigation({
             key: "queues",
             href: `/${locale}/administrator/queues`,
             label: administratorQueuesMessages[locale].title,
+          },
+          {
+            key: "totals",
+            href: `/${locale}/administrator/totals`,
+            label: administratorTotalsMessages[locale].title,
           },
           {
             key: "records",

@@ -2039,6 +2039,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     "Manage Cottage Profiles",
     "Payment support history",
     "Booking queues",
+    "Booking totals",
     "Records",
   ]);
   await expect

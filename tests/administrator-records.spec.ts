@@ -489,7 +489,17 @@ const queueArgs = {
   after_id: null,
 };
 
+const totalsArgs = {
+  target_state: null,
+  target_from: null,
+  target_through: null,
+};
+
 async function expectQueuesDenied(page: Page) {
+  await page.goto("/en/administrator/totals");
+  await expect(page.locator("main")).toContainText(
+    "Administrator access with authenticator verification is required.",
+  );
   await page.goto("/en/administrator/queues");
   await expect(page.locator("main")).toContainText(
     "Administrator access with authenticator verification is required.",
@@ -538,6 +548,10 @@ test("marketplace users and AAL1 administrators cannot discover administrator re
     (await customer.rpc("search_administrator_booking_queue", queueArgs)).error
       ?.code,
   ).toBe("42501");
+  expect(
+    (await customer.rpc("list_administrator_booking_money", totalsArgs)).error
+      ?.code,
+  ).toBe("42501");
   await page.goto("/en/administrator/access");
   await page.getByLabel("Email").fill(administratorEmail);
   await page.getByLabel("Password").fill(password);
@@ -562,6 +576,10 @@ test("marketplace users and AAL1 administrators cannot discover administrator re
   await expectQueuesDenied(page);
   expect(
     (await aal1.rpc("search_administrator_booking_queue", queueArgs)).error
+      ?.code,
+  ).toBe("42501");
+  expect(
+    (await aal1.rpc("list_administrator_booking_money", totalsArgs)).error
       ?.code,
   ).toBe("42501");
 });
