@@ -157,10 +157,14 @@ export function BookingFinancialDetails({
       {ownerEarnings ? (
         <OwnerBookingEarningsDetails locale={locale} earnings={ownerEarnings} />
       ) : null}
-      <div data-testid="verified-refund">
-        <h3>{c.returned}</h3>
-        {components(view.refunded)}
-      </div>
+      {view.cancellation ||
+      view.refunds.length ||
+      view.actorRole === "platform_administrator" ? (
+        <div data-testid="verified-refund">
+          <h3>{c.returned}</h3>
+          {components(view.refunded)}
+        </div>
+      ) : null}
       {view.actorRole === "platform_administrator" &&
       !presentation.fullRefundRequired ? (
         <div data-testid="owner-after-completed">
