@@ -1,4 +1,10 @@
-import { expect, test, type Page, type Response } from "@playwright/test";
+import {
+  expect,
+  test,
+  type Locator,
+  type Page,
+  type Response,
+} from "@playwright/test";
 import { openHeaderPanel } from "./fixtures/site-header";
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
@@ -1250,6 +1256,176 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
       });
     }
 
+    // Wording is the copy table of the translated-reviews plan, not the application's own messages.
+    const arabic = {
+      review: "إقامة هادئة بجانب الحديقة.",
+      reply: "شكراً لإقامتكم معنا.",
+      label: "ترجمة آلية · ترجمة خيالية للاختبار المحلي",
+      translate: "ترجمة",
+      viewOriginal: "عرض الأصل",
+      viewTranslation: "عرض الترجمة",
+      report: "الإبلاغ عن ترجمة ضعيفة",
+      reported: "تم الإبلاغ عن الترجمة.",
+      replyGroup: "رد مالك البيت",
+      signIn: "سجّل الدخول للترجمة أو للإبلاغ عن ترجمة",
+    };
+    const sorani = {
+      review: "مانەوەیەکی ئارام لە تەنیشت باخچەکە.",
+      label: "وەرگێڕانی خۆکار · وەرگێڕانی خەیاڵی تاقیکردنەوەی ناوخۆیی",
+      translate: "وەرگێڕان",
+      unavailable: "وەرگێڕان بەردەست نییە. دەقی ڕەسەن پیشان دەدرێت.",
+      replyGroup: "وەڵامی خاوەن کۆتێج",
+    };
+    const expectText = async (text: Locator, lang: string, dir: string) => {
+      await expect(text).toBeVisible();
+      await expect(text).toHaveAttribute("lang", lang);
+      await expect(text).toHaveAttribute("dir", dir);
+    };
+    const countReports = () =>
+      fixture.harness.runSql(`select count(*)
+        from public.customer_review_translation_reports reports
+        join public.customer_review_translations stored on stored.id=reports.translation_id
+        join public.customer_reviews reviews on reviews.id=stored.review_id
+        where reviews.booking_request_id='${fixture.ids.requestId}';`);
+    const countReplyTranslations = () =>
+      fixture.harness.runSql(`select count(*)
+        from public.customer_review_translations stored
+        join public.customer_reviews reviews on reviews.id=stored.review_id
+        where reviews.booking_request_id='${fixture.ids.requestId}'
+          and stored.subject='reply';`);
+
+    await test.step("the signed-in Cottage Owner translates the reply and the review into Arabic, switches to the original and reports the translation once", async () => {
+      await page.goto(publicPath("ar"));
+      const card = page.getByRole("article");
+      await expect(card).toHaveCount(1);
+      const reply = card.getByRole("group", { name: arabic.replyGroup });
+      // The review's controls come before the reply group in the card.
+      const reviewButton = (name: string) =>
+        card.getByRole("button", { name, exact: true }).first();
+      await expect(card.getByText(arabic.label)).toHaveCount(0);
+
+      await reply
+        .getByRole("button", { name: arabic.translate, exact: true })
+        .click();
+      await expect(reply.getByText(arabic.label)).toBeVisible();
+      await expectText(reply.getByText(arabic.reply), "ar", "rtl");
+
+      // Pressing Translate from the keyboard leaves the focus on the same control.
+      await card
+        .getByRole("button", { name: arabic.translate, exact: true })
+        .focus();
+      await page.keyboard.press("Enter");
+      await expectText(card.getByText(arabic.review), "ar", "rtl");
+      await expect(card.getByText(arabic.label)).toHaveCount(2);
+      await expect(reviewButton(arabic.viewOriginal)).toBeFocused();
+      await page.screenshot({
+        path: testInfo.outputPath("public-translated-ar.png"),
+        fullPage: true,
+      });
+      const viewport = page.viewportSize()!;
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.screenshot({
+        path: testInfo.outputPath("public-translated-ar-390.png"),
+        fullPage: true,
+      });
+      await page.setViewportSize(viewport);
+
+      await reviewButton(arabic.viewOriginal).click();
+      await expectText(card.getByText(reviewBody), "en", "auto");
+      await expect(card.getByText(arabic.review)).toHaveCount(0);
+      await expect(card.getByText(arabic.label)).toHaveCount(1);
+      await page.screenshot({
+        path: testInfo.outputPath("public-original-ar.png"),
+        fullPage: true,
+      });
+      await reviewButton(arabic.viewTranslation).click();
+      await expectText(card.getByText(arabic.review), "ar", "rtl");
+
+      // Pressing Report from the keyboard leaves the focus on the block's first control.
+      await reviewButton(arabic.report).focus();
+      await page.keyboard.press("Enter");
+      await expect(card.getByText(arabic.reported)).toBeVisible();
+      await expect(reviewButton(arabic.viewOriginal)).toBeFocused();
+      await expect(
+        card.getByRole("button", { name: arabic.report, exact: true }),
+      ).toHaveCount(1);
+      expect(countReports()).toBe("1");
+      await page.screenshot({
+        path: testInfo.outputPath("public-translation-reported-ar.png"),
+        fullPage: true,
+      });
+
+      await page.reload();
+      await expectText(card.getByText(arabic.review), "ar", "rtl");
+      await expect(
+        card.getByRole("button", { name: arabic.report, exact: true }),
+      ).toHaveCount(2);
+      await reviewButton(arabic.report).click();
+      await expect(card.getByText(arabic.reported)).toBeVisible();
+      expect(countReports()).toBe("1");
+    });
+
+    await test.step("the signed-out visitor reads the stored Arabic translation with the original one press away, and has no Translate or Report control", async () => {
+      await visitor.goto(publicPath("ar"));
+      const card = visitor.getByRole("article");
+      await expectText(card.getByText(arabic.review), "ar", "rtl");
+      await expectText(card.getByText(arabic.reply), "ar", "rtl");
+      await expect(card.getByText(arabic.label)).toHaveCount(2);
+      await expect(
+        visitor.getByRole("link", { name: arabic.signIn }),
+      ).toBeVisible();
+      for (const name of [arabic.translate, arabic.report])
+        await expect(
+          visitor.getByRole("button", { name, exact: true }),
+        ).toHaveCount(0);
+      await visitor.screenshot({
+        path: testInfo.outputPath("public-signed-out-ar.png"),
+        fullPage: true,
+      });
+      await card
+        .getByRole("button", { name: arabic.viewOriginal, exact: true })
+        .first()
+        .click();
+      await expectText(card.getByText(reviewBody), "en", "auto");
+    });
+
+    await test.step("the Sorani page translates the review and falls back to the original reply with the unavailable message", async () => {
+      await page.goto(publicPath("ckb"));
+      const card = page.getByRole("article");
+      const reply = card.getByRole("group", { name: sorani.replyGroup });
+      await card
+        .getByRole("button", { name: sorani.translate, exact: true })
+        .first()
+        .click();
+      await expectText(card.getByText(sorani.review), "ckb", "rtl");
+      await expect(card.getByText(sorani.label)).toHaveCount(1);
+
+      const replyTranslate = reply.getByRole("button", {
+        name: sorani.translate,
+        exact: true,
+      });
+      await replyTranslate.click();
+      await expect(reply.getByRole("alert")).toContainText(sorani.unavailable);
+      await expectText(reply.getByText(replyBody), "en", "auto");
+      await expect(replyTranslate).toBeVisible();
+      await page.screenshot({
+        path: testInfo.outputPath("public-reply-fallback-ckb.png"),
+        fullPage: true,
+      });
+    });
+
+    await test.step("the English page offers no translation control", async () => {
+      await page.goto(publicPath("en"));
+      const card = page.getByRole("article");
+      await expectText(card.getByText(reviewBody), "en", "auto");
+      await expectText(card.getByText(replyBody), "en", "auto");
+      await expect(
+        page.getByRole("button", {
+          name: /Translate|View original|View translation|Report poor translation/,
+        }),
+      ).toHaveCount(0);
+    });
+
     for (const { locale, replyTitle } of [
       { locale: "ar", replyTitle: "ردّك" },
       { locale: "ckb", replyTitle: "وەڵامی تۆ" },
@@ -1284,6 +1460,55 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     );
     await administratorPage.getByRole("button", { name: "Verify" }).click();
     await expect(administratorPage).toHaveURL("/en/administrator/reviews");
+    await test.step("the administrator follows Translation reports, reads the reported pair beside its original, and returns to Review moderation", async () => {
+      await administratorPage.screenshot({
+        path: testInfo.outputPath("administrator-review-moderation-en.png"),
+        fullPage: true,
+      });
+      await administratorPage
+        .getByRole("link", { name: "Translation reports", exact: true })
+        .click();
+      await expect(administratorPage).toHaveURL(
+        "/en/administrator/reviews/translation-reports",
+      );
+      await expect(
+        administratorPage.getByRole("heading", {
+          name: "Review translation reports",
+          level: 1,
+        }),
+      ).toBeVisible();
+      await expect(
+        administratorPage.getByRole("link", {
+          name: administratorQueuesMessages.en.title,
+        }),
+      ).toHaveAttribute("aria-current", "true");
+      const reported = administratorPage
+        .getByRole("article")
+        .filter({ hasText: fixture.ids.bookingReference });
+      await expect(reported).toHaveCount(1);
+      await expect(
+        reported.getByRole("heading", { name: "Customer review text" }),
+      ).toBeVisible();
+      await expectText(reported.getByText(reviewBody), "en", "auto");
+      await expect(
+        reported.getByText(
+          "Automatic translation · Fictional local-test translation",
+        ),
+      ).toBeVisible();
+      await expectText(reported.getByText(arabic.review), "ar", "rtl");
+      for (const source of [
+        "fictional-local-test",
+        "deterministic-pairs-v1",
+        "review-pairs-v1",
+      ])
+        await expect(reported.getByText(source, { exact: true })).toBeVisible();
+      await administratorPage.screenshot({
+        path: testInfo.outputPath("administrator-translation-reports-en.png"),
+        fullPage: true,
+      });
+      await administratorPage.goBack();
+      await expect(administratorPage).toHaveURL("/en/administrator/reviews");
+    });
     const review = await openAdministratorReview(
       administratorPage,
       fixture.ids.bookingReference,
@@ -1326,6 +1551,18 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     await expect(publicReview.getByText(reviewBody)).toBeVisible();
     await expect(visitor.getByText("Cottage Owner reply")).toHaveCount(0);
     await expect(visitor.getByText(replyBody)).toHaveCount(0);
+
+    await test.step("a hidden reply takes its stored translation off the public page", async () => {
+      await visitor.goto(publicPath("ar"));
+      const card = visitor.getByRole("article");
+      await expectText(card.getByText(arabic.review), "ar", "rtl");
+      await expect(card.getByText(arabic.label)).toHaveCount(1);
+      await expect(visitor.getByText(arabic.replyGroup)).toHaveCount(0);
+      await expect(visitor.getByText(arabic.reply)).toHaveCount(0);
+      await expect(visitor.getByText(replyBody)).toHaveCount(0);
+      // The stored translation is not deleted; the page stops showing it with its hidden parent.
+      expect(countReplyTranslations()).toBe("1");
+    });
 
     await page.goto(ownerPath("en"));
     await expect(ownerReview.getByRole("status")).toHaveText(
