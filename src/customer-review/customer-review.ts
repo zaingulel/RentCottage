@@ -1,3 +1,5 @@
+import type { ReviewTranslationSubject } from "./review-translation";
+
 export type CustomerReviewLanguage = "ar" | "ckb" | "en";
 
 const bookingRequestReferencePattern = /^RC-REQ-[A-F0-9]{16}$/;
@@ -51,16 +53,31 @@ export function isCustomerReviewPublicSlug(value: unknown): value is string {
   return typeof value === "string" && publicSlugPattern.test(value);
 }
 
-export function isCustomerReviewBodyWithinLimit(value: string) {
+function isWithinCodePointLimit(value: string, limit: number) {
   let codePointCount = 0;
   const codePoints = value[Symbol.iterator]();
 
   while (!codePoints.next().done) {
     codePointCount += 1;
-    if (codePointCount > 2000) return false;
+    if (codePointCount > limit) return false;
   }
 
   return true;
+}
+
+export function isCustomerReviewBodyWithinLimit(value: string) {
+  return isWithinCodePointLimit(value, 2000);
+}
+
+// Twice the review cap, as the database allows, so a full-length original still translates.
+export function isCustomerReviewTranslationBody(
+  value: unknown,
+): value is string {
+  return (
+    typeof value === "string" &&
+    isWithinCodePointLimit(value, 4000) &&
+    value.trim().length >= 1
+  );
 }
 
 export type SubmitCustomerReviewInput = Readonly<{
@@ -292,11 +309,20 @@ export function isAdministratorCustomerReviewListInput(
   );
 }
 
-export type PublicCustomerReviewReply = Readonly<{
+export type CustomerReviewTranslation = Readonly<{
+  translationId: string;
+  targetLanguage: CustomerReviewLanguage;
+  translatedBody: string;
+}>;
+
+export type CustomerReviewReplyFacts = Readonly<{
   originalLanguage: CustomerReviewLanguage;
   originalBody: string;
   submittedAt: string;
 }>;
+
+export type PublicCustomerReviewReply = CustomerReviewReplyFacts &
+  Readonly<{ translations: readonly CustomerReviewTranslation[] }>;
 
 export type PublicCustomerReview = Readonly<{
   reviewId: string;
@@ -305,6 +331,7 @@ export type PublicCustomerReview = Readonly<{
   originalBody: string | null;
   submittedAt: string;
   ownerReply: PublicCustomerReviewReply | null;
+  translations: readonly CustomerReviewTranslation[];
 }>;
 
 export type PublicCustomerReviewListResult =
@@ -330,7 +357,7 @@ export type OwnCustomerReviewResult =
       status: "access-required" | "invalid" | "ineligible" | "unavailable";
     }>;
 
-export type OwnerCustomerReviewReply = PublicCustomerReviewReply &
+export type OwnerCustomerReviewReply = CustomerReviewReplyFacts &
   Readonly<{ moderationState: "hidden" | "unhidden" }>;
 
 export type OwnerCustomerReviewResult =
@@ -427,3 +454,88 @@ export type HideCustomerReviewActionResult =
       status: "unavailable";
       recovery: "reload-administrator-reviews";
     }>;
+
+export type TranslateCustomerReviewInput = Readonly<{
+  locale: CustomerReviewLanguage;
+  publicSlug: string;
+  reviewId: string;
+  subject: ReviewTranslationSubject;
+}>;
+
+export function isTranslateCustomerReviewInput(
+  value: unknown,
+): value is TranslateCustomerReviewInput {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ["locale", "publicSlug", "reviewId", "subject"]) &&
+    isCustomerReviewLanguage(value.locale) &&
+    isCustomerReviewPublicSlug(value.publicSlug) &&
+    isCustomerReviewUuid(value.reviewId) &&
+    (value.subject === "review" || value.subject === "reply")
+  );
+}
+
+export type TranslateCustomerReviewActionResult =
+  | Readonly<{
+      status: "translated";
+      translationId: string;
+      translatedBody: string;
+    }>
+  | Readonly<{
+      status:
+        | "access-required"
+        | "invalid"
+        | "not-found"
+        | "blocked"
+        | "unavailable";
+    }>;
+
+export type ReportCustomerReviewTranslationInput = Readonly<{
+  translationId: string;
+}>;
+
+export function isReportCustomerReviewTranslationInput(
+  value: unknown,
+): value is ReportCustomerReviewTranslationInput {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ["translationId"]) &&
+    isCustomerReviewUuid(value.translationId)
+  );
+}
+
+export type ReportCustomerReviewTranslationActionResult = Readonly<{
+  status:
+    | "reported"
+    | "access-required"
+    | "invalid"
+    | "not-found"
+    | "unavailable";
+}>;
+
+export type CustomerReviewTranslationReport = Readonly<{
+  reportId: string;
+  bookingRequestReference: string;
+  subject: ReviewTranslationSubject;
+  originalLanguage: CustomerReviewLanguage;
+  originalBody: string;
+  targetLanguage: CustomerReviewLanguage;
+  translatedBody: string;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  reportedAt: string;
+}>;
+
+export type CustomerReviewTranslationReportCursor = Readonly<{
+  reportedAt: string;
+  reportId: string;
+}>;
+
+export type CustomerReviewTranslationReportListResult =
+  | Readonly<{
+      status: "success";
+      items: readonly CustomerReviewTranslationReport[];
+      nextCursor: CustomerReviewTranslationReportCursor | null;
+    }>
+  | Readonly<{ status: "access-required" | "invalid" | "unavailable" }>;

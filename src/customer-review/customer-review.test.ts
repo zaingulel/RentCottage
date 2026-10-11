@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   isAdministratorCustomerReviewListInput,
   isCustomerReviewBodyWithinLimit,
+  isReportCustomerReviewTranslationInput,
   isSubmitCustomerReviewReplyInput,
+  isTranslateCustomerReviewInput,
 } from "./customer-review";
 
 describe("customer review body validation", () => {
@@ -129,6 +131,45 @@ describe("administrator review list input validation", () => {
       { ...firstPage, beforeAt: "2026-09-21T12:00:00.000Z" },
     ]) {
       expect(isAdministratorCustomerReviewListInput(refused)).toBe(false);
+    }
+  });
+});
+
+describe("review translation input validation", () => {
+  const translate = {
+    locale: "ar",
+    publicSlug: "cottage-deadbeefdeadbeefdeadbeefdead1001",
+    reviewId: "88000000-0000-4000-8000-000000001801",
+    subject: "reply",
+  };
+  const report = { translationId: "77777777-7777-4777-8777-777777777777" };
+
+  it("accepts exactly the translate and report inputs and refuses an extra actor, a bad subject or a bad identifier", () => {
+    expect(isTranslateCustomerReviewInput(translate)).toBe(true);
+    expect(
+      isTranslateCustomerReviewInput({ ...translate, subject: "review" }),
+    ).toBe(true);
+    expect(isReportCustomerReviewTranslationInput(report)).toBe(true);
+
+    for (const refused of [
+      null,
+      { ...translate, actorUserId: "77777777-7777-4777-8777-777777777777" },
+      { ...translate, locale: "fr" },
+      { ...translate, subject: "message" },
+      { ...translate, publicSlug: "not-a-slug" },
+      { ...translate, reviewId: "not-a-uuid" },
+      { locale: "ar", publicSlug: translate.publicSlug },
+    ]) {
+      expect(isTranslateCustomerReviewInput(refused)).toBe(false);
+    }
+    for (const refused of [
+      null,
+      {},
+      { translationId: "not-a-uuid" },
+      { ...report, actorUserId: "77777777-7777-4777-8777-777777777777" },
+      { ...report, locale: "ar" },
+    ]) {
+      expect(isReportCustomerReviewTranslationInput(refused)).toBe(false);
     }
   });
 });

@@ -6,8 +6,10 @@ import {
   isBookingRequestReference,
   isCustomerReviewBodyWithinLimit,
   isCustomerReviewLanguage,
+  isCustomerReviewPageInput,
   isCustomerReviewPublicSlug,
   isCustomerReviewTimestamp,
+  isCustomerReviewTranslationBody,
   isCustomerReviewUuid,
   isHideCustomerReviewInput,
   isPublicCustomerReviewListInput,
@@ -22,6 +24,12 @@ import type {
   AdministratorCustomerReviewReply,
   CustomerReviewCursor,
   CustomerReviewHide,
+  CustomerReviewPageInput,
+  CustomerReviewReplyFacts,
+  CustomerReviewTranslation,
+  CustomerReviewTranslationReport,
+  CustomerReviewTranslationReportCursor,
+  CustomerReviewTranslationReportListResult,
   HideCustomerReviewInput,
   HideCustomerReviewResult,
   OwnCustomerReviewResult,
@@ -58,7 +66,7 @@ function parseCursor(value: unknown): CustomerReviewCursor | null | undefined {
 
 function parseReplyFacts(
   value: Record<string, unknown>,
-): PublicCustomerReviewReply | undefined {
+): CustomerReviewReplyFacts | undefined {
   if (
     !isCustomerReviewLanguage(value.originalLanguage) ||
     typeof value.originalBody !== "string" ||
@@ -75,6 +83,37 @@ function parseReplyFacts(
   };
 }
 
+function parseTranslations(
+  value: unknown,
+): readonly CustomerReviewTranslation[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const translations: CustomerReviewTranslation[] = [];
+  for (const entry of value) {
+    if (
+      !isRecord(entry) ||
+      !hasExactKeys(entry, [
+        "translationId",
+        "targetLanguage",
+        "translatedBody",
+      ]) ||
+      typeof entry.translationId !== "string" ||
+      !isCustomerReviewUuid(entry.translationId) ||
+      !isCustomerReviewLanguage(entry.targetLanguage) ||
+      !isCustomerReviewTranslationBody(entry.translatedBody)
+    ) {
+      return undefined;
+    }
+    translations.push({
+      translationId: entry.translationId,
+      targetLanguage: entry.targetLanguage,
+      translatedBody: entry.translatedBody,
+    });
+  }
+  return translations;
+}
+
 function parsePublicReply(
   value: unknown,
 ): PublicCustomerReviewReply | null | undefined {
@@ -83,11 +122,18 @@ function parsePublicReply(
   }
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, ["originalLanguage", "originalBody", "submittedAt"])
+    !hasExactKeys(value, [
+      "originalLanguage",
+      "originalBody",
+      "submittedAt",
+      "translations",
+    ])
   ) {
     return undefined;
   }
-  return parseReplyFacts(value);
+  const facts = parseReplyFacts(value);
+  const translations = parseTranslations(value.translations);
+  return facts && translations && { ...facts, translations };
 }
 
 function parseOwnerReply(
@@ -122,6 +168,7 @@ function parsePublicReview(value: unknown): PublicCustomerReview | undefined {
       "originalBody",
       "submittedAt",
       "ownerReply",
+      "translations",
     ]) ||
     typeof value.reviewId !== "string" ||
     !isCustomerReviewUuid(value.reviewId) ||
@@ -137,7 +184,8 @@ function parsePublicReview(value: unknown): PublicCustomerReview | undefined {
     return undefined;
   }
   const ownerReply = parsePublicReply(value.ownerReply);
-  if (ownerReply === undefined) {
+  const translations = parseTranslations(value.translations);
+  if (ownerReply === undefined || translations === undefined) {
     return undefined;
   }
   return {
@@ -147,6 +195,7 @@ function parsePublicReview(value: unknown): PublicCustomerReview | undefined {
     originalBody: value.originalBody,
     submittedAt: value.submittedAt,
     ownerReply,
+    translations,
   };
 }
 
@@ -575,13 +624,107 @@ function parseHideResult(value: unknown): HideCustomerReviewResult {
   return { status: "unavailable" };
 }
 
+function parseTranslationReportCursor(
+  value: unknown,
+): CustomerReviewTranslationReportCursor | null | undefined {
+  if (value === null) {
+    return null;
+  }
+  if (
+    isRecord(value) &&
+    hasExactKeys(value, ["reportedAt", "reportId"]) &&
+    isCustomerReviewTimestamp(value.reportedAt) &&
+    typeof value.reportId === "string" &&
+    isCustomerReviewUuid(value.reportId)
+  ) {
+    return { reportedAt: value.reportedAt, reportId: value.reportId };
+  }
+  return undefined;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 1;
+}
+
+function parseTranslationReport(
+  value: unknown,
+): CustomerReviewTranslationReport | undefined {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "reportId",
+      "bookingRequestReference",
+      "subject",
+      "originalLanguage",
+      "originalBody",
+      "targetLanguage",
+      "translatedBody",
+      "provider",
+      "model",
+      "promptVersion",
+      "reportedAt",
+    ]) ||
+    typeof value.reportId !== "string" ||
+    !isCustomerReviewUuid(value.reportId) ||
+    !isBookingRequestReference(value.bookingRequestReference) ||
+    (value.subject !== "review" && value.subject !== "reply") ||
+    !isCustomerReviewLanguage(value.originalLanguage) ||
+    !isNonEmptyString(value.originalBody) ||
+    !isCustomerReviewBodyWithinLimit(value.originalBody) ||
+    !isCustomerReviewLanguage(value.targetLanguage) ||
+    !isCustomerReviewTranslationBody(value.translatedBody) ||
+    !isNonEmptyString(value.provider) ||
+    !isNonEmptyString(value.model) ||
+    !isNonEmptyString(value.promptVersion) ||
+    !isCustomerReviewTimestamp(value.reportedAt)
+  ) {
+    return undefined;
+  }
+  return {
+    reportId: value.reportId,
+    bookingRequestReference: value.bookingRequestReference,
+    subject: value.subject,
+    originalLanguage: value.originalLanguage,
+    originalBody: value.originalBody,
+    targetLanguage: value.targetLanguage,
+    translatedBody: value.translatedBody,
+    provider: value.provider,
+    model: value.model,
+    promptVersion: value.promptVersion,
+    reportedAt: value.reportedAt,
+  };
+}
+
+function parseTranslationReportListResult(
+  value: unknown,
+): CustomerReviewTranslationReportListResult {
+  if (
+    !isRecord(value) ||
+    value.status !== "success" ||
+    !hasExactKeys(value, ["status", "items", "nextCursor"]) ||
+    !Array.isArray(value.items)
+  ) {
+    return { status: "unavailable" };
+  }
+  const items = value.items.map(parseTranslationReport);
+  const nextCursor = parseTranslationReportCursor(value.nextCursor);
+  if (items.some((item) => item === undefined) || nextCursor === undefined) {
+    return { status: "unavailable" };
+  }
+  return {
+    status: "success",
+    items: items as CustomerReviewTranslationReport[],
+    nextCursor,
+  };
+}
+
 function errorCode(error: unknown) {
   return isRecord(error) && typeof error.code === "string"
     ? error.code
     : undefined;
 }
 
-async function callRpc(
+export async function callRpc(
   client: SupabaseClient,
   name: string,
   parameters: Record<string, unknown>,
@@ -802,5 +945,36 @@ export class SupabaseCustomerReviewRepository {
       return { status: "unavailable" };
     }
     return parseHideResult(data);
+  }
+
+  async listTranslationReports(
+    input: CustomerReviewPageInput,
+  ): Promise<CustomerReviewTranslationReportListResult> {
+    if (!isCustomerReviewPageInput(input)) {
+      return { status: "invalid" };
+    }
+    const response = await callRpc(
+      this.client,
+      "list_customer_review_translation_reports",
+      {
+        target_before_at: input.beforeAt,
+        target_before_id: input.beforeId,
+        target_limit: input.limit,
+      },
+    );
+    if (!response) {
+      return { status: "unavailable" };
+    }
+    const { data, error } = response;
+    if (errorCode(error) === "42501") {
+      return { status: "access-required" };
+    }
+    if (errorCode(error) === "22023") {
+      return { status: "invalid" };
+    }
+    if (error !== null) {
+      return { status: "unavailable" };
+    }
+    return parseTranslationReportListResult(data);
   }
 }

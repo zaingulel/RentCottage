@@ -1,21 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createRequestReview, revalidatePath } = vi.hoisted(() => ({
-  createRequestReview: vi.fn(),
-  revalidatePath: vi.fn(),
-}));
+const { createRequestReview, createRequestTranslation, revalidatePath } =
+  vi.hoisted(() => ({
+    createRequestReview: vi.fn(),
+    createRequestTranslation: vi.fn(),
+    revalidatePath: vi.fn(),
+  }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath }));
 vi.mock("./request-customer-review", () => ({
   createRequestCustomerReview: createRequestReview,
 }));
+vi.mock("./request-review-translation", () => ({
+  createRequestReviewTranslation: createRequestTranslation,
+}));
 
 import {
   hideCustomerReview,
   hideCustomerReviewReply,
+  reportCustomerReviewTranslation,
   submitCustomerReview,
   submitCustomerReviewReply,
+  translateCustomerReview,
 } from "./actions";
 
 const affectedPublicSlug = "cottage-deadbeefdeadbeefdeadbeefdead0029";
@@ -545,5 +552,135 @@ describe("Customer review Server Actions", () => {
     expect(revalidated()).toEqual([...pathsForDatabaseReference].sort());
     expect(hide).toHaveBeenCalledOnce();
     expect(hideReply).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Review translation Server Actions", () => {
+  const translateInput = {
+    locale: "ar",
+    publicSlug: affectedPublicSlug,
+    reviewId: "88000000-0000-4000-8000-000000001801",
+    subject: "review",
+  } as const;
+  const translationId = "77777777-7777-4777-8777-777777777777";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("rejects unknown and supplied-actor input before any request work", async () => {
+    for (const value of [
+      { ...translateInput, actorUserId: translationId },
+      { ...translateInput, subject: "message" },
+      { ...translateInput, locale: "fr" },
+      null,
+    ]) {
+      await expect(translateCustomerReview(value)).resolves.toEqual({
+        status: "invalid",
+      });
+    }
+    for (const value of [
+      { translationId, actorUserId: translationId },
+      { translationId: "not-a-uuid" },
+      {},
+    ]) {
+      await expect(reportCustomerReviewTranslation(value)).resolves.toEqual({
+        status: "invalid",
+      });
+    }
+    expect(createRequestTranslation).not.toHaveBeenCalled();
+  });
+
+  it("translates into the page locale, revalidates that reviews page and forwards text only from a translated result", async () => {
+    const translate = vi.fn().mockResolvedValue({
+      status: "translated",
+      translationId,
+      translatedBody: "إقامة هادئة بجانب الحديقة.",
+    });
+    createRequestTranslation.mockReturnValue({ translate });
+
+    await expect(translateCustomerReview(translateInput)).resolves.toEqual({
+      status: "translated",
+      translationId,
+      translatedBody: "إقامة هادئة بجانب الحديقة.",
+    });
+    expect(translate).toHaveBeenCalledWith({
+      reviewId: translateInput.reviewId,
+      subject: "review",
+      targetLanguage: "ar",
+    });
+    expect(revalidatePath.mock.calls).toEqual([
+      [`/ar/cottages/${affectedPublicSlug}/reviews`],
+    ]);
+
+    revalidatePath.mockClear();
+    for (const status of [
+      "access-required",
+      "invalid",
+      "not-found",
+      "blocked",
+      "unavailable",
+    ]) {
+      translate.mockResolvedValue({
+        status,
+        translatedBody: "must not leave the action",
+      });
+      await expect(translateCustomerReview(translateInput)).resolves.toEqual({
+        status,
+      });
+    }
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("answers unavailable when the runtime is off or the request work throws", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    createRequestTranslation.mockReturnValue(undefined);
+    await expect(translateCustomerReview(translateInput)).resolves.toEqual({
+      status: "unavailable",
+    });
+    await expect(
+      reportCustomerReviewTranslation({ translationId }),
+    ).resolves.toEqual({ status: "unavailable" });
+
+    createRequestTranslation.mockImplementation(() => {
+      throw new Error("private detail");
+    });
+    await expect(translateCustomerReview(translateInput)).resolves.toEqual({
+      status: "unavailable",
+    });
+    await expect(
+      reportCustomerReviewTranslation({ translationId }),
+    ).resolves.toEqual({ status: "unavailable" });
+    expect(log.mock.calls).toEqual([
+      ["customer-review-translation-action-unavailable"],
+      ["customer-review-translation-report-action-unavailable"],
+    ]);
+    log.mockRestore();
+  });
+
+  it("reports a translation and returns the status only", async () => {
+    const report = vi.fn().mockResolvedValue({
+      status: "reported",
+      reportId: "66666666-6666-4666-8666-666666666666",
+    });
+    createRequestTranslation.mockReturnValue({ report });
+
+    await expect(
+      reportCustomerReviewTranslation({ translationId }),
+    ).resolves.toEqual({ status: "reported" });
+    expect(report).toHaveBeenCalledWith({ translationId });
+    expect(revalidatePath).not.toHaveBeenCalled();
+
+    for (const status of [
+      "access-required",
+      "invalid",
+      "not-found",
+      "unavailable",
+    ]) {
+      report.mockResolvedValue({ status });
+      await expect(
+        reportCustomerReviewTranslation({ translationId }),
+      ).resolves.toEqual({ status });
+    }
   });
 });
