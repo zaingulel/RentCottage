@@ -1992,6 +1992,364 @@ select ok(
   'the public list returns a translation only inside the visible review or reply it belongs to'
 );
 rollback to savepoint customer_review_translation_listed_review_hidden;
+
+select ok(
+  has_function_privilege('service_role','public.report_customer_review_translation(uuid,uuid)','EXECUTE')
+  and not has_function_privilege('anon','public.report_customer_review_translation(uuid,uuid)','EXECUTE')
+  and not has_function_privilege('authenticated','public.report_customer_review_translation(uuid,uuid)','EXECUTE'),
+  'review translation reporting refuses every role except service_role, an ineligible actor and a hidden source'
+);
+select throws_ok(
+  format(
+    'select public.report_customer_review_translation(''10000000-0000-4000-8000-000000001003'',%L)',
+    (select value->>'translationId' from reply_observations where name='first translation save')
+  ),
+  '42501','Customer review translation is unavailable',
+  'review translation reporting refuses every role except service_role, an ineligible actor and a hidden source'
+);
+set local role authenticated;
+select throws_ok(
+  format(
+    'select public.report_customer_review_translation(''10000000-0000-4000-8000-000000001003'',%L)',
+    (select value->>'translationId' from reply_observations where name='first translation save')
+  ),
+  '42501',null,
+  'review translation reporting refuses every role except service_role, an ineligible actor and a hidden source'
+);
+reset role;
+set local role anon;
+select throws_ok(
+  format(
+    'select public.report_customer_review_translation(''10000000-0000-4000-8000-000000001003'',%L)',
+    (select value->>'translationId' from reply_observations where name='first translation save')
+  ),
+  '42501',null,
+  'review translation reporting refuses every role except service_role, an ineligible actor and a hidden source'
+);
+reset role;
+set local role service_role;
+select ok(
+  public.report_customer_review_translation(
+    '10000000-0000-4000-8000-000000003801',
+    (select (value->>'translationId')::uuid from reply_observations where name='first translation save')
+  )='{"status":"access-required"}'::jsonb
+  and public.report_customer_review_translation(
+    '99999999-0000-4000-8000-000000009999',
+    (select (value->>'translationId')::uuid from reply_observations where name='first translation save')
+  )='{"status":"access-required"}'::jsonb
+  and public.report_customer_review_translation(
+    null,
+    (select (value->>'translationId')::uuid from reply_observations where name='first translation save')
+  )='{"status":"invalid"}'::jsonb
+  and public.report_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',null
+  )='{"status":"invalid"}'::jsonb
+  and public.report_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003','99999999-0000-4000-8000-000000009999'
+  )='{"status":"not-found"}'::jsonb,
+  'review translation reporting refuses every role except service_role, an ineligible actor and a hidden source'
+);
+reset role;
+
+savepoint customer_review_translation_report_reply_hidden;
+insert into public.customer_review_reply_hides(review_id,administrator_user_id,reason)
+select review_id,'10000000-0000-4000-8000-000000003801','Hidden for the translation report test'
+from reply_fixture;
+set local role service_role;
+select ok(
+  public.report_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',
+    (select (value->>'translationId')::uuid from reply_observations where name='reply translation save')
+  )='{"status":"not-found"}'::jsonb
+  and public.report_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',
+    (select (value->>'translationId')::uuid from reply_observations where name='first translation save')
+  )->>'status'='reported',
+  'review translation reporting refuses every role except service_role, an ineligible actor and a hidden source'
+);
+reset role;
+rollback to savepoint customer_review_translation_report_reply_hidden;
+
+savepoint customer_review_translation_report_review_hidden;
+insert into public.customer_review_hides(review_id,administrator_user_id,reason)
+select review_id,'10000000-0000-4000-8000-000000003801','Hidden for the translation report test'
+from reply_fixture;
+set local role service_role;
+select ok(
+  public.report_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',
+    (select (value->>'translationId')::uuid from reply_observations where name='first translation save')
+  )='{"status":"not-found"}'::jsonb
+  and public.report_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',
+    (select (value->>'translationId')::uuid from reply_observations where name='reply translation save')
+  )='{"status":"not-found"}'::jsonb,
+  'review translation reporting refuses every role except service_role, an ineligible actor and a hidden source'
+);
+reset role;
+rollback to savepoint customer_review_translation_report_review_hidden;
+select is(
+  (select count(*)::integer from public.customer_review_translation_reports),0,
+  'a refused review translation report stores nothing'
+);
+
+set local role service_role;
+insert into reply_observations
+select 'first translation report',public.report_customer_review_translation(
+  '10000000-0000-4000-8000-000000001003',
+  (select (value->>'translationId')::uuid from reply_observations where name='first translation save')
+);
+insert into reply_observations
+select 'repeated translation report',public.report_customer_review_translation(
+  '10000000-0000-4000-8000-000000001003',
+  (select (value->>'translationId')::uuid from reply_observations where name='first translation save')
+);
+reset role;
+select ok(
+  (
+    select value->>'status'='reported'
+      and (select array_agg(key order by key) from jsonb_object_keys(value) key)
+        =array['reportId','status']
+      and value->>'reportId'=(select id::text from public.customer_review_translation_reports)
+    from reply_observations where name='first translation report'
+  )
+  and (select value from reply_observations where name='repeated translation report')
+    =(select value from reply_observations where name='first translation report')
+  and (
+    select count(*)=1
+      and bool_and(
+        reports.translation_id=(
+          select (value->>'translationId')::uuid
+          from reply_observations where name='first translation save'
+        )
+        and reports.reporter_user_id='10000000-0000-4000-8000-000000001003'
+      )
+    from public.customer_review_translation_reports reports
+  ),
+  'a review translation report binds one row to the exact translation and reporter and a retry adds none'
+);
+
+set local role service_role;
+insert into reply_observations
+select 'second reader translation report',public.report_customer_review_translation(
+  '10000000-0000-4000-8000-000000001001',
+  (select (value->>'translationId')::uuid from reply_observations where name='first translation save')
+);
+reset role;
+select ok(
+  (
+    select value->>'status'='reported'
+      and value->>'reportId'<>(
+        select value->>'reportId' from reply_observations where name='first translation report'
+      )
+    from reply_observations where name='second reader translation report'
+  )
+  and (
+    select count(*)=2
+      and count(*) filter (
+        where reports.reporter_user_id='10000000-0000-4000-8000-000000001001'
+          and reports.id::text=(
+            select value->>'reportId'
+            from reply_observations where name='second reader translation report'
+          )
+      )=1
+      and count(distinct reports.translation_id)=1
+    from public.customer_review_translation_reports reports
+  ),
+  'a second reader''s report of the same translation is its own row'
+);
+
+set local role service_role;
+insert into reply_observations
+select 'reply translation report',public.report_customer_review_translation(
+  '10000000-0000-4000-8000-000000001003',
+  (select (value->>'translationId')::uuid from reply_observations where name='reply translation save')
+);
+insert into reply_observations
+select 'second language translation report',public.report_customer_review_translation(
+  '10000000-0000-4000-8000-000000001001',
+  (select (value->>'translationId')::uuid from reply_observations where name='second language translation save')
+);
+reset role;
+
+select ok(
+  has_function_privilege('authenticated','public.list_customer_review_translation_reports(timestamptz,uuid,integer)','EXECUTE')
+  and not has_function_privilege('anon','public.list_customer_review_translation_reports(timestamptz,uuid,integer)','EXECUTE')
+  and not has_function_privilege('service_role','public.list_customer_review_translation_reports(timestamptz,uuid,integer)','EXECUTE'),
+  'only an authenticator-verified Platform Administrator reads review translation reports, with no reporter identity'
+);
+select set_config('request.jwt.claim.sub','',true);
+select set_config('request.jwt.claims','{}',true);
+set local role anon;
+select throws_ok(
+  $$select public.list_customer_review_translation_reports(null,null,20)$$,
+  '42501',null,
+  'only an authenticator-verified Platform Administrator reads review translation reports, with no reporter identity'
+);
+reset role;
+set local role authenticated;
+select throws_ok(
+  $$select public.list_customer_review_translation_reports(null,null,20)$$,
+  '42501','Customer review administration is unavailable',
+  'only an authenticator-verified Platform Administrator reads review translation reports, with no reporter identity'
+);
+reset role;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001003',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001003","role":"authenticated","aal":"aal2"}',true);
+set local role authenticated;
+select throws_ok(
+  $$select public.list_customer_review_translation_reports(null,null,20)$$,
+  '42501','Customer review administration is unavailable',
+  'only an authenticator-verified Platform Administrator reads review translation reports, with no reporter identity'
+);
+reset role;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","role":"authenticated","aal":"aal1"}',true);
+set local role authenticated;
+select throws_ok(
+  $$select public.list_customer_review_translation_reports(null,null,20)$$,
+  '42501','Customer review administration is unavailable',
+  'only an authenticator-verified Platform Administrator reads review translation reports, with no reporter identity'
+);
+reset role;
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","role":"authenticated","aal":"aal2"}',true);
+set local role authenticated;
+insert into reply_observations
+select 'translation reports',public.list_customer_review_translation_reports();
+insert into reply_observations
+select 'translation reports first page',public.list_customer_review_translation_reports(null,null,2);
+insert into reply_observations
+select 'translation reports second page',public.list_customer_review_translation_reports(
+  (select (value#>>'{nextCursor,reportedAt}')::timestamptz from reply_observations where name='translation reports first page'),
+  (select (value#>>'{nextCursor,reportId}')::uuid from reply_observations where name='translation reports first page'),
+  2
+);
+select throws_ok(
+  $$select public.list_customer_review_translation_reports(clock_timestamp(),null,20)$$,
+  '22023','Customer review cursor is invalid',
+  'review translation reports refuse half a cursor'
+);
+select throws_ok(
+  $$select public.list_customer_review_translation_reports(null,null,0)$$,
+  '22023','Customer review cursor is invalid',
+  'review translation reports refuse a limit below one'
+);
+select throws_ok(
+  $$select public.list_customer_review_translation_reports(null,null,51)$$,
+  '22023','Customer review cursor is invalid',
+  'review translation reports refuse a limit above fifty'
+);
+reset role;
+select ok(
+  (
+    select (select array_agg(key order by key) from jsonb_object_keys(value) key)
+        =array['items','nextCursor','status']
+      and value->>'status'='success'
+      and value->'nextCursor'='null'::jsonb
+      and jsonb_array_length(value->'items')=4
+      and not exists(
+        select 1 from jsonb_array_elements(value->'items') item
+        where (select array_agg(key order by key collate "C") from jsonb_object_keys(item) key)
+          <>array[
+            'bookingRequestReference','model','originalBody','originalLanguage','promptVersion',
+            'provider','reportId','reportedAt','subject','targetLanguage','translatedBody'
+          ]
+      )
+      and value::text !~ '10000000-0000-4000-8000-00000000100[123]'
+      and value#>'{items,3}'=jsonb_build_object(
+        'reportId',(select value->'reportId' from reply_observations where name='first translation report'),
+        'bookingRequestReference','RC-REQ-0000000000001001',
+        'subject','review',
+        'originalLanguage','en',
+        'originalBody','A peaceful stay with a lovely garden.',
+        'targetLanguage','ar',
+        'translatedBody','إقامة هادئة مع حديقة جميلة.',
+        'provider','fictional-local-test',
+        'model','deterministic-pairs-v1',
+        'promptVersion','review-pairs-v1',
+        'reportedAt',(
+          select to_jsonb(reports.created_at)
+          from public.customer_review_translation_reports reports
+          where reports.id::text=(
+            select value->>'reportId' from reply_observations where name='first translation report'
+          )
+        )
+      )
+      and (value#>'{items,1}')-'reportedAt'::text=jsonb_build_object(
+        'reportId',(select value->'reportId' from reply_observations where name='reply translation report'),
+        'bookingRequestReference','RC-REQ-0000000000001001',
+        'subject','reply',
+        'originalLanguage','en',
+        'originalBody','Thank you for staying with us.',
+        'targetLanguage','ar',
+        'translatedBody','شكراً لإقامتكم معنا.',
+        'provider','fictional-local-test',
+        'model','deterministic-pairs-v1',
+        'promptVersion','review-pairs-v1'
+      )
+    from reply_observations where name='translation reports'
+  ),
+  'only an authenticator-verified Platform Administrator reads review translation reports, with no reporter identity'
+);
+select ok(
+  (
+    select jsonb_array_length(value->'items')=2
+      and (select array_agg(key order by key collate "C") from jsonb_object_keys(value->'nextCursor') key)
+        =array['reportId','reportedAt']
+      and value->'nextCursor'=jsonb_build_object(
+        'reportedAt',value#>'{items,1,reportedAt}',
+        'reportId',value#>'{items,1,reportId}'
+      )
+    from reply_observations where name='translation reports first page'
+  )
+  and (
+    select jsonb_array_length(value->'items')=2 and value->'nextCursor'='null'::jsonb
+    from reply_observations where name='translation reports second page'
+  )
+  and (
+    select jsonb_path_query_array(value,'$.items[*].reportId')
+    from reply_observations where name='translation reports first page'
+  )||(
+    select jsonb_path_query_array(value,'$.items[*].reportId')
+    from reply_observations where name='translation reports second page'
+  )=jsonb_build_array(
+    (select value->'reportId' from reply_observations where name='second language translation report'),
+    (select value->'reportId' from reply_observations where name='reply translation report'),
+    (select value->'reportId' from reply_observations where name='second reader translation report'),
+    (select value->'reportId' from reply_observations where name='first translation report')
+  ),
+  'review translation reports page by cursor without skips'
+);
+
+select throws_ok(
+  $$update public.customer_review_translation_reports set created_at=clock_timestamp()$$,
+  'RC409',null,
+  'review translation reports cannot be changed or deleted and no role holds a table privilege'
+);
+select throws_ok(
+  $$delete from public.customer_review_translation_reports$$,
+  'RC409',null,
+  'review translation reports cannot be changed or deleted and no role holds a table privilege'
+);
+select ok(
+  not exists(
+    select 1
+    from unnest(array['anon','authenticated','service_role']::name[]) grantee
+    where has_table_privilege(
+      grantee,'public.customer_review_translation_reports',
+      'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+    )
+  )
+  and (
+    select relrowsecurity from pg_catalog.pg_class
+    where oid='public.customer_review_translation_reports'::regclass
+  )
+  and not exists(
+    select 1 from pg_catalog.pg_policies
+    where schemaname='public' and tablename='customer_review_translation_reports'
+  ),
+  'review translation reports cannot be changed or deleted and no role holds a table privilege'
+);
 rollback to savepoint customer_review_translation;
 
 savepoint customer_review_reply_review_hidden;

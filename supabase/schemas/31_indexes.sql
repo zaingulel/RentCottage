@@ -128,3 +128,4 @@ CREATE UNIQUE INDEX booking_notification_events_recovery_source_idx ON public.bo
 
 CREATE INDEX customer_reviews_profile_cursor_idx ON public.customer_reviews (profile_id, submitted_at DESC, id DESC);
 CREATE INDEX customer_reviews_administrator_cursor_idx ON public.customer_reviews (submitted_at DESC, id DESC);
+CREATE INDEX customer_review_translation_reports_cursor_idx ON public.customer_review_translation_reports (created_at DESC, id DESC);

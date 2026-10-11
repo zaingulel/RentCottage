@@ -236,6 +236,12 @@ ALTER TABLE ONLY public.customer_review_translations
 ALTER TABLE ONLY public.customer_review_translations
     ADD CONSTRAINT customer_review_translations_cache_key UNIQUE (review_id, subject, target_language, provider, model, prompt_version);
 
+ALTER TABLE ONLY public.customer_review_translation_reports
+    ADD CONSTRAINT customer_review_translation_reports_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.customer_review_translation_reports
+    ADD CONSTRAINT customer_review_translation_reports_reporter_key UNIQUE (translation_id, reporter_user_id);
+
 ALTER TABLE ONLY "public"."booking_request_submission_attempts"
     ADD CONSTRAINT "booking_request_submission_attempts_payment_lifecycle_id_key" UNIQUE ("payment_lifecycle_id");
 
@@ -1124,3 +1130,5 @@ ALTER TABLE ONLY public.customer_review_replies ADD CONSTRAINT customer_review_r
 ALTER TABLE ONLY public.customer_review_reply_hides ADD CONSTRAINT customer_review_reply_hides_review_id_fkey FOREIGN KEY (review_id) REFERENCES public.customer_review_replies(review_id) ON DELETE RESTRICT;
 ALTER TABLE ONLY public.customer_review_reply_hides ADD CONSTRAINT customer_review_reply_hides_administrator_user_id_fkey FOREIGN KEY (administrator_user_id) REFERENCES auth.users(id) ON DELETE RESTRICT;
 ALTER TABLE ONLY public.customer_review_translations ADD CONSTRAINT customer_review_translations_review_id_fkey FOREIGN KEY (review_id) REFERENCES public.customer_reviews(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.customer_review_translation_reports ADD CONSTRAINT customer_review_translation_reports_translation_id_fkey FOREIGN KEY (translation_id) REFERENCES public.customer_review_translations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.customer_review_translation_reports ADD CONSTRAINT customer_review_translation_reports_reporter_user_id_fkey FOREIGN KEY (reporter_user_id) REFERENCES auth.users(id) ON DELETE RESTRICT;

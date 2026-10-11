@@ -416,6 +416,54 @@ commit;`,
       "1",
       "concurrent identical translation saves store one translation",
     );
+    const reportTranslation = `set local role service_role;
+select public.report_customer_review_translation(
+  '${hideFixture.ids.customerUserId}','${savedTranslation.translationId}'
+);`;
+    const translationReportHolder = harness.startSession(`
+begin;
+set application_name='customer_review_translation_report_holder';
+${reportTranslation}
+select 'CUSTOMER_REVIEW_TRANSLATION_REPORT_HELD';
+`);
+    sessions.push(translationReportHolder);
+    await harness.waitForMarker(
+      translationReportHolder,
+      "CUSTOMER_REVIEW_TRANSLATION_REPORT_HELD",
+    );
+    const translationReportContender = harness.startSession(
+      `begin;
+set application_name='customer_review_translation_report_contender';
+${reportTranslation}
+commit;`,
+      true,
+    );
+    sessions.push(translationReportContender);
+    await harness.waitForLock(
+      "customer_review_translation_report_contender",
+      translationReportContender,
+    );
+    assertions += 1;
+    await harness.finishSession(translationReportHolder, { action: "commit" });
+    await harness.finishSession(translationReportContender);
+    const reportedTranslation = jsonResults(translationReportHolder)[0];
+    check(
+      reportedTranslation?.status,
+      "reported",
+      "first translation report wins",
+    );
+    check(
+      jsonResults(translationReportContender)[0],
+      reportedTranslation,
+      "concurrent identical translation reports return one stable report",
+    );
+    check(
+      harness.runSql(
+        `select id from public.customer_review_translation_reports where translation_id='${savedTranslation.translationId}';`,
+      ),
+      reportedTranslation.reportId,
+      "concurrent identical translation reports store one report",
+    );
     setHideListingState("paused");
     const hideHolder = harness.startSession(`
 begin;

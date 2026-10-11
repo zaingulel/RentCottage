@@ -81,3 +81,12 @@ CREATE TABLE IF NOT EXISTS public.customer_review_translations (
 );
 
 ALTER TABLE public.customer_review_translations OWNER TO postgres;
+
+CREATE TABLE IF NOT EXISTS public.customer_review_translation_reports (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  translation_id uuid NOT NULL,
+  reporter_user_id uuid NOT NULL,
+  created_at timestamptz DEFAULT clock_timestamp() NOT NULL
+);
+
+ALTER TABLE public.customer_review_translation_reports OWNER TO postgres;

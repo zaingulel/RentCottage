@@ -1493,6 +1493,7 @@ REVOKE ALL PRIVILEGES ON TABLE public.customer_review_hides FROM PUBLIC,anon,aut
 REVOKE ALL PRIVILEGES ON TABLE public.customer_review_replies FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL PRIVILEGES ON TABLE public.customer_review_reply_hides FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL PRIVILEGES ON TABLE public.customer_review_translations FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL PRIVILEGES ON TABLE public.customer_review_translation_reports FROM PUBLIC,anon,authenticated,service_role;
 
 REVOKE ALL ON FUNCTION public.reject_customer_review_fact_change() FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.submit_customer_review(text,integer,public.cottage_profile_source_language,text) FROM PUBLIC,anon,authenticated,service_role;
@@ -1507,6 +1508,8 @@ REVOKE ALL ON FUNCTION public.customer_review_translation_actor_is_eligible(uuid
 REVOKE ALL ON FUNCTION public.customer_review_translation_source(uuid,text) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.prepare_customer_review_translation(uuid,uuid,text,public.cottage_profile_source_language,text,text,text) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.save_customer_review_translation(uuid,uuid,text,public.cottage_profile_source_language,text,text,text,text) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.report_customer_review_translation(uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.list_customer_review_translation_reports(timestamptz,uuid,integer) FROM PUBLIC,anon,authenticated,service_role;
 
 GRANT EXECUTE ON FUNCTION public.submit_customer_review(text,integer,public.cottage_profile_source_language,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_customer_review(text) TO authenticated;
@@ -1518,6 +1521,8 @@ GRANT EXECUTE ON FUNCTION public.get_owner_customer_review(text) TO authenticate
 GRANT EXECUTE ON FUNCTION public.hide_customer_review_reply(uuid,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.prepare_customer_review_translation(uuid,uuid,text,public.cottage_profile_source_language,text,text,text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.save_customer_review_translation(uuid,uuid,text,public.cottage_profile_source_language,text,text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.report_customer_review_translation(uuid,uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.list_customer_review_translation_reports(timestamptz,uuid,integer) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.search_administrator_records(text,text,text,date,date,uuid,timestamptz,uuid),public.get_administrator_record(text,uuid) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.search_administrator_records(text,text,text,date,date,uuid,timestamptz,uuid),public.get_administrator_record(text,uuid) TO authenticated;
