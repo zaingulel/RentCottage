@@ -2419,35 +2419,25 @@ a:focus-visible {
   }
 }
 
-.quote-page {
-  min-block-size: 100vh;
-  padding: clamp(var(--space-4), 4vw, var(--space-7));
-}
-
-.quote-heading {
-  max-inline-size: 72rem;
-  margin: var(--space-7) auto var(--space-5);
-}
-
-.quote-heading p,
-.quote-heading h1 {
-  margin-block: var(--space-1);
-}
-
-.quote-heading p {
-  color: var(--muted);
-}
-
 .quote-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(17rem, 0.75fr);
+  align-items: start;
   gap: var(--space-4);
-  max-inline-size: 72rem;
-  margin-inline: auto;
+}
+
+.quote-layout > * {
+  grid-column: 1;
+}
+
+.quote-layout > .quote-totals {
+  grid-column: 2;
+  grid-row: 1 / span 4;
+  position: sticky;
+  inset-block-start: var(--space-5);
 }
 
 .quote-card {
-  margin-block-end: var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--surface-field);
@@ -3092,6 +3082,12 @@ section.request-follow-up {
 @media (max-width: 47.5rem) {
   .quote-layout {
     grid-template-columns: 1fr;
+  }
+
+  .quote-layout > .quote-totals {
+    grid-column: 1;
+    grid-row: auto;
+    position: static;
   }
 
   .quote-items > li {

@@ -162,6 +162,70 @@ describe("Booking Quote view", () => {
     ).toBeInTheDocument();
   });
 
+  it("places the price breakdown before the Send button", () => {
+    render(
+      <BookingQuoteView
+        locale="en"
+        queryString="from=2099-08-21&selection=2099-08-21%3Ashift%3A2&guests=4"
+        result={result}
+        slug={result.quote.slug}
+        {...bookingRequestProps}
+      />,
+    );
+    const totals = screen.getByRole("complementary");
+    const send = screen.getByRole("button", { name: "Send Booking Request" });
+    expect(
+      totals.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it.each([
+    [
+      "en",
+      "Total",
+      ["Booking Price", "Booking Service Fee", "Customer Total"],
+      ["IQD 100,003", "IQD 5,000", "IQD 105,003"],
+    ],
+    [
+      "ar",
+      "إجمالي",
+      ["سعر الحجز", "رسوم خدمة الحجز", "إجمالي العميل"],
+      ["IQD 100,003", "IQD 5,000", "IQD 105,003"],
+    ],
+    [
+      "ckb",
+      "کۆی گشتی",
+      ["نرخی حجزکردن", "کرێی خزمەتگوزاری حجزکردن", "کۆی گشتی کڕیار"],
+      ["IQD ١٠٠٬٠٠٣", "IQD ٥٬٠٠٠", "IQD ١٠٥٬٠٠٣"],
+    ],
+  ] as const)(
+    "labels only the Customer Total as a total in every launch language",
+    (locale, totalWord, labels, amounts) => {
+      render(
+        <BookingQuoteView
+          locale={locale}
+          queryString="from=2099-08-21&selection=2099-08-21%3Ashift%3A2&guests=4"
+          result={result}
+          slug={result.quote.slug}
+          {...bookingRequestProps}
+        />,
+      );
+      const rows = within(screen.getByRole("complementary"))
+        .getAllByRole("term")
+        .map((term) => term.parentElement as HTMLElement);
+      const labelText = rows.map((row) => row.querySelector("dt")?.textContent);
+      expect(labelText).toEqual(labels);
+      expect(rows.map((row) => row.querySelector("dd")?.textContent)).toEqual(
+        amounts,
+      );
+      expect(labelText.map((label) => label?.includes(totalWord))).toEqual([
+        false,
+        false,
+        true,
+      ]);
+    },
+  );
+
   it("renders localized right-to-left quote content", () => {
     const { container } = render(
       <BookingQuoteView
