@@ -7,6 +7,7 @@ import {
 import { fromPriceIqd } from "@/cottage-discovery/from-price";
 import type { CottageDiscoveryResult } from "@/cottage-discovery/supabase-cottage-discovery";
 import { formatIqd, formatServiceDay } from "@/i18n/format";
+import { publicCottageAmenityName } from "@/i18n/public-cottage-amenities";
 import type { Locale } from "@/i18n/routing";
 import { ActionFeedback, ActionLink } from "./interaction-controls";
 
@@ -33,6 +34,18 @@ const copy = {
     next: "النتائج التالية",
     first: "العودة إلى أول النتائج",
     pastEnd: "لا توجد بيوت أخرى لهذا البحث.",
+    searchTitle: "بحثك",
+    searchFrom: "من تاريخ",
+    searchTo: "إلى تاريخ",
+    guests: "عدد الضيوف",
+    filters: "مرشحات فترة الحجز",
+    shift: "الفترة",
+    governorate: "المحافظة",
+    area: "المنطقة التقريبية",
+    amenities: "المرافق",
+    capacity: "السعة",
+    capacityGuests: "ضيوف",
+    matchedAmenities: "المرافق التي بحثت عنها",
   },
   ckb: {
     title: "کۆتێجە بەردەستەکان",
@@ -58,6 +71,18 @@ const copy = {
     next: "ئەنجامەکانی دواتر",
     first: "گەڕانەوە بۆ یەکەم ئەنجامەکان",
     pastEnd: "هیچ کۆتێجێکی تر بۆ ئەم گەڕانە نییە.",
+    searchTitle: "گەڕانەکەت",
+    searchFrom: "لە بەرواری",
+    searchTo: "تا بەرواری",
+    guests: "ژمارەی میوان",
+    filters: "پاڵاوتەکانی ماوەی حجز",
+    shift: "شیفت",
+    governorate: "پارێزگا",
+    area: "ناوچەی نزیکەیی",
+    amenities: "خزمەتگوزارییەکان",
+    capacity: "گنجایش",
+    capacityGuests: "میوان",
+    matchedAmenities: "ئەو خزمەتگوزارییانەی بۆیان گەڕایت",
   },
   en: {
     title: "Available cottages",
@@ -83,6 +108,18 @@ const copy = {
     next: "Next results",
     first: "Back to first results",
     pastEnd: "There are no more cottages for this search.",
+    searchTitle: "Your search",
+    searchFrom: "From Service Day",
+    searchTo: "To Service Day",
+    guests: "Guests",
+    filters: "Booking Period filters",
+    shift: "Shift",
+    governorate: "Governorate",
+    area: "Approximate area",
+    amenities: "Amenities",
+    capacity: "Capacity",
+    capacityGuests: "guests",
+    matchedAmenities: "Amenities you searched for",
   },
 } as const;
 
@@ -109,6 +146,78 @@ export function PublicCottageResults({
         </ActionLink>
         <h1 className="page-title">{messages.title}</h1>
       </header>
+      <section
+        className="search-summary"
+        aria-labelledby="search-summary-heading"
+      >
+        <h2 id="search-summary-heading" className="section-title">
+          {messages.searchTitle}
+        </h2>
+        <dl className="fact-list">
+          <div>
+            <dt>{messages.searchFrom}</dt>
+            <dd>{formatServiceDay(query.from, locale, { weekday: true })}</dd>
+          </div>
+          <div>
+            <dt>{messages.searchTo}</dt>
+            <dd>{formatServiceDay(query.to, locale, { weekday: true })}</dd>
+          </div>
+          <div>
+            <dt>{messages.guests}</dt>
+            <dd>{query.guests}</dd>
+          </div>
+          {query.selections.length > 0 ? (
+            <div>
+              <dt>{messages.filters}</dt>
+              <dd>
+                {query.selections.map((selection) => (
+                  <span
+                    key={`${selection.serviceDay}-${selection.kind === "full-day" ? "full" : selection.position}`}
+                  >
+                    <bdi>
+                      {formatServiceDay(selection.serviceDay, locale, {
+                        weekday: true,
+                      })}
+                    </bdi>
+                    :{" "}
+                    {selection.kind === "full-day"
+                      ? messages.fullDay
+                      : `${messages.shift} ${selection.position}`}
+                  </span>
+                ))}
+              </dd>
+            </div>
+          ) : null}
+          {query.governorate ? (
+            <div>
+              <dt>{messages.governorate}</dt>
+              <dd>
+                <bdi>{query.governorate}</bdi>
+              </dd>
+            </div>
+          ) : null}
+          {query.area ? (
+            <div>
+              <dt>{messages.area}</dt>
+              <dd>
+                <bdi>{query.area}</bdi>
+              </dd>
+            </div>
+          ) : null}
+          {query.amenities.length > 0 ? (
+            <div>
+              <dt>{messages.amenities}</dt>
+              <dd>
+                {query.amenities.map((amenity) => (
+                  <span key={amenity}>
+                    {publicCottageAmenityName(locale, amenity)}
+                  </span>
+                ))}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+      </section>
       {result.status === "unavailable" ? (
         <ActionFeedback kind="error">{messages.unavailable}</ActionFeedback>
       ) : result.cottages.length === 0 ? (
@@ -122,6 +231,9 @@ export function PublicCottageResults({
         <section className="results-list" aria-label={messages.title}>
           {result.cottages.map((cottage) => {
             const fromPrice = fromPriceIqd(cottage.inventory);
+            const matchedAmenities = query.amenities.filter((amenity) =>
+              cottage.amenities.includes(amenity),
+            );
             return (
               <article key={cottage.slug}>
                 <div className="result-image">
@@ -140,6 +252,26 @@ export function PublicCottageResults({
                     {messages.location}: {cottage.approximateLocation},{" "}
                     {cottage.governorate}
                   </p>
+                  <dl className="fact-list">
+                    <div>
+                      <dt>{messages.capacity}</dt>
+                      <dd>
+                        {cottage.capacity} {messages.capacityGuests}
+                      </dd>
+                    </div>
+                    {matchedAmenities.length > 0 ? (
+                      <div>
+                        <dt>{messages.matchedAmenities}</dt>
+                        <dd>
+                          {matchedAmenities.map((amenity) => (
+                            <span key={amenity}>
+                              {publicCottageAmenityName(locale, amenity)}
+                            </span>
+                          ))}
+                        </dd>
+                      </div>
+                    ) : null}
+                  </dl>
                   <div className="result-price">
                     {fromPrice === null ? (
                       <p className="result-from-price">{messages.noPrice}</p>

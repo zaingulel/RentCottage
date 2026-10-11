@@ -1183,6 +1183,20 @@ html[lang="ckb"] .page-title {
   justify-self: start;
 }
 
+.result-content .fact-list {
+  gap: var(--space-1);
+  font-size: var(--font-size-2);
+}
+
+.search-summary {
+  margin-block-end: var(--space-5);
+}
+
+.search-summary .fact-list {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-3) var(--space-5);
+}
+
 .access-panel {
   display: grid;
   gap: var(--space-3);

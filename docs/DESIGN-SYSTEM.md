@@ -279,7 +279,10 @@ its own; the block it sits in sets the space around it.
 - Fact list: `dl.fact-list`, with one `div` per fact holding a `dt` and its `dd`, shows the labelled details of one
   record. The label is in `--muted` and sits in a column beside its value, with `--space-3` between them and
   `--space-4` between facts; at the `phone` breakpoint the label stacks above its value. A value with several
-  lines puts each in a `span`. A fact list never carries the record's status.
+  lines puts each in a `span`. A fact list never carries the record's status. The search summary on results,
+  `section.search-summary`, flows its facts in columns at least `18rem` wide, with `--space-3` between rows and
+  `--space-5` between columns, so they share a line on desktop and stack in one column on a phone; the fact list in
+  a result row is at `--font-size-2` with `--space-1` between facts.
 - List row: `ul.list-rows` shows a list of a person's records, one `li` per record. Each is a bordered row, with a
   `1px` `--line` border, `--radius-card` corners and `--space-3` between rows. A row has exactly one link,
   `a.list-row-title`, which holds only the record's name in bold, spans the row's width and is at least `2.75rem`
