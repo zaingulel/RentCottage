@@ -161,9 +161,13 @@ Anything else is a token.
   Sorani, whose letters carry marks above and below the line. It has no margin of its own; the block it sits in
   sets the space around it. It starts at the same inline edge as the content it titles, and a long title wraps
   onto further lines and is never clipped or shortened.
-- A page may put one small label above its title. It is the results page's label (`.results-intro p`):
-  `--font-size-1`, bold, in `--ink-accent`, with the title `--space-1` below it. No page on the template has one yet;
-  the first that does moves that rule's declarations to a shared `page-label` class, so there is one label style.
+- Page heading: `header.page-heading` opens a page on the template. It holds, top to bottom, a back link as
+  `ActionLink kind="text"`, the page title, and an optional plain `p` in `--muted` with no margin. Its items start
+  at the same inline edge, `--space-2` apart, and the block has `--space-5` below it.
+- A page may put one small label above its title. Its style is the `.results-intro p` rule, which only the
+  not-found screen still uses as a label: `--font-size-1`, bold, in `--ink-accent`, with the title `--space-1`
+  below it. No page on the template carries a label; the first that does moves that rule's declarations to a
+  shared `page-label` class, so there is one label style.
 - A page that is not on the template keeps its own width and heading rules until its screen is moved onto it.
 
 ## Component patterns
@@ -239,8 +243,10 @@ Anything else is a token.
   `fieldset`/`legend` per Service Day with `.booking-period-options` and regular `ActionButton` toggles;
   `aria-pressed` exposes the selection. Disable the fieldset and onward actions during URL navigation.
   Missing choices are corrected only through an explicit `ActionButton`; changed availability uses
-  `ActionFeedback`. Results reuse `.result-shifts` inside named `.result-service-day` groups, with individual
-  price and availability text. Times use `<bdi dir="ltr">` in every locale.
+  `ActionFeedback`. Results reuse `.result-shifts` inside named `.result-service-day` groups. Each option there is a
+  row of two aligned lines: its name over its time at the start edge, and its price over its availability text at
+  the end edge, with a selected filter's `span.status-badge` on its own line under the row. Times use
+  `<bdi dir="ltr">` in every locale.
 - Progress steps: `BookingRequestProgress` in
   [booking-request-progress.tsx](../src/components/booking-request-progress.tsx) renders an
   `ol.booking-request-progress` with `role="list"`, named by `aria-label`, with one `li` per step carrying

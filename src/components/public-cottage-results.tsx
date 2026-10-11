@@ -1,5 +1,4 @@
 import Image from "next/image";
-import Link from "next/link";
 
 import {
   serializeCottageResultsQuery,
@@ -9,7 +8,7 @@ import { fromPriceIqd } from "@/cottage-discovery/from-price";
 import type { CottageDiscoveryResult } from "@/cottage-discovery/supabase-cottage-discovery";
 import { formatIqd, formatServiceDay } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
-import { ActionLink } from "./interaction-controls";
+import { ActionFeedback, ActionLink } from "./interaction-controls";
 
 const copy = {
   ar: {
@@ -19,6 +18,7 @@ const copy = {
     location: "الموقع التقريبي",
     view: "اعرض البيت",
     back: "تعديل البحث",
+    changeSearch: "غيّر البحث",
     fullDay: "اليوم الكامل",
     nextDay: "اليوم التالي",
     available: "متاح",
@@ -42,6 +42,7 @@ const copy = {
     location: "شوێنی نزیکەیی",
     view: "کۆتێجەکە ببینە",
     back: "گەڕانەکە بگۆڕە",
+    changeSearch: "گەڕان بگۆڕە",
     fullDay: "پاکێجی ڕۆژی تەواو",
     nextDay: "ڕۆژی دواتر",
     available: "بەردەستە",
@@ -66,6 +67,7 @@ const copy = {
     location: "Approximate location",
     view: "View cottage",
     back: "Change search",
+    changeSearch: "Change search",
     fullDay: "Full-day bundle",
     nextDay: "next day",
     available: "Available",
@@ -100,55 +102,57 @@ export function PublicCottageResults({
   const messages = copy[locale];
   const continued = after !== null;
   return (
-    <main className="results-page">
-      <header className="results-header">
-        <Link href={`/${locale}`}>{messages.back}</Link>
+    <main className="results-page page">
+      <header className="page-heading">
+        <ActionLink kind="text" href={`/${locale}`}>
+          {messages.back}
+        </ActionLink>
+        <h1 className="page-title">{messages.title}</h1>
       </header>
-      <section className="results-intro">
-        <p>RentCottage</p>
-        <h1>{messages.title}</h1>
-      </section>
       {result.status === "unavailable" ? (
-        <p role="alert" className="empty-results">
-          {messages.unavailable}
-        </p>
+        <ActionFeedback kind="error">{messages.unavailable}</ActionFeedback>
       ) : result.cottages.length === 0 ? (
-        <p className="empty-results">
-          {continued ? messages.pastEnd : messages.empty}
-        </p>
+        <div className="empty-state">
+          <p>{continued ? messages.pastEnd : messages.empty}</p>
+          <ActionLink kind="secondary" width="content" href={`/${locale}`}>
+            {messages.changeSearch}
+          </ActionLink>
+        </div>
       ) : (
-        <section className="results-grid" aria-label={messages.title}>
+        <section className="results-list" aria-label={messages.title}>
           {result.cottages.map((cottage) => {
             const fromPrice = fromPriceIqd(cottage.inventory);
             return (
               <article key={cottage.slug}>
-                {cottage.mediaUrls[0] ? (
-                  <div className="result-image">
+                <div className="result-image">
+                  {cottage.mediaUrls[0] ? (
                     <Image
                       src={cottage.mediaUrls[0]}
                       alt={cottage.name}
                       fill
-                      sizes="(min-width: 900px) 33vw, 100vw"
+                      sizes="(min-width: 40rem) 18rem, 100vw"
                     />
-                  </div>
-                ) : null}
+                  ) : null}
+                </div>
                 <div className="result-content">
                   <h2>{cottage.name}</h2>
                   <p>
                     {messages.location}: {cottage.approximateLocation},{" "}
                     {cottage.governorate}
                   </p>
-                  {fromPrice === null ? (
-                    <p className="result-from-price">{messages.noPrice}</p>
-                  ) : (
-                    <>
-                      <p className="result-from-price">
-                        {messages.from} <b>{formatIqd(fromPrice, locale)}</b>
-                      </p>
-                      <p>{messages.fromNote}</p>
-                    </>
-                  )}
-                  <p className="result-prices-note">{messages.prices}</p>
+                  <div className="result-price">
+                    {fromPrice === null ? (
+                      <p className="result-from-price">{messages.noPrice}</p>
+                    ) : (
+                      <>
+                        <p className="result-from-price">
+                          {messages.from} <b>{formatIqd(fromPrice, locale)}</b>
+                        </p>
+                        <p>{messages.fromNote}</p>
+                      </>
+                    )}
+                  </div>
+                  <p>{messages.prices}</p>
                   {[
                     ...new Set(
                       cottage.inventory.map((unit) => unit.serviceDay),
@@ -196,15 +200,19 @@ export function PublicCottageResults({
                                   selection.kind === unit.kind &&
                                   (selection.kind === "full-day" ||
                                     selection.position === unit.position),
-                              ) && <span>{messages.selected}</span>}
+                              ) && (
+                                <span className="status-badge">
+                                  {messages.selected}
+                                </span>
+                              )}
                             </li>
                           ))}
                       </ul>
                     </section>
                   ))}
                   <ActionLink
-                    kind="secondary"
-                    width="full"
+                    kind="primary"
+                    width="content"
                     href={`/${locale}/cottages/${cottage.slug}?${serializeCottageResultsQuery(query, after)}`}
                   >
                     {messages.view}

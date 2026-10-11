@@ -1,6 +1,5 @@
-import Link from "next/link";
-
 import type { Locale } from "@/i18n/routing";
+import { ActionLink } from "./interaction-controls";
 
 const copy = {
   ar: {
@@ -23,14 +22,14 @@ const copy = {
 export function InvalidCottageSearch({ locale }: { locale: Locale }) {
   const messages = copy[locale];
   return (
-    <main className="results-page">
-      <header className="results-header">
-        <Link href={`/${locale}`}>{messages.back}</Link>
-      </header>
-      <section className="results-intro">
-        <h1>{messages.title}</h1>
+    <main className="results-page page">
+      <header className="page-heading">
+        <ActionLink kind="text" href={`/${locale}`}>
+          {messages.back}
+        </ActionLink>
+        <h1 className="page-title">{messages.title}</h1>
         <p>{messages.detail}</p>
-      </section>
+      </header>
     </main>
   );
 }

@@ -1063,7 +1063,6 @@ html[lang="ckb"] .page-title {
 
 .results-header,
 .results-intro,
-.results-grid,
 .results-paging {
   width: min(71.25rem, calc(100% - 2.25rem));
   margin-inline: auto;
@@ -1137,21 +1136,9 @@ html[lang="ckb"] .page-title {
   color: var(--muted);
 }
 
-.empty-results {
-  width: min(42rem, calc(100% - 2.25rem));
-  margin: var(--space-6) auto;
-  padding: var(--space-4);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--card);
-  color: var(--muted);
-  text-align: center;
-}
-
-.results-grid {
+.results-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 .results-paging {
@@ -1162,7 +1149,13 @@ html[lang="ckb"] .page-title {
   margin-block-start: var(--space-5);
 }
 
-.results-grid article {
+.page-heading ~ .results-paging {
+  inline-size: auto;
+}
+
+.results-list article {
+  display: grid;
+  grid-template-columns: 18rem minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
@@ -1171,6 +1164,7 @@ html[lang="ckb"] .page-title {
 
 .result-image {
   position: relative;
+  align-self: start;
   aspect-ratio: 4 / 3;
   background: var(--surface-placeholder);
 }
@@ -1180,7 +1174,13 @@ html[lang="ckb"] .page-title {
 }
 
 .result-content {
+  display: grid;
+  gap: var(--space-3);
   padding: var(--space-4);
+}
+
+.result-content > .action-primary {
+  justify-self: start;
 }
 
 .access-panel {
@@ -1219,10 +1219,11 @@ html[lang="ckb"] .page-title {
 }
 
 .result-content h2 {
-  margin: var(--space-3) 0 var(--space-1);
+  margin: 0;
   color: var(--green);
   font-family: var(--display);
-  font-size: var(--font-size-5);
+  font-size: var(--font-size-4);
+  line-height: 1.25;
 }
 
 .result-content p {
@@ -1231,18 +1232,18 @@ html[lang="ckb"] .page-title {
   font-size: var(--font-size-2);
 }
 
+.result-price {
+  display: grid;
+  gap: var(--space-1);
+}
+
 .result-content .result-from-price {
-  margin-block: var(--space-3) var(--space-1);
   color: var(--ink);
   font-size: var(--font-size-3);
 }
 
 .result-content .result-from-price b {
   font-size: var(--font-size-4);
-}
-
-.result-content .result-prices-note {
-  margin-block-start: var(--space-3);
 }
 
 .result-shifts {
@@ -1265,6 +1266,59 @@ html[lang="ckb"] .page-title {
 
 .result-shifts b {
   color: var(--ink);
+}
+
+.result-service-day .result-shifts {
+  gap: 0;
+  margin: 0;
+  font-size: var(--font-size-2);
+}
+
+.result-service-day .result-shifts > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  grid-auto-flow: column;
+  row-gap: 0;
+  column-gap: var(--space-3);
+  padding-block: var(--space-2);
+  color: var(--ink);
+}
+
+.result-service-day .result-shifts > li > :nth-child(2) {
+  color: var(--muted);
+  font-size: var(--font-size-1);
+}
+
+.result-service-day .result-shifts > li > :nth-child(4) {
+  font-size: var(--font-size-1);
+}
+
+.result-service-day .result-shifts > li > :nth-child(n + 3) {
+  justify-self: end;
+  text-align: end;
+}
+
+.result-service-day .result-shifts > li > .status-badge {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  justify-self: start;
+  margin-block-start: var(--space-1);
+}
+
+@media (max-width: 40rem) {
+  .results-list article {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .result-image:empty {
+    display: none;
+  }
+
+  .result-content > .action-primary {
+    justify-self: stretch;
+    inline-size: auto;
+  }
 }
 
 .profile-page {
@@ -1415,7 +1469,8 @@ html[lang="ckb"] .profile-page {
 
 html[lang="ckb"] .profile-heading h1,
 html[lang="ckb"] .profile-section h2,
-html[lang="ckb"] .booking-summary h2 {
+html[lang="ckb"] .booking-summary h2,
+html[lang="ckb"] .result-content h2 {
   line-height: 1.4;
 }
 
@@ -1517,10 +1572,6 @@ html[lang="ckb"] .booking-summary h2 {
   color: var(--green);
   font-size: var(--font-size-2);
   font-weight: 700;
-}
-
-.result-service-day {
-  margin-block-start: var(--space-4);
 }
 
 .result-service-day h3 {
@@ -2759,10 +2810,20 @@ a:focus-visible {
   margin-block-start: var(--space-3);
 }
 
-.booking-history > header {
+.booking-history > header,
+.page-heading {
   display: grid;
   justify-items: start;
   gap: var(--space-2);
+}
+
+.page-heading {
+  margin-block-end: var(--space-5);
+}
+
+.page-heading > p {
+  margin: 0;
+  color: var(--muted);
 }
 
 .booking-history > .list-rows,

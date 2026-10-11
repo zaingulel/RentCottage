@@ -116,7 +116,9 @@ describe("PublicCottageResults", () => {
       "href",
       "/en/cottages/garden-house?from=2026-09-22&to=2026-09-23&guests=4",
     );
-    expect(view).toHaveClass("action-link", "action-secondary", "action-full");
+    expect(view).toHaveClass("action-link", "action-primary", "action-content");
+    expect(card.querySelector(".result-image")).toBeInTheDocument();
+    expect(within(card).queryByRole("img")).toBeNull();
     expect(screen.queryByRole("navigation")).toBeNull();
   });
 
@@ -415,24 +417,27 @@ describe("PublicCottageResults", () => {
   it("says when a continued page has nothing further", () => {
     const after = "cottage-0123456789abcdef0123456789abcdef";
     const search = "from=2026-09-22&to=2026-09-23&guests=4";
-    for (const [locale, pastEnd, empty, first] of [
+    for (const [locale, pastEnd, empty, first, changeSearch] of [
       [
         "en",
         "There are no more cottages for this search.",
         "No cottage matches every requested Service Day and selected filter.",
         "Back to first results",
+        "Change search",
       ],
       [
         "ar",
         "لا توجد بيوت أخرى لهذا البحث.",
         "لا يوجد بيت يطابق كل يوم مطلوب وجميع المرشحات المحددة.",
         "العودة إلى أول النتائج",
+        "غيّر البحث",
       ],
       [
         "ckb",
         "هیچ کۆتێجێکی تر بۆ ئەم گەڕانە نییە.",
         "هیچ کۆتێجێک لەگەڵ هەموو ڕۆژە داواکراوەکان و پاڵاوتە دیاریکراوەکان ناگونجێت.",
         "گەڕانەوە بۆ یەکەم ئەنجامەکان",
+        "گەڕان بگۆڕە",
       ],
     ] as const) {
       const { unmount } = render(
@@ -444,7 +449,13 @@ describe("PublicCottageResults", () => {
           after={after}
         />,
       );
-      expect(screen.getByText(pastEnd)).toHaveClass("empty-results");
+      const emptyState = screen.getByText(pastEnd).closest(".empty-state");
+      expect(emptyState).not.toBeNull();
+      expect(
+        within(emptyState as HTMLElement).getByRole("link", {
+          name: changeSearch,
+        }),
+      ).toHaveAttribute("href", `/${locale}`);
       expect(screen.queryByText(empty)).toBeNull();
       expect(screen.getByRole("link", { name: first })).toHaveAttribute(
         "href",
@@ -468,6 +479,34 @@ describe("PublicCottageResults", () => {
       ),
     ).toBeVisible();
     expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
+  it("offers Change search from the empty and past-the-end states in every launch language", () => {
+    for (const [locale, changeSearch] of [
+      ["en", "Change search"],
+      ["ar", "غيّر البحث"],
+      ["ckb", "گەڕان بگۆڕە"],
+    ] as const) {
+      for (const after of [null, "cottage-0123456789abcdef0123456789abcdef"]) {
+        const { container, unmount } = render(
+          <PublicCottageResults
+            locale={locale}
+            result={{ status: "loaded", cottages: [], nextAfter: null }}
+            query={query}
+            queryString="from=2026-09-22&to=2026-09-23&guests=4"
+            after={after}
+          />,
+        );
+        const emptyState = container.querySelector(".empty-state");
+        expect(emptyState).not.toBeNull();
+        expect(emptyState!.querySelectorAll("p")).toHaveLength(1);
+        const link = within(emptyState as HTMLElement).getByRole("link");
+        expect(link).toHaveTextContent(changeSearch);
+        expect(link).toHaveAttribute("href", `/${locale}`);
+        expect(link).toHaveClass("action-secondary", "action-content");
+        unmount();
+      }
+    }
   });
 
   describe("cottage links keep the results position", () => {

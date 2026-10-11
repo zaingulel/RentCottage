@@ -1113,13 +1113,6 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     const viewCottage = publicCottage.getByRole("link", {
       name: "View cottage",
     });
-    const [viewCottageBox, cottageCardBox] = await Promise.all([
-      viewCottage.boundingBox(),
-      publicCottage.boundingBox(),
-    ]);
-    expect(viewCottageBox).not.toBeNull();
-    expect(cottageCardBox).not.toBeNull();
-    expect(viewCottageBox!.width).toBeGreaterThan(cottageCardBox!.width * 0.8);
     await viewCottage.click();
     await expectScene(page.getByRole("heading", { name: demo.cottageName }));
     await expectDemoImage(
