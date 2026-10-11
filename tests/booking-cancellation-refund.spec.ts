@@ -20,6 +20,7 @@ import {
 } from "../src/i18n/administrator-payment-history-messages";
 import { administratorQueuesMessages } from "../src/i18n/administrator-queues-messages";
 import { administratorRecordsMessages } from "../src/i18n/administrator-records-messages";
+import { administratorTotalsMessages } from "../src/i18n/administrator-totals-messages";
 import { bookingManagementMessages as messages } from "../src/i18n/booking-management-messages";
 import { bookingLifecycleMessages } from "../src/i18n/booking-lifecycle-messages";
 import { ownerBookingEarningsMessages as earningsMessages } from "../src/i18n/owner-booking-earnings-messages";
@@ -509,6 +510,45 @@ test.describe("retained cancellation and refund controls", () => {
       await assertResponsiveDetails(ownerPage, "cottage_owner");
     } finally {
       await ownerContext.close();
+    }
+    const totals = administratorTotalsMessages.en;
+    await page.goto("/en/administrator/totals");
+    await expect(
+      page.getByRole("heading", { name: totals.title, level: 1 }),
+    ).toBeVisible();
+    const bookingRow = (await findQueueRow(page)).locator(
+      "xpath=ancestor::li[1]",
+    );
+    const money = bookingRow.locator("details");
+    await money.getByText(totals.bookingMoney, { exact: true }).click();
+    for (const [label, amount] of [
+      [totals.bookingPrice, "IQD 110,000"],
+      [totals.bookingServiceFees, "IQD 5,000"],
+      [totals.customerTotal, "IQD 115,000"],
+      [totals.commissionAtCapture, "IQD 11,000"],
+      [totals.commissionAfterRefunds, "IQD 11,000"],
+      [totals.ownerShareAtCapture, "IQD 99,000"],
+      [totals.ownerShareAfterRefunds, "IQD 99,000"],
+      [totals.paidPayouts, "IQD 99,000"],
+      [totals.unpaidPayouts, "IQD 0"],
+    ])
+      await expect(money).toContainText(`${label}${amount}`);
+    await bookingRow
+      .getByRole("link", { name: reference, exact: true })
+      .click();
+    await expect(page).toHaveURL(`/en/administrator/payments/${reference}`);
+    await expect(
+      page.getByRole("region", { name: payoutMessages.en.title, exact: true }),
+    ).toBeVisible();
+    for (const locale of ["ar", "ckb"] as const) {
+      await page.goto(`/${locale}/administrator/totals`);
+      await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+      await expect(
+        page.getByRole("heading", {
+          name: administratorTotalsMessages[locale].title,
+          level: 1,
+        }),
+      ).toBeVisible();
     }
   });
   test("customer cancels with the disclosed rule and returns through retained history", async ({
