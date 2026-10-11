@@ -50,6 +50,7 @@ describe("BackofficeNavigation", () => {
         "Manage Cottage Profiles",
         "Payment support history",
         "Booking queues",
+        "Booking totals",
         "Records",
       ],
     ],
@@ -61,6 +62,7 @@ describe("BackofficeNavigation", () => {
         "إدارة ملفات الأكواخ",
         "سجل دعم الدفع",
         "طوابير الحجوزات",
+        "إجماليات الحجوزات",
         "السجلات",
       ],
     ],
@@ -72,6 +74,7 @@ describe("BackofficeNavigation", () => {
         "پرۆفایلەکانی کۆتێج بەڕێوەببە",
         "مێژووی پشتگیری پارەدان",
         "ڕیزەکانی حجز",
+        "کۆی حجزەکان",
         "تۆمارەکان",
       ],
     ],
@@ -92,6 +95,7 @@ describe("BackofficeNavigation", () => {
         `/${locale}/administrator/cottages`,
         `/${locale}/administrator/payments`,
         `/${locale}/administrator/queues`,
+        `/${locale}/administrator/totals`,
         `/${locale}/administrator/records`,
       ]);
     },
@@ -109,7 +113,7 @@ describe("BackofficeNavigation", () => {
       links("Platform administration").map((link) =>
         link.getAttribute("aria-current"),
       );
-    expect(marks()).toEqual([null, "page", null, null, null]);
+    expect(marks()).toEqual([null, "page", null, null, null, null]);
 
     rerender(
       <BackofficeNavigation
@@ -119,7 +123,7 @@ describe("BackofficeNavigation", () => {
         nested
       />,
     );
-    expect(marks()).toEqual([null, "true", null, null, null]);
+    expect(marks()).toEqual([null, "true", null, null, null, null]);
   });
 
   it("marks the booking queues destination as current on the queue page", () => {
@@ -134,6 +138,21 @@ describe("BackofficeNavigation", () => {
       links("Platform administration").map((link) =>
         link.getAttribute("aria-current"),
       ),
-    ).toEqual([null, null, null, "page", null]);
+    ).toEqual([null, null, null, "page", null, null]);
+  });
+
+  it("marks the booking totals destination as current on the totals page", () => {
+    render(
+      <BackofficeNavigation
+        locale="en"
+        area="administrator"
+        current="totals"
+      />,
+    );
+    expect(
+      links("Platform administration").map((link) =>
+        link.getAttribute("aria-current"),
+      ),
+    ).toEqual([null, null, null, null, "page", null]);
   });
 });
