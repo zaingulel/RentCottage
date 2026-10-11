@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 
 import { formatIraqDateTime } from "@/i18n/format";
+import { messages } from "@/i18n/messages";
 import { messagingMessages } from "@/i18n/messaging-messages";
 import { bookingRequestDisplayStatusMessages } from "@/i18n/booking-request-status-messages";
 import { directionFor, type Locale } from "@/i18n/routing";
@@ -17,6 +18,7 @@ import type { MessagingConversation as Conversation } from "@/messaging/supabase
 import {
   ActionButton,
   ActionFeedback,
+  ActionLink,
   FormControl,
 } from "./interaction-controls";
 
@@ -220,23 +222,26 @@ export function MessagingConversation({
             ? copy.contactAllowed
             : copy.contactProtected}
         </p>
-        {contextQuery &&
-        conversation.cottage.publicSlug &&
-        conversation.canContinueBookingRequest ? (
-          <Link
-            href={`/${locale}/request/${conversation.cottage.publicSlug}?${contextQuery}&conversation=${conversation.conversationId}`}
+        <div className="messaging-conversation-actions">
+          {contextQuery &&
+          conversation.cottage.publicSlug &&
+          conversation.canContinueBookingRequest ? (
+            <ActionLink
+              kind="text"
+              href={`/${locale}/request/${conversation.cottage.publicSlug}?${contextQuery}&conversation=${conversation.conversationId}`}
+            >
+              {copy.booking}
+            </ActionLink>
+          ) : null}
+          <ActionButton
+            kind="secondary"
+            size="regular"
+            type="button"
+            onClick={() => router.refresh()}
           >
-            {copy.booking}
-          </Link>
-        ) : null}
-        <ActionButton
-          kind="secondary"
-          size="regular"
-          type="button"
-          onClick={() => router.refresh()}
-        >
-          {copy.refresh}
-        </ActionButton>
+            {copy.refresh}
+          </ActionButton>
+        </div>
       </header>
       <ol className="messaging-history" aria-label={copy.messages}>
         {conversation.messages.map((message) => {
@@ -244,6 +249,8 @@ export function MessagingConversation({
             translationOverrides[message.messageId] ??
             message.translations.find((item) => item.targetLanguage === locale);
           const original = showOriginal[message.messageId] || !translation;
+          const canTranslate =
+            !translation && canMutate && message.originalLanguage !== locale;
           return (
             <li
               key={message.messageId}
@@ -255,7 +262,7 @@ export function MessagingConversation({
                     ? copy.customer
                     : copy.owner}{" "}
                   · {copy.sourceLanguage}:{" "}
-                  {message.originalLanguage.toUpperCase()}
+                  <bdi>{messages[message.originalLanguage].languageName}</bdi>
                 </p>
                 {translation && !original ? (
                   <p className="translation-label">
@@ -279,43 +286,47 @@ export function MessagingConversation({
                 <time dateTime={message.sentAt}>
                   {formatIraqDateTime(message.sentAt, locale)}
                 </time>
-                {translation ? (
-                  <>
-                    <ActionButton
-                      kind="secondary"
-                      size="compact"
-                      type="button"
-                      onClick={() =>
-                        setShowOriginal((current) => ({
-                          ...current,
-                          [message.messageId]: !original,
-                        }))
-                      }
-                    >
-                      {original ? copy.viewTranslation : copy.viewOriginal}
-                    </ActionButton>
-                    {canMutate && !reported[translation.translationId] ? (
+                {translation || canTranslate ? (
+                  <div className="messaging-message-actions">
+                    {translation ? (
+                      <>
+                        <ActionButton
+                          kind="secondary"
+                          size="compact"
+                          type="button"
+                          onClick={() =>
+                            setShowOriginal((current) => ({
+                              ...current,
+                              [message.messageId]: !original,
+                            }))
+                          }
+                        >
+                          {original ? copy.viewTranslation : copy.viewOriginal}
+                        </ActionButton>
+                        {canMutate && !reported[translation.translationId] ? (
+                          <ActionButton
+                            kind="secondary"
+                            size="compact"
+                            type="button"
+                            pending={pending}
+                            onClick={() => report(translation)}
+                          >
+                            {copy.reportTranslation}
+                          </ActionButton>
+                        ) : null}
+                      </>
+                    ) : (
                       <ActionButton
                         kind="secondary"
                         size="compact"
                         type="button"
                         pending={pending}
-                        onClick={() => report(translation)}
+                        onClick={() => translate(message.messageId)}
                       >
-                        {copy.reportTranslation}
+                        {copy.automaticTranslation}
                       </ActionButton>
-                    ) : null}
-                  </>
-                ) : canMutate && message.originalLanguage !== locale ? (
-                  <ActionButton
-                    kind="secondary"
-                    size="compact"
-                    type="button"
-                    pending={pending}
-                    onClick={() => translate(message.messageId)}
-                  >
-                    {copy.automaticTranslation}
-                  </ActionButton>
+                    )}
+                  </div>
                 ) : null}
                 {reported[translation?.translationId ?? ""] ? (
                   <ActionFeedback kind="success">

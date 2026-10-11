@@ -41,10 +41,15 @@ it("retains the selected stay on a normal inbox card", () => {
       contextQuery={query}
     />,
   );
-  expect(screen.getByRole("link")).toHaveAttribute(
+  const link = screen.getByRole("link", { name: "Garden" });
+  expect(link).toHaveAttribute(
     "href",
     `/en/messages/${item.conversationId}?${query}`,
   );
+  expect(link.contains(screen.getByText("RC-REQ-AAAAAAAAAAAAAAAA"))).toBe(
+    false,
+  );
+  expect(link.contains(screen.getByText("مرحبا"))).toBe(false);
 });
 it("presents paid status in Arabic and marks preview language", () => {
   render(<MessagingInbox locale="ar" items={[item]} nextCursor={null} />);

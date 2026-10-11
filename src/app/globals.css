@@ -3453,7 +3453,6 @@ section.request-follow-up {
   border-radius: var(--radius-card);
 }
 
-.messaging-inbox-list,
 .messaging-history {
   display: grid;
   gap: var(--space-3);
@@ -3461,7 +3460,6 @@ section.request-follow-up {
   list-style: none;
 }
 
-.messaging-inbox-list a,
 .messaging-history article {
   display: grid;
   gap: var(--space-1);
@@ -3471,9 +3469,21 @@ section.request-follow-up {
   overflow-wrap: anywhere;
 }
 
-.messaging-inbox-list a span,
-.messaging-inbox-list a time {
-  display: block;
+.messaging-history article > p {
+  margin: 0;
+}
+
+.messaging-conversation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.messaging-message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
 }
 
 .message-customer article {

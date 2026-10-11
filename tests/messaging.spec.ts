@@ -109,7 +109,7 @@ test("booking customer keeps the original while using fictional translations acr
     .getByRole("list", { name: "Messages" })
     .getByRole("listitem")
     .first();
-  await expect(message).toContainText("Original language: AR");
+  await expect(message).toContainText("Original language: العربية");
   await expect(message.locator("p[dir=rtl]")).toHaveText(
     "هل يمكننا استخدام الحديقة؟",
   );
