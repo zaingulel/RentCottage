@@ -75,7 +75,7 @@ export default async function OwnerConfirmedBookingPage({
     );
   if (details.outcome === "confirmed")
     return (
-      <main className="results-page">
+      <main className="results-page page page-record">
         <ConfirmedBookingDetails
           locale={locale}
           {...details.confirmed}

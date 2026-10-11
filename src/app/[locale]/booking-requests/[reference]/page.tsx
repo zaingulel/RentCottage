@@ -84,7 +84,7 @@ export default async function CustomerBookingRequestPage({
     );
   if (details.outcome === "confirmed")
     return (
-      <main className="results-page">
+      <main className="results-page page page-record">
         <div className="booking-request-progress-card">
           <BookingRequestProgress
             locale={locale}

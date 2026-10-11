@@ -99,7 +99,7 @@ export function BookingFinancialDetails({
           ) : null}
         </header>
       ) : (
-        <h2>{c.title}</h2>
+        <h2 className="section-title">{c.title}</h2>
       )}
       {view.cancellation || view.actorRole === "platform_administrator" ? (
         <>

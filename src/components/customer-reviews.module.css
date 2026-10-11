@@ -9,6 +9,10 @@
   overflow-wrap: anywhere;
 }
 
+.section > h2 {
+  margin: 0;
+}
+
 .page {
   display: grid;
   gap: var(--space-5);

@@ -7,11 +7,11 @@ import type { PaidConfirmationNotificationPresentationStatus } from "@/booking-r
 import type { NavigationHandoff } from "@/cottage-profile/map-provider";
 import { formatFilsAsIqd, formatIqd, formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
+import { Disclosure } from "./interaction-controls";
 import { NotificationRetryControl } from "./notification-retry-control";
 
 const messages = {
   en: {
-    reference: "Booking reference",
     customer: "Customer",
     period: "Booking period",
     party: "Party size",
@@ -47,7 +47,6 @@ const messages = {
     incomplete: "Some practical access or contact details are unavailable.",
   },
   ar: {
-    reference: "مرجع الحجز",
     customer: "العميل",
     period: "فترة الحجز",
     party: "عدد أفراد المجموعة",
@@ -81,7 +80,6 @@ const messages = {
     incomplete: "بعض تفاصيل الوصول أو الاتصال غير متاحة.",
   },
   ckb: {
-    reference: "ژمارەی حجز",
     customer: "کڕیار",
     period: "ماوەی حجز",
     party: "ژمارەی کەسان",
@@ -151,7 +149,7 @@ export function ConfirmedBookingDetails({
     >
       <header>
         <div>
-          <h1 id="confirmed-booking-heading">
+          <h1 id="confirmed-booking-heading" className="page-title">
             {bookingLifecycleMessages[locale][lifecycleStatus]}
           </h1>
           <p>{access.cottageName}</p>
@@ -170,11 +168,7 @@ export function ConfirmedBookingDetails({
           {c.incomplete}
         </p>
       ) : null}
-      <dl>
-        <div>
-          <dt>{c.reference}</dt>
-          <dd>{access.bookingReference}</dd>
-        </div>
+      <dl className="fact-list">
         <div>
           <dt>{c.customer}</dt>
           <dd>{access.customerName}</dd>
@@ -238,10 +232,6 @@ export function ConfirmedBookingDetails({
           <dt>{c.rules}</dt>
           <dd dir="auto">{access.houseRules}</dd>
         </div>
-        <div>
-          <dt>{c.terms}</dt>
-          <dd dir="auto">{access.bookingTermsBody}</dd>
-        </div>
         {access.exactAddress ? (
           <div>
             <dt>{c.address}</dt>
@@ -303,6 +293,9 @@ export function ConfirmedBookingDetails({
           </dd>
         </div>
       </dl>
+      <Disclosure summary={c.terms}>
+        <p dir="auto">{access.bookingTermsBody}</p>
+      </Disclosure>
     </section>
   );
 }

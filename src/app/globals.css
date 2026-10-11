@@ -2699,33 +2699,12 @@ a:focus-visible {
   margin-block: 0 var(--space-1);
 }
 
-.confirmed-booking-details dl {
-  display: grid;
-  gap: 0;
-  margin-block: var(--space-6) 0;
+.confirmed-booking-details .fact-list {
+  margin-block-start: var(--space-6);
 }
 
-.confirmed-booking-details dl > div {
-  display: grid;
-  grid-template-columns: minmax(9rem, 0.4fr) 1fr;
-  gap: var(--space-3);
-  padding-block: var(--space-3);
-  border-block-start: 1px solid var(--line);
-}
-
-.confirmed-booking-details dt {
-  color: var(--muted);
-}
-
-.confirmed-booking-details dd {
-  margin: 0;
-  overflow-wrap: anywhere;
+.confirmed-booking-details .fact-list dd {
   white-space: pre-wrap;
-}
-
-.confirmed-booking-details dd > span,
-.confirmed-booking-details dd > small {
-  display: block;
 }
 
 .confirmed-booking-details .booking-period-timestamp {
@@ -2733,8 +2712,22 @@ a:focus-visible {
 }
 
 .confirmed-booking-details dd > small {
+  display: block;
   margin-block-start: var(--space-2);
   color: var(--muted);
+}
+
+.confirmed-booking-details .disclosure {
+  margin-block-start: var(--space-4);
+}
+
+.confirmed-booking-details .disclosure > p {
+  margin-block: var(--space-3) 0;
+  white-space: pre-wrap;
+}
+
+.confirmed-booking-details + section {
+  margin-block-start: var(--space-4);
 }
 
 .confirmed-booking-details form {
@@ -2857,10 +2850,6 @@ section.request-follow-up {
 
 .owner-booking-requests ~ .request-follow-up {
   inline-size: min(100% - 2rem, 70rem);
-}
-
-.confirmed-booking-details ~ .request-follow-up {
-  inline-size: min(100% - 2rem, 52rem);
 }
 
 .page > .request-follow-up {
@@ -3034,8 +3023,7 @@ section.request-follow-up {
 }
 
 @media (max-width: 40rem) {
-  .fact-list > div,
-  .confirmed-booking-details dl > div {
+  .fact-list > div {
     grid-template-columns: 1fr;
     gap: var(--space-1);
   }

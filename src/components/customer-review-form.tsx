@@ -39,7 +39,9 @@ export function CustomerReviewForm({
         className={styles.section}
         aria-labelledby="customer-review-heading"
       >
-        <h2 id="customer-review-heading">{copy.submitted}</h2>
+        <h2 id="customer-review-heading" className="section-title">
+          {copy.submitted}
+        </h2>
         <p role="status">
           {initialResult.moderationState === "hidden"
             ? copy.hidden
@@ -64,7 +66,9 @@ export function CustomerReviewForm({
         className={styles.section}
         aria-labelledby="customer-review-heading"
       >
-        <h2 id="customer-review-heading">{copy.title}</h2>
+        <h2 id="customer-review-heading" className="section-title">
+          {copy.title}
+        </h2>
         <p role={initialResult.status === "unavailable" ? "alert" : undefined}>
           {initialResult.status === "unavailable"
             ? copy.unavailable
@@ -126,7 +130,9 @@ export function CustomerReviewForm({
       className={styles.section}
       aria-labelledby="customer-review-heading"
     >
-      <h2 id="customer-review-heading">{copy.title}</h2>
+      <h2 id="customer-review-heading" className="section-title">
+        {copy.title}
+      </h2>
       <p>
         {copy.eligibleUntil}{" "}
         <time dateTime={initialResult.reviewExpiresAt}>

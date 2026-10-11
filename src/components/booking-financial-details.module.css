@@ -15,6 +15,9 @@
 .panel p {
   margin: 0;
 }
+.panel h3 {
+  font-size: var(--font-size-3);
+}
 .timestamp {
   display: inline-block;
 }

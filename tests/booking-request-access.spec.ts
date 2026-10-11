@@ -569,6 +569,11 @@ test("a verified Customer double-submit creates one Pending request and one mini
       ar: "فتح الحجز المؤكد",
       ckb: "کردنەوەی حجزی پشتڕاستکراو",
     } as const;
+    const termsLabel = {
+      en: "Booking terms",
+      ar: "شروط الحجز",
+      ckb: "مەرجەکانی حجز",
+    } as const;
     const locales = [
       {
         locale: "en",
@@ -677,6 +682,10 @@ test("a verified Customer double-submit creates one Pending request and one mini
               "Synthetic fixture only. Respect neighbours.",
             ),
           ).toBeVisible();
+          await customerView
+            .locator("summary")
+            .filter({ hasText: termsLabel[copy.locale] })
+            .click();
           await expect(
             customerView.getByText(bookingTermsFixture("en").body),
           ).toBeVisible();
@@ -711,6 +720,10 @@ test("a verified Customer double-submit creates one Pending request and one mini
           await expect(ownerView.getByText(exactAddress)).toBeVisible();
           await expect(ownerView.getByText(customerPhone)).toBeVisible();
           await expect(ownerView.getByText(ownerPhone)).toBeVisible();
+          await ownerView
+            .locator("summary")
+            .filter({ hasText: termsLabel[copy.locale] })
+            .click();
           await expect(
             ownerView.getByText(bookingTermsFixture("en").body),
           ).toBeVisible();
