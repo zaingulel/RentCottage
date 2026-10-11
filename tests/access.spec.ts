@@ -739,6 +739,9 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
           : Buffer.from("%PDF-1.7\nprivate-test-document\n%%EOF"),
     });
     await card.getByRole("button", { name: "Upload document" }).click();
+    await expect(card.getByRole("status")).toContainText(
+      browserFixtures.en.application.uploaded,
+    );
     await expect(
       page.getByRole("article", { name: label }).getByText(filename),
     ).toBeVisible();
@@ -1118,6 +1121,9 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
     await replacementCard
       .getByRole("button", { name: "Replace document" })
       .click();
+    await expect(replacementCard.getByRole("status")).toContainText(
+      browserFixtures.en.application.uploaded,
+    );
     await expect(
       replacementCard.getByText("replacement-identity.pdf"),
     ).toBeVisible();
