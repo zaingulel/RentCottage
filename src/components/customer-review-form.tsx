@@ -55,7 +55,6 @@ export function CustomerReviewForm({
           {copy.submittedAt}:{" "}
           {formatIraqDateTime(initialResult.submittedAt, locale)}
         </p>
-        <small>{copy.translationUnavailable}</small>
       </section>
     );
 

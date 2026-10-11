@@ -1,5 +1,7 @@
 import { notFound, unstable_rethrow } from "next/navigation";
 
+import { hasCustomerCapability } from "@/access/account-access";
+import { resolveRequestAccount } from "@/access/request-account-context";
 import { PublicCustomerReviews } from "@/components/public-customer-reviews";
 import {
   isCustomerReviewPublicSlug,
@@ -47,7 +49,21 @@ export default async function PublicCustomerReviewsPage({
   }
   if (result.status === "not-found") notFound();
   if (result.status === "invalid") result = { status: "unavailable" };
+  // Chooses which controls to draw; the database decides who may translate or report.
+  const account = await resolveRequestAccount();
+  const translationAccess =
+    account.status === "signed_out"
+      ? "sign-in"
+      : account.status === "authenticated" &&
+          hasCustomerCapability(account.context)
+        ? "allowed"
+        : "none";
   return (
-    <PublicCustomerReviews locale={locale} publicSlug={slug} result={result} />
+    <PublicCustomerReviews
+      locale={locale}
+      publicSlug={slug}
+      result={result}
+      translationAccess={translationAccess}
+    />
   );
 }
