@@ -292,6 +292,7 @@ its own; the block it sits in sets the space around it.
 - Status badge: `span.status-badge` is the compact status of one item in a list row or card. Its text is the
   translated status label, so the status never depends on colour. It is a pill on `--status-neutral-bg` with bold
   `--ink` text at `--font-size-1`. It is never the page-level status.
+- Rating stars: the `span.stars` beside a published review's rating is decorative and hidden from assistive technology, so the rating text carries the meaning.
 - Status banner: `p.status-banner` is the page-level status of a record page. It sits directly under the page
   title, at most one per page, and keeps `role="status"` and `aria-live="polite"`. It is a block on
   `--status-neutral-bg` with `--radius-card` corners, holding the status label in bold `--green`, followed by one
