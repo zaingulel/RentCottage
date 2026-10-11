@@ -1101,7 +1101,7 @@ select ok(
       and (value#>>'{items,0,rating}')::integer=5
       and value#>>'{items,0,originalBody}'='A peaceful stay with a lovely garden.'
       and (select array_agg(key order by key) from jsonb_object_keys(value#>'{items,0}') key)
-        =array['originalBody','originalLanguage','ownerReply','rating','reviewId','submittedAt']
+        =array['originalBody','originalLanguage','ownerReply','rating','reviewId','submittedAt','translations']
     from result
   ),
   'anonymous public review reading returns only the admitted public projection'
@@ -1135,7 +1135,7 @@ select ok(
     select value->>'status'='success'
       and jsonb_array_length(value->'items')=1
       and (select array_agg(key order by key) from jsonb_object_keys(value#>'{items,0}') key)
-        =array['originalBody','originalLanguage','ownerReply','rating','reviewId','submittedAt']
+        =array['originalBody','originalLanguage','ownerReply','rating','reviewId','submittedAt','translations']
     from result
   ),
   'restoring the listing returns the unchanged minimal public review projection'
@@ -1492,7 +1492,7 @@ select ok(
       and (
         select array_agg(key order by key)
         from jsonb_object_keys(value#>'{items,0,ownerReply}') key
-      )=array['originalBody','originalLanguage','submittedAt']
+      )=array['originalBody','originalLanguage','submittedAt','translations']
       and value#>>'{items,0,ownerReply,originalLanguage}'='en'
       and value#>>'{items,0,ownerReply,originalBody}'='Thank you for staying with us.'
     from result
@@ -1500,6 +1500,499 @@ select ok(
   'visitors read the reply with its review and no author identity'
 );
 reset role;
+
+savepoint customer_review_translation;
+grant select on reply_fixture to anon,service_role;
+grant select,insert on reply_observations to service_role;
+
+select ok(
+  (
+    select bool_and(
+      has_function_privilege('service_role',routine,'EXECUTE')
+      and not has_function_privilege('anon',routine,'EXECUTE')
+      and not has_function_privilege('authenticated',routine,'EXECUTE')
+    )
+    from unnest(array[
+      'public.prepare_customer_review_translation(uuid,uuid,text,public.cottage_profile_source_language,text,text,text)',
+      'public.save_customer_review_translation(uuid,uuid,text,public.cottage_profile_source_language,text,text,text,text)'
+    ]) routine
+  )
+  and not exists(
+    select 1
+    from unnest(array['anon','authenticated','service_role']::name[]) grantee,
+      unnest(array[
+        'public.customer_review_translation_actor_is_eligible(uuid)',
+        'public.customer_review_translation_source(uuid,text)'
+      ]) routine
+    where has_function_privilege(grantee,routine,'EXECUTE')
+  ),
+  'review translation commands refuse every role except service_role'
+);
+select throws_ok(
+  format(
+    'select public.prepare_customer_review_translation(''10000000-0000-4000-8000-000000001003'',%L,''review'',''ar'',''fictional-local-test'',''deterministic-pairs-v1'',''review-pairs-v1'')',
+    (select review_id from reply_fixture)
+  ),
+  '42501','Customer review translation is unavailable',
+  'review translation commands refuse every role except service_role'
+);
+select throws_ok(
+  format(
+    'select public.save_customer_review_translation(''10000000-0000-4000-8000-000000001003'',%L,''review'',''ar'',''fictional-local-test'',''deterministic-pairs-v1'',''review-pairs-v1'',''Denied text'')',
+    (select review_id from reply_fixture)
+  ),
+  '42501','Customer review translation is unavailable',
+  'review translation commands refuse every role except service_role'
+);
+set local role authenticated;
+select throws_ok(
+  format(
+    'select public.prepare_customer_review_translation(''10000000-0000-4000-8000-000000001003'',%L,''review'',''ar'',''fictional-local-test'',''deterministic-pairs-v1'',''review-pairs-v1'')',
+    (select review_id from reply_fixture)
+  ),
+  '42501',null,
+  'review translation commands refuse every role except service_role'
+);
+select throws_ok(
+  format(
+    'select public.save_customer_review_translation(''10000000-0000-4000-8000-000000001003'',%L,''review'',''ar'',''fictional-local-test'',''deterministic-pairs-v1'',''review-pairs-v1'',''Denied text'')',
+    (select review_id from reply_fixture)
+  ),
+  '42501',null,
+  'review translation commands refuse every role except service_role'
+);
+reset role;
+set local role anon;
+select throws_ok(
+  format(
+    'select public.prepare_customer_review_translation(''10000000-0000-4000-8000-000000001003'',%L,''review'',''ar'',''fictional-local-test'',''deterministic-pairs-v1'',''review-pairs-v1'')',
+    (select review_id from reply_fixture)
+  ),
+  '42501',null,
+  'review translation commands refuse every role except service_role'
+);
+select throws_ok(
+  format(
+    'select public.save_customer_review_translation(''10000000-0000-4000-8000-000000001003'',%L,''review'',''ar'',''fictional-local-test'',''deterministic-pairs-v1'',''review-pairs-v1'',''Denied text'')',
+    (select review_id from reply_fixture)
+  ),
+  '42501',null,
+  'review translation commands refuse every role except service_role'
+);
+reset role;
+
+set local role service_role;
+select ok(
+  public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000003801',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"access-required"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000003801',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'إقامة هادئة مع حديقة جميلة.'
+  )='{"status":"access-required"}'::jsonb
+  and public.prepare_customer_review_translation(
+    '99999999-0000-4000-8000-000000009999',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"access-required"}'::jsonb
+  and public.save_customer_review_translation(
+    '99999999-0000-4000-8000-000000009999',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'إقامة هادئة مع حديقة جميلة.'
+  )='{"status":"access-required"}'::jsonb
+  and public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )->>'status'='prepared'
+  and public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001001',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )->>'status'='prepared',
+  'review translation refuses an actor who is not a phone-verified Customer or Cottage Owner'
+);
+reset role;
+savepoint customer_review_translation_actor;
+update auth.users
+set phone='+9647500003801',phone_confirmed_at=now()
+where id='10000000-0000-4000-8000-000000003801';
+update auth.users
+set phone_confirmed_at=null
+where id='10000000-0000-4000-8000-000000001003';
+set local role service_role;
+select ok(
+  public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000003801',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"access-required"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000003801',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'إقامة هادئة مع حديقة جميلة.'
+  )='{"status":"access-required"}'::jsonb
+  and public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"access-required"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'إقامة هادئة مع حديقة جميلة.'
+  )='{"status":"access-required"}'::jsonb,
+  'review translation refuses an actor who is not a phone-verified Customer or Cottage Owner'
+);
+reset role;
+rollback to savepoint customer_review_translation_actor;
+select is(
+  (select count(*)::integer from public.customer_review_translations),0,
+  'a refused review translation actor stores nothing'
+);
+
+savepoint customer_review_translation_reply_hidden;
+insert into public.customer_review_reply_hides(review_id,administrator_user_id,reason)
+select review_id,'10000000-0000-4000-8000-000000003801','Hidden for the translation test'
+from reply_fixture;
+set local role service_role;
+select ok(
+  public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'reply','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"not-found"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'reply','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'شكراً لإقامتكم معنا.'
+  )='{"status":"not-found"}'::jsonb
+  and public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )->>'status'='prepared',
+  'a hidden review, a hidden reply, a paused cottage and a rating-only review are never translation sources'
+);
+reset role;
+rollback to savepoint customer_review_translation_reply_hidden;
+
+savepoint customer_review_translation_review_hidden;
+insert into public.customer_review_hides(review_id,administrator_user_id,reason)
+select review_id,'10000000-0000-4000-8000-000000003801','Hidden for the translation test'
+from reply_fixture;
+set local role service_role;
+select ok(
+  public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"not-found"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'إقامة هادئة مع حديقة جميلة.'
+  )='{"status":"not-found"}'::jsonb
+  and public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'reply','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"not-found"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'reply','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'شكراً لإقامتكم معنا.'
+  )='{"status":"not-found"}'::jsonb,
+  'a hidden review, a hidden reply, a paused cottage and a rating-only review are never translation sources'
+);
+reset role;
+rollback to savepoint customer_review_translation_review_hidden;
+
+savepoint customer_review_translation_paused;
+update public.cottage_marketplace_listings
+set state='paused'
+where profile_id='20000000-0000-4000-8000-000000001001';
+set local role service_role;
+select ok(
+  public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"not-found"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'إقامة هادئة مع حديقة جميلة.'
+  )='{"status":"not-found"}'::jsonb
+  and public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'reply','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"not-found"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'reply','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'شكراً لإقامتكم معنا.'
+  )='{"status":"not-found"}'::jsonb,
+  'a hidden review, a hidden reply, a paused cottage and a rating-only review are never translation sources'
+);
+reset role;
+rollback to savepoint customer_review_translation_paused;
+
+set local role service_role;
+select ok(
+  public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','en',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"not-found"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','en',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'A peaceful stay with a lovely garden.'
+  )='{"status":"not-found"}'::jsonb
+  and public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'reply','en',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"not-found"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'reply','en',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'Thank you for staying with us.'
+  )='{"status":"not-found"}'::jsonb,
+  'a review or reply already in the target language is not a translation source'
+);
+select ok(
+  public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'cottage','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"invalid"}'::jsonb
+  and public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'another-provider','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"invalid"}'::jsonb
+  and public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','another-model','review-pairs-v1'
+  )='{"status":"invalid"}'::jsonb
+  and public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','message-pairs-v1'
+  )='{"status":"invalid"}'::jsonb
+  and public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',null,'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"invalid"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','message-pairs-v1',
+    'إقامة هادئة مع حديقة جميلة.'
+  )='{"status":"invalid"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    null
+  )='{"status":"invalid"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    E' \n\t' || chr(65279)
+  )='{"status":"invalid"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    repeat('ا',4001)
+  )='{"status":"invalid"}'::jsonb,
+  'review translation refuses an unknown subject, other provenance, a missing argument and an empty or oversized text'
+);
+select is(
+  public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'Call +9647501234567'
+  ),
+  '{"status":"blocked"}'::jsonb,
+  'generated text with contact information is blocked and stores nothing'
+);
+reset role;
+select is(
+  (select count(*)::integer from public.customer_review_translations),0,
+  'refused sources, invalid requests and blocked text store nothing'
+);
+
+set local role service_role;
+insert into reply_observations
+select 'first translation save',public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'إقامة هادئة مع حديقة جميلة.'
+  );
+insert into reply_observations
+select 'repeated translation save',public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001001',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'إقامة هادئة مع حديقة جميلة.'
+  );
+insert into reply_observations
+select 'different translation save',public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'نص مختلف'
+  );
+insert into reply_observations
+select 'cached translation prepare',public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001001',(select review_id from reply_fixture),'review','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  );
+reset role;
+select ok(
+  (
+    select value->>'status'='translated'
+      and (select array_agg(key order by key) from jsonb_object_keys(value) key)
+        =array['status','translatedBody','translationId']
+      and value->>'translatedBody'='إقامة هادئة مع حديقة جميلة.'
+      and value->>'translationId'=(select id::text from public.customer_review_translations)
+    from reply_observations where name='first translation save'
+  )
+  and (select value from reply_observations where name='repeated translation save')
+    =(select value from reply_observations where name='first translation save')
+  and (select value from reply_observations where name='different translation save')
+    ='{"status":"invalid"}'::jsonb
+  and (select value from reply_observations where name='cached translation prepare')
+    =(select value from reply_observations where name='first translation save')
+  and (
+    select count(*)=1
+      and bool_and(
+        translations.review_id=(select review_id from reply_fixture)
+        and translations.subject='review'
+        and translations.target_language='ar'
+        and translations.provider='fictional-local-test'
+        and translations.model='deterministic-pairs-v1'
+        and translations.prompt_version='review-pairs-v1'
+        and translations.translated_body='إقامة هادئة مع حديقة جميلة.'
+      )
+    from public.customer_review_translations translations
+  ),
+  'a repeated save returns the stored translation and a different text for the same key is refused'
+);
+
+select throws_ok(
+  $$update public.customer_review_translations set translated_body='Changed text'$$,
+  'RC409',null,
+  'review translations cannot be changed or deleted and no role holds a table privilege'
+);
+select throws_ok(
+  $$delete from public.customer_review_translations$$,
+  'RC409',null,
+  'review translations cannot be changed or deleted and no role holds a table privilege'
+);
+select ok(
+  not exists(
+    select 1
+    from unnest(array['anon','authenticated','service_role']::name[]) grantee
+    where has_table_privilege(
+      grantee,'public.customer_review_translations',
+      'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+    )
+  )
+  and (
+    select relrowsecurity from pg_catalog.pg_class
+    where oid='public.customer_review_translations'::regclass
+  )
+  and not exists(
+    select 1 from pg_catalog.pg_policies
+    where schemaname='public' and tablename='customer_review_translations'
+  ),
+  'review translations cannot be changed or deleted and no role holds a table privilege'
+);
+
+set local role service_role;
+insert into reply_observations
+select 'second language translation save',public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003',(select review_id from reply_fixture),'review','ckb',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'مانەوەیەکی ئارام لەگەڵ باخچەیەکی جوان.'
+  );
+insert into reply_observations
+select 'reply translation save',public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001001',(select review_id from reply_fixture),'reply','ar',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'شكراً لإقامتكم معنا.'
+  );
+reset role;
+select set_config('request.jwt.claim.sub','',true);
+select set_config('request.jwt.claims','{}',true);
+set local role anon;
+insert into reply_observations
+select 'public list with translations',public.list_public_customer_reviews(
+  'cottage-deadbeefdeadbeefdeadbeefdead1001',null,null,20
+);
+reset role;
+select ok(
+  (
+    select value->>'status'='success'
+      and jsonb_array_length(value->'items')=1
+      and value#>'{items,0,translations}'=jsonb_build_array(
+        jsonb_build_object(
+          'translationId',(select value->'translationId' from reply_observations where name='first translation save'),
+          'targetLanguage','ar',
+          'translatedBody','إقامة هادئة مع حديقة جميلة.'
+        ),
+        jsonb_build_object(
+          'translationId',(select value->'translationId' from reply_observations where name='second language translation save'),
+          'targetLanguage','ckb',
+          'translatedBody','مانەوەیەکی ئارام لەگەڵ باخچەیەکی جوان.'
+        )
+      )
+      and value#>'{items,0,ownerReply,translations}'=jsonb_build_array(
+        jsonb_build_object(
+          'translationId',(select value->'translationId' from reply_observations where name='reply translation save'),
+          'targetLanguage','ar',
+          'translatedBody','شكراً لإقامتكم معنا.'
+        )
+      )
+      and (select count(*)=3 from jsonb_path_query(value,'strict $.** ? (exists (@.translatedBody))'))
+    from reply_observations where name='public list with translations'
+  ),
+  'the public list returns a translation only inside the visible review or reply it belongs to'
+);
+
+savepoint customer_review_translation_listed_reply_hidden;
+insert into public.customer_review_reply_hides(review_id,administrator_user_id,reason)
+select review_id,'10000000-0000-4000-8000-000000003801','Hidden for the translation test'
+from reply_fixture;
+select set_config('request.jwt.claim.sub','',true);
+select set_config('request.jwt.claims','{}',true);
+set local role anon;
+insert into reply_observations
+select 'public list after translated reply hide',public.list_public_customer_reviews(
+  'cottage-deadbeefdeadbeefdeadbeefdead1001',null,null,20
+);
+reset role;
+select ok(
+  (
+    select value#>'{items,0,ownerReply}'='null'::jsonb
+      and jsonb_array_length(value#>'{items,0,translations}')=2
+      and (select count(*)=2 from jsonb_path_query(value,'strict $.** ? (exists (@.translatedBody))'))
+    from reply_observations where name='public list after translated reply hide'
+  ),
+  'the public list returns a translation only inside the visible review or reply it belongs to'
+);
+rollback to savepoint customer_review_translation_listed_reply_hidden;
+
+savepoint customer_review_translation_listed_review_hidden;
+insert into public.customer_review_hides(review_id,administrator_user_id,reason)
+select review_id,'10000000-0000-4000-8000-000000003801','Hidden for the translation test'
+from reply_fixture;
+select set_config('request.jwt.claim.sub','',true);
+select set_config('request.jwt.claims','{}',true);
+set local role anon;
+insert into reply_observations
+select 'public list after translated review hide',public.list_public_customer_reviews(
+  'cottage-deadbeefdeadbeefdeadbeefdead1001',null,null,20
+);
+reset role;
+select ok(
+  (
+    select value->>'status'='success'
+      and jsonb_array_length(value->'items')=0
+      and not jsonb_path_exists(value,'strict $.** ? (exists (@.translatedBody))')
+    from reply_observations where name='public list after translated review hide'
+  ),
+  'the public list returns a translation only inside the visible review or reply it belongs to'
+);
+rollback to savepoint customer_review_translation_listed_review_hidden;
+rollback to savepoint customer_review_translation;
 
 savepoint customer_review_reply_review_hidden;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
@@ -2320,6 +2813,79 @@ select ok(
   'equal-timestamp public cursor pages use the id tie-break without skips and end with a null cursor'
 );
 reset role;
+
+set local role service_role;
+select ok(
+  public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003','88000000-0000-4000-8000-000000001801','review','en',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )
+    ='{"status":"prepared","originalLanguage":"ar","originalBody":"مراجعة عربية آمنة"}'::jsonb
+  and public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003','88000000-0000-4000-8000-000000001901','review','en',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )
+    ='{"status":"prepared","originalLanguage":"ckb","originalBody":"پێداچوونەوەیەکی پارێزراو"}'::jsonb,
+  'tied-timestamp reviews each resolve to their own translation source'
+);
+reset role;
+
+savepoint customer_review_translation_rating_only;
+set local session_replication_role=replica;
+update public.customer_reviews
+set original_body=null
+where id='88000000-0000-4000-8000-000000001801';
+set local session_replication_role=origin;
+set local role service_role;
+select ok(
+  public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003','88000000-0000-4000-8000-000000001801','review','en',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"not-found"}'::jsonb
+  and public.save_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003','88000000-0000-4000-8000-000000001801','review','en',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+    'A safe Arabic review.'
+  )='{"status":"not-found"}'::jsonb,
+  'a hidden review, a hidden reply, a paused cottage and a rating-only review are never translation sources'
+);
+reset role;
+select is(
+  (select count(*)::integer from public.customer_review_translations),0,
+  'a rating-only review stores no translation'
+);
+rollback to savepoint customer_review_translation_rating_only;
+
+savepoint customer_review_translation_hidden_neighbour;
+-- Seeded directly: the contact filter is stubbed false above, so a save here would answer blocked.
+insert into public.customer_review_translations(
+  review_id,subject,target_language,provider,model,prompt_version,translated_body
+) values (
+  '88000000-0000-4000-8000-000000001901','review','en',
+  'fictional-local-test','deterministic-pairs-v1','review-pairs-v1','A protected review.'
+);
+insert into public.customer_review_hides(review_id,administrator_user_id,reason)
+values ('88000000-0000-4000-8000-000000001901','10000000-0000-4000-8000-000000003801','Hidden for the neighbour test');
+set local role service_role;
+select ok(
+  public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003','88000000-0000-4000-8000-000000001901','review','en',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  )='{"status":"not-found"}'::jsonb
+  and (
+    select value->>'status'='prepared'
+      and value->>'originalBody'='مراجعة عربية آمنة'
+    from (
+      select public.prepare_customer_review_translation(
+    '10000000-0000-4000-8000-000000001003','88000000-0000-4000-8000-000000001801','review','en',
+    'fictional-local-test','deterministic-pairs-v1','review-pairs-v1'
+  ) value
+    ) neighbour
+  ),
+  'a hidden review with a cached translation is refused while its tied-timestamp neighbour stays public'
+);
+reset role;
+rollback to savepoint customer_review_translation_hidden_neighbour;
 
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
 select set_config(

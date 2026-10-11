@@ -356,7 +356,67 @@ values('${secondAdministrator}','authenticated','authenticated','review-49-secon
 insert into public.account_contexts(user_id,role)
 values('${secondAdministrator}','platform_administrator');
 `);
+    const setHideListingState = (state) =>
+      harness.runSql(`update public.cottage_marketplace_listings
+set state='${state}'
+where profile_id='${hideFixture.ids.profileId}';`);
+    const saveTranslation = (targetLanguage, translatedBody) =>
+      `set local role service_role;
+select public.save_customer_review_translation(
+  '${hideFixture.ids.customerUserId}','${reviewId}','review','${targetLanguage}',
+  'fictional-local-test','deterministic-pairs-v1','review-pairs-v1',
+  '${translatedBody}'
+);`;
     harness.markTimingPhase("execution");
+    setHideListingState("published");
+    const translationHolder = harness.startSession(`
+begin;
+set application_name='customer_review_translation_holder';
+${saveTranslation("ar", "تقييم للمراجعة")}
+select 'CUSTOMER_REVIEW_TRANSLATION_HELD';
+`);
+    sessions.push(translationHolder);
+    await harness.waitForMarker(
+      translationHolder,
+      "CUSTOMER_REVIEW_TRANSLATION_HELD",
+    );
+    const translationContender = harness.startSession(
+      `begin;
+set application_name='customer_review_translation_contender';
+${saveTranslation("ar", "تقييم للمراجعة")}
+commit;`,
+      true,
+    );
+    sessions.push(translationContender);
+    await harness.waitForLock(
+      "customer_review_translation_contender",
+      translationContender,
+    );
+    assertions += 1;
+    await harness.finishSession(translationHolder, { action: "commit" });
+    await harness.finishSession(translationContender);
+    const savedTranslation = jsonResults(translationHolder)[0];
+    check(
+      {
+        status: savedTranslation?.status,
+        translatedBody: savedTranslation?.translatedBody,
+      },
+      { status: "translated", translatedBody: "تقييم للمراجعة" },
+      "first translation save wins",
+    );
+    check(
+      jsonResults(translationContender)[0],
+      savedTranslation,
+      "concurrent identical translation saves return one stable translation",
+    );
+    check(
+      harness.runSql(
+        `select count(*)::integer from public.customer_review_translations where review_id='${reviewId}';`,
+      ),
+      "1",
+      "concurrent identical translation saves store one translation",
+    );
+    setHideListingState("paused");
     const hideHolder = harness.startSession(`
 begin;
 set application_name='customer_review_hide_holder';
@@ -391,9 +451,35 @@ commit;`,
       hiddenReviewReplyContender,
     );
     assertions += 1;
+    setHideListingState("published");
+    check(
+      JSON.parse(
+        harness.runSql(
+          `select public.list_public_customer_reviews('${hidePublicSlug}',null,null,1);`,
+        ),
+      ).items?.[0]?.reviewId,
+      reviewId,
+      "the review is public while its hide is uncommitted",
+    );
+    // A new language inserts a row, so this save waits on the hidden review's foreign-key lock.
+    const translationHideContender = harness.startSession(
+      `begin;
+set application_name='customer_review_translation_hide_contender';
+${saveTranslation("ckb", "هەڵسەنگاندنێک بۆ پێداچوونەوە")}
+commit;`,
+      true,
+    );
+    sessions.push(translationHideContender);
+    await harness.waitForLock(
+      "customer_review_translation_hide_contender",
+      translationHideContender,
+    );
+    assertions += 1;
     await harness.finishSession(hideHolder, { action: "commit" });
     await harness.finishSession(hideContender);
     await harness.finishSession(hiddenReviewReplyContender);
+    await harness.finishSession(translationHideContender);
+    setHideListingState("paused");
     const hidden = jsonResults(hideHolder)[0];
     check(hidden?.status, "hidden", "first hide wins");
     check(
@@ -449,6 +535,11 @@ commit;`,
       ),
       "0",
       "the refused reply stores nothing",
+    );
+    check(
+      jsonResults(translationHideContender)[0],
+      { status: "not-found" },
+      "a translation save that waited on an uncommitted review hide returns no translated text",
     );
 
     const replyHideHolder = harness.startSession(`

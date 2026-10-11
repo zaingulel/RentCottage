@@ -759,7 +759,23 @@ begin
         select jsonb_build_object(
           'originalLanguage',replies.original_language,
           'originalBody',replies.original_body,
-          'submittedAt',replies.submitted_at
+          'submittedAt',replies.submitted_at,
+          'translations',(
+            select coalesce(
+              jsonb_agg(
+                jsonb_build_object(
+                  'translationId',translations.id,
+                  'targetLanguage',translations.target_language,
+                  'translatedBody',translations.translated_body
+                )
+                order by translations.created_at,translations.id
+              ),
+              '[]'::jsonb
+            )
+            from public.customer_review_translations translations
+            where translations.review_id=replies.review_id
+              and translations.subject='reply'
+          )
         )
         from public.customer_review_replies replies
         where replies.review_id=reviews.id
@@ -815,7 +831,23 @@ begin
         'originalLanguage',page.original_language,
         'originalBody',page.original_body,
         'submittedAt',page.submitted_at,
-        'ownerReply',page.owner_reply
+        'ownerReply',page.owner_reply,
+        'translations',(
+          select coalesce(
+            jsonb_agg(
+              jsonb_build_object(
+                'translationId',translations.id,
+                'targetLanguage',translations.target_language,
+                'translatedBody',translations.translated_body
+              )
+              order by translations.created_at,translations.id
+            ),
+            '[]'::jsonb
+          )
+          from public.customer_review_translations translations
+          where translations.review_id=page.id
+            and translations.subject='review'
+        )
       ) item
     from page
   )
@@ -842,3 +874,226 @@ end;
 $$;
 
 ALTER FUNCTION public.list_public_customer_reviews(text,timestamptz,uuid,integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.customer_review_translation_actor_is_eligible(
+  target_actor_user_id uuid
+) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
+  select exists(
+    select 1
+    from public.account_contexts contexts
+    join auth.users users on users.id=contexts.user_id
+    where contexts.user_id=target_actor_user_id
+      and contexts.role in ('customer','cottage_owner')
+      and users.phone_confirmed_at is not null
+  );
+$$;
+
+ALTER FUNCTION public.customer_review_translation_actor_is_eligible(uuid) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.customer_review_translation_source(
+  target_review_id uuid,
+  target_subject text
+) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
+declare
+  source public.customer_reviews;
+  target_slug text;
+  next_peer_id uuid;
+  listed jsonb;
+  item jsonb;
+begin
+  select * into source
+  from public.customer_reviews reviews
+  where reviews.id=target_review_id;
+  if source.id is null then
+    return null;
+  end if;
+
+  select listings.public_slug into target_slug
+  from public.cottage_marketplace_listings listings
+  where listings.profile_id=source.profile_id;
+
+  select peers.id into next_peer_id
+  from public.customer_reviews peers
+  where peers.profile_id=source.profile_id
+    and peers.submitted_at=source.submitted_at
+    and peers.id>source.id
+  order by peers.id limit 1;
+
+  -- The public list is the one home of the visibility rule: this cursor makes the review its
+  -- first row when it is public, and any other first row is refused below.
+  listed:=public.list_public_customer_reviews(
+    target_slug,
+    case when next_peer_id is null
+      then source.submitted_at+interval '1 microsecond'
+      else source.submitted_at end,
+    coalesce(next_peer_id,'00000000-0000-0000-0000-000000000000'::uuid),
+    1
+  );
+  item:=listed#>'{items,0}';
+  if listed->>'status' is distinct from 'success'
+    or item->>'reviewId' is distinct from target_review_id::text
+  then
+    return null;
+  end if;
+
+  if target_subject='review' and item->>'originalBody' is not null then
+    return jsonb_build_object(
+      'originalLanguage',item->'originalLanguage',
+      'originalBody',item->'originalBody'
+    );
+  end if;
+  if target_subject='reply' and jsonb_typeof(item->'ownerReply')='object' then
+    return jsonb_build_object(
+      'originalLanguage',item#>'{ownerReply,originalLanguage}',
+      'originalBody',item#>'{ownerReply,originalBody}'
+    );
+  end if;
+  return null;
+end;
+$$;
+
+ALTER FUNCTION public.customer_review_translation_source(uuid,text) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.prepare_customer_review_translation(
+  target_actor_user_id uuid,
+  target_review_id uuid,
+  target_subject text,
+  target_language public.cottage_profile_source_language,
+  target_provider text,
+  target_model text,
+  target_prompt_version text
+) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
+declare
+  requested_language public.cottage_profile_source_language:=target_language;
+  source jsonb;
+  cached public.customer_review_translations;
+begin
+  if current_setting('role',true) is distinct from 'service_role' then
+    raise exception 'Customer review translation is unavailable' using errcode='42501';
+  end if;
+  if target_actor_user_id is null
+    or target_review_id is null
+    or requested_language is null
+    or (target_subject in ('review','reply')) is not true
+    or target_provider is distinct from 'fictional-local-test'
+    or target_model is distinct from 'deterministic-pairs-v1'
+    or target_prompt_version is distinct from 'review-pairs-v1'
+  then
+    return jsonb_build_object('status','invalid');
+  end if;
+  if not public.customer_review_translation_actor_is_eligible(target_actor_user_id) then
+    return jsonb_build_object('status','access-required');
+  end if;
+
+  source:=public.customer_review_translation_source(target_review_id,target_subject);
+  if source is null or source->>'originalLanguage'=requested_language::text then
+    return jsonb_build_object('status','not-found');
+  end if;
+
+  select * into cached
+  from public.customer_review_translations translations
+  where translations.review_id=target_review_id
+    and translations.subject=target_subject
+    and translations.target_language=requested_language
+    and translations.provider=target_provider
+    and translations.model=target_model
+    and translations.prompt_version=target_prompt_version;
+  if cached.id is not null then
+    return jsonb_build_object(
+      'status','translated',
+      'translationId',cached.id,
+      'translatedBody',cached.translated_body
+    );
+  end if;
+  return jsonb_build_object(
+    'status','prepared',
+    'originalLanguage',source->'originalLanguage',
+    'originalBody',source->'originalBody'
+  );
+end;
+$$;
+
+ALTER FUNCTION public.prepare_customer_review_translation(uuid,uuid,text,public.cottage_profile_source_language,text,text,text) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.save_customer_review_translation(
+  target_actor_user_id uuid,
+  target_review_id uuid,
+  target_subject text,
+  target_language public.cottage_profile_source_language,
+  target_provider text,
+  target_model text,
+  target_prompt_version text,
+  target_translated_body text
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare
+  requested_language public.cottage_profile_source_language:=target_language;
+  source jsonb;
+  source_after jsonb;
+  saved public.customer_review_translations;
+begin
+  if current_setting('role',true) is distinct from 'service_role' then
+    raise exception 'Customer review translation is unavailable' using errcode='42501';
+  end if;
+  if target_actor_user_id is null
+    or target_review_id is null
+    or requested_language is null
+    or (target_subject in ('review','reply')) is not true
+    or target_provider is distinct from 'fictional-local-test'
+    or target_model is distinct from 'deterministic-pairs-v1'
+    or target_prompt_version is distinct from 'review-pairs-v1'
+    or target_translated_body is null
+    or char_length(target_translated_body) > 4000
+    or target_translated_body !~ '[^\s\uFEFF]'
+  then
+    return jsonb_build_object('status','invalid');
+  end if;
+  if not public.customer_review_translation_actor_is_eligible(target_actor_user_id) then
+    return jsonb_build_object('status','access-required');
+  end if;
+
+  source:=public.customer_review_translation_source(target_review_id,target_subject);
+  if source is null or source->>'originalLanguage'=requested_language::text then
+    return jsonb_build_object('status','not-found');
+  end if;
+  if not public.contact_protection_text_is_safe(target_translated_body) then
+    return jsonb_build_object('status','blocked');
+  end if;
+
+  insert into public.customer_review_translations(
+    review_id,subject,target_language,provider,model,prompt_version,translated_body
+  ) values (
+    target_review_id,target_subject,requested_language,target_provider,target_model,
+    target_prompt_version,target_translated_body
+  ) on conflict on constraint customer_review_translations_cache_key do nothing;
+
+  select * into saved
+  from public.customer_review_translations translations
+  where translations.review_id=target_review_id
+    and translations.subject=target_subject
+    and translations.target_language=requested_language
+    and translations.provider=target_provider
+    and translations.model=target_model
+    and translations.prompt_version=target_prompt_version;
+
+  -- The insert can wait behind a hide or an identical save; text leaves only while the source is still public.
+  select public.customer_review_translation_source(target_review_id,target_subject)
+  into source_after;
+  if source_after is null then
+    return jsonb_build_object('status','not-found');
+  end if;
+  if saved.translated_body is distinct from target_translated_body then
+    return jsonb_build_object('status','invalid');
+  end if;
+  return jsonb_build_object(
+    'status','translated',
+    'translationId',saved.id,
+    'translatedBody',saved.translated_body
+  );
+end;
+$$;
+
+ALTER FUNCTION public.save_customer_review_translation(uuid,uuid,text,public.cottage_profile_source_language,text,text,text,text) OWNER TO postgres;
