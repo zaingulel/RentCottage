@@ -26,6 +26,10 @@ vi.mock("@/access/request-account-context", () => ({
   requireRequestAccount: resolveAccount,
   resolveRequestAccount: resolveAccount,
 }));
+vi.mock("@/customer-review/actions", () => ({
+  hideCustomerReview: vi.fn(),
+  hideCustomerReviewReply: vi.fn(),
+}));
 vi.mock("@/customer-review/request-customer-review", () => ({
   createRequestCustomerReview: createReview,
 }));
