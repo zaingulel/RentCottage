@@ -46,7 +46,7 @@ export const administratorTotalsMessages = {
     tooMany:
       "يوجد أكثر من {limit} حجز مطابق. ضيّق نطاق التواريخ أو اختر حالة واحدة.",
     bookingCount: "الحجوزات المؤكدة",
-    captured: "المحصَّل من العملاء",
+    captured: "المحصل من العملاء",
     bookingPrice: "سعر الحجز",
     bookingServiceFees: "رسوم خدمة الحجز",
     customerTotal: "إجمالي العميل",

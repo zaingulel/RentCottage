@@ -148,53 +148,59 @@ function BookingRow({
         </span>
       </p>
       <Disclosure summary={copy.bookingMoney}>
-        {derived.status === "available" ? (
-          <FigureList
-            locale={locale}
-            copy={copy}
-            figures={derived.figures}
-            keys={figureGroups.flatMap((group) => group.figures)}
-          />
-        ) : (
-          <p>{copy.evidenceUnavailable}</p>
-        )}
+        <div className={styles.results}>
+          {derived.status === "available" ? (
+            <FigureList
+              locale={locale}
+              copy={copy}
+              figures={derived.figures}
+              keys={figureGroups.flatMap((group) => group.figures)}
+            />
+          ) : (
+            <p>{copy.evidenceUnavailable}</p>
+          )}
+        </div>
         {row.refundRecords.map((record) => (
-          <dl className="fact-list" key={record.id}>
-            <div>
-              <dt>{copy.refundRecord}</dt>
-              <dd>
-                <span>
-                  <bdi>{record.id}</bdi>
-                </span>
-                <span>{refundSourceLabel(locale, record.source)}</span>
-                <span>{bookingManagementMessages[locale][record.state]}</span>
-              </dd>
-            </div>
-            <div>
-              <dt>{copy.bookingPrice}</dt>
-              <dd>
-                <bdi>{formatFilsAsIqd(record.bookingPriceFils, locale)}</bdi>
-              </dd>
-            </div>
-            <div>
-              <dt>{copy.bookingServiceFees}</dt>
-              <dd>
-                <bdi>
-                  {formatFilsAsIqd(record.bookingServiceFeeFils, locale)}
-                </bdi>
-              </dd>
-            </div>
-          </dl>
+          <div className={styles.results} key={record.id}>
+            <dl className="fact-list">
+              <div>
+                <dt>{copy.refundRecord}</dt>
+                <dd>
+                  <span>
+                    <bdi>{record.id}</bdi>
+                  </span>
+                  <span>{refundSourceLabel(locale, record.source)}</span>
+                  <span>{bookingManagementMessages[locale][record.state]}</span>
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.bookingPrice}</dt>
+                <dd>
+                  <bdi>{formatFilsAsIqd(record.bookingPriceFils, locale)}</bdi>
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.bookingServiceFees}</dt>
+                <dd>
+                  <bdi>
+                    {formatFilsAsIqd(record.bookingServiceFeeFils, locale)}
+                  </bdi>
+                </dd>
+              </div>
+            </dl>
+          </div>
         ))}
         {row.settlementIntentId ? (
-          <dl className="fact-list">
-            <div>
-              <dt>{copy.payoutRecord}</dt>
-              <dd>
-                <bdi>{row.settlementIntentId}</bdi>
-              </dd>
-            </div>
-          </dl>
+          <div className={styles.results}>
+            <dl className="fact-list">
+              <div>
+                <dt>{copy.payoutRecord}</dt>
+                <dd>
+                  <bdi>{row.settlementIntentId}</bdi>
+                </dd>
+              </div>
+            </dl>
+          </div>
         ) : null}
       </Disclosure>
     </li>
@@ -331,6 +337,7 @@ function BookingMoneyResults({
           figureGroups.map((group) => (
             <section
               key={group.title}
+              className={styles.results}
               aria-labelledby={`totals-${group.title}`}
             >
               <h2 className="section-title" id={`totals-${group.title}`}>
@@ -353,7 +360,7 @@ function BookingMoneyResults({
           </ActionFeedback>
         )}
         {flagged.length > 0 ? (
-          <section aria-labelledby="totals-flagged">
+          <section className={styles.results} aria-labelledby="totals-flagged">
             <h2 className="section-title" id="totals-flagged">
               {copy.flagged}
             </h2>
@@ -378,7 +385,10 @@ function BookingMoneyResults({
           </section>
         ) : null}
         {page.rows.length > 0 ? (
-          <section aria-labelledby="totals-contributing">
+          <section
+            className={styles.results}
+            aria-labelledby="totals-contributing"
+          >
             <h2 className="section-title" id="totals-contributing">
               {copy.contributing}
             </h2>
