@@ -251,3 +251,5 @@ CREATE TRIGGER customer_reviews_immutable BEFORE UPDATE OR DELETE ON public.cust
 CREATE TRIGGER customer_review_hides_immutable BEFORE UPDATE OR DELETE ON public.customer_review_hides FOR EACH ROW EXECUTE FUNCTION public.reject_customer_review_fact_change();
 CREATE TRIGGER customer_review_replies_immutable BEFORE UPDATE OR DELETE ON public.customer_review_replies FOR EACH ROW EXECUTE FUNCTION public.reject_customer_review_fact_change();
 CREATE TRIGGER customer_review_reply_hides_immutable BEFORE UPDATE OR DELETE ON public.customer_review_reply_hides FOR EACH ROW EXECUTE FUNCTION public.reject_customer_review_fact_change();
+CREATE TRIGGER customer_review_translations_immutable BEFORE UPDATE OR DELETE ON public.customer_review_translations FOR EACH ROW EXECUTE FUNCTION public.reject_customer_review_fact_change();
+CREATE TRIGGER customer_review_translation_reports_immutable BEFORE UPDATE OR DELETE ON public.customer_review_translation_reports FOR EACH ROW EXECUTE FUNCTION public.reject_customer_review_fact_change();

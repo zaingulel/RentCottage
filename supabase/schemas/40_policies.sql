@@ -282,3 +282,5 @@ ALTER TABLE public.customer_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_review_hides ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_review_replies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_review_reply_hides ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customer_review_translations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customer_review_translation_reports ENABLE ROW LEVEL SECURITY;

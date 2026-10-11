@@ -54,3 +54,39 @@ CREATE TABLE IF NOT EXISTS public.customer_review_reply_hides (
 );
 
 ALTER TABLE public.customer_review_reply_hides OWNER TO postgres;
+
+CREATE TABLE IF NOT EXISTS public.customer_review_translations (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  review_id uuid NOT NULL,
+  subject text NOT NULL,
+  target_language public.cottage_profile_source_language NOT NULL,
+  provider text NOT NULL,
+  model text NOT NULL,
+  prompt_version text NOT NULL,
+  translated_body text NOT NULL,
+  created_at timestamptz DEFAULT clock_timestamp() NOT NULL,
+  CONSTRAINT customer_review_translations_subject_check CHECK (
+    subject IN ('review','reply')
+  ),
+  -- Twice the 2,000 source cap, so a faithful rendering of a full-length original is not refused.
+  CONSTRAINT customer_review_translations_translated_body_check CHECK (
+    char_length(translated_body) <= 4000
+      AND translated_body ~ '[^\s\uFEFF]'
+  ),
+  CONSTRAINT customer_review_translations_provenance_check CHECK (
+    provider = btrim(provider) AND char_length(provider) >= 1 AND char_length(provider) <= 80
+      AND model = btrim(model) AND char_length(model) >= 1 AND char_length(model) <= 120
+      AND prompt_version = btrim(prompt_version) AND char_length(prompt_version) >= 1 AND char_length(prompt_version) <= 120
+  )
+);
+
+ALTER TABLE public.customer_review_translations OWNER TO postgres;
+
+CREATE TABLE IF NOT EXISTS public.customer_review_translation_reports (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  translation_id uuid NOT NULL,
+  reporter_user_id uuid NOT NULL,
+  created_at timestamptz DEFAULT clock_timestamp() NOT NULL
+);
+
+ALTER TABLE public.customer_review_translation_reports OWNER TO postgres;

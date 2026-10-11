@@ -348,6 +348,13 @@ export function CustomerReviewModeration({
   return (
     <main className={styles.page}>
       <h1>{copy.administratorTitle}</h1>
+      <ActionLink
+        kind="secondary"
+        width="content"
+        href={`/${locale}/administrator/reviews/translation-reports`}
+      >
+        {copy.translationReportsLink}
+      </ActionLink>
       <ReviewFilterForm
         locale={locale}
         filters={filters}

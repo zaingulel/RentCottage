@@ -18,6 +18,7 @@ import { SupabaseCustomerReviewRepository } from "./supabase-customer-review";
 
 const reviewId = "11111111-1111-4111-8111-111111111111";
 const laterReviewId = "22222222-2222-4222-8222-222222222222";
+const translationId = "77777777-7777-4777-8777-777777777777";
 const affectedPublicSlug = "cottage-deadbeefdeadbeefdeadbeefdead0029";
 
 const unfilteredFirstPage = {
@@ -143,11 +144,13 @@ describe("Supabase Customer review repository", () => {
       originalBody: null,
       submittedAt: "2026-09-21T11:00:00.000Z",
       ownerReply: null,
+      translations: [],
     };
     const ownerReply = {
       originalLanguage: "ar",
       originalBody: "شكراً لزيارتكم",
       submittedAt: "2026-09-22T08:00:00.000Z",
+      translations: [],
     };
     const repliedItem = {
       reviewId: laterReviewId,
@@ -156,6 +159,7 @@ describe("Supabase Customer review repository", () => {
       originalBody: "A calm stay.",
       submittedAt: "2026-09-21T10:00:00.000Z",
       ownerReply,
+      translations: [],
     };
     const client = clientWith({
       status: "success",
@@ -184,6 +188,7 @@ describe("Supabase Customer review repository", () => {
           originalBody: null,
           submittedAt: "2026-09-21T11:00:00.000Z",
           ownerReply: null,
+          translations: [],
         },
         {
           reviewId: laterReviewId,
@@ -195,7 +200,9 @@ describe("Supabase Customer review repository", () => {
             originalLanguage: "ar",
             originalBody: "شكراً لزيارتكم",
             submittedAt: "2026-09-22T08:00:00.000Z",
+            translations: [],
           },
+          translations: [],
         },
       ],
       nextCursor: {
@@ -234,6 +241,7 @@ describe("Supabase Customer review repository", () => {
         ownerReply: {
           originalLanguage: "ar",
           originalBody: "شكراً لزيارتكم",
+          translations: [],
         },
       },
       { ...repliedItem, ownerReply: "شكراً لزيارتكم" },
@@ -725,7 +733,9 @@ describe("Supabase Customer review repository", () => {
             originalLanguage: "en",
             originalBody,
             submittedAt: "2026-09-21T12:00:00.000Z",
+            translations: [],
           },
+          translations: [],
         },
       ],
       nextCursor: null,
@@ -1228,5 +1238,302 @@ describe("Supabase Customer review repository", () => {
       repository.hideReply({ reviewId, reason: "Moderation reason" }),
     ).resolves.toEqual({ status: "unavailable" });
     expect(client.rpc).toHaveBeenCalledTimes(8);
+  });
+
+  it("a public review whose translations are malformed is unavailable", async () => {
+    const translation = {
+      translationId,
+      targetLanguage: "ar",
+      translatedBody: "إقامة هادئة",
+    };
+    const second = {
+      translationId: laterReviewId,
+      targetLanguage: "ckb",
+      translatedBody: "مانەوەیەکی ئارام",
+    };
+    const reply = {
+      originalLanguage: "en",
+      originalBody: "Thank you for staying with us.",
+      submittedAt: "2026-09-21T12:00:00.000Z",
+      translations: [translation],
+    };
+    const review = {
+      reviewId,
+      rating: 5,
+      originalLanguage: "en",
+      originalBody: "A calm stay.",
+      submittedAt: "2026-09-21T11:00:00.000Z",
+      ownerReply: reply,
+      translations: [translation, second],
+    };
+    const list = (item: unknown) =>
+      new SupabaseCustomerReviewRepository(
+        clientWith({
+          status: "success",
+          items: [item],
+          nextCursor: null,
+        }) as never,
+      ).listPublic({
+        publicSlug: "cottage-00000000000040008000000000000029",
+        beforeAt: null,
+        beforeId: null,
+        limit: 20,
+      });
+
+    await expect(list(review)).resolves.toEqual({
+      status: "success",
+      items: [review],
+      nextCursor: null,
+    });
+    const longest = { ...translation, translatedBody: "🏡".repeat(4000) };
+    await expect(
+      list({ ...review, translations: [longest] }),
+    ).resolves.toMatchObject({ status: "success" });
+
+    const omit = (value: object, key: string) =>
+      Object.fromEntries(Object.entries(value).filter(([k]) => k !== key));
+    const withoutTranslations = omit(review, "translations");
+    const replyWithoutTranslations = omit(reply, "translations");
+    const malformedLists = [
+      "text",
+      null,
+      {},
+      [null],
+      ["text"],
+      [{ ...translation, extra: "private" }],
+      [{ translationId, targetLanguage: "ar" }],
+      [{ ...translation, translationId: "not-a-uuid" }],
+      [{ ...translation, targetLanguage: "fr" }],
+      [{ ...translation, translatedBody: "" }],
+      [{ ...translation, translatedBody: "  " }],
+      [{ ...translation, translatedBody: 3 }],
+      [{ ...translation, translatedBody: "🏡".repeat(4001) }],
+      [translation, { ...second, translatedBody: "" }],
+    ];
+    for (const malformed of malformedLists) {
+      await expect(
+        list({ ...review, translations: malformed }),
+      ).resolves.toEqual({ status: "unavailable" });
+      await expect(
+        list({
+          ...review,
+          ownerReply: { ...reply, translations: malformed },
+        }),
+      ).resolves.toEqual({ status: "unavailable" });
+    }
+    await expect(list(withoutTranslations)).resolves.toEqual({
+      status: "unavailable",
+    });
+    await expect(
+      list({ ...review, ownerReply: replyWithoutTranslations }),
+    ).resolves.toEqual({ status: "unavailable" });
+  });
+
+  it("owner and administrator replies refuse a translations key", async () => {
+    const ownerReply = {
+      originalLanguage: "en",
+      originalBody: "Thank you for staying with us.",
+      submittedAt: "2026-09-21T12:00:00.000Z",
+      moderationState: "unhidden",
+    };
+    const reviewed = {
+      status: "reviewed",
+      rating: 4,
+      originalLanguage: "en",
+      originalBody: "A calm stay.",
+      submittedAt: "2026-09-21T11:00:00.000Z",
+      reply: ownerReply,
+    };
+    const getOwnerReview = (payload: unknown) =>
+      new SupabaseCustomerReviewRepository(
+        clientWith(payload) as never,
+      ).getOwnerReview("RC-REQ-0123456789ABCDEF");
+    await expect(getOwnerReview(reviewed)).resolves.toEqual(reviewed);
+    await expect(
+      getOwnerReview({
+        ...reviewed,
+        reply: { ...ownerReply, translations: [] },
+      }),
+    ).resolves.toEqual({ status: "unavailable" });
+    await expect(
+      getOwnerReview({
+        status: "review-hidden",
+        reply: { ...ownerReply, translations: [] },
+      }),
+    ).resolves.toEqual({ status: "unavailable" });
+
+    const administratorReply = {
+      authorUserId: "66666666-6666-4666-8666-666666666666",
+      originalLanguage: "en",
+      originalBody: "Thank you for staying with us.",
+      submittedAt: "2026-09-21T12:00:00.000Z",
+      moderationState: "unhidden",
+      hide: null,
+    };
+    const administratorList = (reply: unknown) =>
+      new SupabaseCustomerReviewRepository(
+        clientWith({
+          status: "success",
+          items: [
+            {
+              reviewId,
+              bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+              profileId: "33333333-3333-4333-8333-333333333333",
+              authorUserId: "44444444-4444-4444-8444-444444444444",
+              rating: 4,
+              originalLanguage: "en",
+              originalBody: "A calm stay.",
+              submittedAt: "2026-09-21T11:00:00.000Z",
+              moderationState: "unhidden",
+              hide: null,
+              reply,
+            },
+          ],
+          nextCursor: null,
+          total: 1,
+          stateCounts: { unhidden: 1, hidden: 0 },
+        }) as never,
+      ).listAdministrator(unfilteredFirstPage);
+    await expect(administratorList(administratorReply)).resolves.toMatchObject({
+      status: "success",
+    });
+    await expect(
+      administratorList({ ...administratorReply, translations: [] }),
+    ).resolves.toEqual({ status: "unavailable" });
+  });
+
+  it("lists translation reports through the aal2 RPC and reads the fixed report shape", async () => {
+    const reportId = "66666666-6666-4666-8666-666666666666";
+    const item = {
+      reportId,
+      bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+      subject: "reply",
+      originalLanguage: "en",
+      originalBody: "Thank you for staying with us.",
+      targetLanguage: "ar",
+      translatedBody: "شكراً لإقامتكم معنا.",
+      provider: "fictional-local-test",
+      model: "deterministic-pairs-v1",
+      promptVersion: "review-pairs-v1",
+      reportedAt: "2026-09-22T08:00:00.000Z",
+    };
+    const nextCursor = {
+      reportedAt: "2026-09-22T08:00:00.000Z",
+      reportId,
+    };
+    const items = [
+      item,
+      { ...item, subject: "review", reportId: laterReviewId },
+    ];
+    const client = clientWith({ status: "success", items, nextCursor });
+    const repository = new SupabaseCustomerReviewRepository(client as never);
+    const first = { beforeAt: null, beforeId: null, limit: 20 };
+
+    await expect(repository.listTranslationReports(first)).resolves.toEqual({
+      status: "success",
+      items,
+      nextCursor,
+    });
+    expect(client.rpc).toHaveBeenCalledWith(
+      "list_customer_review_translation_reports",
+      { target_before_at: null, target_before_id: null, target_limit: 20 },
+    );
+    await expect(
+      repository.listTranslationReports({
+        beforeAt: "2026-09-22T08:00:00.000Z",
+        beforeId: reportId,
+        limit: 50,
+      }),
+    ).resolves.toMatchObject({ status: "success" });
+    expect(client.rpc).toHaveBeenLastCalledWith(
+      "list_customer_review_translation_reports",
+      {
+        target_before_at: "2026-09-22T08:00:00.000Z",
+        target_before_id: reportId,
+        target_limit: 50,
+      },
+    );
+
+    const unreached = clientWith({ status: "success", items: [] });
+    for (const input of [
+      { ...first, limit: 0 },
+      { ...first, limit: 51 },
+      { ...first, beforeAt: "2026-09-22T08:00:00.000Z" },
+      { ...first, extra: 1 },
+    ]) {
+      await expect(
+        new SupabaseCustomerReviewRepository(
+          unreached as never,
+        ).listTranslationReports(input as never),
+      ).resolves.toEqual({ status: "invalid" });
+    }
+    expect(unreached.rpc).not.toHaveBeenCalled();
+
+    const read = (payload: unknown, error: unknown = null) =>
+      new SupabaseCustomerReviewRepository(
+        clientWith(payload, error) as never,
+      ).listTranslationReports(first);
+    const page = (pageItems: unknown[], cursor: unknown = null) => ({
+      status: "success",
+      items: pageItems,
+      nextCursor: cursor,
+    });
+    await expect(read(page([]))).resolves.toEqual({
+      status: "success",
+      items: [],
+      nextCursor: null,
+    });
+    await expect(read(null, { code: "42501" })).resolves.toEqual({
+      status: "access-required",
+    });
+    await expect(read(null, { code: "22023" })).resolves.toEqual({
+      status: "invalid",
+    });
+    await expect(read(null, { code: "XX000" })).resolves.toEqual({
+      status: "unavailable",
+    });
+    for (const malformed of [
+      null,
+      { status: "success", items: [], nextCursor: null, extra: 1 },
+      { status: "success", items: "none", nextCursor: null },
+      { status: "success", items: [] },
+      page([{ ...item, reporterUserId: reportId }]),
+      page([
+        Object.fromEntries(
+          Object.entries(item).filter(([key]) => key !== "provider"),
+        ),
+      ]),
+      page([{ ...item, reportId: "not-a-uuid" }]),
+      page([{ ...item, bookingRequestReference: "RC-REQ-1" }]),
+      page([{ ...item, subject: "message" }]),
+      page([{ ...item, originalLanguage: "fr" }]),
+      page([{ ...item, originalBody: "" }]),
+      page([{ ...item, originalBody: null }]),
+      page([{ ...item, targetLanguage: "fr" }]),
+      page([{ ...item, translatedBody: "  " }]),
+      page([{ ...item, translatedBody: "🏡".repeat(4001) }]),
+      page([{ ...item, model: "" }]),
+      page([{ ...item, promptVersion: 1 }]),
+      page([{ ...item, reportedAt: "yesterday" }]),
+      page([item], { submittedAt: item.reportedAt, reviewId: reportId }),
+      page([item], { reportedAt: item.reportedAt }),
+      page([item], { reportedAt: "yesterday", reportId }),
+      page([item], { ...nextCursor, reportId: "not-a-uuid" }),
+    ]) {
+      await expect(read(malformed)).resolves.toEqual({
+        status: "unavailable",
+      });
+    }
+    await expect(
+      new SupabaseCustomerReviewRepository({
+        rpc: vi.fn().mockRejectedValue(new Error("network lost")),
+      } as never).listTranslationReports(first),
+    ).resolves.toEqual({ status: "unavailable" });
+
+    createRequestClient.mockResolvedValue(client);
+    const request = await createRequestCustomerReview();
+    await expect(request?.listTranslationReports(first)).resolves.toMatchObject(
+      { status: "success" },
+    );
   });
 });

@@ -6,13 +6,18 @@ import { locales } from "@/i18n/routing";
 
 import {
   isHideCustomerReviewInput,
+  isReportCustomerReviewTranslationInput,
   isSubmitCustomerReviewInput,
   isSubmitCustomerReviewReplyInput,
+  isTranslateCustomerReviewInput,
   type HideCustomerReviewActionResult,
+  type ReportCustomerReviewTranslationActionResult,
   type SubmitCustomerReviewActionResult,
   type SubmitCustomerReviewReplyActionResult,
+  type TranslateCustomerReviewActionResult,
 } from "./customer-review";
 import { createRequestCustomerReview } from "./request-customer-review";
+import { createRequestReviewTranslation } from "./request-review-translation";
 
 function revalidateCustomerReviewPaths(
   bookingRequestReference: string,
@@ -214,4 +219,59 @@ export async function hideCustomerReviewReply(
     "hideReply",
     "customer-review-reply-hide-unavailable",
   );
+}
+
+export async function translateCustomerReview(
+  value: unknown,
+): Promise<TranslateCustomerReviewActionResult> {
+  if (!isTranslateCustomerReviewInput(value)) {
+    return { status: "invalid" };
+  }
+  const input = value;
+
+  let result;
+  try {
+    const translation = createRequestReviewTranslation();
+    if (!translation) {
+      return { status: "unavailable" };
+    }
+    result = await translation.translate({
+      reviewId: input.reviewId,
+      subject: input.subject,
+      targetLanguage: input.locale,
+    });
+  } catch {
+    console.error("customer-review-translation-action-unavailable");
+    return { status: "unavailable" };
+  }
+  if (result.status === "translated") {
+    revalidatePath(`/${input.locale}/cottages/${input.publicSlug}/reviews`);
+    return {
+      status: result.status,
+      translationId: result.translationId,
+      translatedBody: result.translatedBody,
+    };
+  }
+  return { status: result.status };
+}
+
+export async function reportCustomerReviewTranslation(
+  value: unknown,
+): Promise<ReportCustomerReviewTranslationActionResult> {
+  if (!isReportCustomerReviewTranslationInput(value)) {
+    return { status: "invalid" };
+  }
+
+  let result;
+  try {
+    const translation = createRequestReviewTranslation();
+    if (!translation) {
+      return { status: "unavailable" };
+    }
+    result = await translation.report({ translationId: value.translationId });
+  } catch {
+    console.error("customer-review-translation-report-action-unavailable");
+    return { status: "unavailable" };
+  }
+  return { status: result.status };
 }

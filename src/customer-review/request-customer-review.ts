@@ -25,5 +25,6 @@ export async function createRequestCustomerReview() {
     getOwnerReview: repository.getOwnerReview.bind(repository),
     submitReply: repository.submitReply.bind(repository),
     hideReply: repository.hideReply.bind(repository),
+    listTranslationReports: repository.listTranslationReports.bind(repository),
   };
 }

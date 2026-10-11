@@ -253,6 +253,14 @@ Anything else is a token.
   secondary content-width `ActionLink`s at the inline end: one back to the first results on a continued page, then
   one to the next results when more exist. Paging continues from the last result shown, so it has no page numbers
   and no total, and the `nav` is omitted when neither link applies.
+- Automatic translation: generated text sits under `p.translation-label`, which names it in `--ink-translation`, in
+  one paragraph that carries the reader's `lang` and the `dir` from `directionFor(locale)` while it shows the
+  translation and the original's own `lang` and direction while it shows the original. One compact secondary
+  `ActionButton` switches between the two and keeps its place, so focus stays on it, and once Translate or Report
+  settles focus returns to it when the pending or removed button dropped it; a second reports the translation on
+  screen and `ActionFeedback` answers it. When no translation can be produced the original stays and
+  `ActionFeedback` says so. [customer-review-translation.tsx](../src/components/customer-review-translation.tsx) is
+  the pattern; the conversation in `messaging-conversation.tsx` keeps its own rules until it is moved onto it.
 - A new button, link-styled action, form field, checkbox, radio button, option group, disclosure or submit
   feedback reuses these. A pattern they lack is added there, not built inside a feature component.
 
