@@ -1543,8 +1543,16 @@ html[lang="ckb"] .result-content h2 {
 
 .search-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: var(--space-4);
+}
+
+.search-fields > label:nth-child(-n + 3) {
+  grid-column: span 2;
+}
+
+.search-fields > label:nth-child(n + 4) {
+  grid-column: span 3;
 }
 
 .search-fields label,
@@ -1680,7 +1688,6 @@ html[lang="ckb"] .result-content h2 {
 }
 
 .retreat-search > .action-primary {
-  width: min(100%, 17rem);
   min-height: 3.5rem;
   margin-block-start: var(--space-5);
   font-family: var(--display);
@@ -1818,6 +1825,16 @@ a:focus-visible {
 
   .retreat-search {
     padding: var(--space-4);
+  }
+
+  .search-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Repeats the span selectors so the reset outranks them. */
+  .search-fields > label:nth-child(-n + 3),
+  .search-fields > label:nth-child(n + 4) {
+    grid-column: auto;
   }
 }
 

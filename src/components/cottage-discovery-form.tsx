@@ -347,7 +347,7 @@ export function CottageDiscoveryForm({
         ))}
       </OptionGroup>
       {invalid ? <p role="alert">{messages.invalidRange}</p> : null}
-      <ActionButton kind="primary" width="content" type="submit">
+      <ActionButton kind="primary" width="full" type="submit">
         {messages.submit}
       </ActionButton>
     </form>
