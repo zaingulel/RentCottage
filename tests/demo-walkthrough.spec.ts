@@ -714,6 +714,7 @@ test("shows varied demo results and filters across desktop and mobile languages"
       const card = cards.filter({
         has: page.getByRole("heading", { level: 2, name, exact: true }),
       });
+      await card.scrollIntoViewIfNeeded();
       await expect(
         card.getByRole("heading", { level: 2, name, exact: true }),
       ).toBeVisible();
