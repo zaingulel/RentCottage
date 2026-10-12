@@ -194,6 +194,28 @@ describe("confirmed booking details", () => {
       "Delivery status is temporarily unavailable",
     );
   });
+  it("keeps the complete booking terms inside a collapsed disclosure after the facts", () => {
+    render(
+      <ConfirmedBookingDetails
+        locale="en"
+        access={base}
+        notification={pending}
+        navigation={null}
+      />,
+    );
+    const terms = screen.getByText("Preserved readable booking terms.");
+    const disclosure = terms.closest("details")!;
+    const facts = screen.getByText("Booking period").closest("dl")!;
+    expect(disclosure).not.toHaveAttribute("open");
+    expect(disclosure.querySelector("summary")).toHaveTextContent(
+      "Booking terms",
+    );
+    expect(facts).not.toContainElement(terms);
+    expect(
+      facts.compareDocumentPosition(disclosure) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
   it.each([
     ["en", "Some practical access or contact details are unavailable."],
     ["ar", "بعض تفاصيل الوصول أو الاتصال غير متاحة."],

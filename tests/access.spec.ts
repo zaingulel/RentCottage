@@ -3032,6 +3032,11 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(
     resultCard.getByText("Selected filter", { exact: true }),
   ).toHaveCount(1);
+  const searchSummary = page.getByRole("region", { name: "Your search" });
+  await expect(searchSummary).toContainText(fixture!.approximateLocation);
+  await expect(searchSummary).toContainText(`Shift ${firstShift.position}`);
+  await expect(resultCard).toContainText("Capacity");
+  await expectPrivateValuesAbsent();
   await resultCard.getByRole("link", { name: "View cottage" }).click();
   await expect(page).toHaveURL(
     (url) =>
@@ -3073,6 +3078,20 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     `${firstDay}:shift:${secondShift.position}`,
   ]);
   await expect(resultCard).toHaveCount(0);
+  await expect(searchSummary).toBeVisible();
+  const emptyResultsUrl = new URL(page.url());
+  const arabicResults = page
+    .getByRole("banner")
+    .getByRole("link", { name: "العربية" });
+  await openHeaderPanel(page, "language");
+  await expect(arabicResults).toHaveAttribute("href", /^\/ar\/results\?/);
+  await arabicResults.click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === "/ar/results" && url.search === emptyResultsUrl.search,
+  );
+  await expect(page.getByRole("region", { name: "بحثك" })).toBeVisible();
+  await expectPrivateValuesAbsent();
 
   const { error: restoreAvailabilityError } = await fixtureOwner.rpc(
     "set_cottage_inventory_availability",

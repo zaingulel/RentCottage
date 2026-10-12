@@ -1,5 +1,4 @@
 import Image from "next/image";
-import Link from "next/link";
 
 import {
   serializeCottageResultsQuery,
@@ -8,8 +7,9 @@ import {
 import { fromPriceIqd } from "@/cottage-discovery/from-price";
 import type { CottageDiscoveryResult } from "@/cottage-discovery/supabase-cottage-discovery";
 import { formatIqd, formatServiceDay } from "@/i18n/format";
+import { publicCottageAmenityName } from "@/i18n/public-cottage-amenities";
 import type { Locale } from "@/i18n/routing";
-import { ActionLink } from "./interaction-controls";
+import { ActionFeedback, ActionLink } from "./interaction-controls";
 
 const copy = {
   ar: {
@@ -19,6 +19,7 @@ const copy = {
     location: "الموقع التقريبي",
     view: "اعرض البيت",
     back: "تعديل البحث",
+    changeSearch: "غيّر البحث",
     fullDay: "اليوم الكامل",
     nextDay: "اليوم التالي",
     available: "متاح",
@@ -33,6 +34,18 @@ const copy = {
     next: "النتائج التالية",
     first: "العودة إلى أول النتائج",
     pastEnd: "لا توجد بيوت أخرى لهذا البحث.",
+    searchTitle: "بحثك",
+    searchFrom: "من تاريخ",
+    searchTo: "إلى تاريخ",
+    guests: "عدد الضيوف",
+    filters: "مرشحات فترة الحجز",
+    shift: "الفترة",
+    governorate: "المحافظة",
+    area: "المنطقة التقريبية",
+    amenities: "المرافق",
+    capacity: "السعة",
+    capacityGuests: "ضيوف",
+    matchedAmenities: "المرافق التي بحثت عنها",
   },
   ckb: {
     title: "کۆتێجە بەردەستەکان",
@@ -42,6 +55,7 @@ const copy = {
     location: "شوێنی نزیکەیی",
     view: "کۆتێجەکە ببینە",
     back: "گەڕانەکە بگۆڕە",
+    changeSearch: "گەڕان بگۆڕە",
     fullDay: "پاکێجی ڕۆژی تەواو",
     nextDay: "ڕۆژی دواتر",
     available: "بەردەستە",
@@ -57,6 +71,18 @@ const copy = {
     next: "ئەنجامەکانی دواتر",
     first: "گەڕانەوە بۆ یەکەم ئەنجامەکان",
     pastEnd: "هیچ کۆتێجێکی تر بۆ ئەم گەڕانە نییە.",
+    searchTitle: "گەڕانەکەت",
+    searchFrom: "لە بەرواری",
+    searchTo: "تا بەرواری",
+    guests: "ژمارەی میوان",
+    filters: "پاڵاوتەکانی ماوەی حجز",
+    shift: "شیفت",
+    governorate: "پارێزگا",
+    area: "ناوچەی نزیکەیی",
+    amenities: "خزمەتگوزارییەکان",
+    capacity: "گنجایش",
+    capacityGuests: "میوان",
+    matchedAmenities: "ئەو خزمەتگوزارییانەی بۆیان گەڕایت",
   },
   en: {
     title: "Available cottages",
@@ -66,6 +92,7 @@ const copy = {
     location: "Approximate location",
     view: "View cottage",
     back: "Change search",
+    changeSearch: "Change search",
     fullDay: "Full-day bundle",
     nextDay: "next day",
     available: "Available",
@@ -81,6 +108,18 @@ const copy = {
     next: "Next results",
     first: "Back to first results",
     pastEnd: "There are no more cottages for this search.",
+    searchTitle: "Your search",
+    searchFrom: "From Service Day",
+    searchTo: "To Service Day",
+    guests: "Guests",
+    filters: "Booking Period filters",
+    shift: "Shift",
+    governorate: "Governorate",
+    area: "Approximate area",
+    amenities: "Amenities",
+    capacity: "Capacity",
+    capacityGuests: "guests",
+    matchedAmenities: "Amenities you searched for",
   },
 } as const;
 
@@ -100,55 +139,152 @@ export function PublicCottageResults({
   const messages = copy[locale];
   const continued = after !== null;
   return (
-    <main className="results-page">
-      <header className="results-header">
-        <Link href={`/${locale}`}>{messages.back}</Link>
+    <main className="results-page page">
+      <header className="page-heading">
+        <ActionLink kind="text" href={`/${locale}`}>
+          {messages.back}
+        </ActionLink>
+        <h1 className="page-title">{messages.title}</h1>
       </header>
-      <section className="results-intro">
-        <p>RentCottage</p>
-        <h1>{messages.title}</h1>
+      <section
+        className="search-summary"
+        aria-labelledby="search-summary-heading"
+      >
+        <h2 id="search-summary-heading" className="section-title">
+          {messages.searchTitle}
+        </h2>
+        <dl className="fact-list">
+          <div>
+            <dt>{messages.searchFrom}</dt>
+            <dd>{formatServiceDay(query.from, locale, { weekday: true })}</dd>
+          </div>
+          <div>
+            <dt>{messages.searchTo}</dt>
+            <dd>{formatServiceDay(query.to, locale, { weekday: true })}</dd>
+          </div>
+          <div>
+            <dt>{messages.guests}</dt>
+            <dd>{query.guests}</dd>
+          </div>
+          {query.selections.length > 0 ? (
+            <div>
+              <dt>{messages.filters}</dt>
+              <dd>
+                {query.selections.map((selection) => (
+                  <span
+                    key={`${selection.serviceDay}-${selection.kind === "full-day" ? "full" : selection.position}`}
+                  >
+                    <bdi>
+                      {formatServiceDay(selection.serviceDay, locale, {
+                        weekday: true,
+                      })}
+                    </bdi>
+                    :{" "}
+                    {selection.kind === "full-day"
+                      ? messages.fullDay
+                      : `${messages.shift} ${selection.position}`}
+                  </span>
+                ))}
+              </dd>
+            </div>
+          ) : null}
+          {query.governorate ? (
+            <div>
+              <dt>{messages.governorate}</dt>
+              <dd>
+                <bdi>{query.governorate}</bdi>
+              </dd>
+            </div>
+          ) : null}
+          {query.area ? (
+            <div>
+              <dt>{messages.area}</dt>
+              <dd>
+                <bdi>{query.area}</bdi>
+              </dd>
+            </div>
+          ) : null}
+          {query.amenities.length > 0 ? (
+            <div>
+              <dt>{messages.amenities}</dt>
+              <dd>
+                {query.amenities.map((amenity) => (
+                  <span key={amenity}>
+                    {publicCottageAmenityName(locale, amenity)}
+                  </span>
+                ))}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
       </section>
       {result.status === "unavailable" ? (
-        <p role="alert" className="empty-results">
-          {messages.unavailable}
-        </p>
+        <ActionFeedback kind="error">{messages.unavailable}</ActionFeedback>
       ) : result.cottages.length === 0 ? (
-        <p className="empty-results">
-          {continued ? messages.pastEnd : messages.empty}
-        </p>
+        <div className="empty-state">
+          <p>{continued ? messages.pastEnd : messages.empty}</p>
+          <ActionLink kind="secondary" width="content" href={`/${locale}`}>
+            {messages.changeSearch}
+          </ActionLink>
+        </div>
       ) : (
-        <section className="results-grid" aria-label={messages.title}>
+        <section className="results-list" aria-label={messages.title}>
           {result.cottages.map((cottage) => {
             const fromPrice = fromPriceIqd(cottage.inventory);
+            const matchedAmenities = query.amenities.filter((amenity) =>
+              cottage.amenities.includes(amenity),
+            );
             return (
               <article key={cottage.slug}>
-                {cottage.mediaUrls[0] ? (
-                  <div className="result-image">
+                <div className="result-image">
+                  {cottage.mediaUrls[0] ? (
                     <Image
                       src={cottage.mediaUrls[0]}
                       alt={cottage.name}
                       fill
-                      sizes="(min-width: 900px) 33vw, 100vw"
+                      sizes="(min-width: 40rem) 18rem, 100vw"
                     />
-                  </div>
-                ) : null}
+                  ) : null}
+                </div>
                 <div className="result-content">
                   <h2>{cottage.name}</h2>
                   <p>
                     {messages.location}: {cottage.approximateLocation},{" "}
                     {cottage.governorate}
                   </p>
-                  {fromPrice === null ? (
-                    <p className="result-from-price">{messages.noPrice}</p>
-                  ) : (
-                    <>
-                      <p className="result-from-price">
-                        {messages.from} <b>{formatIqd(fromPrice, locale)}</b>
-                      </p>
-                      <p>{messages.fromNote}</p>
-                    </>
-                  )}
-                  <p className="result-prices-note">{messages.prices}</p>
+                  <dl className="fact-list">
+                    <div>
+                      <dt>{messages.capacity}</dt>
+                      <dd>
+                        {cottage.capacity} {messages.capacityGuests}
+                      </dd>
+                    </div>
+                    {matchedAmenities.length > 0 ? (
+                      <div>
+                        <dt>{messages.matchedAmenities}</dt>
+                        <dd>
+                          {matchedAmenities.map((amenity) => (
+                            <span key={amenity}>
+                              {publicCottageAmenityName(locale, amenity)}
+                            </span>
+                          ))}
+                        </dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                  <div className="result-price">
+                    {fromPrice === null ? (
+                      <p className="result-from-price">{messages.noPrice}</p>
+                    ) : (
+                      <>
+                        <p className="result-from-price">
+                          {messages.from} <b>{formatIqd(fromPrice, locale)}</b>
+                        </p>
+                        <p>{messages.fromNote}</p>
+                      </>
+                    )}
+                  </div>
+                  <p>{messages.prices}</p>
                   {[
                     ...new Set(
                       cottage.inventory.map((unit) => unit.serviceDay),
@@ -196,15 +332,19 @@ export function PublicCottageResults({
                                   selection.kind === unit.kind &&
                                   (selection.kind === "full-day" ||
                                     selection.position === unit.position),
-                              ) && <span>{messages.selected}</span>}
+                              ) && (
+                                <span className="status-badge">
+                                  {messages.selected}
+                                </span>
+                              )}
                             </li>
                           ))}
                       </ul>
                     </section>
                   ))}
                   <ActionLink
-                    kind="secondary"
-                    width="full"
+                    kind="primary"
+                    width="content"
                     href={`/${locale}/cottages/${cottage.slug}?${serializeCottageResultsQuery(query, after)}`}
                   >
                     {messages.view}

@@ -29,36 +29,44 @@ export function MessagingInbox({
       {items.length === 0 ? (
         <p>{copy.empty}</p>
       ) : (
-        <ol className="messaging-inbox-list">
+        <ul className="list-rows">
           {items.map((item) => (
             <li key={item.conversationId}>
               <Link
+                className="list-row-title"
                 href={`/${locale}/messages/${item.conversationId}${contextQuery ? `?${contextQuery}` : ""}`}
               >
-                <strong>{item.cottage.name}</strong>
+                {item.cottage.name}
+              </Link>
+              <p className="list-row-meta">
                 {item.booking ? (
-                  <span>
-                    {item.booking.bookingRequestReference} ·{" "}
-                    {
-                      bookingRequestDisplayStatusMessages[locale][
-                        item.booking.paymentStatus ?? item.booking.requestStatus
-                      ]
-                    }
-                  </span>
+                  <>
+                    <bdi>{item.booking.bookingRequestReference}</bdi>
+                    <span className="status-badge">
+                      {
+                        bookingRequestDisplayStatusMessages[locale][
+                          item.booking.paymentStatus ??
+                            item.booking.requestStatus
+                        ]
+                      }
+                    </span>
+                  </>
                 ) : null}
-                <span
+                <time dateTime={item.activityAt}>
+                  {formatIraqDateTime(item.activityAt, locale)}
+                </time>
+              </p>
+              <p className="list-row-meta">
+                <bdi
                   lang={item.preview?.originalLanguage ?? locale}
                   dir={directionFor(item.preview?.originalLanguage ?? locale)}
                 >
                   {item.preview?.originalBody ?? copy.emptyMessages}
-                </span>
-                <time dateTime={item.activityAt}>
-                  {formatIraqDateTime(item.activityAt, locale)}
-                </time>
-              </Link>
+                </bdi>
+              </p>
             </li>
           ))}
-        </ol>
+        </ul>
       )}
       {nextCursor ? (
         <Link

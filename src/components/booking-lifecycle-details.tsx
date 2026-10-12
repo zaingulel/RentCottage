@@ -27,7 +27,7 @@ export function BookingLifecycleDetails({
   return (
     <section aria-label={c.title}>
       <header>
-        <h2>{c.title}</h2>
+        <h2 className="section-title">{c.title}</h2>
         <p>
           <strong>{c[lifecycle.status]}</strong>
         </p>
@@ -64,7 +64,7 @@ export function BookingLifecycleDetails({
           {eligibility.payoutPrerequisiteAvailable
             ? c.payoutReady
             : c.payoutPending}{" "}
-          <small>{c.payoutHelp}</small>
+          {c.payoutHelp}
         </p>
       )}
       {actorRole === "platform_administrator" ? (

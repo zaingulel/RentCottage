@@ -103,6 +103,13 @@ export function PublicCustomerReviews({
               <header className={styles.cardHeader}>
                 <strong>{copy.customer}</strong>
                 <span>
+                  <span className={styles.stars} aria-hidden="true">
+                    {[1, 2, 3, 4, 5]
+                      .map((position) =>
+                        position <= review.rating ? "★" : "☆",
+                      )
+                      .join("")}
+                  </span>{" "}
                   {copy.rating}: {review.rating} / 5 {copy.ratingValue}
                 </span>
               </header>

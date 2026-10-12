@@ -714,6 +714,7 @@ test("shows varied demo results and filters across desktop and mobile languages"
       const card = cards.filter({
         has: page.getByRole("heading", { level: 2, name, exact: true }),
       });
+      await card.scrollIntoViewIfNeeded();
       await expect(
         card.getByRole("heading", { level: 2, name, exact: true }),
       ).toBeVisible();
@@ -1113,13 +1114,6 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     const viewCottage = publicCottage.getByRole("link", {
       name: "View cottage",
     });
-    const [viewCottageBox, cottageCardBox] = await Promise.all([
-      viewCottage.boundingBox(),
-      publicCottage.boundingBox(),
-    ]);
-    expect(viewCottageBox).not.toBeNull();
-    expect(cottageCardBox).not.toBeNull();
-    expect(viewCottageBox!.width).toBeGreaterThan(cottageCardBox!.width * 0.8);
     await viewCottage.click();
     await expectScene(page.getByRole("heading", { name: demo.cottageName }));
     await expectDemoImage(

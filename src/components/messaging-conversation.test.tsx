@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -77,6 +77,15 @@ describe("Messaging conversation", () => {
     expect(
       screen.queryByText(/Fictional local-test translation/),
     ).not.toBeInTheDocument();
+  });
+
+  it("names the original language of a message instead of its code", () => {
+    render(<MessagingConversation locale="en" conversation={conversation} />);
+    const sourceLine = within(
+      screen.getByRole("list", { name: "Messages" }),
+    ).getByText(/Original language/);
+    expect(sourceLine).toHaveTextContent("Original language: العربية");
+    expect(sourceLine).not.toHaveTextContent("AR");
   });
 
   it("keeps validated stay context through booking, inbox, paging, and language links", () => {

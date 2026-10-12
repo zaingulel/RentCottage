@@ -231,6 +231,59 @@ describe("retained cancellation and refund details", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByTestId("verified-refund")).toBeInTheDocument();
   });
+  it("hides the zero returned block from a participant until a cancellation or refund exists", () => {
+    const nothingReturned = { ...financial, refunds: [] };
+    const customer = render(
+      <BookingFinancialDetails
+        locale="en"
+        view={{
+          ...nothingReturned,
+          actorRole: "customer",
+          ownerEarnings: undefined,
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("verified-refund")).not.toBeInTheDocument();
+    expect(screen.queryByText("Returned to customer")).not.toBeInTheDocument();
+    customer.unmount();
+    const owner = render(
+      <BookingFinancialDetails locale="en" view={nothingReturned} />,
+    );
+    expect(screen.queryByTestId("verified-refund")).not.toBeInTheDocument();
+    expect(screen.queryByText("Returned to customer")).not.toBeInTheDocument();
+    owner.unmount();
+    const administrator = render(
+      <BookingFinancialDetails
+        locale="en"
+        view={{
+          ...nothingReturned,
+          actorRole: "platform_administrator",
+          ownerEarnings: undefined,
+        }}
+      />,
+    );
+    expect(
+      within(screen.getByTestId("verified-refund")).getAllByText("IQD 0"),
+    ).toHaveLength(3);
+    administrator.unmount();
+    render(
+      <BookingFinancialDetails
+        locale="en"
+        view={{
+          ...nothingReturned,
+          actorRole: "customer",
+          ownerEarnings: undefined,
+          cancellation: {
+            occurredAt: "2100-12-02T12:00:00Z",
+            obligation: zero,
+          },
+        }}
+      />,
+    );
+    const cancelled = screen.getByTestId("verified-refund");
+    expect(cancelled).toHaveTextContent("Returned to customer");
+    expect(within(cancelled).getAllByText("IQD 0")).toHaveLength(3);
+  });
   it.each([
     [
       "en",

@@ -126,14 +126,13 @@ A stylesheet may write these as literals:
   - `.retreat-copy { padding-block: 11rem 8.5rem }`
   - `.retreat-copy { padding-block-end: 7.5rem }`
   - `.retreat-search { margin-block-start: -4rem }`
-- Six display heading size declarations larger than the largest step. Each stays until its screen is moved onto the
+- Five display heading size declarations larger than the largest step. Each stays until its screen is moved onto the
   page template, when a page title takes the style under Page template and its entry is removed here; a heading
   that is not a page title, as the home page hero headline and section headings are, keeps its entry until a rule
   in this document replaces it:
   - `.retreat-copy h1 { font-size: clamp(2.5rem, 6vw, 4.4rem) }`
   - `.retreat-copy h1 { font-size: clamp(2.25rem, 12vw, 3.3rem) }`
   - `.results-intro h1 { font-size: clamp(2.6rem, 6vw, 4.5rem) }`
-  - `.profile-heading h1 { font-size: clamp(2.5rem, 6vw, 4rem) }`
   - `.access-required-card h1 { font-size: clamp(2.2rem, 6vw, 3.5rem) }`
   - `.trusted-copy h2 { font-size: clamp(2rem, 4vw, 3rem) }`
 
@@ -161,9 +160,13 @@ Anything else is a token.
   Sorani, whose letters carry marks above and below the line. It has no margin of its own; the block it sits in
   sets the space around it. It starts at the same inline edge as the content it titles, and a long title wraps
   onto further lines and is never clipped or shortened.
-- A page may put one small label above its title. It is the results page's label (`.results-intro p`):
-  `--font-size-1`, bold, in `--ink-accent`, with the title `--space-1` below it. No page on the template has one yet;
-  the first that does moves that rule's declarations to a shared `page-label` class, so there is one label style.
+- Page heading: `header.page-heading` opens a page on the template. It holds, top to bottom, a back link as
+  `ActionLink kind="text"`, the page title, and an optional plain `p` in `--muted` with no margin. Its items start
+  at the same inline edge, `--space-2` apart, and the block has `--space-5` below it.
+- A page may put one small label above its title. Its style is the `.results-intro p` rule, which only the
+  not-found screen still uses as a label: `--font-size-1`, bold, in `--ink-accent`, with the title `--space-1`
+  below it. No page on the template carries a label; the first that does moves that rule's declarations to a
+  shared `page-label` class, so there is one label style.
 - A page that is not on the template keeps its own width and heading rules until its screen is moved onto it.
 
 ## Component patterns
@@ -239,8 +242,11 @@ Anything else is a token.
   `fieldset`/`legend` per Service Day with `.booking-period-options` and regular `ActionButton` toggles;
   `aria-pressed` exposes the selection. Disable the fieldset and onward actions during URL navigation.
   Missing choices are corrected only through an explicit `ActionButton`; changed availability uses
-  `ActionFeedback`. Results reuse `.result-shifts` inside named `.result-service-day` groups, with individual
-  price and availability text. Times use `<bdi dir="ltr">` in every locale.
+  `ActionFeedback`. Results reuse `.result-shifts` inside named `.result-service-day` groups. Each option there is a
+  row of two aligned lines: its name over its time at the start edge, and its price over its availability text at
+  the end edge, with a selected filter's `span.status-badge` on its own line under the row. The picker on the
+  cottage page uses the same row, and shows the state text only on an option that cannot be chosen. Times use
+  `<bdi dir="ltr">` in every locale.
 - Progress steps: `BookingRequestProgress` in
   [booking-request-progress.tsx](../src/components/booking-request-progress.tsx) renders an
   `ol.booking-request-progress` with `role="list"`, named by `aria-label`, with one `li` per step carrying
@@ -273,7 +279,10 @@ its own; the block it sits in sets the space around it.
 - Fact list: `dl.fact-list`, with one `div` per fact holding a `dt` and its `dd`, shows the labelled details of one
   record. The label is in `--muted` and sits in a column beside its value, with `--space-3` between them and
   `--space-4` between facts; at the `phone` breakpoint the label stacks above its value. A value with several
-  lines puts each in a `span`. A fact list never carries the record's status.
+  lines puts each in a `span`. A fact list never carries the record's status. The search summary on results,
+  `section.search-summary`, flows its facts in columns at least `18rem` wide, with `--space-3` between rows and
+  `--space-5` between columns, so they share a line on desktop and stack in one column on a phone; the fact list in
+  a result row is at `--font-size-2` with `--space-1` between facts.
 - List row: `ul.list-rows` shows a list of a person's records, one `li` per record. Each is a bordered row, with a
   `1px` `--line` border, `--radius-card` corners and `--space-3` between rows. A row has exactly one link,
   `a.list-row-title`, which holds only the record's name in bold, spans the row's width and is at least `2.75rem`
@@ -283,6 +292,7 @@ its own; the block it sits in sets the space around it.
 - Status badge: `span.status-badge` is the compact status of one item in a list row or card. Its text is the
   translated status label, so the status never depends on colour. It is a pill on `--status-neutral-bg` with bold
   `--ink` text at `--font-size-1`. It is never the page-level status.
+- Rating stars: the `span.stars` beside a published review's rating is decorative and hidden from assistive technology, so the rating text carries the meaning.
 - Status banner: `p.status-banner` is the page-level status of a record page. It sits directly under the page
   title, at most one per page, and keeps `role="status"` and `aria-live="polite"`. It is a block on
   `--status-neutral-bg` with `--radius-card` corners, holding the status label in bold `--green`, followed by one

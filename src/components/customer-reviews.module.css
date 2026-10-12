@@ -9,6 +9,10 @@
   overflow-wrap: anywhere;
 }
 
+.section > h2 {
+  margin: 0;
+}
+
 .page {
   display: grid;
   gap: var(--space-5);
@@ -46,6 +50,10 @@
   flex-wrap: wrap;
   justify-content: space-between;
   gap: var(--space-3);
+}
+
+.stars {
+  color: var(--ink-accent);
 }
 
 .card small {

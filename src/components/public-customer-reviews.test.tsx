@@ -95,6 +95,41 @@ describe("PublicCustomerReviews", () => {
     },
   );
 
+  it("shows decorative stars beside the unchanged rating text", () => {
+    render(
+      <PublicCustomerReviews
+        locale="en"
+        publicSlug={publicSlug}
+        translationAccess="none"
+        result={{
+          status: "success",
+          items: [
+            {
+              reviewId,
+              rating: 4,
+              originalLanguage: "en",
+              originalBody: "A calm place",
+              submittedAt: "2026-09-21T12:00:00.000Z",
+              ownerReply: null,
+              translations: [],
+            },
+          ],
+          nextCursor: null,
+        }}
+      />,
+    );
+    const review = screen.getByRole("article");
+    expect(within(review).getByText("★★★★☆")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    expect(
+      within(review).getByText(
+        `${customerReviewMessages.en.rating}: 4 / 5 ${customerReviewMessages.en.ratingValue}`,
+      ),
+    ).toBeVisible();
+  });
+
   it.each([
     ["en", "Cottage Owner reply"],
     ["ar", "رد مالك البيت"],

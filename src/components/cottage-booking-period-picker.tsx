@@ -24,7 +24,6 @@ const copy = {
     title: "Choose your Booking Period",
     fullDay: "Full-day bundle",
     nextDay: "next day",
-    available: "Available",
     unavailable: "Unavailable",
     noPrice: "Price unavailable",
     prices:
@@ -41,7 +40,6 @@ const copy = {
     title: "اختر فترة الحجز",
     fullDay: "اليوم الكامل",
     nextDay: "اليوم التالي",
-    available: "متاح",
     unavailable: "غير متاح",
     noPrice: "السعر غير متاح",
     prices: "الأسعار لكل خيار. يشمل عرض السعر الدقيق رسوم خدمة الحجز.",
@@ -56,7 +54,6 @@ const copy = {
     title: "ماوەی حجزەکەت هەڵبژێرە",
     fullDay: "پاکێجی ڕۆژی تەواو",
     nextDay: "ڕۆژی دواتر",
-    available: "بەردەستە",
     unavailable: "بەردەست نییە",
     noPrice: "نرخ بەردەست نییە",
     prices:
@@ -216,11 +213,7 @@ export function CottageBookingPeriodPicker({
                         ? messages.noPrice
                         : formatIqd(unit.priceIqd, locale)}
                     </b>
-                    <span>
-                      {unit.available
-                        ? messages.available
-                        : messages.unavailable}
-                    </span>
+                    {!unit.available && <span>{messages.unavailable}</span>}
                   </li>
                 );
               })}

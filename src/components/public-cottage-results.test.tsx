@@ -116,7 +116,9 @@ describe("PublicCottageResults", () => {
       "href",
       "/en/cottages/garden-house?from=2026-09-22&to=2026-09-23&guests=4",
     );
-    expect(view).toHaveClass("action-link", "action-secondary", "action-full");
+    expect(view).toHaveClass("action-link", "action-primary", "action-content");
+    expect(card.querySelector(".result-image")).toBeInTheDocument();
+    expect(within(card).queryByRole("img")).toBeNull();
     expect(screen.queryByRole("navigation")).toBeNull();
   });
 
@@ -415,24 +417,27 @@ describe("PublicCottageResults", () => {
   it("says when a continued page has nothing further", () => {
     const after = "cottage-0123456789abcdef0123456789abcdef";
     const search = "from=2026-09-22&to=2026-09-23&guests=4";
-    for (const [locale, pastEnd, empty, first] of [
+    for (const [locale, pastEnd, empty, first, changeSearch] of [
       [
         "en",
         "There are no more cottages for this search.",
         "No cottage matches every requested Service Day and selected filter.",
         "Back to first results",
+        "Change search",
       ],
       [
         "ar",
         "لا توجد بيوت أخرى لهذا البحث.",
         "لا يوجد بيت يطابق كل يوم مطلوب وجميع المرشحات المحددة.",
         "العودة إلى أول النتائج",
+        "غيّر البحث",
       ],
       [
         "ckb",
         "هیچ کۆتێجێکی تر بۆ ئەم گەڕانە نییە.",
         "هیچ کۆتێجێک لەگەڵ هەموو ڕۆژە داواکراوەکان و پاڵاوتە دیاریکراوەکان ناگونجێت.",
         "گەڕانەوە بۆ یەکەم ئەنجامەکان",
+        "گەڕان بگۆڕە",
       ],
     ] as const) {
       const { unmount } = render(
@@ -444,7 +449,13 @@ describe("PublicCottageResults", () => {
           after={after}
         />,
       );
-      expect(screen.getByText(pastEnd)).toHaveClass("empty-results");
+      const emptyState = screen.getByText(pastEnd).closest(".empty-state");
+      expect(emptyState).not.toBeNull();
+      expect(
+        within(emptyState as HTMLElement).getByRole("link", {
+          name: changeSearch,
+        }),
+      ).toHaveAttribute("href", `/${locale}`);
       expect(screen.queryByText(empty)).toBeNull();
       expect(screen.getByRole("link", { name: first })).toHaveAttribute(
         "href",
@@ -468,6 +479,334 @@ describe("PublicCottageResults", () => {
       ),
     ).toBeVisible();
     expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
+  it("offers Change search from the empty and past-the-end states in every launch language", () => {
+    for (const [locale, changeSearch] of [
+      ["en", "Change search"],
+      ["ar", "غيّر البحث"],
+      ["ckb", "گەڕان بگۆڕە"],
+    ] as const) {
+      for (const after of [null, "cottage-0123456789abcdef0123456789abcdef"]) {
+        const { container, unmount } = render(
+          <PublicCottageResults
+            locale={locale}
+            result={{ status: "loaded", cottages: [], nextAfter: null }}
+            query={query}
+            queryString="from=2026-09-22&to=2026-09-23&guests=4"
+            after={after}
+          />,
+        );
+        const emptyState = container.querySelector(".empty-state");
+        expect(emptyState).not.toBeNull();
+        expect(emptyState!.querySelectorAll("p")).toHaveLength(1);
+        const link = within(emptyState as HTMLElement).getByRole("link");
+        expect(link).toHaveTextContent(changeSearch);
+        expect(link).toHaveAttribute("href", `/${locale}`);
+        expect(link).toHaveClass("action-secondary", "action-content");
+        unmount();
+      }
+    }
+  });
+
+  describe("search summary and match explanation", () => {
+    const fullQuery = {
+      from: "2026-09-22",
+      to: "2026-09-23",
+      guests: 4,
+      selections: [
+        {
+          serviceDay: "2026-09-22",
+          kind: "shift" as const,
+          position: 1 as const,
+        },
+        { serviceDay: "2026-09-23", kind: "full-day" as const },
+      ],
+      governorate: "Erbil",
+      area: "Shaqlawa",
+      amenities: ["pool", "wifi"],
+    };
+    const facts = (list: Element) =>
+      [...list.querySelectorAll(":scope > div")].map((fact) => {
+        const lines = [...fact.querySelectorAll("dd > span")];
+        return [
+          fact.querySelector("dt")?.textContent,
+          ...(lines.length > 0
+            ? lines.map((line) => line.textContent)
+            : [fact.querySelector("dd")?.textContent]),
+        ];
+      });
+    const summaryFacts = (name: string) => {
+      const summary = screen.getByRole("region", { name });
+      expect(summary).toHaveClass("search-summary");
+      const list = summary.querySelector("dl.fact-list");
+      expect(list).not.toBeNull();
+      return facts(list!);
+    };
+
+    it("summarises the submitted search in every launch language", () => {
+      for (const [locale, title, expected] of [
+        [
+          "en",
+          "Your search",
+          [
+            ["From Service Day", "Tue, Sep 22"],
+            ["To Service Day", "Wed, Sep 23"],
+            ["Guests", "4"],
+            [
+              "Booking Period filters",
+              "Tue, Sep 22: Shift 1",
+              "Wed, Sep 23: Full-day bundle",
+            ],
+            ["Governorate", "Erbil"],
+            ["Approximate area", "Shaqlawa"],
+            ["Amenities", "Pool", "Wi-Fi"],
+          ],
+        ],
+        [
+          "ar",
+          "بحثك",
+          [
+            ["من تاريخ", "الثلاثاء، 22 أيلول"],
+            ["إلى تاريخ", "الأربعاء، 23 أيلول"],
+            ["عدد الضيوف", "4"],
+            [
+              "مرشحات فترة الحجز",
+              "الثلاثاء، 22 أيلول: الفترة 1",
+              "الأربعاء، 23 أيلول: اليوم الكامل",
+            ],
+            ["المحافظة", "Erbil"],
+            ["المنطقة التقريبية", "Shaqlawa"],
+            ["المرافق", "مسبح", "واي فاي"],
+          ],
+        ],
+        [
+          "ckb",
+          "گەڕانەکەت",
+          [
+            ["لە بەرواری", "سێشەممە، ٢٢ی ئەیلوول"],
+            ["تا بەرواری", "چوارشەممە، ٢٣ی ئەیلوول"],
+            ["ژمارەی میوان", "4"],
+            [
+              "پاڵاوتەکانی ماوەی حجز",
+              "سێشەممە، ٢٢ی ئەیلوول: شیفت 1",
+              "چوارشەممە، ٢٣ی ئەیلوول: پاکێجی ڕۆژی تەواو",
+            ],
+            ["پارێزگا", "Erbil"],
+            ["ناوچەی نزیکەیی", "Shaqlawa"],
+            ["خزمەتگوزارییەکان", "مەلەوانگە", "وایفای"],
+          ],
+        ],
+      ] as const) {
+        const { unmount } = render(
+          <PublicCottageResults
+            locale={locale}
+            result={{ status: "loaded", cottages: [cottage], nextAfter: null }}
+            query={fullQuery}
+            after={null}
+            queryString=""
+          />,
+        );
+        expect(summaryFacts(title)).toEqual(expected);
+        const summary = screen.getByRole("region", { name: title });
+        const heading = within(summary).getByRole("heading", {
+          level: 2,
+          name: title,
+        });
+        expect(heading).toHaveClass("section-title");
+        expect(summary.previousElementSibling).toHaveClass("page-heading");
+        expect(summary.nextElementSibling).toHaveClass("results-list");
+        expect(within(summary).getByText("Erbil").tagName).toBe("BDI");
+        expect(within(summary).getByText("Shaqlawa").tagName).toBe("BDI");
+        expect(
+          within(summary)
+            .getAllByText(expected[0][1])
+            .map((date) => date.tagName),
+        ).toEqual(["DD", "BDI"]);
+        unmount();
+      }
+    });
+
+    it("shows the search summary in the empty, past-the-end and load-failure states", () => {
+      for (const [status, after, state] of [
+        [
+          "loaded",
+          null,
+          "No cottage matches every requested Service Day and selected filter.",
+        ],
+        [
+          "loaded",
+          "cottage-0123456789abcdef0123456789abcdef",
+          "There are no more cottages for this search.",
+        ],
+        [
+          "unavailable",
+          null,
+          "Cottages could not be loaded right now. Please try again.",
+        ],
+      ] as const) {
+        const { unmount } = render(
+          <PublicCottageResults
+            locale="en"
+            result={
+              status === "loaded"
+                ? { status, cottages: [], nextAfter: null }
+                : { status }
+            }
+            query={fullQuery}
+            after={after}
+            queryString=""
+          />,
+        );
+        expect(screen.getByText(state)).toBeVisible();
+        expect(summaryFacts("Your search")).toEqual([
+          ["From Service Day", "Tue, Sep 22"],
+          ["To Service Day", "Wed, Sep 23"],
+          ["Guests", "4"],
+          [
+            "Booking Period filters",
+            "Tue, Sep 22: Shift 1",
+            "Wed, Sep 23: Full-day bundle",
+          ],
+          ["Governorate", "Erbil"],
+          ["Approximate area", "Shaqlawa"],
+          ["Amenities", "Pool", "Wi-Fi"],
+        ]);
+        unmount();
+      }
+    });
+
+    it("leaves out the rows the search did not supply", () => {
+      render(
+        <PublicCottageResults
+          locale="en"
+          result={{ status: "loaded", cottages: [cottage], nextAfter: null }}
+          query={query}
+          after={null}
+          queryString=""
+        />,
+      );
+      expect(summaryFacts("Your search")).toEqual([
+        ["From Service Day", "Tue, Sep 22"],
+        ["To Service Day", "Wed, Sep 23"],
+        ["Guests", "4"],
+      ]);
+      expect(
+        within(screen.getByRole("article")).queryByText(
+          "Amenities you searched for",
+        ),
+      ).toBeNull();
+    });
+
+    it("explains a match by capacity and only the searched amenities the cottage has", () => {
+      const searched = { ...query, amenities: ["pool", "parking", "wifi"] };
+      const matching = render(
+        <PublicCottageResults
+          locale="en"
+          result={{
+            status: "loaded",
+            cottages: [
+              {
+                ...cottage,
+                name: "Hill House",
+                amenities: ["garden", "wifi", "pool"],
+              },
+            ],
+            nextAfter: null,
+          }}
+          query={searched}
+          after={null}
+          queryString=""
+        />,
+      );
+      const card = screen.getByRole("article");
+      const match = card.querySelector(".result-content > dl.fact-list");
+      expect(match).not.toBeNull();
+      expect(facts(match!)).toEqual([
+        ["Capacity", "5 guests"],
+        ["Amenities you searched for", "Pool", "Wi-Fi"],
+      ]);
+      expect(match!.previousElementSibling).toHaveTextContent(
+        "Approximate location: Shaqlawa, Erbil",
+      );
+      expect(card).not.toHaveTextContent("Garden");
+      expect(card).not.toHaveTextContent("Parking");
+      expect(card.querySelectorAll("li")).toHaveLength(
+        cottage.inventory.length,
+      );
+      matching.unmount();
+
+      render(
+        <PublicCottageResults
+          locale="en"
+          result={{
+            status: "loaded",
+            cottages: [{ ...cottage, amenities: ["garden"] }],
+            nextAfter: null,
+          }}
+          query={searched}
+          after={null}
+          queryString=""
+        />,
+      );
+      expect(
+        facts(
+          screen
+            .getByRole("article")
+            .querySelector(".result-content > dl.fact-list")!,
+        ),
+      ).toEqual([["Capacity", "5 guests"]]);
+    });
+
+    it("never shows a word for a total on results in any launch language", () => {
+      for (const [locale, title] of [
+        ["en", "Your search"],
+        ["ar", "بحثك"],
+        ["ckb", "گەڕانەکەت"],
+      ] as const) {
+        const { container, unmount } = render(
+          <PublicCottageResults
+            locale={locale}
+            result={{
+              status: "loaded",
+              cottages: [{ ...cottage, amenities: ["pool", "wifi"] }],
+              nextAfter: null,
+            }}
+            query={fullQuery}
+            after={null}
+            queryString=""
+          />,
+        );
+        expect(screen.getByRole("region", { name: title })).toBeVisible();
+        expect(screen.getByRole("article")).toBeVisible();
+        expect(container).not.toHaveTextContent(/total/i);
+        expect(container).not.toHaveTextContent("إجمالي");
+        expect(container).not.toHaveTextContent("کۆی گشتی");
+        unmount();
+      }
+    });
+
+    it("renders a hostile governorate and area as text", () => {
+      const hostile = '<img src=x onerror="alert(1)">';
+      render(
+        <PublicCottageResults
+          locale="en"
+          result={{ status: "loaded", cottages: [cottage], nextAfter: null }}
+          query={{ ...query, governorate: hostile, area: hostile }}
+          after={null}
+          queryString=""
+        />,
+      );
+      const summary = screen.getByRole("region", { name: "Your search" });
+      expect(summary.querySelector("img")).toBeNull();
+      const shown = within(summary).getAllByText(hostile);
+      expect(shown).toHaveLength(2);
+      for (const value of shown) expect(value.tagName).toBe("BDI");
+      expect(summaryFacts("Your search").slice(3)).toEqual([
+        ["Governorate", hostile],
+        ["Approximate area", hostile],
+      ]);
+    });
   });
 
   describe("cottage links keep the results position", () => {

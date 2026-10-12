@@ -95,7 +95,9 @@ export function CustomerReviewOwnerReply({
       className={styles.section}
       aria-labelledby="customer-review-owner-heading"
     >
-      <h2 id="customer-review-owner-heading">{copy.ownerTitle}</h2>
+      <h2 id="customer-review-owner-heading" className="section-title">
+        {copy.ownerTitle}
+      </h2>
       {initialResult.status === "access-required" ? (
         <p>{copy.ownerAccessRequired}</p>
       ) : null}

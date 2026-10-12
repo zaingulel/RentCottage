@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import {
   continuousFullDayAccess,
   type PublicBookingQuoteResult,
@@ -14,6 +12,7 @@ import { formatIqd, formatIraqDateTime } from "@/i18n/format";
 import { directionFor, type Locale } from "@/i18n/routing";
 
 import { BookingRequestForm } from "./booking-request-form";
+import { ActionLink } from "./interaction-controls";
 
 export function BookingQuoteView({
   locale,
@@ -47,9 +46,11 @@ export function BookingQuoteView({
   const requestQueryString = `${queryString}${selectedConversationId ? `&conversation=${selectedConversationId}` : ""}`;
   if (result.status !== "quoted") {
     return (
-      <main className="quote-page" dir={directionFor(locale)}>
-        <header className="results-header">
-          <Link href={cottageHref}>{copy.back}</Link>
+      <main className="results-page page" dir={directionFor(locale)}>
+        <header className="page-heading">
+          <ActionLink kind="text" href={cottageHref}>
+            {copy.back}
+          </ActionLink>
         </header>
         <p role="alert">
           {result.status === "selection-unavailable"
@@ -65,83 +66,68 @@ export function BookingQuoteView({
   }
   const accessRanges = continuousFullDayAccess(quote.items);
   return (
-    <main className="quote-page" dir={directionFor(locale)}>
-      <header className="results-header">
-        <Link href={cottageHref}>{copy.back}</Link>
-      </header>
-      <header className="quote-heading">
+    <main className="results-page page" dir={directionFor(locale)}>
+      <header className="page-heading">
+        <ActionLink kind="text" href={cottageHref}>
+          {copy.back}
+        </ActionLink>
+        <h1 className="page-title">{copy.title}</h1>
         <p>
           {copy.quoteFor} {quote.cottageName}
         </p>
-        <h1>{copy.title}</h1>
       </header>
       <div className="quote-layout">
-        <div>
-          <section
-            className="quote-card"
-            aria-labelledby="booking-period-heading"
-          >
-            <h2 id="booking-period-heading">{copy.bookingPeriod}</h2>
-            <ol className="quote-items">
-              {quote.items.map((item) => {
-                const itemLabel =
-                  item.kind === "full-day"
-                    ? copy.fullDay
-                    : copy.shifts[item.position];
-                return (
-                  <li
-                    key={`${item.serviceDay}-${item.kind}-${item.position ?? "full"}`}
-                    aria-label={`${itemLabel} ${item.serviceDay}`}
-                  >
-                    <div>
-                      <strong>{itemLabel}</strong>
-                      <span>
-                        {formatIraqDateTime(item.startsAt, locale)} –{" "}
-                        {formatIraqDateTime(item.endsAt, locale)}
-                        {item.crossesMidnight ? ` (${copy.nextDay})` : ""}
-                      </span>
-                    </div>
-                    <strong>{formatIqd(item.priceIqd, locale)}</strong>
+        <section
+          className="quote-card"
+          aria-labelledby="booking-period-heading"
+        >
+          <h2 id="booking-period-heading">{copy.bookingPeriod}</h2>
+          <ol className="quote-items">
+            {quote.items.map((item) => {
+              const itemLabel =
+                item.kind === "full-day"
+                  ? copy.fullDay
+                  : copy.shifts[item.position];
+              return (
+                <li
+                  key={`${item.serviceDay}-${item.kind}-${item.position ?? "full"}`}
+                  aria-label={`${itemLabel} ${item.serviceDay}`}
+                >
+                  <div>
+                    <strong>{itemLabel}</strong>
+                    <span>
+                      {formatIraqDateTime(item.startsAt, locale)} –{" "}
+                      {formatIraqDateTime(item.endsAt, locale)}
+                      {item.crossesMidnight ? ` (${copy.nextDay})` : ""}
+                    </span>
+                  </div>
+                  <strong>{formatIqd(item.priceIqd, locale)}</strong>
+                </li>
+              );
+            })}
+          </ol>
+          {accessRanges.length > 0 ? (
+            <div className="quote-access">
+              <h3>{copy.continuousAccess}</h3>
+              <ul>
+                {accessRanges.map((range) => (
+                  <li key={range.fromServiceDay}>
+                    {formatIraqDateTime(range.startsAt, locale)} –{" "}
+                    {formatIraqDateTime(range.endsAt, locale)}
                   </li>
-                );
-              })}
-            </ol>
-            {accessRanges.length > 0 ? (
-              <div className="quote-access">
-                <h3>{copy.continuousAccess}</h3>
-                <ul>
-                  {accessRanges.map((range) => (
-                    <li key={range.fromServiceDay}>
-                      {formatIraqDateTime(range.startsAt, locale)} –{" "}
-                      {formatIraqDateTime(range.endsAt, locale)}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </section>
-          <section className="quote-card">
-            <h2>{copy.houseRules}</h2>
-            <p className="quote-rules">{quote.houseRules}</p>
-          </section>
-          <section className="quote-card booking-terms-fixture">
-            <h2>{copy.marketplaceTerms}</h2>
-            <pre aria-label={copy.termsBody}>{quote.marketplaceTerms.body}</pre>
-          </section>
-          <BookingRequestForm
-            locale={locale}
-            quote={quote}
-            discoveryQuery={discoveryQuery}
-            idempotencyKey={idempotencyKey}
-            customerReady={customerReady}
-            customerAccessUnavailable={customerAccessUnavailable}
-            uiPolicy={bookingRequestUiPolicy}
-            acceptanceEvidence={bookingRequestAcceptanceEvidence}
-            enquiryOptions={enquiryOptions}
-            selectedConversationId={selectedConversationId}
-            returnTo={`/${locale}/request/${slug}?${requestQueryString}`}
-          />
-        </div>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </section>
+        <section className="quote-card">
+          <h2>{copy.houseRules}</h2>
+          <p className="quote-rules">{quote.houseRules}</p>
+        </section>
+        <section className="quote-card booking-terms-fixture">
+          <h2>{copy.marketplaceTerms}</h2>
+          <pre aria-label={copy.termsBody}>{quote.marketplaceTerms.body}</pre>
+        </section>
         <aside className="quote-card quote-totals">
           <dl>
             <div>
@@ -158,6 +144,19 @@ export function BookingQuoteView({
             </div>
           </dl>
         </aside>
+        <BookingRequestForm
+          locale={locale}
+          quote={quote}
+          discoveryQuery={discoveryQuery}
+          idempotencyKey={idempotencyKey}
+          customerReady={customerReady}
+          customerAccessUnavailable={customerAccessUnavailable}
+          uiPolicy={bookingRequestUiPolicy}
+          acceptanceEvidence={bookingRequestAcceptanceEvidence}
+          enquiryOptions={enquiryOptions}
+          selectedConversationId={selectedConversationId}
+          returnTo={`/${locale}/request/${slug}?${requestQueryString}`}
+        />
       </div>
     </main>
   );
