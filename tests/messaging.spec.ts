@@ -139,6 +139,9 @@ test("booking customer keeps the original while using fictional translations acr
     page.getByRole("heading", { name: fixture.bookingCottageName }),
   ).toBeVisible();
   await expect(
+    page.getByRole("heading", { name: fixture.bookingCottageName, level: 1 }),
+  ).toBeFocused();
+  await expect(
     page.getByText(
       "You can send contact details once this booking has a valid payment.",
     ),

@@ -1633,6 +1633,13 @@ test("a verified Customer double-submit creates one Pending request and one mini
                     exact: true,
                   }),
                 ).toBeVisible();
+                await expect(
+                  surface.getByRole("heading", {
+                    name: cottageName,
+                    exact: true,
+                    level: 1,
+                  }),
+                ).toBeFocused();
                 const conversationOpenRows =
                   await conversationOpenMeasurement.evaluate((measurement) => {
                     measurement.read("settled");

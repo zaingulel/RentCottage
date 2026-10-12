@@ -150,7 +150,14 @@ export function MessagingConversation({
           {copy.inbox}
         </Link>
         <p>{copy.conversation}</p>
-        <h1>{conversation.cottage.name}</h1>
+        <h1
+          id="messaging-conversation-title"
+          tabIndex={-1}
+          className="action-focus-target"
+        >
+          {conversation.cottage.name}
+        </h1>
+        <ActionFocusTarget targetId="messaging-conversation-title" navigation />
         {conversation.booking ? (
           <dl>
             <div>
