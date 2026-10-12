@@ -752,10 +752,7 @@ test.describe("retained cancellation and refund controls", () => {
       await form.getByLabel(messages.en.feeInput).fill("0.001");
       await form.getByRole("button", { name: messages.en.approve }).click();
       await expectAmount(
-        page
-          .getByRole("list", { name: messages.en.approved })
-          .locator("li")
-          .first(),
+        page.getByRole("list", { name: messages.en.approved }),
         messages.en.total,
         "IQD 20,000.001",
       );
