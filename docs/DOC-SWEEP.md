@@ -63,11 +63,14 @@ tree. Its parser packages are exact production pins in the base branch's `packag
 `htmlparser2@10.1.0`, `mdast-util-from-markdown@2.0.3`, `mdast-util-gfm@3.1.0`, and `micromark-extension-gfm@3.0.0`.
 Only a judged branch installs the base branch's entire locked production dependency tree, which includes those four
 exact parser pins, with `npm ci --omit=dev --ignore-scripts --no-audit --no-fund` from that base-owned lock. The
-workflow has read-only repository permission, disables persisted checkout credentials, and reads the pull request's
-commits only as Git objects. An unavailable npm registry therefore leaves the check failed and unavailable rather
-than bypassed; rerun it after the registry service is restored. That YAML is not enforcement proof. Before
-publication is authorized, the owner must separately configure a source-bound hosted `sweep-scope` protection with
-no administrator bypass and verify the setting live.
+checker also reads an optional table in this manual whose header cell is `Content-only Markdown`. This manual holds
+no such table and this repository carries nothing that table needs: a listed file must open with a frontmatter block
+and is judged with `nunjucks@3.2.4`, which is not pinned here, so the check refuses any listed file a sweep or
+triage branch edits. The workflow has read-only repository permission, disables persisted checkout credentials, and
+reads the pull request's commits only as Git objects. An unavailable npm registry therefore leaves the check failed
+and unavailable rather than bypassed; rerun it after the registry service is restored. That YAML is not enforcement
+proof. Before publication is authorized, the owner must separately configure a source-bound hosted `sweep-scope`
+protection with no administrator bypass and verify the setting live.
 
 The check closes the spellings on which it knows that parser and GitHub disagree, set out here; a disagreement not
 named here leaves it blind, and this sentence is the only control for it. Before it reads raw HTML, the check
