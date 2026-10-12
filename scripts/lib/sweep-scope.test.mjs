@@ -1,8 +1,7 @@
 // sweep-scope.test.mjs — the CI lane that owns the documentation sweep's scope.
 //
 // The sweep lands its own pull request, so no one reads it before it merges; these tests are the
-// evidence that the two rules docs/DOC-SWEEP.md used to leave to the owner's eyes now fail the
-// required check mechanically. The pure functions are tested on the real manual and on synthetic
+// evidence that scope, destination and optional content-only rules fail the required check mechanically. The pure functions are tested on the real manual and on synthetic
 // tables; the script is run end-to-end against a throwaway Git repository so a stubbed check, a
 // head-tree manual read, or a swallowed Git error each goes red here.
 
@@ -13,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  addedNetworkTokens, hiddenDestinationShapes, markupDifference, outOfScope, parseMayEdit, renderedDestinations,
+  addedNetworkTokens, hiddenDestinationShapes, markupDifference, outOfScope, parseContentOnlyMarkdown, parseMayEdit, renderedDestinations,
   tokenMatches, treeGrepArgs, treeGrepCandidates,
 } from './sweep-scope.mjs';
 import {
@@ -58,6 +57,28 @@ test('parseMayEdit takes only the left column and fails loud on a missing or emp
   assert.deepEqual(parseMayEdit(table), ['a.md', 'b/c.md']);
   assert.throws(() => parseMayEdit('# no table here'), /scope table/);
   assert.throws(() => parseMayEdit('| May edit | Never edit |\n|---|---|\n| | `d.md` |\n'), /empty/);
+});
+
+test('content-only Markdown policy is an exact optional base-owned table', () => {
+  const table = (rows) => `| Content-only Markdown |\n|---|\n${rows}\n`;
+  const allowed = ['a.md', 'b/c.md', 'page.html'];
+  assert.deepEqual(parseContentOnlyMarkdown('# Manual without opt-in\n', allowed), []);
+  assert.deepEqual(parseContentOnlyMarkdown(table('| `a.md` |\n| `b/c.md` |'), allowed), ['a.md', 'b/c.md']);
+  assert.deepEqual(parseContentOnlyMarkdown('| Content-only Markdown**example** |\n|---|\n| `a.md` |\n', allowed), []);
+  for (const malformed of [
+    table(''),
+    table('| |'),
+    table('| a.md |'),
+    table('| `a.md` and prose |'),
+    table('| `a.md`, `b/c.md` |'),
+    table('| `a.md` |\n| `a.md` |'),
+    table('| `missing.md` |'),
+    table('| `page.html` |'),
+    table('| `b/` |'),
+    table('| `*.md` |'),
+    table('| `a.md` |') + '\n' + table('| `b/c.md` |'),
+    '| Content-only Markdown | Extra |\n|---|---|\n| `a.md` | other |\n',
+  ]) assert.throws(() => parseContentOnlyMarkdown(malformed, allowed), /Content-only Markdown policy/, malformed);
 });
 
 test('outOfScope is an exact-path match, so a shared prefix never admits a never-edit path', () => {

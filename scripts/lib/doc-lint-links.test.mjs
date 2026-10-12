@@ -23,10 +23,11 @@ import {
   checkMarkdownLinks,
 } from './doc-lint-links.mjs';
 import { buildTrackedSet, pathExists, classifyDocLintPath, vendoredSkillNames } from './doc-lint.mjs';
-import { installs, presentRuntimes } from './runtimes.mjs';
+import { installs, presentRuntimes, sweepOmits, sweepOn } from './runtimes.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PRESENT = presentRuntimes(ROOT);
+const SWEEP = sweepOn(ROOT);
 
 test('checkMarkdownLinks: a dead relative Markdown link is reported with its file line and target', () => {
   const md = [
@@ -170,7 +171,7 @@ test('repo-pass: the real repo classified prose files have zero dead Markdown li
   const errors = [];
   for (const rel of scanFiles) {
     const text = fs.readFileSync(path.join(ROOT, rel), 'utf8');
-    const dead = checkMarkdownLinks(rel, text, (p) => pathExists(trackedSet, p) || !installs(PRESENT, p));
+    const dead = checkMarkdownLinks(rel, text, (p) => pathExists(trackedSet, p) || !installs(PRESENT, p) || sweepOmits(SWEEP, p));
     for (const d of dead) errors.push(`${rel}:${d.line} — dead link: ${d.target}`);
   }
 

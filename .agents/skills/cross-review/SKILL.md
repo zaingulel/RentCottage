@@ -19,7 +19,7 @@ them. The read-only sandbox has no network, so the prompt carries the card, body
 and the charter's own `gh` and web calls fail harmlessly. `<out>` is a directory outside the worktree.
 
 `<pending>` names every check and review still running or already scheduled for this branch, the full suite, a
-convergence check, `security-reviewer` or Greptile among them, or reads `none`. Every reviewer dispatch carries it,
+convergence check, `security-reviewer` or the external review among them, or reads `none`. Every reviewer dispatch carries it,
 a native dispatch of this family's own seat included, so the reviewer treats those as in hand and reports findings
 only on what is already settled.
 

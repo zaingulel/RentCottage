@@ -16,7 +16,7 @@
 //                                the key pass
 //   git push --force / -f    -> unsafe overwrite (--force-with-lease is ALLOWED)
 //   git filter-branch        -> history rewrite
-//   gh pr create (no --draft)-> skips the draft review before the metered suite
+//   gh pr create (no --draft)-> skips the draft stage before the metered suite
 //   gh pr merge              -> only `gh pr merge --auto --squash --delete-branch <number>`, alone
 //                                in its segment, is allowed: an admin token merges regardless of
 //                                checks, and --auto lets GitHub merge only once the required test
@@ -454,7 +454,7 @@ export function blockReason(cmd, checkout) {
       return "git filter-branch rewrites history";
     }
     if (GH_PR_CREATE.test(s) && !/(?:^|\s)(?:--draft|-d)(?:\s|$)/.test(s)) {
-      return "gh pr create without --draft skips the draft review: open it as a draft (--draft/-d) so Greptile reviews it before CI runs";
+      return "gh pr create without --draft skips the draft stage: open it as a draft (--draft/-d) so it is settled before CI runs";
     }
     // Auto-merge is GitHub's own wait-for-green: the agent's owner-authorised merge is queued, never
     // forced. The allow list runs these two prefixes unprompted, so only the exact forms pass.

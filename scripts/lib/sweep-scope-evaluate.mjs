@@ -1,9 +1,9 @@
 // sweep-scope-evaluate.mjs — Git reads and verdict formatting for one explicitly named checkout.
-// Parser and programmer exceptions propagate; only Git failures become nonzero verdicts.
+// Selected content parse failures become refusals; other parser and programmer exceptions propagate.
 
 import { spawnSync } from 'node:child_process';
 import {
-  addedNetworkTokens, hiddenDestinationShapes, markupDifference, outOfScope, parseMayEdit, renderedDestinations,
+  addedNetworkTokens, contentOnlyMarkdownDifference, hiddenDestinationShapes, markupDifference, outOfScope, parseContentOnlyMarkdown, parseMayEdit, renderedDestinations,
   tokenMatches, treeGrepArgs, treeGrepCandidates,
 } from './sweep-scope.mjs';
 
@@ -38,7 +38,9 @@ export function evaluateSweepScope(base, head, cwd) {
     const from = git('merge-base', base, head).trim();
     const at = base.slice(0, 12);
 
-    const mayEdit = parseMayEdit(git('show', `${base}:docs/DOC-SWEEP.md`));
+    const manual = git('show', `${base}:docs/DOC-SWEEP.md`);
+    const mayEdit = parseMayEdit(manual);
+    const contentOnly = new Set(parseContentOnlyMarkdown(manual, mayEdit));
     const failures = [];
 
     // The sweep repairs existing documents: a modification is the only change it may make. A status of
@@ -114,10 +116,16 @@ export function evaluateSweepScope(base, head, cwd) {
         failures.push(`${path} is in the may-edit column but is not Markdown, so the rendered half cannot judge it`);
         continue;
       }
+      const beforeMarkdown = git('show', `${base}:${path}`);
+      const afterMarkdown = git('show', `${head}:${path}`);
+      if (contentOnly.has(path)) {
+        const difference = contentOnlyMarkdownDifference(beforeMarkdown, afterMarkdown);
+        if (difference) failures.push(`${path}: content-only Markdown ${difference}`);
+      }
       // The set doubles as the record of what has been accounted for, so one destination rendered twice in
       // the after document is one report.
-      const rendered = new Set(renderedDestinations(git('show', `${base}:${path}`)).map((record) => record.text));
-      for (const record of renderedDestinations(git('show', `${head}:${path}`))) {
+      const rendered = new Set(renderedDestinations(beforeMarkdown).map((record) => record.text));
+      for (const record of renderedDestinations(afterMarkdown)) {
         // Nothing can vouch for a destination no reader can resolve, so it is refused however old it is.
         if (record.problem) {
           failures.push(`${path}: the rendered destination ${shown(record)} is refused (${record.problem})`);

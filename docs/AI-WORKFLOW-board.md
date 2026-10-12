@@ -68,7 +68,7 @@ board's own automation, so no agent moves a card for these cases:
 | Pull request linked to issue | Off | | Awaiting push and In review are `resume`'s calls, tied to push authorisation and the draft actually opening, not merely a link existing |
 | Pull request merged | Off | | The issue's own close, through the pull request's `Closes #` line, already triggers Item closed |
 | Item reopened | Off | | A reopen is the Returned quality signal the session records deliberately; an automatic reversion would fight the Awaiting-push/In-review sequencing |
-| Code changes requested | Off | | Review state is tracked by the `resume` skill's own evidence bar (fresh review, Greptile where required), not by the board |
+| Code changes requested | Off | | Review state is tracked by the `resume` skill's own evidence bar (fresh review, the external review where required), not by the board |
 | Code review approved | Off | | The same evidence bar as Code changes requested |
 | Auto-close issue | Off | | Closing an issue follows the pull request's `Closes #` line, never inferred from a card's column |
 

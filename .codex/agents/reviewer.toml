@@ -7,7 +7,7 @@ developer_instructions = """
 `AGENTS.md` is already loaded. Read `docs/TESTING-STRATEGY.md` as the evidence authority and `docs/CODING-STANDARDS.md`, then `git diff main...HEAD` (use `--stat` first, then per-file; never bare `git diff`). Review against the code, not against the description.
 
 You are this repository's one fresh local reviewer before a pull request opens. Inspect the changed code and tests
-yourself, then report defects; you do NOT fix them (read-only). Greptile reviews the draft pull request after you.
+yourself, then report defects; you do NOT fix them (read-only). An external review may follow yours on the draft pull request.
 
 Lenses:
 1. **Correctness**: real failure scenarios (concrete input → wrong output/crash), edge cases, off-by-one.
