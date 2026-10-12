@@ -7,6 +7,8 @@ import type {
   TextareaHTMLAttributes,
 } from "react";
 
+import { ActionFocusTarget } from "./action-button";
+
 export {
   ActionButton,
   ActionFocusTarget,
@@ -131,17 +133,22 @@ export function Disclosure({
 export function ActionFeedback({
   kind,
   children,
+  focusTargetId,
 }: {
   kind: "success" | "error";
   children: ReactNode;
+  focusTargetId?: string;
 }) {
   return (
     <p
       role={kind === "success" ? "status" : "alert"}
-      className={`action-feedback action-feedback-${kind}`}
+      id={focusTargetId}
+      tabIndex={focusTargetId ? -1 : undefined}
+      className={`action-feedback action-feedback-${kind}${focusTargetId ? " action-focus-target" : ""}`}
     >
       <span aria-hidden="true">{kind === "success" ? "✓" : "!"}</span>{" "}
       {children}
+      {focusTargetId && <ActionFocusTarget targetId={focusTargetId} />}
     </p>
   );
 }

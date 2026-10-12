@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
+  completePhone,
   refresh,
   replace,
   requestPhone,
@@ -10,6 +11,7 @@ const {
   verifyAdministrator,
   verifyPhone,
 } = vi.hoisted(() => ({
+  completePhone: vi.fn(),
   refresh: vi.fn(),
   replace: vi.fn(),
   requestPhone: vi.fn(),
@@ -23,6 +25,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/access/actions", () => ({
+  completePhoneAccess: completePhone,
   requestPhoneAccess: requestPhone,
   signInPlatformAdministrator: signInAdministrator,
   verifyPhoneAccess: verifyPhone,
@@ -34,6 +37,151 @@ import { PhoneAccessForm } from "./phone-access-form";
 
 describe("access forms", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("restores owned focus to the next local access step without reclaiming departed focus", async () => {
+    let resolveRequest!: (value: {
+      status: "code_sent" | "invalid_phone";
+    }) => void;
+    requestPhone.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    const phoneView = render(<PhoneAccessForm locale="en" />);
+
+    const phone = screen.getByLabelText("Iraqi phone number");
+    expect(phone).not.toHaveFocus();
+    await user.type(phone, "+9647500000000");
+    const send = screen.getByRole("button", {
+      name: "Send verification code",
+    });
+    await user.click(send);
+    expect(send).toBeDisabled();
+
+    await act(async () => resolveRequest({ status: "invalid_phone" }));
+    expect(send).toHaveFocus();
+    await user.click(send);
+    await act(async () => resolveRequest({ status: "code_sent" }));
+
+    expect(send).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Verification code")).toHaveFocus();
+    phoneView.unmount();
+
+    const departedView = render(<PhoneAccessForm locale="en" />);
+    const departedPhone = screen.getByLabelText("Iraqi phone number");
+    await user.type(departedPhone, "+9647500000000");
+    await user.click(
+      screen.getByRole("button", { name: "Send verification code" }),
+    );
+    await user.click(departedPhone);
+    expect(departedPhone).toHaveFocus();
+    await act(async () => resolveRequest({ status: "code_sent" }));
+    expect(departedPhone).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Verification code")).not.toHaveFocus();
+    expect(document.body).toHaveFocus();
+    departedView.unmount();
+
+    requestPhone.mockResolvedValue({ status: "code_sent" });
+    let resolveVerification!: (value: { status: "authenticated" }) => void;
+    let resolveCompletion!: (value: { status: "unavailable" }) => void;
+    verifyPhone.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveVerification = resolve;
+        }),
+    );
+    completePhone.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCompletion = resolve;
+        }),
+    );
+    for (const depart of [false, true]) {
+      const completionView = render(
+        <PhoneAccessForm locale="en" returnTo="/en/bookings" />,
+      );
+      await user.type(
+        screen.getByLabelText("Iraqi phone number"),
+        "+9647500000000",
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Send verification code" }),
+      );
+      const codeInput = screen.getByLabelText("Verification code");
+      await user.type(codeInput, "123456");
+      const verify = screen.getByRole("button", { name: "Verify" });
+      await user.click(verify);
+      if (depart) await user.click(codeInput);
+      await act(async () => resolveVerification({ status: "authenticated" }));
+      expect(codeInput).not.toBeInTheDocument();
+      expect(verify).not.toBeInTheDocument();
+      expect(completePhone).toHaveBeenLastCalledWith("en", "/en/bookings");
+      await act(async () => resolveCompletion({ status: "unavailable" }));
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Verification is unavailable. Try again.",
+      );
+      if (depart) {
+        expect(screen.getByLabelText("Verification code")).not.toHaveFocus();
+        expect(document.body).toHaveFocus();
+      } else {
+        expect(screen.getByLabelText("Verification code")).toHaveFocus();
+      }
+      completionView.unmount();
+    }
+
+    let resolveSignIn!: (value: {
+      status: "challenge_required";
+      factorId: string;
+      challengeId: string;
+    }) => void;
+    let resolveMfa!: (value: {
+      status: "challenge_expired" | "authenticated";
+    }) => void;
+    signInAdministrator.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSignIn = resolve;
+        }),
+    );
+    verifyAdministrator.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveMfa = resolve;
+        }),
+    );
+    render(<AdministratorAccessForm locale="en" />);
+    const email = screen.getByLabelText("Email");
+    expect(email).not.toHaveFocus();
+    await user.type(email, "admin@example.com");
+    await user.type(screen.getByLabelText("Password"), "password");
+    for (const status of ["challenge_expired", "authenticated"] as const) {
+      const continueButton = screen.getByRole("button", { name: "Continue" });
+      await user.click(continueButton);
+      await act(async () =>
+        resolveSignIn({
+          status: "challenge_required",
+          factorId: "factor-1",
+          challengeId: "challenge-1",
+        }),
+      );
+      expect(continueButton).not.toBeInTheDocument();
+      const authenticatorCode = screen.getByLabelText("Authenticator app code");
+      expect(authenticatorCode).toHaveFocus();
+      await user.type(authenticatorCode, "123456");
+      await user.click(screen.getByRole("button", { name: "Verify" }));
+      await act(async () => resolveMfa({ status }));
+      expect(authenticatorCode).not.toBeInTheDocument();
+      if (status === "challenge_expired") {
+        expect(screen.getByLabelText("Email")).toHaveFocus();
+      } else {
+        expect(screen.getByRole("status")).toHaveFocus();
+      }
+    }
+    expect(replace).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
 
   it.each(["ar", "ckb"] as const)(
     "keeps the %s phone-format example left to right",

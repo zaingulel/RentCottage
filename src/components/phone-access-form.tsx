@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import {
   completePhoneAccess,
@@ -13,6 +13,7 @@ import type { Locale } from "@/i18n/routing";
 import {
   ActionButton,
   ActionFeedback,
+  ActionFocusTarget,
   FormControl,
 } from "./interaction-controls";
 import { useExclusiveAction } from "./use-exclusive-action";
@@ -21,12 +22,16 @@ export function PhoneAccessForm({
   locale,
   returnTo,
   onVerified,
+  verifiedFocusTargetId,
 }: {
   locale: Locale;
   returnTo?: string;
   onVerified?: () => void;
+  verifiedFocusTargetId?: string;
 }) {
   const copy = accessMessages[locale];
+  const codeInputId = useId();
+  const verifiedFeedbackId = useId();
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [stage, setStage] = useState<"phone" | "code" | "verified">("phone");
@@ -122,6 +127,7 @@ export function PhoneAccessForm({
             type="button"
             pending={pending}
             onClick={sendCode}
+            focusSuccessorId={codeInputId}
           >
             {copy.sendCode}
           </ActionButton>
@@ -134,6 +140,7 @@ export function PhoneAccessForm({
             <FormControl
               kind="input"
               dir="ltr"
+              id={codeInputId}
               inputMode="numeric"
               maxLength={6}
               autoComplete="one-time-code"
@@ -147,6 +154,11 @@ export function PhoneAccessForm({
             type="button"
             pending={pending}
             onClick={verifyCode}
+            focusSuccessorId={
+              returnTo
+                ? codeInputId
+                : (verifiedFocusTargetId ?? verifiedFeedbackId)
+            }
           >
             {copy.verify}
           </ActionButton>
@@ -174,8 +186,21 @@ export function PhoneAccessForm({
           </ActionButton>
         </>
       )}
+      {stage === "code" && !pending && (
+        <ActionFocusTarget targetId={codeInputId} />
+      )}
       {message && (
-        <ActionFeedback kind={stage === "verified" ? "success" : "error"}>
+        <ActionFeedback
+          kind={stage === "verified" ? "success" : "error"}
+          focusTargetId={
+            stage === "verified" &&
+            !pending &&
+            !returnTo &&
+            !verifiedFocusTargetId
+              ? verifiedFeedbackId
+              : undefined
+          }
+        >
           {message}
         </ActionFeedback>
       )}

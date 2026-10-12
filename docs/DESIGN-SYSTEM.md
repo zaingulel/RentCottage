@@ -338,6 +338,10 @@ its own; the block it sits in sets the space around it.
 - A connected source that is transiently disabled keeps its focus intent; keep its target heading connected
   during pending and render the matching local `ActionFocusTarget` only when the caller's existing pending state
   or result says the action has settled, authorizing the named successor if the source remains disabled.
+- For a feedback successor, `ActionFeedback` accepts optional `focusTargetId?: string`. It applies the ID,
+  `tabIndex={-1}` and `action-focus-target` to its existing paragraph and includes the matching local
+  `ActionFocusTarget`, preserving the status or alert role and content. The prop is the readiness signal
+  described above: supply it only for a ready named successor and omit it while pending or for untargeted feedback.
 - Existing headings, status text and landmarks explicitly named as busy-action successors use `tabIndex={-1}`
   and `action-focus-target`. When focused, `.action-focus-target` has a `3px` outline in `var(--green)` with a
   `3px` offset. These non-control targets keep their existing semantics, copy and layout and stay outside the

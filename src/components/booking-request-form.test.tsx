@@ -1,12 +1,18 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { submitBookingRequest } = vi.hoisted(() => ({
+const { requestPhone, verifyPhone, submitBookingRequest } = vi.hoisted(() => ({
+  requestPhone: vi.fn(),
+  verifyPhone: vi.fn(),
   submitBookingRequest: vi.fn(),
 }));
 
 vi.mock("@/booking-request/actions", () => ({ submitBookingRequest }));
+vi.mock("@/access/actions", () => ({
+  requestPhoneAccess: requestPhone,
+  verifyPhoneAccess: verifyPhone,
+}));
 
 import type { PublicBookingQuote } from "@/booking-quote/booking-quote";
 import { bookingQuoteMessages } from "@/i18n/booking-quote-messages";
@@ -61,6 +67,70 @@ function policyProps(locale: Locale) {
 
 describe("Booking Request form", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it.each([false, true])(
+    "focuses the inline verification successor when insideCutoff is %s",
+    async (insideCutoff) => {
+      requestPhone.mockResolvedValue({ status: "code_sent" });
+      let resolveVerification!: (value: { status: "authenticated" }) => void;
+      verifyPhone.mockReturnValue(
+        new Promise((resolve) => {
+          resolveVerification = resolve;
+        }),
+      );
+      const user = userEvent.setup();
+      render(
+        <BookingRequestForm
+          customerReady={false}
+          discoveryQuery={{
+            from: "2099-08-21",
+            to: "2099-08-21",
+            guests: 4,
+            amenities: [],
+            selections: [
+              { serviceDay: "2099-08-21", kind: "shift", position: 2 },
+            ],
+          }}
+          idempotencyKey="11111111-1111-4111-8111-111111111111"
+          locale="en"
+          quote={quote}
+          {...policyProps("en")}
+          uiPolicy={{ ...uiPolicy, insideCutoff }}
+        />,
+      );
+      await user.type(
+        screen.getByLabelText("Iraqi phone number"),
+        "+9647500000000",
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Send verification code" }),
+      );
+      await user.type(screen.getByLabelText("Verification code"), "123456");
+      const verify = screen.getByRole("button", { name: "Verify" });
+      act(() => verify.focus());
+      await user.keyboard("{Enter}");
+      expect(verify).toBeDisabled();
+
+      await act(async () => resolveVerification({ status: "authenticated" }));
+
+      expect(verify).not.toBeInTheDocument();
+      if (insideCutoff) {
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          bookingRequestMessages.en.cutoffPassed,
+        );
+        expect(screen.getByRole("alert")).toHaveFocus();
+        expect(
+          screen.queryByLabelText("Customer name"),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole("button", { name: "Send Booking Request" }),
+        ).not.toBeInTheDocument();
+      } else {
+        expect(screen.getByLabelText("Customer name")).toHaveFocus();
+      }
+      expect(submitBookingRequest).not.toHaveBeenCalled();
+    },
+  );
 
   it("submits the accepted immutable intent and shows the Pending receipt", async () => {
     submitBookingRequest.mockResolvedValue({
