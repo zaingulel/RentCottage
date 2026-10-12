@@ -24,6 +24,7 @@ import styles from "./customer-reviews.module.css";
 import {
   ActionButton,
   ActionFeedback,
+  ActionFocusTarget,
   ActionLink,
   FormControl,
 } from "./interaction-controls";
@@ -73,8 +74,8 @@ function HideWithReason({
   const noticeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (notice?.kind === "error") noticeRef.current?.focus();
-  }, [notice]);
+    if (notice?.text === copy[keys.reasonRequired]) noticeRef.current?.focus();
+  }, [notice, copy, keys.reasonRequired]);
 
   function submit(formData: FormData) {
     const value = formData.get("reason");
@@ -149,11 +150,15 @@ function HideWithReason({
             size="regular"
             type="submit"
             pending={pending}
+            focusSuccessorId="administrator-reviews-heading"
           >
             {pending ? copy.hiding : copy[keys.submitLabel]}
           </ActionButton>
         </form>
       )}
+      {!pending ? (
+        <ActionFocusTarget targetId="administrator-reviews-heading" />
+      ) : null}
       {notice ? (
         <div
           ref={noticeRef}
@@ -317,7 +322,14 @@ export function CustomerReviewModeration({
   if (result.status === "invalid")
     return (
       <main className={styles.page}>
-        <h1>{copy.administratorTitle}</h1>
+        <h1
+          id="administrator-reviews-heading"
+          tabIndex={-1}
+          className="action-focus-target"
+        >
+          {copy.administratorTitle}
+        </h1>
+        <ActionFocusTarget targetId="administrator-reviews-heading" />
         <ReviewFilterForm locale={locale} filters={filters} />
         <ActionFeedback kind="error">
           {administratorQueuesMessages[locale].invalid}
@@ -327,7 +339,14 @@ export function CustomerReviewModeration({
   if (result.status !== "success")
     return (
       <main className={styles.page}>
-        <h1>{copy.administratorTitle}</h1>
+        <h1
+          id="administrator-reviews-heading"
+          tabIndex={-1}
+          className="action-focus-target"
+        >
+          {copy.administratorTitle}
+        </h1>
+        <ActionFocusTarget targetId="administrator-reviews-heading" />
         <p role={result.status === "unavailable" ? "alert" : undefined}>
           {result.status === "access-required"
             ? copy.administratorAccessRequired
@@ -347,7 +366,14 @@ export function CustomerReviewModeration({
     );
   return (
     <main className={styles.page}>
-      <h1>{copy.administratorTitle}</h1>
+      <h1
+        id="administrator-reviews-heading"
+        tabIndex={-1}
+        className="action-focus-target"
+      >
+        {copy.administratorTitle}
+      </h1>
+      <ActionFocusTarget targetId="administrator-reviews-heading" />
       <ActionLink
         kind="secondary"
         width="content"

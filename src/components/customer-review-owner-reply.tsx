@@ -17,6 +17,7 @@ import styles from "./customer-reviews.module.css";
 import {
   ActionButton,
   ActionFeedback,
+  ActionFocusTarget,
   FormControl,
 } from "./interaction-controls";
 import { useExclusiveAction } from "./use-exclusive-action";
@@ -95,9 +96,16 @@ export function CustomerReviewOwnerReply({
       className={styles.section}
       aria-labelledby="customer-review-owner-heading"
     >
-      <h2 id="customer-review-owner-heading" className="section-title">
+      <h2
+        id="customer-review-owner-heading"
+        tabIndex={-1}
+        className="section-title action-focus-target"
+      >
         {copy.ownerTitle}
       </h2>
+      {!pending ? (
+        <ActionFocusTarget targetId="customer-review-owner-heading" />
+      ) : null}
       {initialResult.status === "access-required" ? (
         <p>{copy.ownerAccessRequired}</p>
       ) : null}
@@ -185,6 +193,7 @@ export function CustomerReviewOwnerReply({
             width="content"
             type="submit"
             pending={pending}
+            focusSuccessorId="customer-review-owner-heading"
           >
             {pending ? copy.submitting : copy.replySubmit}
           </ActionButton>

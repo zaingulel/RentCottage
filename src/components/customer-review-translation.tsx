@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useId, useState } from "react";
 
 import {
   reportCustomerReviewTranslation,
@@ -14,7 +14,11 @@ import type { ReviewTranslationSubject } from "@/customer-review/review-translat
 import { customerReviewMessages } from "@/i18n/customer-review-messages";
 import { directionFor, type Locale } from "@/i18n/routing";
 
-import { ActionButton, ActionFeedback } from "./interaction-controls";
+import {
+  ActionButton,
+  ActionFeedback,
+  ActionFocusTarget,
+} from "./interaction-controls";
 import styles from "./customer-reviews.module.css";
 import { useExclusiveAction } from "./use-exclusive-action";
 
@@ -48,17 +52,7 @@ export function CustomerReviewTranslation({
   const [reported, setReported] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>();
   const { pending, run } = useExclusiveAction();
-  const actions = useRef<HTMLDivElement>(null);
-  const restoreFocus = useRef(false);
-
-  // A pending button is disabled and a reported one leaves the page, and either drops focus to the body.
-  useEffect(() => {
-    if (pending || !restoreFocus.current) return;
-    restoreFocus.current = false;
-    const active = document.activeElement;
-    if (active && active !== document.body && active.isConnected) return;
-    actions.current?.querySelector("button")?.focus();
-  }, [pending]);
+  const toggleId = useId();
 
   const current = shown ?? translation;
   const showingTranslation = current !== undefined && !showOriginal;
@@ -130,16 +124,9 @@ export function CustomerReviewTranslation({
         {showingTranslation ? current.translatedBody : originalBody}
       </p>
       {primary ? (
-        <div
-          ref={actions}
-          className={styles.translationActions}
-          onClickCapture={(event) => {
-            restoreFocus.current = event.currentTarget.contains(
-              document.activeElement,
-            );
-          }}
-        >
+        <div className={styles.translationActions}>
           <ActionButton
+            id={toggleId}
             kind="secondary"
             size="compact"
             type="button"
@@ -154,11 +141,13 @@ export function CustomerReviewTranslation({
               size="compact"
               type="button"
               pending={pending}
+              focusSuccessorId={toggleId}
               onClick={() => report(current.translationId)}
             >
               {copy.reportTranslation}
             </ActionButton>
           ) : null}
+          {!pending ? <ActionFocusTarget targetId={toggleId} /> : null}
         </div>
       ) : null}
       {feedback ? (

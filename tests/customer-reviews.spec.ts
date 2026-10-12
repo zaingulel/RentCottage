@@ -1064,17 +1064,18 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   );
   await hideReviewControl.press("Enter");
   await expect(review).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Customer review moderation", level: 1 }),
+  ).toBeFocused();
   const hideReviewRows = await hideReviewMeasurement.evaluate((measurement) => {
     measurement.read("settled");
     measurement.observer.disconnect();
     return measurement.rows;
   });
-  await test
-    .info()
-    .attach("focus-hideReview", {
-      body: JSON.stringify(hideReviewRows),
-      contentType: "application/json",
-    });
+  await test.info().attach("focus-hideReview", {
+    body: JSON.stringify(hideReviewRows),
+    contentType: "application/json",
+  });
   await hideReviewMeasurement.dispose();
   await hideReviewSource.dispose();
 
@@ -1339,6 +1340,13 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
       await expect(ownerReview).not.toContainText("Visible to visitors");
     };
     await expectPublishedReply();
+    await expect(
+      ownerReview.getByRole("heading", {
+        name: "Customer review",
+        exact: true,
+        level: 2,
+      }),
+    ).toBeFocused();
     await replyPublishMeasurement.evaluate((measurement) => {
       measurement.read("settled");
       measurement.observer.disconnect();
@@ -1499,6 +1507,9 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
       await replyTranslateArControl.press("Enter");
       await expect(reply.getByText(arabic.label)).toBeVisible();
       await expectText(reply.getByText(arabic.reply), "ar", "rtl");
+      await expect(
+        reply.getByRole("button", { name: arabic.viewOriginal, exact: true }),
+      ).toBeFocused();
       await replyTranslateArMeasurement.evaluate((measurement) => {
         measurement.read("settled");
         measurement.observer.disconnect();
@@ -1912,6 +1923,12 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     await expect(administratorReply.getByRole("status")).toContainText(
       "The reply was hidden.",
     );
+    await expect(
+      administratorPage.getByRole("heading", {
+        name: "Customer review moderation",
+        level: 1,
+      }),
+    ).toBeFocused();
     await replyHideMeasurement.evaluate((measurement) => {
       measurement.read("settled");
       measurement.observer.disconnect();

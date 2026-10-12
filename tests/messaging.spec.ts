@@ -225,6 +225,7 @@ test("booking customer keeps the original while using fictional translations acr
   await expect(message.locator("p[dir=rtl]")).toHaveText(
     "هل يمكننا استخدام الحديقة؟",
   );
+  await expect(sendEnControl).toBeFocused();
   await sendEnMeasurement.evaluate((measurement) => {
     measurement.read("settled");
     measurement.observer.disconnect();
@@ -288,6 +289,9 @@ test("booking customer keeps the original while using fictional translations acr
   await expect(message).toContainText(
     "Automatic translation · Fictional local-test translation",
   );
+  await expect(
+    message.getByRole("button", { name: "View original" }),
+  ).toBeFocused();
   await translateEnMeasurement.evaluate((measurement) => {
     measurement.read("settled");
     measurement.observer.disconnect();
@@ -353,6 +357,9 @@ test("booking customer keeps the original while using fictional translations acr
   await expect(message.getByRole("status")).toContainText(
     "Translation reported.",
   );
+  await expect(
+    message.getByRole("button", { name: "View translation" }),
+  ).toBeFocused();
   await reportEnMeasurement.evaluate((measurement) => {
     measurement.read("settled");
     measurement.observer.disconnect();
@@ -428,6 +435,7 @@ test("booking customer keeps the original while using fictional translations acr
   );
   await sendArControl.press("Enter");
   await expect(page.getByLabel("الرسالة", { exact: true })).toHaveValue("");
+  await expect(sendArControl).toBeFocused();
   await sendArMeasurement.evaluate((measurement) => {
     measurement.read("settled");
     measurement.observer.disconnect();

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -207,7 +207,7 @@ describe("CustomerReviewTranslation", () => {
       }),
     );
     const user = userEvent.setup();
-    render(
+    const { rerender } = render(
       <>
         {island({ canAct: true })}
         <button type="button">Elsewhere</button>
@@ -217,16 +217,22 @@ describe("CustomerReviewTranslation", () => {
     await user.click(screen.getByRole("button", { name: "Translate" }));
     const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
     elsewhere.focus();
-    finish({
-      status: "translated",
-      translationId,
-      translatedBody: "A quiet place",
-    });
+    expect(elsewhere).toHaveFocus();
+    rerender(<>{island({ canAct: true })}</>);
+    expect(elsewhere).not.toBeInTheDocument();
+    expect(document.body).toHaveFocus();
+    await act(async () =>
+      finish({
+        status: "translated",
+        translationId,
+        translatedBody: "A quiet place",
+      }),
+    );
 
     expect(
       await screen.findByRole("button", { name: "View original" }),
     ).toBeEnabled();
-    expect(elsewhere).toHaveFocus();
+    expect(document.body).toHaveFocus();
   });
 
   it.each([
