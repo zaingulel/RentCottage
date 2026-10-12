@@ -36,6 +36,7 @@ export function CottageShiftScheduleEditor({
 }) {
   const copy = cottageShiftScheduleMessages[locale];
   const checkId = useId();
+  const feedbackId = useId();
   const [draft, setDraft] = useState(
     schedule?.shifts.map(({ name, startTime, endTime }) => ({
       name,
@@ -326,12 +327,18 @@ export function CottageShiftScheduleEditor({
             type="submit"
             pending={pending}
             disabled={blocked}
+            focusSuccessorId={feedbackId}
           >
             {copy.save}
           </ActionButton>
         ) : null}
         {showFeedback && feedback ? (
-          <ActionFeedback kind={state.status === "saved" ? "success" : "error"}>
+          <ActionFeedback
+            kind={state.status === "saved" ? "success" : "error"}
+            focusTargetId={
+              !pending && state.status === "conflict" ? feedbackId : undefined
+            }
+          >
             {feedback}
           </ActionFeedback>
         ) : null}

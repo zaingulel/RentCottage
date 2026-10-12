@@ -11,7 +11,7 @@ import { selectPaymentRequiredExpiry } from "../src/booking-request/booking-requ
 import { bookingRequestPaymentFactsFrom } from "../src/booking-request/supabase-booking-request-payment-observation";
 import { bookingTermsFixture } from "../src/booking-request/booking-terms-fixture";
 import { paidConfirmationNotice } from "../src/notification/paid-confirmation-notice";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Route } from "@playwright/test";
 import { createRequire } from "node:module";
 import { createClient } from "@supabase/supabase-js";
 
@@ -259,6 +259,12 @@ test("a verified Customer double-submit creates one Pending request and one mini
       .getByRole("complementary")
       .getByRole("button", { name: "Get exact quote", exact: true }),
   ).toBeDisabled();
+  await expect(
+    page.getByRole("complementary").getByRole("heading", {
+      name: "Choose your Booking Period",
+      exact: true,
+    }),
+  ).toBeFocused();
   const periodClearRows = await periodClearMeasurement.evaluate(
     (measurement) => {
       measurement.read("settled");
@@ -432,6 +438,10 @@ test("a verified Customer double-submit creates one Pending request and one mini
       page.getByRole("link", { name: copy.quote, exact: true }),
     ).toBeVisible();
     await expect(periodToggleControl).toBeEnabled();
+    await expect(periodToggleControl).toBeFocused();
+    expect(
+      await periodToggleSource.evaluate((source) => document.activeElement === source),
+    ).toBe(true);
     const periodToggleRows = await periodToggleMeasurement.evaluate(
       (measurement) => {
         measurement.read("settled");
@@ -689,16 +699,50 @@ test("a verified Customer double-submit creates one Pending request and one mini
     },
     { family: "booking-request-form", action: "Submit duplicate request" },
   );
-  await page
-    .getByRole("form", { name: "Send your Booking Request" })
-    .evaluate((form) => {
-      (form as HTMLFormElement).requestSubmit();
-      (form as HTMLFormElement).requestSubmit();
+  const submitRouteUrl = page.url();
+  let releaseSubmitResponse: () => void = () => {};
+  const submitRelease = new Promise<void>((resolve) => {
+    releaseSubmitResponse = resolve;
+  });
+  const holdSubmitResponse = async (route: Route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    const response = await route.fetch();
+    await submitRelease;
+    await route.fulfill({ response });
+  };
+  await page.route(submitRouteUrl, holdSubmitResponse);
+  try {
+    const submitRequest = page.waitForRequest(
+      (request) =>
+        request.url() === submitRouteUrl && request.method() === "POST",
+    );
+    await page.keyboard.press("Enter");
+    await submitRequest;
+    const requestForm = page.getByRole("form", {
+      name: "Send your Booking Request",
     });
-
-  await expect(
-    page.getByRole("heading", { name: "Booking Request pending" }),
-  ).toBeVisible();
+    const pendingSubmit = requestForm.locator('button[type="submit"]');
+    await expect(pendingSubmit).toBeDisabled();
+    await expect(pendingSubmit).toHaveAttribute("aria-busy", "true");
+    await requestForm.evaluate((form) =>
+      (form as HTMLFormElement).requestSubmit(),
+    );
+    await expect(pendingSubmit).toBeDisabled();
+    await expect(pendingSubmit).toHaveAttribute("aria-busy", "true");
+    releaseSubmitResponse();
+    await expect(
+      page.getByRole("heading", { name: "Booking Request pending" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", {
+        name: "View and manage this request",
+        exact: true,
+      }),
+    ).toBeFocused();
+  } finally {
+    releaseSubmitResponse();
+    await page.unroute(submitRouteUrl, holdSubmitResponse);
+  }
   const requestSubmitRows = await requestSubmitMeasurement.evaluate(
     (measurement) => {
       measurement.read("settled");

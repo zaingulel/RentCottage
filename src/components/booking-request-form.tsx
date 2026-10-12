@@ -63,6 +63,7 @@ export function BookingRequestForm({
   const copy = bookingRequestMessages[locale];
   const customerNameInputId = useId();
   const cutoffFeedbackId = useId();
+  const receiptStatusLinkId = useId();
   const quoteNotice = bookingQuoteMessages[locale].notice;
   const firstStartsAt = quote.items[0]?.startsAt ?? "";
   const [verified, setVerified] = useState(customerReady);
@@ -108,10 +109,12 @@ export function BookingRequestForm({
             : copy.existingExplanation}
         </p>
         <Link
+          id={receiptStatusLinkId}
           href={`/${locale}/booking-requests/${result.bookingRequestReference}`}
         >
           {copy.viewStatus}
         </Link>
+        {!pending && <ActionFocusTarget targetId={receiptStatusLinkId} />}
       </section>
     );
   }
@@ -318,6 +321,7 @@ export function BookingRequestForm({
             width="full"
             type="submit"
             pending={pending}
+            focusSuccessorId={receiptStatusLinkId}
           >
             {pending ? copy.pendingAction : copy.submit}
           </ActionButton>

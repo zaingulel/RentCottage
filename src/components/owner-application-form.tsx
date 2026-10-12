@@ -28,35 +28,47 @@ import type { Locale } from "@/i18n/routing";
 import {
   ActionButton,
   ActionFeedback,
+  ActionFocusTarget,
   FormControl,
 } from "./interaction-controls";
 
 function SubmitButton({
   children,
   kind,
+  focusSuccessorId,
 }: {
   children: string;
   kind: "primary" | "secondary";
+  focusSuccessorId?: string;
 }) {
   const { pending } = useFormStatus();
-  return kind === "primary" ? (
-    <ActionButton
-      kind="primary"
-      width="content"
-      type="submit"
-      pending={pending}
-    >
-      {children}
-    </ActionButton>
-  ) : (
-    <ActionButton
-      kind="secondary"
-      size="regular"
-      type="submit"
-      pending={pending}
-    >
-      {children}
-    </ActionButton>
+  return (
+    <>
+      {kind === "primary" ? (
+        <ActionButton
+          kind="primary"
+          width="content"
+          type="submit"
+          pending={pending}
+          focusSuccessorId={focusSuccessorId}
+        >
+          {children}
+        </ActionButton>
+      ) : (
+        <ActionButton
+          kind="secondary"
+          size="regular"
+          type="submit"
+          pending={pending}
+          focusSuccessorId={focusSuccessorId}
+        >
+          {children}
+        </ActionButton>
+      )}
+      {!pending && focusSuccessorId && (
+        <ActionFocusTarget targetId={focusSuccessorId} />
+      )}
+    </>
   );
 }
 
@@ -242,7 +254,14 @@ export function OwnerApplicationForm({
         >
           {statusCopy.statuses[applicationStatus]}
         </span>
-        <h1>{copy.title}</h1>
+        <h1
+          id="owner-application-title"
+          tabIndex={-1}
+          className="action-focus-target"
+        >
+          {copy.title}
+        </h1>
+        {submitted && <ActionFocusTarget targetId="owner-application-title" />}
         <p>
           {applicationStatus === "draft"
             ? copy.intro
@@ -590,7 +609,12 @@ export function OwnerApplicationForm({
           <section className="application-submit-card">
             <form action={submitAction}>
               <input type="hidden" name="locale" value={locale} />
-              <SubmitButton kind="primary">{copy.submit}</SubmitButton>
+              <SubmitButton
+                kind="primary"
+                focusSuccessorId="owner-application-title"
+              >
+                {copy.submit}
+              </SubmitButton>
             </form>
             {submitState.status === "incomplete" ? (
               <div className="application-missing" role="alert">

@@ -337,8 +337,6 @@ test("an administrator discovers accounts and approval records with authoritativ
       measurement.observer.disconnect();
     });
     await recordSearchMeasurement.dispose();
-    await recordSearchSource.dispose();
-
     const applicationButton = page.getByRole("button", {
       name: new RegExp(`^${applicationLabel}:`),
     });
@@ -353,6 +351,11 @@ test("an administrator discovers accounts and approval records with authoritativ
     expect(
       westernDigits((await approvalButton.textContent()) ?? "").trim(),
     ).toBe(`${approvalLabel}: ${approvals}`);
+    await expect(recordSearchControl).toBeFocused();
+    expect(
+      await recordSearchSource.evaluate((source) => document.activeElement === source),
+    ).toBe(true);
+    await recordSearchSource.dispose();
     await page
       .getByRole("button", { name: new RegExp(`^${approvalLabel}`) })
       .click();
@@ -469,6 +472,9 @@ test("an administrator discovers accounts and approval records with authoritativ
   await page.keyboard.press("Enter");
   const link = documentRow.getByRole("link", { name: "Open secure document" });
   await expect(link).toBeVisible();
+  await expect(
+    documentRow.getByRole("button", { name: "Create secure link" }),
+  ).toBeFocused();
   const href = await link.getAttribute("href");
   if (!href)
     throw new Error("Secure document link missing after explicit action");

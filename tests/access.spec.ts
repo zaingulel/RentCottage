@@ -531,6 +531,10 @@ async function saveOwnerApplicationDraft(
   );
   await draftControl.press("Enter");
   await expect(page.getByRole("status")).toContainText(copy.saved);
+  await expect(draftControl).toBeFocused();
+  expect(
+    await draftSource.evaluate((source) => document.activeElement === source),
+  ).toBe(true);
   await draftMeasurement.evaluate((measurement) => {
     measurement.read("settled");
     measurement.observer.disconnect();
@@ -860,6 +864,12 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
     await expect(card.getByRole("status")).toContainText(
       browserFixtures.en.application.uploaded,
     );
+    await expect(
+      card.getByRole("button", { name: "Replace document", exact: true }),
+    ).toBeFocused();
+    expect(
+      await uploadSource.evaluate((source) => document.activeElement === source),
+    ).toBe(true);
     await uploadMeasurement.evaluate((measurement) => {
       measurement.read("settled");
       measurement.observer.disconnect();
@@ -934,6 +944,12 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
   await expect(
     page.getByRole("button", { name: "Submit application" }),
   ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", {
+      name: "Prepare your Owner Application",
+      exact: true,
+    }),
+  ).toBeFocused();
   await applicationSubmitMeasurement.evaluate((measurement) => {
     measurement.read("settled");
     measurement.observer.disconnect();
@@ -1078,6 +1094,7 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
         name: browserFixtures[locale].review.openDocument,
       });
       await expect(link).toBeVisible();
+      await expect(createLink).toBeFocused();
       const href = await link.getAttribute("href");
       if (!href) throw new Error("Owned secure link has no URL");
       const signedUrl = new URL(href, administratorPage.url());
@@ -1664,6 +1681,10 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await locationControl.press("Enter");
   await expect(page.getByLabel("Latitude")).toHaveValue("36.408333");
   await expect(page.getByLabel("Longitude")).toHaveValue("44.385834");
+  await expect(locationControl).toBeFocused();
+  expect(
+    await locationSource.evaluate((source) => document.activeElement === source),
+  ).toBe(true);
   await locationMeasurement.evaluate((measurement) => {
     measurement.read("settled");
     measurement.observer.disconnect();
@@ -2064,6 +2085,10 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     await expect(
       scheduleForm.getByRole("status").filter({ hasText: copy.saved }),
     ).toBeVisible();
+    await expect(scheduleControl).toBeFocused();
+    expect(
+      await scheduleSource.evaluate((source) => document.activeElement === source),
+    ).toBe(true);
     await scheduleMeasurement.evaluate((measurement) => {
       measurement.read("settled");
       measurement.observer.disconnect();
@@ -2890,6 +2915,10 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
       name: copy.openDocument,
     });
     await expect(secureLink).toBeVisible();
+    await expect(secureLinkControl).toBeFocused();
+    expect(
+      await secureLinkSource.evaluate((source) => document.activeElement === source),
+    ).toBe(true);
     await secureLinkMeasurement.evaluate((measurement) => {
       measurement.read("settled");
       measurement.observer.disconnect();
