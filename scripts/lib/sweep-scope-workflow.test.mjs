@@ -224,7 +224,6 @@ test('a registry failure stops the judged install closed', () => {
   assert.match(result.stderr, /registry unavailable/);
 });
 
-
 test('the base-owned checker receives the quoted immutable base and head SHAs', () => {
   const directory = mkdtempSync(join(tmpdir(), 'sweep-scope-check-'));
   const commandLog = join(directory, 'command-log');

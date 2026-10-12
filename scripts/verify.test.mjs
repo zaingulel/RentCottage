@@ -1152,6 +1152,7 @@ describe("repository verification command", () => {
     ["Codex browser rule", [".codex/rules/playwright.rules"], "baseline"],
     ["native hook manual", [".githooks/README.md"], "baseline"],
     ["shared workflow manifest", [".agents/factory-manifest.json"], "baseline"],
+    ["shared workflow settings", [".agents/factory-settings.json"], "baseline"],
     ["merge watch entry", ["scripts/merge-watch.mjs"], "baseline"],
     ["merge watch library", ["scripts/lib/merge-watch.mjs"], "baseline"],
     ["merge watch tests", ["scripts/lib/merge-watch.test.mjs"], "baseline"],

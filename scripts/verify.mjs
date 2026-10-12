@@ -156,6 +156,7 @@ const baselineOnlyPaths = new Set([
   // a browser. Exact names, never directory wildcards: these directories also hold
   // Supabase, Worker and browser fixtures, which do need the expensive route.
   ".agents/factory-manifest.json",
+  ".agents/factory-settings.json",
   "scripts/board.mjs",
   "scripts/board-add.mjs",
   "scripts/board-move.mjs",
