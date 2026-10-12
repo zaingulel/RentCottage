@@ -15,6 +15,7 @@ import { bookingPayoutMessages } from "@/i18n/administrator-payment-history-mess
 import type { Locale } from "@/i18n/routing";
 import {
   ActionButton,
+  ActionFocusTarget,
   ActionFeedback,
   FormControl,
 } from "./interaction-controls";
@@ -27,6 +28,7 @@ export function BookingManagementControl({
   commandId,
   action,
   subjectId,
+  focusSuccessorId,
 }: {
   locale: Locale;
   reference: string;
@@ -40,6 +42,7 @@ export function BookingManagementControl({
     | BookingPayoutAction
     | "settle";
   subjectId?: string;
+  focusSuccessorId?: string;
 }) {
   const c = bookingManagementMessages[locale],
     l = bookingLifecycleMessages[locale],
@@ -89,6 +92,9 @@ export function BookingManagementControl({
   }
   return (
     <form action={submit} className={styles.form} aria-label={label}>
+      {!pending && focusSuccessorId ? (
+        <ActionFocusTarget targetId={focusSuccessorId} />
+      ) : null}
       <input type="hidden" name="locale" value={locale} />
       <input type="hidden" name="reference" value={reference} />
       <input type="hidden" name="actorRole" value={actorRole} />
@@ -240,6 +246,7 @@ export function BookingManagementControl({
         kind="primary"
         width="content"
         pending={pending}
+        focusSuccessorId={focusSuccessorId}
       >
         {action === "refund" ? c.approve : label}
       </ActionButton>

@@ -2,6 +2,7 @@ import { formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 import type { RequestNotificationPresentation } from "@/notification/request-notification-status";
 import { requestNoticeTitles } from "@/notification/booking-request-notice";
+import { ActionFocusTarget } from "./interaction-controls";
 import { NotificationRetryControl } from "./notification-retry-control";
 const messages = {
   en: {
@@ -73,13 +74,25 @@ export function RequestNotificationDetails({
                   {formatIraqDateTime(notice.createdAt, locale)}
                 </time>
               </p>
-              <p>{copy[notice.state]}</p>
+              <p
+                id={`request-notice-${notice.eventId}`}
+                tabIndex={-1}
+                className="action-focus-target"
+              >
+                {copy[notice.state]}
+                {!notice.retryAllowed ? (
+                  <ActionFocusTarget
+                    targetId={`request-notice-${notice.eventId}`}
+                  />
+                ) : null}
+              </p>
               {notice.retryAllowed ? (
                 <NotificationRetryControl
                   locale={locale}
                   reference={reference}
                   receiptId={null}
                   eventId={notice.eventId}
+                  focusSuccessorId={`request-notice-${notice.eventId}`}
                   label={copy.retry}
                   failed={copy.failed}
                   queued={copy.queued}

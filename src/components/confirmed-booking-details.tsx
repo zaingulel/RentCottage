@@ -7,7 +7,7 @@ import type { PaidConfirmationNotificationPresentationStatus } from "@/booking-r
 import type { NavigationHandoff } from "@/cottage-profile/map-provider";
 import { formatFilsAsIqd, formatIqd, formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
-import { Disclosure } from "./interaction-controls";
+import { ActionFocusTarget, Disclosure } from "./interaction-controls";
 import { NotificationRetryControl } from "./notification-retry-control";
 
 const messages = {
@@ -137,6 +137,7 @@ export function ConfirmedBookingDetails({
   navigation: NavigationHandoff | null;
 }) {
   const c = messages[locale];
+  const noticeFocusTargetId = `confirmation-notice-${access.receiptId}`;
   const practicalDetailsIncomplete =
     access.privateDirections === null ||
     access.mapPin === null ||
@@ -276,8 +277,16 @@ export function ConfirmedBookingDetails({
         <div>
           <dt>{c.notice}</dt>
           <dd>
-            <span role="status">
+            <span
+              id={noticeFocusTargetId}
+              tabIndex={-1}
+              className="action-focus-target"
+              role="status"
+            >
               {notification.historical ? c.historical : c[notification.state]}
+              {notification.state !== "retryable" ? (
+                <ActionFocusTarget targetId={noticeFocusTargetId} />
+              ) : null}
             </span>
             <small>{c.fictional}</small>
             {notification.state === "retryable" ? (
@@ -285,6 +294,7 @@ export function ConfirmedBookingDetails({
                 locale={locale}
                 reference={access.bookingRequestReference}
                 receiptId={access.receiptId}
+                focusSuccessorId={noticeFocusTargetId}
                 label={c.retry}
                 failed={c.retryFailed}
                 queued={c.retryQueued}

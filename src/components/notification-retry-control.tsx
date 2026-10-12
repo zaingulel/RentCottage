@@ -6,7 +6,11 @@ import {
   retryPaidConfirmationNotification,
   type RetryPaidConfirmationNotificationState,
 } from "@/notification/notification-actions";
-import { ActionButton, ActionFeedback } from "./interaction-controls";
+import {
+  ActionButton,
+  ActionFeedback,
+  ActionFocusTarget,
+} from "./interaction-controls";
 
 const idle: RetryPaidConfirmationNotificationState = { status: "idle" };
 
@@ -18,6 +22,7 @@ export function NotificationRetryControl({
   label,
   failed,
   queued,
+  focusSuccessorId,
 }: {
   locale: string;
   reference: string;
@@ -26,6 +31,7 @@ export function NotificationRetryControl({
   label: string;
   failed: string;
   queued: string;
+  focusSuccessorId?: string;
 }) {
   const [state, action, pending] = useActionState(
     retryPaidConfirmationNotification,
@@ -33,6 +39,9 @@ export function NotificationRetryControl({
   );
   return (
     <form action={action}>
+      {!pending && focusSuccessorId ? (
+        <ActionFocusTarget targetId={focusSuccessorId} />
+      ) : null}
       <input type="hidden" name="locale" value={locale} />
       <input type="hidden" name="reference" value={reference} />
       {receiptId ? (
@@ -44,6 +53,7 @@ export function NotificationRetryControl({
         kind="primary"
         width="content"
         pending={pending}
+        focusSuccessorId={focusSuccessorId}
       >
         {label}
       </ActionButton>

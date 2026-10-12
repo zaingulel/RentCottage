@@ -464,6 +464,9 @@ test.describe("retained cancellation and refund controls", () => {
       "PRIVATE payout review",
     );
     await expect(page.getByText(p.held, { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: p.title, exact: true }),
+    ).toBeFocused();
     const payoutHoldRows = await payoutHoldObservation.measurement.evaluate(
       (measurement) => {
         measurement.read("settled");
@@ -485,6 +488,9 @@ test.describe("retained cancellation and refund controls", () => {
       "PRIVATE dispute review",
     );
     await expect(page.getByText(p.open, { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: p.title, exact: true }),
+    ).toBeFocused();
     const payoutDisputeRows =
       await payoutDisputeObservation.measurement.evaluate((measurement) => {
         measurement.read("settled");
@@ -557,6 +563,9 @@ test.describe("retained cancellation and refund controls", () => {
     );
     await payoutResolveControl.press("Enter");
     await expect(page.getByText(p.resolved, { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: p.title, exact: true }),
+    ).toBeFocused();
     const payoutResolveRows = await payoutResolveMeasurement.evaluate(
       (measurement) => {
         measurement.read("settled");
@@ -581,6 +590,12 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByRole("form", { name: p.settle }).getByRole("alert"),
     ).toContainText(p.blocked);
+    await expect(
+      page.getByRole("form", { name: p.settle }).getByRole("button", {
+        name: p.settle,
+        exact: true,
+      }),
+    ).toBeFocused();
     const payoutBlockedRows =
       await payoutBlockedObservation.measurement.evaluate((measurement) => {
         measurement.read("settled");
@@ -608,6 +623,9 @@ test.describe("retained cancellation and refund controls", () => {
       "PRIVATE review complete",
     );
     await expect(page.getByText(p.clear, { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: p.title, exact: true }),
+    ).toBeFocused();
     const payoutReleaseRows =
       await payoutReleaseObservation.measurement.evaluate((measurement) => {
         measurement.read("settled");
@@ -636,6 +654,9 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(page.getByTestId("settlement-recovery")).toContainText(
       p.noDebit,
     );
+    await expect(
+      page.getByRole("heading", { name: p.title, exact: true }),
+    ).toBeFocused();
     const payoutSettleRows = await payoutSettleObservation.measurement.evaluate(
       (measurement) => {
         measurement.read("settled");
@@ -914,6 +935,9 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByRole("heading", { name: "Cancelled booking", exact: true }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: messages.en.cancelled, exact: true }),
+    ).toBeFocused();
     const cancelCustomerRows = await cancelCustomerMeasurement.evaluate(
       (measurement) => {
         measurement.read("settled");
@@ -1042,6 +1066,9 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByRole("heading", { name: messages.ar.cancelled, exact: true }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: messages.ar.cancelled, exact: true }),
+    ).toBeFocused();
     const cancelOwnerRows = await cancelOwnerMeasurement.evaluate(
       (measurement) => {
         measurement.read("settled");
@@ -1153,6 +1180,9 @@ test.describe("retained cancellation and refund controls", () => {
         initialId,
       );
       await expect(form.getByLabel(messages.en.reason)).toHaveValue("");
+      await expect(
+        page.getByRole("heading", { name: messages.en.title, exact: true }),
+      ).toBeFocused();
       const exceptionFirstRows = await exceptionFirstMeasurement.evaluate(
         (measurement) => {
           measurement.read("settled");
@@ -1260,6 +1290,9 @@ test.describe("retained cancellation and refund controls", () => {
       await expect(
         page.getByRole("list", { name: messages.en.approved }).locator("li"),
       ).toHaveCount(2);
+      await expect(
+        page.getByRole("heading", { name: messages.en.title, exact: true }),
+      ).toBeFocused();
       const exceptionFeeRows = await exceptionFeeMeasurement.evaluate(
         (measurement) => {
           measurement.read("settled");
@@ -1357,6 +1390,9 @@ test.describe("retained cancellation and refund controls", () => {
           exact: true,
         }),
       ).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: messages.ckb.cancelled, exact: true }),
+      ).toBeFocused();
       const cancelAdministratorRows =
         await cancelAdministratorMeasurement.evaluate((measurement) => {
           measurement.read("settled");

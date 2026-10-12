@@ -2000,6 +2000,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       await expect(
         paidDetails.getByRole("button", { name: "Retry confirmation notice" }),
       ).toHaveCount(0);
+      await expect(paidDetails.getByRole("status")).toBeFocused();
       const confirmationRetryRows = await confirmationRetryMeasurement.evaluate(
         (measurement) => {
           measurement.read("settled");
