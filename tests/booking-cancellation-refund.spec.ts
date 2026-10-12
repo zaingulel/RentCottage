@@ -45,6 +45,13 @@ const { confirmedBookingCleanup } = createRequire(import.meta.url)(
   }): string;
 };
 const harness = createLocalSupabaseConcurrencyHarness();
+async function expectAmount(figures: Locator, label: string, amount: string) {
+  await expect(
+    figures
+      .getByText(label, { exact: true })
+      .locator("xpath=following-sibling::dd[1]"),
+  ).toHaveText(amount);
+}
 const request = "60000000-0000-4000-8000-000000001001",
   reference = "RC-REQ-0000000000001001";
 const owner = "10000000-0000-4000-8000-000000001001",
@@ -426,9 +433,12 @@ test.describe("retained cancellation and refund controls", () => {
     await command("release_hold", "PRIVATE review complete");
     await expect(page.getByText(p.clear, { exact: true })).toBeVisible();
     await command("settle", "PRIVATE settlement approval");
-    await expect(page.getByTestId("settlement-recovery")).toContainText(
-      "IQD 99,000",
-    );
+    await expect(
+      page
+        .getByTestId("settlement-recovery")
+        .locator("p")
+        .filter({ hasText: payoutMessages.en.paidAmount }),
+    ).toHaveText(`${payoutMessages.en.paidAmount}: IQD 99,000`);
     await expect(page.getByTestId("settlement-recovery")).toContainText(
       p.noDebit,
     );
@@ -492,14 +502,16 @@ test.describe("retained cancellation and refund controls", () => {
       const summary = ownerPage.getByRole("region", {
         name: earningsMessages.en.summaryTitle,
       });
-      await expect(summary).toContainText("Paid payoutsIQD 99,000");
-      await expect(summary).toContainText("Expected unpaid payoutsIQD 0");
+      await expectAmount(summary, earningsMessages.en.paidTotal, "IQD 99,000");
+      await expectAmount(summary, earningsMessages.en.expectedTotal, "IQD 0");
       await ownerPage.reload();
-      await expect(summary).toContainText("Paid payoutsIQD 99,000");
+      await expectAmount(summary, earningsMessages.en.paidTotal, "IQD 99,000");
       await ownerPage.goto(`/en/owner/booking-requests/${reference}`);
-      await expect(
+      await expectAmount(
         ownerPage.getByRole("region", { name: earningsMessages.en.title }),
-      ).toContainText("Recorded paid payoutIQD 99,000");
+        earningsMessages.en.paid,
+        "IQD 99,000",
+      );
       await expect(
         ownerPage.getByText("PRIVATE payout review", { exact: true }),
       ).toHaveCount(0);
@@ -645,7 +657,11 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByRole("heading", { name: "Full refund required", exact: true }),
     ).toBeVisible();
-    await expect(page.getByTestId("verified-refund")).toContainText("IQD 0");
+    await expectAmount(
+      page.getByTestId("verified-refund"),
+      messages.en.total,
+      "IQD 0",
+    );
     await expect(
       page.getByText("Private address", { exact: true }),
     ).toHaveCount(0);
@@ -674,7 +690,9 @@ test.describe("retained cancellation and refund controls", () => {
     await assertResponsiveDetails(page, "customer");
     expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
     await page.goto(`/en/booking-requests/${reference}`);
-    await expect(page.getByTestId("verified-refund")).toContainText(
+    await expectAmount(
+      page.getByTestId("verified-refund"),
+      messages.en.total,
       "IQD 115,000",
     );
     await expect(
@@ -733,9 +751,14 @@ test.describe("retained cancellation and refund controls", () => {
       await form.getByLabel(messages.en.priceInput).fill("20000");
       await form.getByLabel(messages.en.feeInput).fill("0.001");
       await form.getByRole("button", { name: messages.en.approve }).click();
-      await expect(
-        page.getByRole("list", { name: messages.en.approved }),
-      ).toContainText("IQD 20,000.001");
+      await expectAmount(
+        page
+          .getByRole("list", { name: messages.en.approved })
+          .locator("li")
+          .first(),
+        messages.en.total,
+        "IQD 20,000.001",
+      );
       await expect(form.locator('input[name="commandId"]')).not.toHaveValue(
         initialId,
       );
@@ -743,9 +766,11 @@ test.describe("retained cancellation and refund controls", () => {
       await participant(ownerContext, owner, baseURL);
       const ownerPage = await ownerContext.newPage();
       await ownerPage.goto(`${baseURL}/en/owner/booking-requests/${reference}`);
-      await expect(
+      await expectAmount(
         ownerPage.getByRole("region", { name: earningsMessages.en.title }),
-      ).toContainText("IQD 99,000");
+        earningsMessages.en.currentNet,
+        "IQD 99,000",
+      );
       await expect(
         ownerPage.getByText(earningsMessages.en.causes["refund-pending"], {
           exact: true,
@@ -756,10 +781,14 @@ test.describe("retained cancellation and refund controls", () => {
       ).toHaveCount(0);
       expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
       await ownerPage.reload();
-      await expect(
+      await expectAmount(
         ownerPage.getByRole("region", { name: earningsMessages.en.title }),
-      ).toContainText("IQD 81,000");
-      await expect(ownerPage.getByTestId("verified-refund")).toContainText(
+        earningsMessages.en.currentNet,
+        "IQD 81,000",
+      );
+      await expectAmount(
+        ownerPage.getByTestId("verified-refund"),
+        messages.en.total,
         "IQD 20,000.001",
       );
       await assertResponsiveDetails(ownerPage, "cottage_owner");
@@ -775,10 +804,14 @@ test.describe("retained cancellation and refund controls", () => {
       ).toHaveCount(2);
       expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
       await ownerPage.goto(`${baseURL}/en/owner/booking-requests/${reference}`);
-      await expect(
+      await expectAmount(
         ownerPage.getByRole("region", { name: earningsMessages.en.title }),
-      ).toContainText("IQD 81,000");
-      await expect(ownerPage.getByTestId("verified-refund")).toContainText(
+        earningsMessages.en.currentNet,
+        "IQD 81,000",
+      );
+      await expectAmount(
+        ownerPage.getByTestId("verified-refund"),
+        messages.en.total,
         "IQD 20,000.003",
       );
       await page.goto(`/ckb/administrator/payments/${reference}`);
