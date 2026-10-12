@@ -170,4 +170,20 @@ test("booking customer keeps the original while using fictional translations acr
   ).toBeLessThanOrEqual(
     await page.locator("body").evaluate((body) => body.clientWidth),
   );
+
+  const longMessage = "W".repeat(1000);
+  await page.getByLabel("نامە", { exact: true }).fill(longMessage);
+  await page.getByRole("button", { name: "نامە بنێرە" }).click();
+  await expect(
+    page.getByRole("list", { name: "نامەکان" }).getByText(longMessage),
+  ).toBeVisible();
+  await page.goto("/ckb/messages");
+  await expect(
+    page.getByRole("listitem").filter({ hasText: longMessage }),
+  ).toBeVisible();
+  expect(
+    await page.locator("body").evaluate((body) => body.scrollWidth),
+  ).toBeLessThanOrEqual(
+    await page.locator("body").evaluate((body) => body.clientWidth),
+  );
 });

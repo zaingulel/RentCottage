@@ -55,6 +55,7 @@ it("presents paid status in Arabic and marks preview language", () => {
   render(<MessagingInbox locale="ar" items={[item]} nextCursor={null} />);
   expect(screen.getByText(/تم تأكيد الحجز/)).toBeInTheDocument();
   expect(screen.getByText("مرحبا")).toHaveAttribute("lang", "ar");
+  expect(screen.getByText("مرحبا").parentElement).toHaveClass("list-row-meta");
   expect(screen.queryByText(/accepted/)).not.toBeInTheDocument();
 });
 it("describes an existing empty conversation as having no messages", () => {

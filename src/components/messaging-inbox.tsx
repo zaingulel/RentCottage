@@ -56,7 +56,7 @@ export function MessagingInbox({
                   {formatIraqDateTime(item.activityAt, locale)}
                 </time>
               </p>
-              <p>
+              <p className="list-row-meta">
                 <bdi
                   lang={item.preview?.originalLanguage ?? locale}
                   dir={directionFor(item.preview?.originalLanguage ?? locale)}

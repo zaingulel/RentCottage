@@ -182,6 +182,9 @@ describe("CottageDiscoveryForm booking period picker", () => {
     await user.click(
       screen.getByRole("button", { name: "Search available cottages" }),
     );
+    expect(
+      screen.getByRole("button", { name: "Search available cottages" }),
+    ).toHaveClass("action-full");
     expect(push).toHaveBeenLastCalledWith(
       "/en/results?from=2099-01-01&to=2099-01-02&guests=4",
     );
