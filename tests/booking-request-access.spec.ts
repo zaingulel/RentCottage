@@ -183,6 +183,99 @@ test("a verified Customer double-submit creates one Pending request and one mini
     guests: "4",
     selection: `${requestedDay}:shift:${shift.position}`,
   });
+  expect(shifts.map((item) => item.position)).toEqual([1, 2]);
+  const staleQuery = new URLSearchParams(query);
+  staleQuery.set("selection", `${requestedDay}:shift:3`);
+  await page.goto(`/en/cottages/${slug}?${staleQuery.toString()}`);
+  const missingPeriod = page.getByText(
+    "A selected period is no longer offered. Clear that day's selection and choose again.",
+    { exact: true },
+  );
+  await expect(missingPeriod).toBeVisible();
+  await expect(
+    page
+      .getByRole("complementary")
+      .getByRole("button", { name: "Clear selection", exact: true }),
+  ).toHaveCount(1);
+  const periodClearControl = page
+    .getByRole("complementary")
+    .getByRole("button", { name: "Clear selection", exact: true });
+  await periodClearControl.focus();
+  await expect(periodClearControl).toBeFocused();
+  const periodClearSource = await periodClearControl.elementHandle();
+  if (!periodClearSource)
+    throw new Error("Focus measurement source is missing");
+  const periodClearMeasurement = await periodClearSource.evaluateHandle(
+    (source, labels) => {
+      const rows: Record<string, string | boolean | number | null>[] = [];
+      const read = (phase: string) => {
+        rows.push({
+          family: labels.family,
+          action: labels.action,
+          phase,
+          pathname: location.pathname,
+          locale: document.documentElement.lang,
+          direction: document.documentElement.dir,
+          activeTag: document.activeElement?.tagName ?? null,
+          activeId: document.activeElement?.id ?? null,
+          sourceConnected: source.isConnected,
+          sourceDisabled: source.matches(":disabled"),
+          sourceBusy: source.getAttribute("aria-busy"),
+          sameNode: source.isConnected,
+        });
+      };
+      let previous = "";
+      const observer = new MutationObserver(() => {
+        const current = JSON.stringify([
+          source.isConnected,
+          source.matches(":disabled"),
+          source.getAttribute("aria-busy"),
+          location.pathname,
+        ]);
+        if (current !== previous) {
+          previous = current;
+          read("transition");
+        }
+      });
+      observer.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["disabled", "aria-busy"],
+      });
+      read("before");
+      return { read, observer, rows };
+    },
+    { family: "cottage-booking-period-picker", action: "Clear selection" },
+  );
+  await periodClearControl.press("Enter");
+  await expect(page).toHaveURL(
+    (url) => url.searchParams.getAll("selection").length === 0,
+  );
+  await expect(periodClearControl).toHaveCount(0);
+  await expect(missingPeriod).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("complementary")
+      .getByRole("button", { name: "Get exact quote", exact: true }),
+  ).toBeDisabled();
+  const periodClearRows = await periodClearMeasurement.evaluate(
+    (measurement) => {
+      measurement.read("settled");
+      measurement.observer.disconnect();
+      return measurement.rows;
+    },
+  );
+  await test.info().attach("focus-periodClear", {
+    body: JSON.stringify(periodClearRows),
+    contentType: "application/json",
+  });
+  await periodClearMeasurement.dispose();
+  await periodClearSource.dispose();
+  await page.goto(`/en/cottages/${slug}?${query.toString()}`);
+  expect(new URL(page.url()).searchParams.getAll("selection")).toEqual([
+    `${requestedDay}:shift:${shift.position}`,
+  ]);
   const discoveryCopy = {
     en: {
       from: "From Service Day",
@@ -262,10 +355,97 @@ test("a verified Customer double-submit creates one Pending request and one mini
       (url) =>
         url.pathname === `/${locale}/cottages/${slug}` && url.search !== "",
     );
-    await page
+    const periodToggleControl = page
       .getByRole("complementary")
-      .getByRole("button", { name: unit.name, exact: true })
-      .click();
+      .getByRole("button", { name: unit.name, exact: true });
+    await periodToggleControl.focus();
+    await expect(periodToggleControl).toBeFocused();
+    const periodToggleSource = await periodToggleControl.elementHandle();
+    if (!periodToggleSource)
+      throw new Error("Focus measurement source is missing");
+    const periodToggleMeasurement = await periodToggleSource.evaluateHandle(
+      (source, labels) => {
+        const rows: Record<string, string | boolean | number | null>[] = [];
+        const read = (phase: string) => {
+          const placeholders = [
+            ...(source
+              .closest("aside")
+              ?.querySelectorAll("button[aria-busy=true]") ?? []),
+          ];
+          rows.push({
+            family: labels.family,
+            action: "Quote and Message pending placeholders",
+            phase,
+            pathname: location.pathname,
+            locale: document.documentElement.lang,
+            direction: document.documentElement.dir,
+            pendingPlaceholderCount: placeholders.length,
+            pendingPlaceholdersDisabled:
+              placeholders.length === 2 &&
+              placeholders.every((button) => button.matches(":disabled")),
+          });
+
+          rows.push({
+            family: labels.family,
+            action: labels.action,
+            phase,
+            pathname: location.pathname,
+            locale: document.documentElement.lang,
+            direction: document.documentElement.dir,
+            activeTag: document.activeElement?.tagName ?? null,
+            activeId: document.activeElement?.id ?? null,
+            sourceConnected: source.isConnected,
+            sourceDisabled: source.matches(":disabled"),
+            sourceBusy: source.getAttribute("aria-busy"),
+            sameNode: source.isConnected,
+          });
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer, rows };
+      },
+      {
+        family: "cottage-booking-period-picker",
+        action: "Toggle available period",
+      },
+    );
+    await periodToggleControl.press("Enter");
+    await expect(
+      page.getByRole("link", { name: copy.quote, exact: true }),
+    ).toBeVisible();
+    await expect(periodToggleControl).toBeEnabled();
+    const periodToggleRows = await periodToggleMeasurement.evaluate(
+      (measurement) => {
+        measurement.read("settled");
+        measurement.observer.disconnect();
+        return measurement.rows;
+      },
+    );
+    await test.info().attach("focus-periodToggle", {
+      body: JSON.stringify(periodToggleRows),
+      contentType: "application/json",
+    });
+    await periodToggleMeasurement.dispose();
+    await periodToggleSource.dispose();
+
     await page.getByRole("link", { name: copy.quote }).click();
     await expect(page).toHaveURL(
       (url) => url.pathname === `/${locale}/request/${slug}`,
@@ -294,14 +474,142 @@ test("a verified Customer double-submit creates one Pending request and one mini
     page.getByRole("heading", { name: "Verify your phone to continue" }),
   ).toBeVisible();
   await page.getByLabel("Iraqi phone number").fill(customerPhone);
-  await page.getByRole("button", { name: "Send verification code" }).click();
+  const inlineSendControl = page.getByRole("button", {
+    name: "Send verification code",
+  });
+  await inlineSendControl.focus();
+  await expect(inlineSendControl).toBeFocused();
+  const inlineSendSource = await inlineSendControl.elementHandle();
+  if (!inlineSendSource) throw new Error("Focus measurement source is missing");
+  const inlineSendMeasurement = await inlineSendSource.evaluateHandle(
+    (source, labels) => {
+      const rows: Record<string, string | boolean | number | null>[] = [];
+      const read = (phase: string) => {
+        rows.push({
+          family: labels.family,
+          action: labels.action,
+          phase,
+          pathname: location.pathname,
+          locale: document.documentElement.lang,
+          direction: document.documentElement.dir,
+          activeTag: document.activeElement?.tagName ?? null,
+          activeId: document.activeElement?.id ?? null,
+          sourceConnected: source.isConnected,
+          sourceDisabled: source.matches(":disabled"),
+          sourceBusy: source.getAttribute("aria-busy"),
+          sameNode: source.isConnected,
+        });
+      };
+      let previous = "";
+      const observer = new MutationObserver(() => {
+        const current = JSON.stringify([
+          source.isConnected,
+          source.matches(":disabled"),
+          source.getAttribute("aria-busy"),
+          location.pathname,
+        ]);
+        if (current !== previous) {
+          previous = current;
+          read("transition");
+        }
+      });
+      observer.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["disabled", "aria-busy"],
+      });
+      read("before");
+      return { read, observer, rows };
+    },
+    { family: "phone-access-form", action: "Inline Send verification code" },
+  );
+  await inlineSendControl.press("Enter");
   const verificationCode = page.getByLabel("Verification code");
   await expect(verificationCode).toBeVisible();
+  const inlineSendRows = await inlineSendMeasurement.evaluate((measurement) => {
+    measurement.read("settled");
+    measurement.observer.disconnect();
+    return measurement.rows;
+  });
+  await test.info().attach("focus-inlineSend", {
+    body: JSON.stringify(inlineSendRows),
+    contentType: "application/json",
+  });
+  await inlineSendMeasurement.dispose();
+  await inlineSendSource.dispose();
+
   await verificationCode.fill("123456");
-  await page.getByRole("button", { name: "Verify", exact: true }).click();
+  const inlineVerifyControl = page.getByRole("button", {
+    name: "Verify",
+    exact: true,
+  });
+  await inlineVerifyControl.focus();
+  await expect(inlineVerifyControl).toBeFocused();
+  const inlineVerifySource = await inlineVerifyControl.elementHandle();
+  if (!inlineVerifySource)
+    throw new Error("Focus measurement source is missing");
+  const inlineVerifyMeasurement = await inlineVerifySource.evaluateHandle(
+    (source, labels) => {
+      const rows: Record<string, string | boolean | number | null>[] = [];
+      const read = (phase: string) => {
+        rows.push({
+          family: labels.family,
+          action: labels.action,
+          phase,
+          pathname: location.pathname,
+          locale: document.documentElement.lang,
+          direction: document.documentElement.dir,
+          activeTag: document.activeElement?.tagName ?? null,
+          activeId: document.activeElement?.id ?? null,
+          sourceConnected: source.isConnected,
+          sourceDisabled: source.matches(":disabled"),
+          sourceBusy: source.getAttribute("aria-busy"),
+          sameNode: source.isConnected,
+        });
+      };
+      let previous = "";
+      const observer = new MutationObserver(() => {
+        const current = JSON.stringify([
+          source.isConnected,
+          source.matches(":disabled"),
+          source.getAttribute("aria-busy"),
+          location.pathname,
+        ]);
+        if (current !== previous) {
+          previous = current;
+          read("transition");
+        }
+      });
+      observer.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["disabled", "aria-busy"],
+      });
+      read("before");
+      return { read, observer, rows };
+    },
+    { family: "phone-access-form", action: "Inline Verify" },
+  );
+  await inlineVerifyControl.press("Enter");
   await expect(
     page.getByRole("heading", { name: "Send your Booking Request" }),
   ).toBeVisible();
+  const inlineVerifyRows = await inlineVerifyMeasurement.evaluate(
+    (measurement) => {
+      measurement.read("settled");
+      measurement.observer.disconnect();
+      return measurement.rows;
+    },
+  );
+  await test.info().attach("focus-inlineVerify", {
+    body: JSON.stringify(inlineVerifyRows),
+    contentType: "application/json",
+  });
+  await inlineVerifyMeasurement.dispose();
+  await inlineVerifySource.dispose();
+
   // Verification completes through the access page; wait for the header to
   // settle on the request page before switching language.
   await expect(
@@ -329,6 +637,58 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await page.getByLabel(/accept the preserved House Rules/i).check();
   await page.getByLabel(/accept the cancellation policy/i).check();
   await page.getByLabel(/accept the marketplace booking terms/i).check();
+  const requestSubmitControl = page.getByRole("button", {
+    name: "Send Booking Request",
+    exact: true,
+  });
+  await requestSubmitControl.focus();
+  await expect(requestSubmitControl).toBeFocused();
+  const requestSubmitSource = await requestSubmitControl.elementHandle();
+  if (!requestSubmitSource)
+    throw new Error("Focus measurement source is missing");
+  const requestSubmitMeasurement = await requestSubmitSource.evaluateHandle(
+    (source, labels) => {
+      const rows: Record<string, string | boolean | number | null>[] = [];
+      const read = (phase: string) => {
+        rows.push({
+          family: labels.family,
+          action: labels.action,
+          phase,
+          pathname: location.pathname,
+          locale: document.documentElement.lang,
+          direction: document.documentElement.dir,
+          activeTag: document.activeElement?.tagName ?? null,
+          activeId: document.activeElement?.id ?? null,
+          sourceConnected: source.isConnected,
+          sourceDisabled: source.matches(":disabled"),
+          sourceBusy: source.getAttribute("aria-busy"),
+          sameNode: source.isConnected,
+        });
+      };
+      let previous = "";
+      const observer = new MutationObserver(() => {
+        const current = JSON.stringify([
+          source.isConnected,
+          source.matches(":disabled"),
+          source.getAttribute("aria-busy"),
+          location.pathname,
+        ]);
+        if (current !== previous) {
+          previous = current;
+          read("transition");
+        }
+      });
+      observer.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["disabled", "aria-busy"],
+      });
+      read("before");
+      return { read, observer, rows };
+    },
+    { family: "booking-request-form", action: "Submit duplicate request" },
+  );
   await page
     .getByRole("form", { name: "Send your Booking Request" })
     .evaluate((form) => {
@@ -339,6 +699,20 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await expect(
     page.getByRole("heading", { name: "Booking Request pending" }),
   ).toBeVisible();
+  const requestSubmitRows = await requestSubmitMeasurement.evaluate(
+    (measurement) => {
+      measurement.read("settled");
+      measurement.observer.disconnect();
+      return measurement.rows;
+    },
+  );
+  await test.info().attach("focus-requestSubmit", {
+    body: JSON.stringify(requestSubmitRows),
+    contentType: "application/json",
+  });
+  await requestSubmitMeasurement.dispose();
+  await requestSubmitSource.dispose();
+
   await expect(page.getByText(/does not reserve/)).toHaveCount(0);
   await expect(page.getByText("Owner response deadline")).toBeVisible();
   expect(await page.locator("body").innerText()).not.toContain(exactAddress);
@@ -473,12 +847,73 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await arabicNotice
       .getByLabel("ملاحظة اختيارية للعميل")
       .fill("صيانة مجدولة للمسبح.");
-    await arabicNotice
-      .getByRole("button", { name: "رفض الطلب كاملاً" })
-      .click();
+    const declineArControl = arabicNotice.getByRole("button", {
+      name: "رفض الطلب كاملاً",
+    });
+    await declineArControl.focus();
+    await expect(declineArControl).toBeFocused();
+    const declineArSource = await declineArControl.elementHandle();
+    if (!declineArSource)
+      throw new Error("Focus measurement source is missing");
+    const declineArMeasurement = await declineArSource.evaluateHandle(
+      (source, labels) => {
+        const rows: Record<string, string | boolean | number | null>[] = [];
+        const read = (phase: string) => {
+          rows.push({
+            family: labels.family,
+            action: labels.action,
+            phase,
+            pathname: location.pathname,
+            locale: document.documentElement.lang,
+            direction: document.documentElement.dir,
+            activeTag: document.activeElement?.tagName ?? null,
+            activeId: document.activeElement?.id ?? null,
+            sourceConnected: source.isConnected,
+            sourceDisabled: source.matches(":disabled"),
+            sourceBusy: source.getAttribute("aria-busy"),
+            sameNode: source.isConnected,
+          });
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer, rows };
+      },
+      { family: "booking-request-decision-controls", action: "Decline Arabic" },
+    );
+    await declineArControl.press("Enter");
     await expect(
       arabicNotice.getByText("مرفوض", { exact: true }),
     ).toBeVisible();
+    const declineArRows = await declineArMeasurement.evaluate((measurement) => {
+      measurement.read("settled");
+      measurement.observer.disconnect();
+      return measurement.rows;
+    });
+    await test.info().attach("focus-declineAr", {
+      body: JSON.stringify(declineArRows),
+      contentType: "application/json",
+    });
+    await declineArMeasurement.dispose();
+    await declineArSource.dispose();
+
     await ownerPage.reload();
     await expect(
       arabicNotice.getByText("إشعار الحالة", { exact: true }),
@@ -493,10 +928,73 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
     // The sentence starts with the label's letters, so the label is asserted together with the sentence's first word.
     await expect(page.locator(".status-banner")).toContainText("چاوەڕێچاوەڕێی");
-    await page
-      .getByRole("button", { name: "کشاندنەوەی داواکاری چاوەڕێ" })
-      .click();
+    const withdrawCkbControl = page.getByRole("button", {
+      name: "کشاندنەوەی داواکاری چاوەڕێ",
+    });
+    await withdrawCkbControl.focus();
+    await expect(withdrawCkbControl).toBeFocused();
+    const withdrawCkbSource = await withdrawCkbControl.elementHandle();
+    if (!withdrawCkbSource)
+      throw new Error("Focus measurement source is missing");
+    const withdrawCkbMeasurement = await withdrawCkbSource.evaluateHandle(
+      (source, labels) => {
+        const rows: Record<string, string | boolean | number | null>[] = [];
+        const read = (phase: string) => {
+          rows.push({
+            family: labels.family,
+            action: labels.action,
+            phase,
+            pathname: location.pathname,
+            locale: document.documentElement.lang,
+            direction: document.documentElement.dir,
+            activeTag: document.activeElement?.tagName ?? null,
+            activeId: document.activeElement?.id ?? null,
+            sourceConnected: source.isConnected,
+            sourceDisabled: source.matches(":disabled"),
+            sourceBusy: source.getAttribute("aria-busy"),
+            sameNode: source.isConnected,
+          });
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer, rows };
+      },
+      { family: "customer-booking-request-status", action: "Withdraw Sorani" },
+    );
+    await withdrawCkbControl.press("Enter");
     await expect(page.locator(".status-banner")).toContainText("کشێنراوەتەوە");
+    const withdrawCkbRows = await withdrawCkbMeasurement.evaluate(
+      (measurement) => {
+        measurement.read("settled");
+        measurement.observer.disconnect();
+        return measurement.rows;
+      },
+    );
+    await test.info().attach("focus-withdrawCkb", {
+      body: JSON.stringify(withdrawCkbRows),
+      contentType: "application/json",
+    });
+    await withdrawCkbMeasurement.dispose();
+    await withdrawCkbSource.dispose();
+
     await page.reload();
     await expect(
       page.getByText("ئاگادارکردنەوەی دۆخ", { exact: true }),
@@ -508,12 +1006,76 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await ownerNotice
       .getByLabel("Optional note to the Customer")
       .fill("The requested party cannot be accommodated safely.");
-    await ownerNotice
-      .getByRole("button", { name: "Decline complete request" })
-      .click();
+    const declineEnControl = ownerNotice.getByRole("button", {
+      name: "Decline complete request",
+    });
+    await declineEnControl.focus();
+    await expect(declineEnControl).toBeFocused();
+    const declineEnSource = await declineEnControl.elementHandle();
+    if (!declineEnSource)
+      throw new Error("Focus measurement source is missing");
+    const declineEnMeasurement = await declineEnSource.evaluateHandle(
+      (source, labels) => {
+        const rows: Record<string, string | boolean | number | null>[] = [];
+        const read = (phase: string) => {
+          rows.push({
+            family: labels.family,
+            action: labels.action,
+            phase,
+            pathname: location.pathname,
+            locale: document.documentElement.lang,
+            direction: document.documentElement.dir,
+            activeTag: document.activeElement?.tagName ?? null,
+            activeId: document.activeElement?.id ?? null,
+            sourceConnected: source.isConnected,
+            sourceDisabled: source.matches(":disabled"),
+            sourceBusy: source.getAttribute("aria-busy"),
+            sameNode: source.isConnected,
+          });
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer, rows };
+      },
+      {
+        family: "booking-request-decision-controls",
+        action: "Decline English",
+      },
+    );
+    await declineEnControl.press("Enter");
     await expect(
       ownerNotice.getByText("Declined", { exact: true }),
     ).toBeVisible();
+    const declineEnRows = await declineEnMeasurement.evaluate((measurement) => {
+      measurement.read("settled");
+      measurement.observer.disconnect();
+      return measurement.rows;
+    });
+    await test.info().attach("focus-declineEn", {
+      body: JSON.stringify(declineEnRows),
+      contentType: "application/json",
+    });
+    await declineEnMeasurement.dispose();
+    await declineEnSource.dispose();
+
     await ownerPage.reload();
     await expect(
       ownerNotice.getByText("Status notification", { exact: true }),
@@ -536,11 +1098,77 @@ test("a verified Customer double-submit creates one Pending request and one mini
       await new Promise((resolve) => setTimeout(resolve, 1_000));
       await route.fulfill({ response });
     });
-    await page
-      .getByRole("button", { name: "Withdraw pending request" })
-      .click();
+    const withdrawEnControl = page.getByRole("button", {
+      name: "Withdraw pending request",
+    });
+    await withdrawEnControl.focus();
+    await expect(withdrawEnControl).toBeFocused();
+    const withdrawEnSource = await withdrawEnControl.elementHandle();
+    if (!withdrawEnSource)
+      throw new Error("Focus measurement source is missing");
+    const withdrawEnMeasurement = await withdrawEnSource.evaluateHandle(
+      (source, labels) => {
+        const rows: Record<string, string | boolean | number | null>[] = [];
+        const read = (phase: string) => {
+          rows.push({
+            family: labels.family,
+            action: labels.action,
+            phase,
+            pathname: location.pathname,
+            locale: document.documentElement.lang,
+            direction: document.documentElement.dir,
+            activeTag: document.activeElement?.tagName ?? null,
+            activeId: document.activeElement?.id ?? null,
+            sourceConnected: source.isConnected,
+            sourceDisabled: source.matches(":disabled"),
+            sourceBusy: source.getAttribute("aria-busy"),
+            sameNode: source.isConnected,
+          });
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer, rows };
+      },
+      {
+        family: "customer-booking-request-status",
+        action: "Withdraw English processing",
+      },
+    );
+    await withdrawEnControl.press("Enter");
     await expect(page.locator(".status-banner")).toContainText("Processing");
     await expect(page.locator(".status-banner")).toContainText("Withdrawn");
+    const withdrawEnRows = await withdrawEnMeasurement.evaluate(
+      (measurement) => {
+        measurement.read("settled");
+        measurement.observer.disconnect();
+        return measurement.rows;
+      },
+    );
+    await test.info().attach("focus-withdrawEn", {
+      body: JSON.stringify(withdrawEnRows),
+      contentType: "application/json",
+    });
+    await withdrawEnMeasurement.dispose();
+    await withdrawEnSource.dispose();
+
     const resubmittedReference = await submitAnotherRequest("en");
     await page.goto(`/en/booking-requests/${resubmittedReference}`);
     await expect(page.locator(".status-banner")).toContainText("Pending");
@@ -549,401 +1177,648 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await expect(
       page.getByRole("button", { name: "Withdraw pending request" }),
     ).toBeVisible();
-    await ownerNotice
-      .getByRole("button", { name: "Accept complete request" })
-      .click();
-    // The Customer stays mounted across the independent Owner action.
-    await expect(page.getByRole("status")).toContainText(
-      "Payment confirmation pending",
-      { timeout: 15000 },
-    );
-    await expect(ownerNotice.getByRole("status")).toContainText(
-      "Payment confirmation pending",
-    );
-    await expect(
-      page.getByRole("button", { name: "Withdraw pending request" }),
-    ).toHaveCount(0);
-    await expect(ownerNotice.getByRole("button")).toHaveCount(0);
-    const ownerBookingLink = {
-      en: "Open confirmed booking",
-      ar: "فتح الحجز المؤكد",
-      ckb: "کردنەوەی حجزی پشتڕاستکراو",
-    } as const;
-    const termsLabel = {
-      en: "Booking terms",
-      ar: "شروط الحجز",
-      ckb: "مەرجەکانی حجز",
-    } as const;
-    const locales = [
-      {
-        locale: "en",
-        pending: "Payment confirmation pending",
-        confirmed: "Booking confirmed",
-        paidHeading: "Confirmed booking",
-        incomplete: "Some practical access or contact details are unavailable.",
-        noticePending: "Pending",
-        noticeDelivered: "Delivered",
-        required: "Payment Required",
-        elapsed: "deadline has passed",
-        quarantined: "Payment needs review",
-        attention: "Support needs to review this payment",
-        held: "remain held",
-        paymentDeadline: "Payment deadline",
-      },
-      {
-        locale: "ar",
-        pending: "بانتظار تأكيد الدفع",
-        confirmed: "تم تأكيد الحجز",
-        paidHeading: "حجز مؤكد",
-        incomplete: "بعض تفاصيل الوصول أو الاتصال غير متاحة.",
-        noticePending: "قيد الانتظار",
-        noticeDelivered: "تم التسليم",
-        required: "الدفع مطلوب",
-        elapsed: "انتهى موعد",
-        quarantined: "الدفع يحتاج إلى مراجعة",
-        attention: "يحتاج فريق الدعم إلى مراجعة هذا الدفع",
-        held: "محجوزة",
-        paymentDeadline: "موعد الدفع",
-      },
-      {
-        locale: "ckb",
-        pending: "چاوەڕێی پشتڕاستکردنەوەی پارەدان",
-        confirmed: "حجز پشتڕاست کراوەتەوە",
-        paidHeading: "حجزی پشتڕاستکراو",
-        incomplete: "هەندێک وردەکاری گەیشتن یان پەیوەندی بەردەست نییە.",
-        noticePending: "چاوەڕێ",
-        noticeDelivered: "گەیەنرا",
-        required: "پارەدان پێویستە",
-        elapsed: "تێپەڕی",
-        quarantined: "پارەدان پێویستی بە پێداچوونەوە هەیە",
-        attention: "تیمی پشتگیری پێویستە پێداچوونەوە بە ئەم پارەدانە بکات",
-        held: "گیراو دەمێننەوە",
-        paymentDeadline: "کاتی کۆتایی پارەدان",
-      },
-    ] as const;
-    async function assertPaymentViews(
-      state:
-        | "capture-processing"
-        | "paid-confirmed"
-        | "paid-confirmed-incomplete"
-        | "payment-required-open"
-        | "payment-required-elapsed"
-        | "payment-expiry-quarantined",
-      reference = requestReference,
-    ) {
-      for (const copy of locales) {
-        // Keep the transition observers mounted: navigating an in-flight refresh
-        // can terminate Wrangler's local forwarding proxy.
-        const customerView = await page.context().newPage();
-        const ownerView = await ownerContext.newPage();
-        await customerView.setViewportSize({ width: 390, height: 844 });
-        await ownerView.setViewportSize({ width: 390, height: 844 });
-        await customerView.goto(
-          `/${copy.locale}/booking-requests/${reference}`,
-        );
-        await ownerView.goto(`/${copy.locale}/owner/cottages`);
-        const currentOwnerNotice = ownerView.getByRole("article", {
-          name: reference,
-        });
-        for (const surface of [customerView, ownerView]) {
-          await expect(surface.locator("html")).toHaveAttribute(
-            "dir",
-            copy.locale === "en" ? "ltr" : "rtl",
+    const ownerDetailPage = await ownerContext.newPage();
+    try {
+      await ownerDetailPage.goto(
+        `/en/owner/booking-requests/${requestReference}`,
+      );
+      const ownerMainSource = await ownerDetailPage
+        .getByRole("main")
+        .elementHandle();
+      if (!ownerMainSource)
+        throw new Error("Owner detail main measurement source is missing");
+      const ownerMainMeasurement = await ownerMainSource.evaluateHandle(
+        (source) => {
+          const rows: Record<string, string | boolean | null>[] = [];
+          const read = (phase: string) =>
+            rows.push({
+              family: "booking-request-decision-controls",
+              action: "Owner detail main identity",
+              phase,
+              pathname: location.pathname,
+              locale: document.documentElement.lang,
+              direction: document.documentElement.dir,
+              activeTag: document.activeElement?.tagName ?? null,
+              activeId: document.activeElement?.id ?? null,
+              sourceConnected: source.isConnected,
+              sourceDisabled: source.matches(":disabled"),
+              sourceBusy: source.getAttribute("aria-busy"),
+              sameNode: document.querySelector("main") === source,
+            });
+          let previous = JSON.stringify([
+            source.isConnected,
+            document.querySelector("main") === source,
+          ]);
+          const observer = new MutationObserver(() => {
+            const current = JSON.stringify([
+              source.isConnected,
+              document.querySelector("main") === source,
+            ]);
+            if (current !== previous) {
+              previous = current;
+              read("replacement");
+            }
+          });
+          observer.observe(document.documentElement, {
+            subtree: true,
+            childList: true,
+          });
+          read("before-accept");
+          return { read, observer, rows };
+        },
+      );
+      const ownerAcceptControl = ownerDetailPage.getByRole("button", {
+        name: "Accept complete request",
+        exact: true,
+      });
+      await ownerAcceptControl.focus();
+      await expect(ownerAcceptControl).toBeFocused();
+      const ownerAcceptSource = await ownerAcceptControl.elementHandle();
+      if (!ownerAcceptSource)
+        throw new Error("Focus measurement source is missing");
+      const ownerAcceptMeasurement = await ownerAcceptSource.evaluateHandle(
+        (source, labels) => {
+          const rows: Record<string, string | boolean | number | null>[] = [];
+          const read = (phase: string) => {
+            rows.push({
+              family: labels.family,
+              action: labels.action,
+              phase,
+              pathname: location.pathname,
+              locale: document.documentElement.lang,
+              direction: document.documentElement.dir,
+              activeTag: document.activeElement?.tagName ?? null,
+              activeId: document.activeElement?.id ?? null,
+              sourceConnected: source.isConnected,
+              sourceDisabled: source.matches(":disabled"),
+              sourceBusy: source.getAttribute("aria-busy"),
+              sameNode: source.isConnected,
+            });
+          };
+          let previous = "";
+          const observer = new MutationObserver(() => {
+            const current = JSON.stringify([
+              source.isConnected,
+              source.matches(":disabled"),
+              source.getAttribute("aria-busy"),
+              location.pathname,
+            ]);
+            if (current !== previous) {
+              previous = current;
+              read("transition");
+            }
+          });
+          observer.observe(document.documentElement, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            attributeFilter: ["disabled", "aria-busy"],
+          });
+          read("before");
+          return { read, observer, rows };
+        },
+        {
+          family: "booking-request-decision-controls",
+          action: "Accept mounted owner detail",
+        },
+      );
+      await ownerAcceptControl.press("Enter");
+      // The Customer stays mounted across the independent Owner action.
+      await expect(page.getByRole("status")).toContainText(
+        "Payment confirmation pending",
+        { timeout: 15000 },
+      );
+      await expect(ownerNotice.getByRole("status")).toContainText(
+        "Payment confirmation pending",
+      );
+      await expect(
+        page.getByRole("button", { name: "Withdraw pending request" }),
+      ).toHaveCount(0);
+      await expect(ownerNotice.getByRole("button")).toHaveCount(0);
+      await expect(
+        ownerDetailPage
+          .getByText("Payment confirmation pending", { exact: true })
+          .first(),
+      ).toBeVisible();
+      const ownerAcceptRows = await ownerAcceptMeasurement.evaluate(
+        (measurement) => {
+          measurement.read("settled");
+          measurement.observer.disconnect();
+          return measurement.rows;
+        },
+      );
+      await test.info().attach("focus-ownerAccept", {
+        body: JSON.stringify(ownerAcceptRows),
+        contentType: "application/json",
+      });
+      await ownerAcceptMeasurement.dispose();
+      await ownerAcceptSource.dispose();
+      await ownerMainMeasurement.evaluate((measurement) =>
+        measurement.read("capture-processing"),
+      );
+
+      const ownerBookingLink = {
+        en: "Open confirmed booking",
+        ar: "فتح الحجز المؤكد",
+        ckb: "کردنەوەی حجزی پشتڕاستکراو",
+      } as const;
+      const termsLabel = {
+        en: "Booking terms",
+        ar: "شروط الحجز",
+        ckb: "مەرجەکانی حجز",
+      } as const;
+      const locales = [
+        {
+          locale: "en",
+          pending: "Payment confirmation pending",
+          confirmed: "Booking confirmed",
+          paidHeading: "Confirmed booking",
+          incomplete:
+            "Some practical access or contact details are unavailable.",
+          noticePending: "Pending",
+          noticeDelivered: "Delivered",
+          required: "Payment Required",
+          elapsed: "deadline has passed",
+          quarantined: "Payment needs review",
+          attention: "Support needs to review this payment",
+          held: "remain held",
+          paymentDeadline: "Payment deadline",
+        },
+        {
+          locale: "ar",
+          pending: "بانتظار تأكيد الدفع",
+          confirmed: "تم تأكيد الحجز",
+          paidHeading: "حجز مؤكد",
+          incomplete: "بعض تفاصيل الوصول أو الاتصال غير متاحة.",
+          noticePending: "قيد الانتظار",
+          noticeDelivered: "تم التسليم",
+          required: "الدفع مطلوب",
+          elapsed: "انتهى موعد",
+          quarantined: "الدفع يحتاج إلى مراجعة",
+          attention: "يحتاج فريق الدعم إلى مراجعة هذا الدفع",
+          held: "محجوزة",
+          paymentDeadline: "موعد الدفع",
+        },
+        {
+          locale: "ckb",
+          pending: "چاوەڕێی پشتڕاستکردنەوەی پارەدان",
+          confirmed: "حجز پشتڕاست کراوەتەوە",
+          paidHeading: "حجزی پشتڕاستکراو",
+          incomplete: "هەندێک وردەکاری گەیشتن یان پەیوەندی بەردەست نییە.",
+          noticePending: "چاوەڕێ",
+          noticeDelivered: "گەیەنرا",
+          required: "پارەدان پێویستە",
+          elapsed: "تێپەڕی",
+          quarantined: "پارەدان پێویستی بە پێداچوونەوە هەیە",
+          attention: "تیمی پشتگیری پێویستە پێداچوونەوە بە ئەم پارەدانە بکات",
+          held: "گیراو دەمێننەوە",
+          paymentDeadline: "کاتی کۆتایی پارەدان",
+        },
+      ] as const;
+      async function assertPaymentViews(
+        state:
+          | "capture-processing"
+          | "paid-confirmed"
+          | "paid-confirmed-incomplete"
+          | "payment-required-open"
+          | "payment-required-elapsed"
+          | "payment-expiry-quarantined",
+        reference = requestReference,
+      ) {
+        for (const copy of locales) {
+          // Keep the transition observers mounted: navigating an in-flight refresh
+          // can terminate Wrangler's local forwarding proxy.
+          const customerView = await page.context().newPage();
+          const ownerView = await ownerContext.newPage();
+          await customerView.setViewportSize({ width: 390, height: 844 });
+          await ownerView.setViewportSize({ width: 390, height: 844 });
+          await customerView.goto(
+            `/${copy.locale}/booking-requests/${reference}`,
           );
-        }
-        const expectedStatus =
-          state === "capture-processing"
-            ? copy.pending
-            : state === "payment-expiry-quarantined"
-              ? copy.quarantined
-              : state === "paid-confirmed" ||
-                  state === "paid-confirmed-incomplete"
-                ? copy.confirmed
-                : copy.required;
-        if (
-          state === "paid-confirmed" ||
-          state === "paid-confirmed-incomplete"
-        ) {
-          await expect(
-            customerView.getByRole("heading", { name: copy.paidHeading }),
-          ).toBeVisible();
-          await expect(
-            customerView.getByRole("status").filter({
-              hasText: new RegExp(
-                `${copy.noticePending}|${copy.noticeDelivered}`,
+          await ownerView.goto(`/${copy.locale}/owner/cottages`);
+          const currentOwnerNotice = ownerView.getByRole("article", {
+            name: reference,
+          });
+          for (const surface of [customerView, ownerView]) {
+            await expect(surface.locator("html")).toHaveAttribute(
+              "dir",
+              copy.locale === "en" ? "ltr" : "rtl",
+            );
+          }
+          const expectedStatus =
+            state === "capture-processing"
+              ? copy.pending
+              : state === "payment-expiry-quarantined"
+                ? copy.quarantined
+                : state === "paid-confirmed" ||
+                    state === "paid-confirmed-incomplete"
+                  ? copy.confirmed
+                  : copy.required;
+          if (
+            state === "paid-confirmed" ||
+            state === "paid-confirmed-incomplete"
+          ) {
+            await expect(
+              customerView.getByRole("heading", { name: copy.paidHeading }),
+            ).toBeVisible();
+            await expect(
+              customerView.getByRole("status").filter({
+                hasText: new RegExp(
+                  `${copy.noticePending}|${copy.noticeDelivered}`,
+                ),
+              }),
+            ).toBeVisible();
+            await expect(customerView.getByText(exactAddress)).toBeVisible();
+            await expect(customerView.getByText(customerPhone)).toBeVisible();
+            await expect(customerView.getByText(ownerPhone)).toBeVisible();
+            await expect(
+              customerView.getByText(
+                "Synthetic fixture only. Respect neighbours.",
               ),
-            }),
-          ).toBeVisible();
-          await expect(customerView.getByText(exactAddress)).toBeVisible();
-          await expect(customerView.getByText(customerPhone)).toBeVisible();
-          await expect(customerView.getByText(ownerPhone)).toBeVisible();
-          await expect(
-            customerView.getByText(
-              "Synthetic fixture only. Respect neighbours.",
-            ),
-          ).toBeVisible();
-          await customerView
-            .locator("summary")
-            .filter({ hasText: termsLabel[copy.locale] })
-            .click();
-          await expect(
-            customerView.getByText(bookingTermsFixture("en").body),
-          ).toBeVisible();
-          await expect(
-            customerView.getByText("36.408333, 44.385834"),
-          ).toBeVisible();
-        } else {
-          await expect(customerView.getByRole("status")).toContainText(
+            ).toBeVisible();
+            await customerView
+              .locator("summary")
+              .filter({ hasText: termsLabel[copy.locale] })
+              .click();
+            await expect(
+              customerView.getByText(bookingTermsFixture("en").body),
+            ).toBeVisible();
+            await expect(
+              customerView.getByText("36.408333, 44.385834"),
+            ).toBeVisible();
+          } else {
+            await expect(customerView.getByRole("status")).toContainText(
+              expectedStatus,
+            );
+          }
+          await expect(currentOwnerNotice.getByRole("status")).toContainText(
             expectedStatus,
           );
-        }
-        await expect(currentOwnerNotice.getByRole("status")).toContainText(
-          expectedStatus,
-        );
-        if (
-          state === "paid-confirmed" ||
-          state === "paid-confirmed-incomplete"
-        ) {
-          await currentOwnerNotice
-            .getByRole("link", { name: ownerBookingLink[copy.locale] })
-            .click();
-          await expect(
-            ownerView.getByRole("heading", { name: copy.paidHeading }),
-          ).toBeVisible();
-          await expect(
-            ownerView.getByRole("status").filter({
-              hasText: new RegExp(
-                `${copy.noticePending}|${copy.noticeDelivered}`,
-              ),
-            }),
-          ).toBeVisible();
-          await expect(ownerView.getByText(exactAddress)).toBeVisible();
-          await expect(ownerView.getByText(customerPhone)).toBeVisible();
-          await expect(ownerView.getByText(ownerPhone)).toBeVisible();
-          await ownerView
-            .locator("summary")
-            .filter({ hasText: termsLabel[copy.locale] })
-            .click();
-          await expect(
-            ownerView.getByText(bookingTermsFixture("en").body),
-          ).toBeVisible();
-          for (const surface of [customerView, ownerView]) {
-            const deliveryTitle = {
-              en: "Notifications about this request",
-              ar: "إشعارات هذا الطلب",
-              ckb: "ئاگادارکردنەوەکانی ئەم داواکارییە",
-            }[copy.locale];
-            const requestDelivery = surface.getByRole("region", {
-              name: deliveryTitle,
-            });
-            await expect(requestDelivery.getByRole("listitem")).not.toHaveCount(
-              0,
-            );
-            await expect(requestDelivery.getByRole("status")).toHaveCount(0);
-            const conversation = surface.getByRole("button", {
-              name: {
-                en: "Open conversation",
-                ar: "فتح المحادثة",
-                ckb: "گفتوگۆ بکەرەوە",
-              }[copy.locale],
-            });
-            // A raw browser button computes weight 400 and radius 0px here.
-            await expect(conversation).toHaveCSS("font-weight", "700");
-            await expect(conversation).not.toHaveCSS("border-radius", "0px");
-            // An unstyled section computes border width 0px and radius 0px.
-            await expect(requestDelivery).toHaveCSS("border-top-width", "1px");
-            await expect(requestDelivery).not.toHaveCSS("border-radius", "0px");
-            const bookingCard = surface.getByRole("region").filter({
-              has: surface.getByRole("heading", { level: 1 }),
-            });
-            for (const followUp of [conversation, requestDelivery]) {
-              await expect
-                .poll(async () => {
-                  const [card, box, viewportWidth] = await Promise.all([
-                    bookingCard.boundingBox(),
-                    followUp.boundingBox(),
-                    surface.evaluate(
-                      () => document.documentElement.clientWidth,
-                    ),
-                  ]);
-                  return (
-                    box!.x >= Math.max(card!.x, 1) &&
-                    box!.x + box!.width <=
-                      Math.min(card!.x + card!.width, viewportWidth - 1)
-                  );
-                })
-                .toBe(true);
-            }
-            if (state === "paid-confirmed-incomplete") {
-              await expect(
-                surface.getByRole("status", { name: copy.incomplete }),
-              ).toBeVisible();
-            }
-            for (const value of [
-              customerPhone,
-              ownerPhone,
-              "36.408333, 44.385834",
-            ]) {
-              await expect(surface.getByText(value, { exact: true })).toHaveCSS(
-                "direction",
-                "ltr",
-              );
-            }
+          if (
+            state === "paid-confirmed" ||
+            state === "paid-confirmed-incomplete"
+          ) {
+            await currentOwnerNotice
+              .getByRole("link", { name: ownerBookingLink[copy.locale] })
+              .click();
             await expect(
-              surface.getByText(bookingTermsFixture("en").body),
-            ).toHaveCSS("direction", "ltr");
-          }
-        }
-        if (state === "payment-required-elapsed") {
-          await expect(customerView.getByRole("status")).toContainText(
-            copy.elapsed,
-          );
-          await expect(currentOwnerNotice.getByRole("status")).toContainText(
-            copy.elapsed,
-          );
-        }
-        if (state === "payment-expiry-quarantined") {
-          const customerStatus = customerView.getByRole("region").filter({
-            has: customerView.getByRole("heading", { level: 1 }),
-          });
-          for (const surface of [customerStatus, currentOwnerNotice]) {
-            await expect(surface.getByRole("status")).toContainText(
-              copy.attention,
-            );
-            await expect(
-              surface.getByText(copy.paymentDeadline, { exact: true }),
+              ownerView.getByRole("heading", { name: copy.paidHeading }),
             ).toBeVisible();
-            await expect(surface.getByRole("status")).toContainText(copy.held);
-            await expect(surface.getByRole("button")).toHaveCount(0);
+            await expect(
+              ownerView.getByRole("status").filter({
+                hasText: new RegExp(
+                  `${copy.noticePending}|${copy.noticeDelivered}`,
+                ),
+              }),
+            ).toBeVisible();
+            await expect(ownerView.getByText(exactAddress)).toBeVisible();
+            await expect(ownerView.getByText(customerPhone)).toBeVisible();
+            await expect(ownerView.getByText(ownerPhone)).toBeVisible();
+            await ownerView
+              .locator("summary")
+              .filter({ hasText: termsLabel[copy.locale] })
+              .click();
+            await expect(
+              ownerView.getByText(bookingTermsFixture("en").body),
+            ).toBeVisible();
+            for (const surface of [customerView, ownerView]) {
+              const deliveryTitle = {
+                en: "Notifications about this request",
+                ar: "إشعارات هذا الطلب",
+                ckb: "ئاگادارکردنەوەکانی ئەم داواکارییە",
+              }[copy.locale];
+              const requestDelivery = surface.getByRole("region", {
+                name: deliveryTitle,
+              });
+              await expect(
+                requestDelivery.getByRole("listitem"),
+              ).not.toHaveCount(0);
+              await expect(requestDelivery.getByRole("status")).toHaveCount(0);
+              const conversation = surface.getByRole("button", {
+                name: {
+                  en: "Open conversation",
+                  ar: "فتح المحادثة",
+                  ckb: "گفتوگۆ بکەرەوە",
+                }[copy.locale],
+              });
+              if (
+                state === "paid-confirmed" &&
+                reference === requestReference &&
+                copy.locale === "en" &&
+                surface === customerView
+              ) {
+                const originalRequestUrl = surface.url();
+                const conversationOpenControl = conversation;
+                await conversationOpenControl.focus();
+                await expect(conversationOpenControl).toBeFocused();
+                const conversationOpenSource =
+                  await conversationOpenControl.elementHandle();
+                if (!conversationOpenSource)
+                  throw new Error("Focus measurement source is missing");
+                const conversationOpenMeasurement =
+                  await conversationOpenSource.evaluateHandle(
+                    (source, labels) => {
+                      const rows: Record<
+                        string,
+                        string | boolean | number | null
+                      >[] = [];
+                      const read = (phase: string) => {
+                        rows.push({
+                          family: labels.family,
+                          action: labels.action,
+                          phase,
+                          pathname: location.pathname,
+                          locale: document.documentElement.lang,
+                          direction: document.documentElement.dir,
+                          activeTag: document.activeElement?.tagName ?? null,
+                          activeId: document.activeElement?.id ?? null,
+                          sourceConnected: source.isConnected,
+                          sourceDisabled: source.matches(":disabled"),
+                          sourceBusy: source.getAttribute("aria-busy"),
+                          sameNode: source.isConnected,
+                        });
+                      };
+                      let previous = "";
+                      const observer = new MutationObserver(() => {
+                        const current = JSON.stringify([
+                          source.isConnected,
+                          source.matches(":disabled"),
+                          source.getAttribute("aria-busy"),
+                          location.pathname,
+                        ]);
+                        if (current !== previous) {
+                          previous = current;
+                          read("transition");
+                        }
+                      });
+                      observer.observe(document.documentElement, {
+                        subtree: true,
+                        childList: true,
+                        attributes: true,
+                        attributeFilter: ["disabled", "aria-busy"],
+                      });
+                      read("before");
+                      return { read, observer, rows };
+                    },
+                    {
+                      family: "messaging-booking-link",
+                      action: "Open booking conversation",
+                    },
+                  );
+                await conversationOpenControl.press("Enter");
+                await expect(surface).toHaveURL(
+                  /\/en\/messages\/[0-9a-f-]{36}/,
+                );
+                await expect(
+                  surface.getByRole("heading", {
+                    name: cottageName,
+                    exact: true,
+                  }),
+                ).toBeVisible();
+                const conversationOpenRows =
+                  await conversationOpenMeasurement.evaluate((measurement) => {
+                    measurement.read("settled");
+                    measurement.observer.disconnect();
+                    return measurement.rows;
+                  });
+                await test.info().attach("focus-conversationOpen", {
+                  body: JSON.stringify(conversationOpenRows),
+                  contentType: "application/json",
+                });
+                await conversationOpenMeasurement.dispose();
+                await conversationOpenSource.dispose();
+                await surface.goto(originalRequestUrl);
+                await expect(
+                  surface.getByRole("heading", { name: copy.paidHeading }),
+                ).toBeVisible();
+              }
+              // A raw browser button computes weight 400 and radius 0px here.
+              await expect(conversation).toHaveCSS("font-weight", "700");
+              await expect(conversation).not.toHaveCSS("border-radius", "0px");
+              // An unstyled section computes border width 0px and radius 0px.
+              await expect(requestDelivery).toHaveCSS(
+                "border-top-width",
+                "1px",
+              );
+              await expect(requestDelivery).not.toHaveCSS(
+                "border-radius",
+                "0px",
+              );
+              const bookingCard = surface.getByRole("region").filter({
+                has: surface.getByRole("heading", { level: 1 }),
+              });
+              for (const followUp of [conversation, requestDelivery]) {
+                await expect
+                  .poll(async () => {
+                    const [card, box, viewportWidth] = await Promise.all([
+                      bookingCard.boundingBox(),
+                      followUp.boundingBox(),
+                      surface.evaluate(
+                        () => document.documentElement.clientWidth,
+                      ),
+                    ]);
+                    return (
+                      box!.x >= Math.max(card!.x, 1) &&
+                      box!.x + box!.width <=
+                        Math.min(card!.x + card!.width, viewportWidth - 1)
+                    );
+                  })
+                  .toBe(true);
+              }
+              if (state === "paid-confirmed-incomplete") {
+                await expect(
+                  surface.getByRole("status", { name: copy.incomplete }),
+                ).toBeVisible();
+              }
+              for (const value of [
+                customerPhone,
+                ownerPhone,
+                "36.408333, 44.385834",
+              ]) {
+                await expect(
+                  surface.getByText(value, { exact: true }),
+                ).toHaveCSS("direction", "ltr");
+              }
+              await expect(
+                surface.getByText(bookingTermsFixture("en").body),
+              ).toHaveCSS("direction", "ltr");
+            }
           }
-          await expect(customerView.locator("body")).not.toContainText(
-            "Synthetic private fixture address",
-          );
-          await expect(currentOwnerNotice).not.toContainText(
-            /providerReference|diagnostic_reason|idempotency/i,
-          );
-        }
-        if (state !== "paid-confirmed" && state !== "paid-confirmed-incomplete")
-          await expect(currentOwnerNotice.getByRole("button")).toHaveCount(0);
-        for (const viewport of [
-          { width: 390, height: 844 },
-          { width: 1440, height: 1000 },
-        ]) {
-          for (const surface of [customerView, ownerView]) {
-            await surface.setViewportSize({
-              width: viewport.width,
-              height: viewport.height,
+          if (state === "payment-required-elapsed") {
+            await expect(customerView.getByRole("status")).toContainText(
+              copy.elapsed,
+            );
+            await expect(currentOwnerNotice.getByRole("status")).toContainText(
+              copy.elapsed,
+            );
+          }
+          if (state === "payment-expiry-quarantined") {
+            const customerStatus = customerView.getByRole("region").filter({
+              has: customerView.getByRole("heading", { level: 1 }),
             });
-            await surface.evaluate(() => document.fonts.ready);
-            expect(
-              await surface.evaluate(
-                () =>
-                  document.documentElement.scrollWidth <=
-                  document.documentElement.clientWidth,
-              ),
-            ).toBe(true);
+            for (const surface of [customerStatus, currentOwnerNotice]) {
+              await expect(surface.getByRole("status")).toContainText(
+                copy.attention,
+              );
+              await expect(
+                surface.getByText(copy.paymentDeadline, { exact: true }),
+              ).toBeVisible();
+              await expect(surface.getByRole("status")).toContainText(
+                copy.held,
+              );
+              await expect(surface.getByRole("button")).toHaveCount(0);
+            }
+            await expect(customerView.locator("body")).not.toContainText(
+              "Synthetic private fixture address",
+            );
+            await expect(currentOwnerNotice).not.toContainText(
+              /providerReference|diagnostic_reason|idempotency/i,
+            );
           }
+          if (
+            state !== "paid-confirmed" &&
+            state !== "paid-confirmed-incomplete"
+          )
+            await expect(currentOwnerNotice.getByRole("button")).toHaveCount(0);
+          for (const viewport of [
+            { width: 390, height: 844 },
+            { width: 1440, height: 1000 },
+          ]) {
+            for (const surface of [customerView, ownerView]) {
+              await surface.setViewportSize({
+                width: viewport.width,
+                height: viewport.height,
+              });
+              await surface.evaluate(() => document.fonts.ready);
+              expect(
+                await surface.evaluate(
+                  () =>
+                    document.documentElement.scrollWidth <=
+                    document.documentElement.clientWidth,
+                ),
+              ).toBe(true);
+            }
+          }
+          // Drain page requests before closing their local proxy streams.
+          await Promise.all([
+            customerView.waitForLoadState("networkidle"),
+            ownerView.waitForLoadState("networkidle"),
+          ]);
+          await customerView.close();
+          await ownerView.close();
         }
-        // Drain page requests before closing their local proxy streams.
-        await Promise.all([
-          customerView.waitForLoadState("networkidle"),
-          ownerView.waitForLoadState("networkidle"),
-        ]);
-        await customerView.close();
-        await ownerView.close();
       }
-    }
-    await assertPaymentViews("capture-processing");
-    const notificationSelector = harness.runSql(
-      "select pg_get_functiondef('public.list_due_booking_confirmation_notifications(integer)'::regprocedure);",
-    );
-    // Hold notice discovery for this tick to prove paid access before a drain.
-    // Capture and expiry still run through the real Worker; restore in all cases.
-    try {
-      harness.runSql(`create or replace function public.list_due_booking_confirmation_notifications(target_limit integer default 50)
+      await assertPaymentViews("capture-processing");
+      const notificationSelector = harness.runSql(
+        "select pg_get_functiondef('public.list_due_booking_confirmation_notifications(integer)'::regprocedure);",
+      );
+      // Hold notice discovery for this tick to prove paid access before a drain.
+      // Capture and expiry still run through the real Worker; restore in all cases.
+      try {
+        harness.runSql(`create or replace function public.list_due_booking_confirmation_notifications(target_limit integer default 50)
         returns setof jsonb language sql security definer set search_path='' as $$select null::jsonb where false$$;`);
-      const scheduled = await triggerScheduled(
-        baseURL,
-        "/__scheduled?cron=%2A%20%2A%20%2A%20%2A%20%2A",
+        const scheduled = await triggerScheduled(
+          baseURL,
+          "/__scheduled?cron=%2A%20%2A%20%2A%20%2A%20%2A",
+        );
+        expect(scheduled.ok).toBe(true);
+      } finally {
+        harness.runSql(notificationSelector);
+      }
+      await expect(ownerNotice.getByRole("status")).toContainText(
+        "Booking confirmed",
+        { timeout: 15000 },
       );
-      expect(scheduled.ok).toBe(true);
-    } finally {
-      harness.runSql(notificationSelector);
-    }
-    await expect(ownerNotice.getByRole("status")).toContainText(
-      "Booking confirmed",
-      { timeout: 15000 },
-    );
-    // The mounted pending page must refresh into the paid details automatically.
-    await expect(
-      page.getByRole("heading", { name: "Confirmed booking" }),
-    ).toBeVisible({ timeout: 15000 });
-    await expect(page.getByRole("status")).toContainText("Pending");
-    // The upgrade backfill helper shares identity with live producers. Exercise
-    // the actual authenticated pages and unchanged financial parser with both
-    // receiptless request events and receipt-bearing preparation events present.
-    const mixedNoticeIdentity = () =>
-      harness.runSql(
-        `select jsonb_agg(jsonb_build_object('id',e.id,'kind',e.event_kind,'receiptId',e.receipt_id) order by e.id) from public.booking_notification_events e join public.booking_requests q on q.id=e.booking_request_id where q.booking_request_reference='${requestReference}'`,
+      // The mounted pending page must refresh into the paid details automatically.
+      await expect(
+        page.getByRole("heading", { name: "Confirmed booking" }),
+      ).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole("status")).toContainText("Pending");
+      await expect(
+        ownerDetailPage.getByRole("heading", {
+          name: "Confirmed booking",
+          exact: true,
+        }),
+      ).toBeVisible({ timeout: 15000 });
+      const ownerMainRows = await ownerMainMeasurement.evaluate(
+        (measurement) => {
+          measurement.read("confirmed-replacement");
+          measurement.observer.disconnect();
+          return measurement.rows;
+        },
       );
-    const mixedBeforeBackfill = mixedNoticeIdentity();
-    harness.runSql(
-      `select public.ensure_booking_request_notification_events(id) from public.booking_requests where booking_request_reference='${requestReference}';`,
-    );
-    expect(mixedNoticeIdentity()).toBe(mixedBeforeBackfill);
-    const mixedNotices = JSON.parse(mixedBeforeBackfill) as Array<{
-      kind: string;
-      receiptId: string | null;
-    }>;
-    expect(
-      mixedNotices.filter((n) => n.kind === "request_accepted"),
-    ).toHaveLength(2);
-    expect(
-      mixedNotices
-        .filter((n) => n.kind === "request_accepted")
-        .every((n) => n.receiptId === null),
-    ).toBe(true);
-    expect(
-      mixedNotices.filter((n) => n.kind === "preparation_reminder"),
-    ).toHaveLength(2);
-    expect(
-      mixedNotices
-        .filter((n) => n.kind === "preparation_reminder")
-        .every((n) => typeof n.receiptId === "string"),
-    ).toBe(true);
-    await assertPaymentViews("paid-confirmed");
-    const originalPrivateDirections = JSON.parse(
-      harness.runSql(
-        `select to_jsonb(private_directions) from public.owner_application_cottage_profiles where id='${profile.id}';`,
-      ),
-    ) as string | null;
-    try {
-      harness.runSql(
-        `update public.owner_application_cottage_profiles set private_directions=null where id='${profile.id}';`,
-      );
-      await assertPaymentViews("paid-confirmed-incomplete");
-    } finally {
-      const restoredPrivateDirections =
-        originalPrivateDirections === null
-          ? "null"
-          : `'${originalPrivateDirections.replaceAll("'", "''")}'`;
-      harness.runSql(
-        `update public.owner_application_cottage_profiles set private_directions=${restoredPrivateDirections} where id='${profile.id}';`,
-      );
-    }
-    type PaidIdentity = {
-      bookingRequestId: string;
-      bookingRequestReference: string;
-      bookingReference: string;
-      receiptId: string;
-      recipientUserId: string;
-      recipientRole: "customer";
-      locale: "en" | "ar" | "ckb";
-    };
-    const paidIdentity = () => {
-      const identities = JSON.parse(
+      await test.info().attach("focus-ownerMain", {
+        body: JSON.stringify(ownerMainRows),
+        contentType: "application/json",
+      });
+      await ownerMainMeasurement.dispose();
+      await ownerMainSource.dispose();
+
+      // The upgrade backfill helper shares identity with live producers. Exercise
+      // the actual authenticated pages and unchanged financial parser with both
+      // receiptless request events and receipt-bearing preparation events present.
+      const mixedNoticeIdentity = () =>
         harness.runSql(
-          `select coalesce(jsonb_agg(jsonb_build_object(
+          `select jsonb_agg(jsonb_build_object('id',e.id,'kind',e.event_kind,'receiptId',e.receipt_id) order by e.id) from public.booking_notification_events e join public.booking_requests q on q.id=e.booking_request_id where q.booking_request_reference='${requestReference}'`,
+        );
+      const mixedBeforeBackfill = mixedNoticeIdentity();
+      harness.runSql(
+        `select public.ensure_booking_request_notification_events(id) from public.booking_requests where booking_request_reference='${requestReference}';`,
+      );
+      expect(mixedNoticeIdentity()).toBe(mixedBeforeBackfill);
+      const mixedNotices = JSON.parse(mixedBeforeBackfill) as Array<{
+        kind: string;
+        receiptId: string | null;
+      }>;
+      expect(
+        mixedNotices.filter((n) => n.kind === "request_accepted"),
+      ).toHaveLength(2);
+      expect(
+        mixedNotices
+          .filter((n) => n.kind === "request_accepted")
+          .every((n) => n.receiptId === null),
+      ).toBe(true);
+      expect(
+        mixedNotices.filter((n) => n.kind === "preparation_reminder"),
+      ).toHaveLength(2);
+      expect(
+        mixedNotices
+          .filter((n) => n.kind === "preparation_reminder")
+          .every((n) => typeof n.receiptId === "string"),
+      ).toBe(true);
+      await assertPaymentViews("paid-confirmed");
+      const originalPrivateDirections = JSON.parse(
+        harness.runSql(
+          `select to_jsonb(private_directions) from public.owner_application_cottage_profiles where id='${profile.id}';`,
+        ),
+      ) as string | null;
+      try {
+        harness.runSql(
+          `update public.owner_application_cottage_profiles set private_directions=null where id='${profile.id}';`,
+        );
+        await assertPaymentViews("paid-confirmed-incomplete");
+      } finally {
+        const restoredPrivateDirections =
+          originalPrivateDirections === null
+            ? "null"
+            : `'${originalPrivateDirections.replaceAll("'", "''")}'`;
+        harness.runSql(
+          `update public.owner_application_cottage_profiles set private_directions=${restoredPrivateDirections} where id='${profile.id}';`,
+        );
+      }
+      type PaidIdentity = {
+        bookingRequestId: string;
+        bookingRequestReference: string;
+        bookingReference: string;
+        receiptId: string;
+        recipientUserId: string;
+        recipientRole: "customer";
+        locale: "en" | "ar" | "ckb";
+      };
+      const paidIdentity = () => {
+        const identities = JSON.parse(
+          harness.runSql(
+            `select coalesce(jsonb_agg(jsonb_build_object(
             'bookingRequestId',requests.id,
             'bookingRequestReference',requests.booking_request_reference,
             'bookingReference',commitments.commitment_reference,
@@ -958,26 +1833,26 @@ test("a verified Customer double-submit creates one Pending request and one mini
           join public.booking_snapshots snapshots on snapshots.id=requests.booking_snapshot_id and snapshots.id=confirmations.booking_snapshot_id and snapshots.id=receipts.booking_snapshot_id and snapshots.customer_user_id=requests.customer_user_id
           join public.cottage_booking_period_commitments commitments on commitments.id=confirmations.booking_period_commitment_id and commitments.id=requests.booking_period_commitment_id and commitments.customer_user_id=requests.customer_user_id
           where requests.booking_request_reference='${requestReference}';`,
-        ),
-      ) as PaidIdentity[];
-      expect(identities).toHaveLength(1);
-      expect(identities[0]).toBeTruthy();
-      return identities[0];
-    };
-    const identityBeforeRetry = paidIdentity();
-    const authenticatedCustomerId = harness.runSql(
-      `select id from auth.users where phone='${customerPhone.slice(1)}';`,
-    );
-    expect(identityBeforeRetry).toMatchObject({
-      bookingRequestReference: requestReference,
-      recipientUserId: authenticatedCustomerId,
-      recipientRole: "customer",
-    });
-    const noticePayload = JSON.stringify(
-      paidConfirmationNotice(identityBeforeRetry),
-    ).replaceAll("'", "''");
-    const failedNotice = JSON.parse(
-      harness.runSql(`set role service_role;
+          ),
+        ) as PaidIdentity[];
+        expect(identities).toHaveLength(1);
+        expect(identities[0]).toBeTruthy();
+        return identities[0];
+      };
+      const identityBeforeRetry = paidIdentity();
+      const authenticatedCustomerId = harness.runSql(
+        `select id from auth.users where phone='${customerPhone.slice(1)}';`,
+      );
+      expect(identityBeforeRetry).toMatchObject({
+        bookingRequestReference: requestReference,
+        recipientUserId: authenticatedCustomerId,
+        recipientRole: "customer",
+      });
+      const noticePayload = JSON.stringify(
+        paidConfirmationNotice(identityBeforeRetry),
+      ).replaceAll("'", "''");
+      const failedNotice = JSON.parse(
+        harness.runSql(`set role service_role;
         select public.ensure_booking_confirmation_notification_work(
           '${identityBeforeRetry.receiptId}','${identityBeforeRetry.locale}',
           'paid-confirmation-v1','${noticePayload}'::jsonb
@@ -991,130 +1866,198 @@ test("a verified Customer double-submit creates one Pending request and one mini
           (result->>'leaseToken')::uuid,
           'failed'
         ) from leased;`),
-    );
-    expect(failedNotice.status).toBe("retryable");
-    await page.reload();
-    const paidDetails = page.getByRole("region", {
-      name: "Confirmed booking",
-    });
-    await expect(paidDetails.getByRole("status")).toContainText(
-      "Delivery failed",
-    );
-    await paidDetails
-      .getByRole("button", { name: "Retry confirmation notice" })
-      .click();
-    await expect(paidDetails.getByRole("status")).toHaveText("Pending");
-    await expect(
-      paidDetails.getByRole("button", { name: "Retry confirmation notice" }),
-    ).toHaveCount(0);
-    await expect(
-      paidDetails.getByText("IQD 185,000", { exact: true }),
-    ).toBeVisible();
-    expect(paidIdentity()).toEqual(identityBeforeRetry);
-    const notificationSourceCount = Number(
-      harness.runSql(`select
+      );
+      expect(failedNotice.status).toBe("retryable");
+      await page.reload();
+      const paidDetails = page.getByRole("region", {
+        name: "Confirmed booking",
+      });
+      await expect(paidDetails.getByRole("status")).toContainText(
+        "Delivery failed",
+      );
+      const confirmationRetryControl = paidDetails.getByRole("button", {
+        name: "Retry confirmation notice",
+      });
+      await confirmationRetryControl.focus();
+      await expect(confirmationRetryControl).toBeFocused();
+      const confirmationRetrySource =
+        await confirmationRetryControl.elementHandle();
+      if (!confirmationRetrySource)
+        throw new Error("Focus measurement source is missing");
+      const confirmationRetryMeasurement =
+        await confirmationRetrySource.evaluateHandle(
+          (source, labels) => {
+            const rows: Record<string, string | boolean | number | null>[] = [];
+            const read = (phase: string) => {
+              rows.push({
+                family: labels.family,
+                action: labels.action,
+                phase,
+                pathname: location.pathname,
+                locale: document.documentElement.lang,
+                direction: document.documentElement.dir,
+                activeTag: document.activeElement?.tagName ?? null,
+                activeId: document.activeElement?.id ?? null,
+                sourceConnected: source.isConnected,
+                sourceDisabled: source.matches(":disabled"),
+                sourceBusy: source.getAttribute("aria-busy"),
+                sameNode: source.isConnected,
+              });
+            };
+            let previous = "";
+            const observer = new MutationObserver(() => {
+              const current = JSON.stringify([
+                source.isConnected,
+                source.matches(":disabled"),
+                source.getAttribute("aria-busy"),
+                location.pathname,
+              ]);
+              if (current !== previous) {
+                previous = current;
+                read("transition");
+              }
+            });
+            observer.observe(document.documentElement, {
+              subtree: true,
+              childList: true,
+              attributes: true,
+              attributeFilter: ["disabled", "aria-busy"],
+            });
+            read("before");
+            return { read, observer, rows };
+          },
+          {
+            family: "notification-retry-control",
+            action: "Retry confirmed notice",
+          },
+        );
+      await confirmationRetryControl.press("Enter");
+      await expect(paidDetails.getByRole("status")).toHaveText("Pending");
+      await expect(
+        paidDetails.getByRole("button", { name: "Retry confirmation notice" }),
+      ).toHaveCount(0);
+      const confirmationRetryRows = await confirmationRetryMeasurement.evaluate(
+        (measurement) => {
+          measurement.read("settled");
+          measurement.observer.disconnect();
+          return measurement.rows;
+        },
+      );
+      await test.info().attach("focus-confirmationRetry", {
+        body: JSON.stringify(confirmationRetryRows),
+        contentType: "application/json",
+      });
+      await confirmationRetryMeasurement.dispose();
+      await confirmationRetrySource.dispose();
+
+      await expect(
+        paidDetails.getByText("IQD 185,000", { exact: true }),
+      ).toBeVisible();
+      expect(paidIdentity()).toEqual(identityBeforeRetry);
+      const notificationSourceCount = Number(
+        harness.runSql(`select
         (select count(*) from public.booking_receipts) +
         (select count(*) from public.booking_notification_events);`),
-    );
-    expect(Number.isSafeInteger(notificationSourceCount)).toBe(true);
-    const tickBudget = Math.ceil(notificationSourceCount / 50) + 1;
-    let attemptedTicks = 0;
-    let targetState: string | null = null;
-    while (attemptedTicks < tickBudget && targetState !== "delivered") {
-      attemptedTicks += 1;
-      const scheduled = await triggerScheduled(baseURL, "/__scheduled");
-      if (!scheduled.ok) {
-        throw new Error(
-          `Booking confirmation scheduler tick ${attemptedTicks}/${tickBudget} failed with target ${targetState ?? "pending"}`,
-        );
-      }
-      const exactWork = JSON.parse(
-        harness.runSql(`select coalesce((select jsonb_build_object(
+      );
+      expect(Number.isSafeInteger(notificationSourceCount)).toBe(true);
+      const tickBudget = Math.ceil(notificationSourceCount / 50) + 1;
+      let attemptedTicks = 0;
+      let targetState: string | null = null;
+      while (attemptedTicks < tickBudget && targetState !== "delivered") {
+        attemptedTicks += 1;
+        const scheduled = await triggerScheduled(baseURL, "/__scheduled");
+        if (!scheduled.ok) {
+          throw new Error(
+            `Booking confirmation scheduler tick ${attemptedTicks}/${tickBudget} failed with target ${targetState ?? "pending"}`,
+          );
+        }
+        const exactWork = JSON.parse(
+          harness.runSql(`select coalesce((select jsonb_build_object(
           'state',work.state
         ) from public.booking_confirmation_notification_work work
         where work.notification_id='${identityBeforeRetry.receiptId}'
           and work.event_id is null), 'null'::jsonb);`),
-      ) as { state: string } | null;
-      if (!exactWork) {
+        ) as { state: string } | null;
+        if (!exactWork) {
+          throw new Error(
+            `Booking confirmation work is missing after ${attemptedTicks}/${tickBudget} ticks`,
+          );
+        }
+        targetState = exactWork.state;
+      }
+      if (targetState !== "delivered") {
         throw new Error(
-          `Booking confirmation work is missing after ${attemptedTicks}/${tickBudget} ticks`,
+          `Booking confirmation remained ${targetState ?? "missing"} after ${attemptedTicks}/${tickBudget} ticks`,
         );
       }
-      targetState = exactWork.state;
-    }
-    if (targetState !== "delivered") {
-      throw new Error(
-        `Booking confirmation remained ${targetState ?? "missing"} after ${attemptedTicks}/${tickBudget} ticks`,
+      await page.goto(`/en/booking-requests/${requestReference}`);
+      await expect(
+        page.getByRole("heading", { name: "Confirmed booking" }),
+      ).toBeVisible();
+      await expect(page.getByRole("status")).toContainText("Delivered");
+      expect(paidIdentity()).toEqual(identityBeforeRetry);
+      await page.getByRole("link", { name: "My bookings" }).click();
+      await expect(
+        page.getByRole("heading", { name: "My bookings" }),
+      ).toBeVisible();
+      const customerHistoryLink = page.locator(
+        `a[href="/en/booking-requests/${requestReference}"]`,
       );
-    }
-    await page.goto(`/en/booking-requests/${requestReference}`);
-    await expect(
-      page.getByRole("heading", { name: "Confirmed booking" }),
-    ).toBeVisible();
-    await expect(page.getByRole("status")).toContainText("Delivered");
-    expect(paidIdentity()).toEqual(identityBeforeRetry);
-    await page.getByRole("link", { name: "My bookings" }).click();
-    await expect(
-      page.getByRole("heading", { name: "My bookings" }),
-    ).toBeVisible();
-    const customerHistoryLink = page.locator(
-      `a[href="/en/booking-requests/${requestReference}"]`,
-    );
-    await expect(
-      page.locator(".list-rows > li").filter({ has: customerHistoryLink }),
-    ).toContainText(identityBeforeRetry.bookingReference);
-    await customerHistoryLink.click();
-    await expect(
-      page.getByRole("region", { name: "Confirmed booking" }),
-    ).toContainText(identityBeforeRetry.bookingReference);
-    await expect(page.getByText(exactAddress)).toBeVisible();
-    await ownerPage.goto(`/en/owner/booking-requests/${requestReference}`);
-    await expect(
-      ownerPage.getByRole("heading", { name: "Confirmed booking" }),
-    ).toBeVisible();
-    await expect(ownerPage.getByRole("status")).toContainText("Delivered");
-    await ownerPage
-      .getByRole("link", { name: "Bookings for my cottages" })
-      .click();
-    const ownerHistoryLink = ownerPage.locator(
-      `a[href="/en/owner/booking-requests/${requestReference}"]`,
-    );
-    await expect(
-      ownerPage.locator(".list-rows > li").filter({ has: ownerHistoryLink }),
-    ).toContainText(identityBeforeRetry.bookingReference);
-    await ownerHistoryLink.click();
-    await expect(ownerPage.getByText(exactAddress)).toBeVisible();
+      await expect(
+        page.locator(".list-rows > li").filter({ has: customerHistoryLink }),
+      ).toContainText(identityBeforeRetry.bookingReference);
+      await customerHistoryLink.click();
+      await expect(
+        page.getByRole("region", { name: "Confirmed booking" }),
+      ).toContainText(identityBeforeRetry.bookingReference);
+      await expect(page.getByText(exactAddress)).toBeVisible();
+      await ownerPage.goto(`/en/owner/booking-requests/${requestReference}`);
+      await expect(
+        ownerPage.getByRole("heading", { name: "Confirmed booking" }),
+      ).toBeVisible();
+      await expect(ownerPage.getByRole("status")).toContainText("Delivered");
+      await ownerPage
+        .getByRole("link", { name: "Bookings for my cottages" })
+        .click();
+      const ownerHistoryLink = ownerPage.locator(
+        `a[href="/en/owner/booking-requests/${requestReference}"]`,
+      );
+      await expect(
+        ownerPage.locator(".list-rows > li").filter({ has: ownerHistoryLink }),
+      ).toContainText(identityBeforeRetry.bookingReference);
+      await ownerHistoryLink.click();
+      await expect(ownerPage.getByText(exactAddress)).toBeVisible();
 
-    // A second, distinct Shift preserves the successful journey above.
-    query.set("selection", `${requestedDay}:shift:${shifts[1].position}`);
-    const failureReference = await submitAnotherRequest("en");
-    expect(failureReference).not.toBe(requestReference);
-    await page.goto(`/en/booking-requests/${failureReference}`);
-    await ownerPage.goto("/en/owner/cottages");
-    const failureNotice = ownerPage.getByRole("article", {
-      name: failureReference,
-    });
-    await failureNotice
-      .getByRole("button", { name: "Accept complete request" })
-      .click();
-    await expect(page.getByRole("status")).toContainText(
-      "Payment confirmation pending",
-      { timeout: 15000 },
-    );
-    await expect(failureNotice.getByRole("status")).toContainText(
-      "Payment confirmation pending",
-    );
+      // A second, distinct Shift preserves the successful journey above.
+      query.set("selection", `${requestedDay}:shift:${shifts[1].position}`);
+      const failureReference = await submitAnotherRequest("en");
+      expect(failureReference).not.toBe(requestReference);
+      await page.goto(`/en/booking-requests/${failureReference}`);
+      await ownerPage.goto("/en/owner/cottages");
+      const failureNotice = ownerPage.getByRole("article", {
+        name: failureReference,
+      });
+      await failureNotice
+        .getByRole("button", { name: "Accept complete request" })
+        .click();
+      await expect(page.getByRole("status")).toContainText(
+        "Payment confirmation pending",
+        { timeout: 15000 },
+      );
+      await expect(failureNotice.getByRole("status")).toContainText(
+        "Payment confirmation pending",
+      );
 
-    const failureId = harness.runSql(
-      paymentEvidenceSql +
-        `select id from public.booking_requests where booking_request_reference='${failureReference}';`,
-    );
-    expect(failureId).toMatch(/^[0-9a-f-]{36}$/);
-    const observeFailure = () =>
-      JSON.parse(
-        harness.runSql(
-          paymentEvidenceSql +
-            `select jsonb_build_object(
+      const failureId = harness.runSql(
+        paymentEvidenceSql +
+          `select id from public.booking_requests where booking_request_reference='${failureReference}';`,
+      );
+      expect(failureId).toMatch(/^[0-9a-f-]{36}$/);
+      const observeFailure = () =>
+        JSON.parse(
+          harness.runSql(
+            paymentEvidenceSql +
+              `select jsonb_build_object(
       'work',(select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id='${failureId}'),
       'provider',(select pg_temp.payment_fixture_operation_json(operation) from public.payment_provider_operations operation join public.booking_request_capture_work work on work.payment_lifecycle_id=operation.payment_lifecycle_id where work.booking_request_id='${failureId}' and operation.operation_kind='capture'),
       'notifications',(select count(*) from public.booking_request_status_notifications where booking_request_id='${failureId}' and status='payment-required'),
@@ -1123,13 +2066,13 @@ test("a verified Customer double-submit creates one Pending request and one mini
       'intentActive',(select intent_dedupe_active from public.booking_request_submission_attempts where booking_request_id='${failureId}'),
       'confirmations',(select count(*) from public.booking_confirmations where booking_request_id='${failureId}')
     );`,
-        ),
-      );
-    const held = observeFailure();
-    const failureRecorded = JSON.parse(
-      harness.runSql(
-        paymentEvidenceSql +
-          `set role service_role;
+          ),
+        );
+      const held = observeFailure();
+      const failureRecorded = JSON.parse(
+        harness.runSql(
+          paymentEvidenceSql +
+            `set role service_role;
       with leased as materialized (
         select public.lease_booking_request_capture_work('${failureId}',
           '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) result
@@ -1141,118 +2084,118 @@ test("a verified Customer double-submit creates one Pending request and one mini
       select public.record_booking_request_capture_failure('${failureId}',
         (permit->>'leaseGeneration')::bigint, (permit->>'leaseToken')::uuid,
         result) from executed;`,
-      ),
-    );
-    expect(failureRecorded.status).toBe("payment-required");
-    // Both existing pages must refresh from the request's persisted failure evidence.
-    await expect(page.getByRole("status")).toContainText("Payment Required", {
-      timeout: 15000,
-    });
-    await expect(failureNotice.getByRole("status")).toContainText(
-      "Payment Required",
-      { timeout: 15000 },
-    );
-    await expect(page.getByRole("status")).toContainText("remain held");
-    await expect(failureNotice.getByRole("status")).toContainText(
-      "not confirmed",
-    );
-    await expect(page.getByText("Owner response deadline")).toHaveCount(0);
-    await expect(page.getByText("Payment deadline")).toBeVisible();
-    const terminal = observeFailure();
-    expect(terminal.work.state).toBe("payment_required");
-    expect(
-      Date.parse(terminal.work.payment_required_deadline) -
-        Date.parse(terminal.work.payment_required_recorded_at),
-    ).toBe(1_200_000);
-    expect(terminal.provider.original_outcome).toBe("failed");
-    expect(terminal.provider.current_outcome).toBe("failed");
-    expect(terminal.provider.movement_reference).toBeNull();
-    expect(terminal.provider.physical_execution_count).toBe(1);
-    expect(terminal.notifications).toBe(1);
-    expect(terminal.confirmations).toBe(0);
-    expect(terminal.hold).toEqual(held.hold);
-    expect(terminal.occupancies).toEqual(held.occupancies);
-    expect(terminal.intentActive).toBe(true);
-    // The live owner list has refreshed through both capture outcomes. Paid
-    // access details are fetched on explicit navigation, not by list prefetch.
-    expect(ownerPaidDetailPrefetches).toEqual([]);
-    await assertPaymentViews("payment-required-open", failureReference);
-    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
-    expect(observeFailure()).toEqual(terminal);
-    // Only the current notice reaches the adapter; the ones the request moved past are suppressed.
-    expect(
-      JSON.parse(
-        harness.runSql(
-          `select coalesce(jsonb_agg(jsonb_build_array(e.event_kind,e.recipient_role,w.state,(select count(*) from public.fictional_booking_confirmation_notification_effects f where f.event_id=e.id)) order by e.event_kind,e.recipient_role),'[]') from public.booking_notification_events e join public.booking_requests q on q.id=e.booking_request_id left join public.booking_confirmation_notification_work w on w.event_id=e.id where q.booking_request_reference='${failureReference}' and e.receipt_id is null;`,
         ),
-      ),
-    ).toEqual([
-      ["request_accepted", "cottage_owner", "suppressed", 0],
-      ["request_accepted", "customer", "suppressed", 0],
-      ["request_new", "cottage_owner", "suppressed", 0],
-      ["request_payment_required", "customer", "delivered", 1],
-    ]);
-
-    const windowDefinition = harness.runSql(
-      paymentEvidenceSql +
-        "select pg_get_functiondef('public.booking_request_payment_required_window(public.booking_requests)'::regprocedure);",
-    );
-    expect(windowDefinition).toContain("clock_timestamp()");
-    try {
-      // Pin only database read time at the exact boundary; immutable stored timestamps stay untouched.
-      harness.runSql(
-        paymentEvidenceSql +
-          windowDefinition.replace(
-            "clock_timestamp()",
-            "work.payment_required_deadline",
-          ),
       );
-      await expect(page.getByRole("status")).toContainText(
-        "deadline has passed",
-        {
-          timeout: 15000,
-        },
-      );
+      expect(failureRecorded.status).toBe("payment-required");
+      // Both existing pages must refresh from the request's persisted failure evidence.
+      await expect(page.getByRole("status")).toContainText("Payment Required", {
+        timeout: 15000,
+      });
       await expect(failureNotice.getByRole("status")).toContainText(
-        "deadline has passed",
+        "Payment Required",
         { timeout: 15000 },
       );
-      await assertPaymentViews("payment-required-elapsed", failureReference);
+      await expect(page.getByRole("status")).toContainText("remain held");
+      await expect(failureNotice.getByRole("status")).toContainText(
+        "not confirmed",
+      );
+      await expect(page.getByText("Owner response deadline")).toHaveCount(0);
+      await expect(page.getByText("Payment deadline")).toBeVisible();
+      const terminal = observeFailure();
+      expect(terminal.work.state).toBe("payment_required");
+      expect(
+        Date.parse(terminal.work.payment_required_deadline) -
+          Date.parse(terminal.work.payment_required_recorded_at),
+      ).toBe(1_200_000);
+      expect(terminal.provider.original_outcome).toBe("failed");
+      expect(terminal.provider.current_outcome).toBe("failed");
+      expect(terminal.provider.movement_reference).toBeNull();
+      expect(terminal.provider.physical_execution_count).toBe(1);
+      expect(terminal.notifications).toBe(1);
+      expect(terminal.confirmations).toBe(0);
+      expect(terminal.hold).toEqual(held.hold);
+      expect(terminal.occupancies).toEqual(held.occupancies);
+      expect(terminal.intentActive).toBe(true);
+      // The live owner list has refreshed through both capture outcomes. Paid
+      // access details are fetched on explicit navigation, not by list prefetch.
+      expect(ownerPaidDetailPrefetches).toEqual([]);
+      await assertPaymentViews("payment-required-open", failureReference);
+      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
       expect(observeFailure()).toEqual(terminal);
-    } finally {
-      harness.runSql(paymentEvidenceSql + windowDefinition);
-    }
-    // Authenticate a different Customer through the real public client before exercising the command.
-    const otherCustomer = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_PUBLISHABLE_KEY!,
-      { auth: { autoRefreshToken: false, persistSession: false } },
-    );
-    const otherPhone = "+9647520000000";
-    const otp = await otherCustomer.auth.signInWithOtp({ phone: otherPhone });
-    if (otp.error) throw otp.error;
-    const verified = await otherCustomer.auth.verifyOtp({
-      phone: otherPhone,
-      token: "123456",
-      type: "sms",
-    });
-    if (verified.error) throw verified.error;
-    const role = await otherCustomer.rpc("claim_marketplace_role", {
-      requested_role: "customer",
-    });
-    if (role.error) throw role.error;
-    const deniedPaidAccess = await otherCustomer.rpc(
-      "get_confirmed_booking_access",
-      { target_reference: requestReference },
-    );
-    expect(deniedPaidAccess.error).toBeNull();
-    expect(deniedPaidAccess.data).toBeNull();
-    expect(JSON.stringify(deniedPaidAccess.data)).not.toContain(exactAddress);
-    expect(JSON.stringify(deniedPaidAccess.data)).not.toContain(ownerPhone);
-    const recoveryGraph = () =>
-      harness.runSql(
+      // Only the current notice reaches the adapter; the ones the request moved past are suppressed.
+      expect(
+        JSON.parse(
+          harness.runSql(
+            `select coalesce(jsonb_agg(jsonb_build_array(e.event_kind,e.recipient_role,w.state,(select count(*) from public.fictional_booking_confirmation_notification_effects f where f.event_id=e.id)) order by e.event_kind,e.recipient_role),'[]') from public.booking_notification_events e join public.booking_requests q on q.id=e.booking_request_id left join public.booking_confirmation_notification_work w on w.event_id=e.id where q.booking_request_reference='${failureReference}' and e.receipt_id is null;`,
+          ),
+        ),
+      ).toEqual([
+        ["request_accepted", "cottage_owner", "suppressed", 0],
+        ["request_accepted", "customer", "suppressed", 0],
+        ["request_new", "cottage_owner", "suppressed", 0],
+        ["request_payment_required", "customer", "delivered", 1],
+      ]);
+
+      const windowDefinition = harness.runSql(
         paymentEvidenceSql +
-          `select jsonb_build_object(
+          "select pg_get_functiondef('public.booking_request_payment_required_window(public.booking_requests)'::regprocedure);",
+      );
+      expect(windowDefinition).toContain("clock_timestamp()");
+      try {
+        // Pin only database read time at the exact boundary; immutable stored timestamps stay untouched.
+        harness.runSql(
+          paymentEvidenceSql +
+            windowDefinition.replace(
+              "clock_timestamp()",
+              "work.payment_required_deadline",
+            ),
+        );
+        await expect(page.getByRole("status")).toContainText(
+          "deadline has passed",
+          {
+            timeout: 15000,
+          },
+        );
+        await expect(failureNotice.getByRole("status")).toContainText(
+          "deadline has passed",
+          { timeout: 15000 },
+        );
+        await assertPaymentViews("payment-required-elapsed", failureReference);
+        expect(observeFailure()).toEqual(terminal);
+      } finally {
+        harness.runSql(paymentEvidenceSql + windowDefinition);
+      }
+      // Authenticate a different Customer through the real public client before exercising the command.
+      const otherCustomer = createClient(
+        process.env.SUPABASE_URL!,
+        process.env.SUPABASE_PUBLISHABLE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } },
+      );
+      const otherPhone = "+9647520000000";
+      const otp = await otherCustomer.auth.signInWithOtp({ phone: otherPhone });
+      if (otp.error) throw otp.error;
+      const verified = await otherCustomer.auth.verifyOtp({
+        phone: otherPhone,
+        token: "123456",
+        type: "sms",
+      });
+      if (verified.error) throw verified.error;
+      const role = await otherCustomer.rpc("claim_marketplace_role", {
+        requested_role: "customer",
+      });
+      if (role.error) throw role.error;
+      const deniedPaidAccess = await otherCustomer.rpc(
+        "get_confirmed_booking_access",
+        { target_reference: requestReference },
+      );
+      expect(deniedPaidAccess.error).toBeNull();
+      expect(deniedPaidAccess.data).toBeNull();
+      expect(JSON.stringify(deniedPaidAccess.data)).not.toContain(exactAddress);
+      expect(JSON.stringify(deniedPaidAccess.data)).not.toContain(ownerPhone);
+      const recoveryGraph = () =>
+        harness.runSql(
+          paymentEvidenceSql +
+            `select jsonb_build_object(
       'attempts',(select coalesce(jsonb_agg(to_jsonb(attempts) order by id),'[]') from public.booking_request_payment_recovery_attempts attempts where booking_request_id='${failureId}'),
       'operations',(select coalesce(jsonb_agg(to_jsonb(operations) order by operations.id),'[]') from public.booking_request_payment_recovery_operations operations join public.booking_request_payment_recovery_attempts attempts on attempts.id=operations.recovery_attempt_id where attempts.booking_request_id='${failureId}'),
       'ledger',(select jsonb_agg(pg_temp.payment_fixture_operation_json(ledger) order by ledger.id) from public.payment_provider_operations ledger),
@@ -1264,211 +2207,278 @@ test("a verified Customer double-submit creates one Pending request and one mini
       'notifications',(select jsonb_agg(to_jsonb(notifications) order by id) from public.booking_request_status_notifications notifications),
       'inventory',(select jsonb_agg(to_jsonb(inventory) order by id) from public.cottage_inventory_commitments inventory),
       'history',(select coalesce(jsonb_agg(to_jsonb(history) order by sequence),'[]') from public.booking_request_payment_history history where booking_request_id='${failureId}'));`,
+        );
+      const beforeDenial = recoveryGraph();
+      const denied = await otherCustomer.rpc(
+        "claim_customer_booking_request_payment_recovery",
+        {
+          target_booking_request_id: failureId,
+          target_command_key: "81000000-0000-4000-8000-000000001003",
+          target_replacement_method: "simulated-replacement",
+        },
       );
-    const beforeDenial = recoveryGraph();
-    const denied = await otherCustomer.rpc(
-      "claim_customer_booking_request_payment_recovery",
-      {
-        target_booking_request_id: failureId,
-        target_command_key: "81000000-0000-4000-8000-000000001003",
-        target_replacement_method: "simulated-replacement",
-      },
-    );
-    expect(denied.error?.code).toBe("RC404");
-    expect(recoveryGraph()).toEqual(beforeDenial);
-    expect(observeFailure()).toEqual(terminal);
-    const confirmationDefinition = harness.runSql(
-      paymentEvidenceSql +
-        "select pg_get_functiondef('public.finalize_booking_request_confirmation(uuid,jsonb)'::regprocedure);",
-    );
-    const recoveryFinalizationDefinition = harness.runSql(
-      paymentEvidenceSql +
-        "select pg_get_functiondef('public.finalize_booking_request_payment_required_expiry(uuid)'::regprocedure);",
-    );
-    const recoveryFactsDefinition = harness.runSql(
-      paymentEvidenceSql +
-        "select pg_get_functiondef('public.get_booking_request_payment_facts(uuid)'::regprocedure);",
-    );
-    expect(recoveryFactsDefinition).toContain("clock_timestamp()");
-    try {
-      // Interrupt confirmation after the real replacement-payment action records pre-deadline success.
-      harness.runSql(
+      expect(denied.error?.code).toBe("RC404");
+      expect(recoveryGraph()).toEqual(beforeDenial);
+      expect(observeFailure()).toEqual(terminal);
+      const confirmationDefinition = harness.runSql(
         paymentEvidenceSql +
-          confirmationDefinition.replace(
-            "begin\n",
-            "begin\n  raise exception 'Injected confirmation delivery interruption';\n",
-          ),
+          "select pg_get_functiondef('public.finalize_booking_request_confirmation(uuid,jsonb)'::regprocedure);",
       );
-      await page.goto(`/en/booking-requests/${failureReference}`);
-      await page
-        .getByRole("button", {
-          name: "Use simulated replacement payment",
-          exact: true,
-        })
-        .click();
-      // Refresh can remount the status view and clear its local action error.
-      // Observe the durable interrupted outcome and the authoritative visible state.
-      await expect
-        .poll(() =>
-          harness.runSql(
-            paymentEvidenceSql +
-              `select count(*) from public.booking_request_payment_recovery_operations operations join public.booking_request_payment_recovery_attempts attempts on attempts.id=operations.recovery_attempt_id join public.booking_request_capture_work work on work.booking_request_id=attempts.booking_request_id where attempts.booking_request_id='${failureId}' and operations.step='replacement-capture' and operations.outcome='succeeded' and operations.authoritative_outcome_at < work.payment_required_deadline;`,
-          ),
-        )
-        .toBe("1");
-      await expect(
-        page.getByText(
-          "Your replacement payment is being checked. Do not start another attempt.",
-          { exact: true },
-        ),
-      ).toBeVisible();
-      await expect(page.getByRole("status")).toContainText("not confirmed");
-      await expect(page.getByRole("status")).toContainText("remain held");
-      expect(observeFailure().confirmations).toBe(0);
-      harness.runSql(
+      const recoveryFinalizationDefinition = harness.runSql(
         paymentEvidenceSql +
-          `create function public.confirmation_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${failureId}'$$;`,
+          "select pg_get_functiondef('public.finalize_booking_request_payment_required_expiry(uuid)'::regprocedure);",
       );
-      for (const definition of [
-        windowDefinition,
-        recoveryFinalizationDefinition,
-        recoveryFactsDefinition,
-        confirmationDefinition,
-      ])
+      const recoveryFactsDefinition = harness.runSql(
+        paymentEvidenceSql +
+          "select pg_get_functiondef('public.get_booking_request_payment_facts(uuid)'::regprocedure);",
+      );
+      expect(recoveryFactsDefinition).toContain("clock_timestamp()");
+      try {
+        // Interrupt confirmation after the real replacement-payment action records pre-deadline success.
         harness.runSql(
           paymentEvidenceSql +
-            definition.replaceAll(
-              "clock_timestamp()",
-              "public.confirmation_expiry_now()",
+            confirmationDefinition.replace(
+              "begin\n",
+              "begin\n  raise exception 'Injected confirmation delivery interruption';\n",
             ),
         );
-      const recoveryFacts = bookingRequestPaymentFactsFrom(
-        JSON.parse(
+        await page.goto(`/en/booking-requests/${failureReference}`);
+        const paymentRecoveryControl = page.getByRole("button", {
+          name: "Use simulated replacement payment",
+          exact: true,
+        });
+        await paymentRecoveryControl.focus();
+        await expect(paymentRecoveryControl).toBeFocused();
+        const paymentRecoverySource =
+          await paymentRecoveryControl.elementHandle();
+        if (!paymentRecoverySource)
+          throw new Error("Focus measurement source is missing");
+        const paymentRecoveryMeasurement =
+          await paymentRecoverySource.evaluateHandle(
+            (source, labels) => {
+              const rows: Record<string, string | boolean | number | null>[] =
+                [];
+              const read = (phase: string) => {
+                rows.push({
+                  family: labels.family,
+                  action: labels.action,
+                  phase,
+                  pathname: location.pathname,
+                  locale: document.documentElement.lang,
+                  direction: document.documentElement.dir,
+                  activeTag: document.activeElement?.tagName ?? null,
+                  activeId: document.activeElement?.id ?? null,
+                  sourceConnected: source.isConnected,
+                  sourceDisabled: source.matches(":disabled"),
+                  sourceBusy: source.getAttribute("aria-busy"),
+                  sameNode: source.isConnected,
+                });
+              };
+              let previous = "";
+              const observer = new MutationObserver(() => {
+                const current = JSON.stringify([
+                  source.isConnected,
+                  source.matches(":disabled"),
+                  source.getAttribute("aria-busy"),
+                  location.pathname,
+                ]);
+                if (current !== previous) {
+                  previous = current;
+                  read("transition");
+                }
+              });
+              observer.observe(document.documentElement, {
+                subtree: true,
+                childList: true,
+                attributes: true,
+                attributeFilter: ["disabled", "aria-busy"],
+              });
+              read("before");
+              return { read, observer, rows };
+            },
+            {
+              family: "customer-booking-request-status",
+              action: "Use replacement payment",
+            },
+          );
+        await paymentRecoveryControl.press("Enter");
+        // Refresh can remount the status view and clear its local action error.
+        // Observe the durable interrupted outcome and the authoritative visible state.
+        await expect
+          .poll(() =>
+            harness.runSql(
+              paymentEvidenceSql +
+                `select count(*) from public.booking_request_payment_recovery_operations operations join public.booking_request_payment_recovery_attempts attempts on attempts.id=operations.recovery_attempt_id join public.booking_request_capture_work work on work.booking_request_id=attempts.booking_request_id where attempts.booking_request_id='${failureId}' and operations.step='replacement-capture' and operations.outcome='succeeded' and operations.authoritative_outcome_at < work.payment_required_deadline;`,
+            ),
+          )
+          .toBe("1");
+        await expect(
+          page.getByText(
+            "Your replacement payment is being checked. Do not start another attempt.",
+            { exact: true },
+          ),
+        ).toBeVisible();
+        await expect(page.getByRole("status")).toContainText("not confirmed");
+        await expect(page.getByRole("status")).toContainText("remain held");
+        const paymentRecoveryRows = await paymentRecoveryMeasurement.evaluate(
+          (measurement) => {
+            measurement.read("settled");
+            measurement.observer.disconnect();
+            return measurement.rows;
+          },
+        );
+        await test.info().attach("focus-paymentRecovery", {
+          body: JSON.stringify(paymentRecoveryRows),
+          contentType: "application/json",
+        });
+        await paymentRecoveryMeasurement.dispose();
+        await paymentRecoverySource.dispose();
+
+        expect(observeFailure().confirmations).toBe(0);
+        harness.runSql(
+          paymentEvidenceSql +
+            `create function public.confirmation_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${failureId}'$$;`,
+        );
+        for (const definition of [
+          windowDefinition,
+          recoveryFinalizationDefinition,
+          recoveryFactsDefinition,
+          confirmationDefinition,
+        ])
           harness.runSql(
             paymentEvidenceSql +
-              `set role service_role;select public.get_booking_request_payment_facts('${failureId}');`,
+              definition.replaceAll(
+                "clock_timestamp()",
+                "public.confirmation_expiry_now()",
+              ),
+          );
+        const recoveryFacts = bookingRequestPaymentFactsFrom(
+          JSON.parse(
+            harness.runSql(
+              paymentEvidenceSql +
+                `set role service_role;select public.get_booking_request_payment_facts('${failureId}');`,
+            ),
           ),
-        ),
-      );
-      expect(recoveryFacts.deadline).not.toBeNull();
-      expect(recoveryFacts.observedAt).toBe(recoveryFacts.deadline);
-      expect(recoveryFacts.attempts).toHaveLength(1);
-      expect(recoveryFacts.attempts[0]?.state).toBe("succeeded");
-      expect(selectPaymentRequiredExpiry(recoveryFacts)).toEqual({
-        status: "confirm",
-        attemptId: recoveryFacts.attempts[0]?.id,
-      });
-      // Application expiry selects confirmation; the integrity finalizer must
-      // refuse expiry without adding the retired selector's bookkeeping row.
-      const beforeExpiryRefusal = recoveryGraph();
-      const heldBeforeExpiryRefusal = observeFailure();
-      const expiryResult = JSON.parse(
+        );
+        expect(recoveryFacts.deadline).not.toBeNull();
+        expect(recoveryFacts.observedAt).toBe(recoveryFacts.deadline);
+        expect(recoveryFacts.attempts).toHaveLength(1);
+        expect(recoveryFacts.attempts[0]?.state).toBe("succeeded");
+        expect(selectPaymentRequiredExpiry(recoveryFacts)).toEqual({
+          status: "confirm",
+          attemptId: recoveryFacts.attempts[0]?.id,
+        });
+        // Application expiry selects confirmation; the integrity finalizer must
+        // refuse expiry without adding the retired selector's bookkeeping row.
+        const beforeExpiryRefusal = recoveryGraph();
+        const heldBeforeExpiryRefusal = observeFailure();
+        const expiryResult = JSON.parse(
+          harness.runSql(
+            paymentEvidenceSql +
+              `set role service_role;select public.finalize_booking_request_payment_required_expiry('${failureId}');`,
+          ),
+        );
+        expect(expiryResult.status).toBe("processing");
+        expect(recoveryGraph()).toEqual(beforeExpiryRefusal);
+        expect(observeFailure()).toEqual(heldBeforeExpiryRefusal);
+        expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
+        await expect(
+          page.getByRole("heading", { name: "Confirmed booking" }),
+        ).toBeVisible({ timeout: 15000 });
+        await expect(failureNotice.getByRole("status")).toContainText(
+          "Booking confirmed",
+          { timeout: 15000 },
+        );
+        expect(
+          harness.runSql(
+            paymentEvidenceSql +
+              `select count(*) from public.booking_request_payment_required_expiry_work where booking_request_id='${failureId}';`,
+          ),
+        ).toBe("0");
+        expect(
+          harness.runSql(
+            paymentEvidenceSql +
+              `select count(*) from public.booking_request_payment_required_expiry_operations where booking_request_id='${failureId}';`,
+          ),
+        ).toBe("0");
+      } finally {
+        for (const definition of [
+          windowDefinition,
+          recoveryFinalizationDefinition,
+          recoveryFactsDefinition,
+          confirmationDefinition,
+        ])
+          harness.runSql(paymentEvidenceSql + definition);
         harness.runSql(
           paymentEvidenceSql +
-            `set role service_role;select public.finalize_booking_request_payment_required_expiry('${failureId}');`,
+            "drop function if exists public.confirmation_expiry_now();",
+        );
+      }
+      const recovered = observeFailure();
+      expect(recovered.work).toEqual(terminal.work);
+      expect(recovered.provider).toEqual(terminal.provider);
+      expect(recovered.occupancies).toEqual(terminal.occupancies);
+      expect(recovered.hold.id).toBe(terminal.hold.id);
+      expect(recovered.hold.status).toBe("confirmed_booking");
+      expect(recovered.confirmations).toBe(1);
+      expect(
+        harness.runSql(
+          paymentEvidenceSql +
+            `select count(*)||':'||sum((select effect.physical_execution_count from public.simulated_payment_effects effect where effect.operation_id=ledger.id)) from public.payment_provider_operations ledger join public.booking_request_payment_recovery_attempts attempts on attempts.id=ledger.recovery_attempt_id where attempts.booking_request_id='${failureId}';`,
         ),
+      ).toBe("3:3");
+      await assertPaymentViews("paid-confirmed", failureReference);
+
+      // A separate future Shift proves unpaid expiry without changing either confirmed booking above.
+      const expiryDay = serviceDay(dayOffset + 1);
+      const opened = await fixtureOwner.rpc(
+        "set_cottage_inventory_availability",
+        {
+          target_profile_id: profile.id,
+          target_schedule_revision_id: profile.current_shift_schedule_id,
+          target_service_day: expiryDay,
+          requested_states: [
+            ...shifts.map((item) => ({
+              unitId: item.id,
+              unitKind: "shift",
+              state: "open",
+            })),
+            {
+              unitId: schedule.full_day_bundle_id,
+              unitKind: "full_day_bundle",
+              state: "open",
+            },
+          ],
+        },
       );
-      expect(expiryResult.status).toBe("processing");
-      expect(recoveryGraph()).toEqual(beforeExpiryRefusal);
-      expect(observeFailure()).toEqual(heldBeforeExpiryRefusal);
-      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
-      await expect(
-        page.getByRole("heading", { name: "Confirmed booking" }),
-      ).toBeVisible({ timeout: 15000 });
-      await expect(failureNotice.getByRole("status")).toContainText(
-        "Booking confirmed",
+      if (opened.error) throw opened.error;
+      query.set("from", expiryDay);
+      query.set("to", expiryDay);
+      query.set("selection", `${expiryDay}:shift:${shift.position}`);
+      const expiryReference = await submitAnotherRequest("en");
+      await page.goto(`/en/booking-requests/${expiryReference}`);
+      await ownerPage.goto("/en/owner/cottages");
+      const expiryNotice = ownerPage.getByRole("article", {
+        name: expiryReference,
+      });
+      await expiryNotice
+        .getByRole("button", { name: "Accept complete request" })
+        .click();
+      await expect(page.getByRole("status")).toContainText(
+        "Payment confirmation pending",
         { timeout: 15000 },
       );
-      expect(
-        harness.runSql(
-          paymentEvidenceSql +
-            `select count(*) from public.booking_request_payment_required_expiry_work where booking_request_id='${failureId}';`,
-        ),
-      ).toBe("0");
-      expect(
-        harness.runSql(
-          paymentEvidenceSql +
-            `select count(*) from public.booking_request_payment_required_expiry_operations where booking_request_id='${failureId}';`,
-        ),
-      ).toBe("0");
-    } finally {
-      for (const definition of [
-        windowDefinition,
-        recoveryFinalizationDefinition,
-        recoveryFactsDefinition,
-        confirmationDefinition,
-      ])
-        harness.runSql(paymentEvidenceSql + definition);
-      harness.runSql(
+      const expiryId = harness.runSql(
         paymentEvidenceSql +
-          "drop function if exists public.confirmation_expiry_now();",
+          `select id from public.booking_requests where booking_request_reference='${expiryReference}';`,
       );
-    }
-    const recovered = observeFailure();
-    expect(recovered.work).toEqual(terminal.work);
-    expect(recovered.provider).toEqual(terminal.provider);
-    expect(recovered.occupancies).toEqual(terminal.occupancies);
-    expect(recovered.hold.id).toBe(terminal.hold.id);
-    expect(recovered.hold.status).toBe("confirmed_booking");
-    expect(recovered.confirmations).toBe(1);
-    expect(
-      harness.runSql(
-        paymentEvidenceSql +
-          `select count(*)||':'||sum((select effect.physical_execution_count from public.simulated_payment_effects effect where effect.operation_id=ledger.id)) from public.payment_provider_operations ledger join public.booking_request_payment_recovery_attempts attempts on attempts.id=ledger.recovery_attempt_id where attempts.booking_request_id='${failureId}';`,
-      ),
-    ).toBe("3:3");
-    await assertPaymentViews("paid-confirmed", failureReference);
-
-    // A separate future Shift proves unpaid expiry without changing either confirmed booking above.
-    const expiryDay = serviceDay(dayOffset + 1);
-    const opened = await fixtureOwner.rpc(
-      "set_cottage_inventory_availability",
-      {
-        target_profile_id: profile.id,
-        target_schedule_revision_id: profile.current_shift_schedule_id,
-        target_service_day: expiryDay,
-        requested_states: [
-          ...shifts.map((item) => ({
-            unitId: item.id,
-            unitKind: "shift",
-            state: "open",
-          })),
-          {
-            unitId: schedule.full_day_bundle_id,
-            unitKind: "full_day_bundle",
-            state: "open",
-          },
-        ],
-      },
-    );
-    if (opened.error) throw opened.error;
-    query.set("from", expiryDay);
-    query.set("to", expiryDay);
-    query.set("selection", `${expiryDay}:shift:${shift.position}`);
-    const expiryReference = await submitAnotherRequest("en");
-    await page.goto(`/en/booking-requests/${expiryReference}`);
-    await ownerPage.goto("/en/owner/cottages");
-    const expiryNotice = ownerPage.getByRole("article", {
-      name: expiryReference,
-    });
-    await expiryNotice
-      .getByRole("button", { name: "Accept complete request" })
-      .click();
-    await expect(page.getByRole("status")).toContainText(
-      "Payment confirmation pending",
-      { timeout: 15000 },
-    );
-    const expiryId = harness.runSql(
-      paymentEvidenceSql +
-        `select id from public.booking_requests where booking_request_reference='${expiryReference}';`,
-    );
-    expect(expiryId).toMatch(/^[0-9a-f-]{36}$/);
-    const identity =
-      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}';
-    const expiryFailureRecorded = JSON.parse(
-      harness.runSql(
-        paymentEvidenceSql +
-          `set role service_role;
+      expect(expiryId).toMatch(/^[0-9a-f-]{36}$/);
+      const identity =
+        '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}';
+      const expiryFailureRecorded = JSON.parse(
+        harness.runSql(
+          paymentEvidenceSql +
+            `set role service_role;
       with leased as materialized (
         select public.lease_booking_request_capture_work('${expiryId}','${identity}') result
       ), executed as materialized (
@@ -1479,34 +2489,34 @@ test("a verified Customer double-submit creates one Pending request and one mini
       select public.record_booking_request_capture_failure('${expiryId}',
         (permit->>'leaseGeneration')::bigint, (permit->>'leaseToken')::uuid,
         result) from executed;`,
-      ),
-    );
-    expect(expiryFailureRecorded.status).toBe("payment-required");
-    await expect(page.getByRole("status")).toContainText("Payment Required", {
-      timeout: 15000,
-    });
-    const expiryGraph = async () => {
-      const input = {
-        target_profile_id: profile.id,
-        target_schedule_revision_id: profile.current_shift_schedule_id,
-        target_service_day: expiryDay,
-      };
-      const [availability, calendar] = await Promise.all([
-        fixtureOwner.rpc(
-          "resolve_cottage_inventory_public_availability",
-          input,
         ),
-        fixtureOwner.rpc("resolve_cottage_inventory_owner_calendar", input),
-      ]);
-      if (availability.error) throw availability.error;
-      if (calendar.error) throw calendar.error;
-      return {
-        availability: availability.data,
-        calendar: calendar.data,
-        ...JSON.parse(
-          harness.runSql(
-            paymentEvidenceSql +
-              `select jsonb_build_object(
+      );
+      expect(expiryFailureRecorded.status).toBe("payment-required");
+      await expect(page.getByRole("status")).toContainText("Payment Required", {
+        timeout: 15000,
+      });
+      const expiryGraph = async () => {
+        const input = {
+          target_profile_id: profile.id,
+          target_schedule_revision_id: profile.current_shift_schedule_id,
+          target_service_day: expiryDay,
+        };
+        const [availability, calendar] = await Promise.all([
+          fixtureOwner.rpc(
+            "resolve_cottage_inventory_public_availability",
+            input,
+          ),
+          fixtureOwner.rpc("resolve_cottage_inventory_owner_calendar", input),
+        ]);
+        if (availability.error) throw availability.error;
+        if (calendar.error) throw calendar.error;
+        return {
+          availability: availability.data,
+          calendar: calendar.data,
+          ...JSON.parse(
+            harness.runSql(
+              paymentEvidenceSql +
+                `select jsonb_build_object(
       'request',(select to_jsonb(r) from public.booking_requests r where id='${expiryId}'),
       'capture',(select to_jsonb(w) from public.booking_request_capture_work w where booking_request_id='${expiryId}'),
       'expiry',(select to_jsonb(w) from public.booking_request_payment_required_expiry_work w where booking_request_id='${expiryId}'),
@@ -1515,127 +2525,130 @@ test("a verified Customer double-submit creates one Pending request and one mini
       'ledger',(select jsonb_agg(pg_temp.payment_fixture_operation_json(o) order by o.id) from public.payment_provider_operations o join public.booking_request_capture_work w on w.authorization_claim_id=o.claim_id where w.booking_request_id='${expiryId}'),
       'hold',(select c.status from public.cottage_booking_period_commitments c join public.booking_requests r on r.booking_period_commitment_id=c.id where r.id='${expiryId}'),
       'occupancies',(select jsonb_agg(to_jsonb(o) order by shift_id,service_day) from public.cottage_booking_period_occupancies o join public.booking_requests r on r.booking_period_commitment_id=o.booking_period_commitment_id where r.id='${expiryId}'));`,
+            ),
           ),
-        ),
+        };
       };
-    };
-    const beforeExpiry = await expiryGraph();
-    const signatures = [
-      "booking_request_payment_required_window(public.booking_requests)",
-      "claim_due_booking_request_payment_required_expiries(integer,jsonb)",
-      "prepare_booking_request_payment_required_expiry(uuid,jsonb,jsonb)",
-      "persist_simulated_payment_effect(jsonb,jsonb)",
-      "resolve_simulated_payment_effect(jsonb,text,jsonb)",
-      "seal_simulated_payment_absence(jsonb)",
-      "validate_payment_provider_observation(jsonb,uuid)",
-      "accept_payment_provider_observation(uuid,jsonb)",
-      "admit_booking_request_payment_required_expiry(jsonb)",
-      "reload_booking_request_payment_operation(jsonb,text,text)",
-      "finalize_booking_request_payment_required_expiry(uuid)",
-      "booking_request_payment_required_expiry_completed(uuid)",
-      "get_booking_request_payment_facts(uuid)",
-    ];
-    const definitions = signatures.map((signature) =>
-      harness.runSql(
-        paymentEvidenceSql +
-          `select pg_get_functiondef('public.${signature}'::regprocedure);`,
-      ),
-    );
-    // The due claim (signatures[1]) treats only this request as due at the pinned deadline, so an
-    // earlier attempt's unpaid request stays on the database clock.
-    const clocked = definitions.map((definition, index) =>
-      definition.replaceAll(
-        "clock_timestamp()",
-        index === 1
-          ? `(case when work.booking_request_id='${expiryId}' then public.live_payment_expiry_now() else clock_timestamp() end)`
-          : "public.live_payment_expiry_now()",
-      ),
-    );
-    try {
-      harness.runSql(
-        paymentEvidenceSql +
-          `create function public.live_payment_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${expiryId}'$$;`,
+      const beforeExpiry = await expiryGraph();
+      const signatures = [
+        "booking_request_payment_required_window(public.booking_requests)",
+        "claim_due_booking_request_payment_required_expiries(integer,jsonb)",
+        "prepare_booking_request_payment_required_expiry(uuid,jsonb,jsonb)",
+        "persist_simulated_payment_effect(jsonb,jsonb)",
+        "resolve_simulated_payment_effect(jsonb,text,jsonb)",
+        "seal_simulated_payment_absence(jsonb)",
+        "validate_payment_provider_observation(jsonb,uuid)",
+        "accept_payment_provider_observation(uuid,jsonb)",
+        "admit_booking_request_payment_required_expiry(jsonb)",
+        "reload_booking_request_payment_operation(jsonb,text,text)",
+        "finalize_booking_request_payment_required_expiry(uuid)",
+        "booking_request_payment_required_expiry_completed(uuid)",
+        "get_booking_request_payment_facts(uuid)",
+      ];
+      const definitions = signatures.map((signature) =>
+        harness.runSql(
+          paymentEvidenceSql +
+            `select pg_get_functiondef('public.${signature}'::regprocedure);`,
+        ),
       );
-      for (const definition of clocked)
-        harness.runSql(paymentEvidenceSql + definition);
-      // Both pages stay mounted across the real fixed deadline and later scheduled observations.
-      await expect(page.getByRole("status")).toContainText(
-        "deadline has passed",
-        { timeout: 15000 },
+      // The due claim (signatures[1]) treats only this request as due at the pinned deadline, so an
+      // earlier attempt's unpaid request stays on the database clock.
+      const clocked = definitions.map((definition, index) =>
+        definition.replaceAll(
+          "clock_timestamp()",
+          index === 1
+            ? `(case when work.booking_request_id='${expiryId}' then public.live_payment_expiry_now() else clock_timestamp() end)`
+            : "public.live_payment_expiry_now()",
+        ),
       );
-      await expect(expiryNotice.getByRole("status")).toContainText(
-        "deadline has passed",
-        { timeout: 15000 },
-      );
-      await assertPaymentViews("payment-required-elapsed", expiryReference);
-      harness.runSql(
-        paymentEvidenceSql +
-          `set role service_role;select pg_temp.expiry_execute(pg_temp.expiry_prepare('${expiryId}','${identity}',jsonb_build_object('action','release','authorizationLifecycleId',public.get_booking_request_payment_facts('${expiryId}')->>'originalLifecycleId','recoveryOperationId',null))->'permit','indeterminate','expiry-release-indeterminate');`,
-      );
-      // Model a provider which still cannot establish the existing release outcome.
-      const unresolvedQuery = clocked[4].replace(
-        "  if jsonb_typeof(target_result#>'{evidence,occurredAt}')",
-        "  return winner.result;\n  if jsonb_typeof(target_result#>'{evidence,occurredAt}')",
-      );
-      expect(unresolvedQuery).not.toBe(clocked[4]);
-      harness.runSql(paymentEvidenceSql + unresolvedQuery);
-      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
-      await expect(page.getByRole("status")).toContainText(
-        "Support needs to review this payment",
-        { timeout: 15000 },
-      );
-      await expect(expiryNotice.getByRole("status")).toContainText(
-        "Support needs to review this payment",
-        { timeout: 15000 },
-      );
-      await expect(
-        page
-          .getByRole("region")
-          .filter({
-            has: page.getByRole("heading", {
-              name: "Booking Request status",
-              exact: true,
-            }),
-          })
-          .getByRole("button"),
-      ).toHaveCount(0);
-      const attention = await expiryGraph();
-      expect(attention.expiry.state).toBe("quarantined");
-      expect(attention.request.status).toBe("accepted");
-      expect(attention.capture).toEqual(beforeExpiry.capture);
-      expect(attention.occupancies).toEqual(beforeExpiry.occupancies);
-      expect(attention.hold).toBe("pending_hold");
-      expect(attention.confirmations).toBe(0);
-      expect(attention.notices).toHaveLength(0);
-      expect(
-        attention.availability.units.find(
-          (unit: { id: string }) => unit.id === shift.id,
-        ).available,
-      ).toBe(false);
-      expect(
-        attention.calendar.units.find(
-          (unit: { id: string }) => unit.id === shift.id,
-        ).calendarState,
-      ).toBe("pending_hold");
-      await assertPaymentViews("payment-expiry-quarantined", expiryReference);
-      // The actual scheduled handler cannot restart an uncertain release after quarantine.
-      harness.runSql(paymentEvidenceSql + clocked[4]);
-      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
-      await expect(page.getByRole("status")).toContainText(
-        "Payment needs review",
-      );
-      expect(await expiryGraph()).toEqual(attention);
-      await assertPaymentViews("payment-expiry-quarantined", expiryReference);
-      expect(observeFailure()).toEqual(recovered);
+      try {
+        harness.runSql(
+          paymentEvidenceSql +
+            `create function public.live_payment_expiry_now() returns timestamptz language sql volatile security definer set search_path='' as $$select payment_required_deadline from public.booking_request_capture_work where booking_request_id='${expiryId}'$$;`,
+        );
+        for (const definition of clocked)
+          harness.runSql(paymentEvidenceSql + definition);
+        // Both pages stay mounted across the real fixed deadline and later scheduled observations.
+        await expect(page.getByRole("status")).toContainText(
+          "deadline has passed",
+          { timeout: 15000 },
+        );
+        await expect(expiryNotice.getByRole("status")).toContainText(
+          "deadline has passed",
+          { timeout: 15000 },
+        );
+        await assertPaymentViews("payment-required-elapsed", expiryReference);
+        harness.runSql(
+          paymentEvidenceSql +
+            `set role service_role;select pg_temp.expiry_execute(pg_temp.expiry_prepare('${expiryId}','${identity}',jsonb_build_object('action','release','authorizationLifecycleId',public.get_booking_request_payment_facts('${expiryId}')->>'originalLifecycleId','recoveryOperationId',null))->'permit','indeterminate','expiry-release-indeterminate');`,
+        );
+        // Model a provider which still cannot establish the existing release outcome.
+        const unresolvedQuery = clocked[4].replace(
+          "  if jsonb_typeof(target_result#>'{evidence,occurredAt}')",
+          "  return winner.result;\n  if jsonb_typeof(target_result#>'{evidence,occurredAt}')",
+        );
+        expect(unresolvedQuery).not.toBe(clocked[4]);
+        harness.runSql(paymentEvidenceSql + unresolvedQuery);
+        expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
+        await expect(page.getByRole("status")).toContainText(
+          "Support needs to review this payment",
+          { timeout: 15000 },
+        );
+        await expect(expiryNotice.getByRole("status")).toContainText(
+          "Support needs to review this payment",
+          { timeout: 15000 },
+        );
+        await expect(
+          page
+            .getByRole("region")
+            .filter({
+              has: page.getByRole("heading", {
+                name: "Booking Request status",
+                exact: true,
+              }),
+            })
+            .getByRole("button"),
+        ).toHaveCount(0);
+        const attention = await expiryGraph();
+        expect(attention.expiry.state).toBe("quarantined");
+        expect(attention.request.status).toBe("accepted");
+        expect(attention.capture).toEqual(beforeExpiry.capture);
+        expect(attention.occupancies).toEqual(beforeExpiry.occupancies);
+        expect(attention.hold).toBe("pending_hold");
+        expect(attention.confirmations).toBe(0);
+        expect(attention.notices).toHaveLength(0);
+        expect(
+          attention.availability.units.find(
+            (unit: { id: string }) => unit.id === shift.id,
+          ).available,
+        ).toBe(false);
+        expect(
+          attention.calendar.units.find(
+            (unit: { id: string }) => unit.id === shift.id,
+          ).calendarState,
+        ).toBe("pending_hold");
+        await assertPaymentViews("payment-expiry-quarantined", expiryReference);
+        // The actual scheduled handler cannot restart an uncertain release after quarantine.
+        harness.runSql(paymentEvidenceSql + clocked[4]);
+        expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
+        await expect(page.getByRole("status")).toContainText(
+          "Payment needs review",
+        );
+        expect(await expiryGraph()).toEqual(attention);
+        await assertPaymentViews("payment-expiry-quarantined", expiryReference);
+        expect(observeFailure()).toEqual(recovered);
+      } finally {
+        for (const definition of definitions)
+          harness.runSql(paymentEvidenceSql + definition);
+        harness.runSql(
+          paymentEvidenceSql +
+            "drop function if exists public.live_payment_expiry_now();",
+        );
+      }
+      await otherCustomer.auth.signOut();
     } finally {
-      for (const definition of definitions)
-        harness.runSql(paymentEvidenceSql + definition);
-      harness.runSql(
-        paymentEvidenceSql +
-          "drop function if exists public.live_payment_expiry_now();",
-      );
+      await ownerDetailPage.close();
     }
-    await otherCustomer.auth.signOut();
   }
   await ownerContext.close();
 });

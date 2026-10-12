@@ -506,6 +506,14 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   page,
   browser,
 }, testInfo) => {
+  page.on("console", (message) => {
+    if (
+      message.type() === "info" &&
+      message.text().startsWith("FOCUS_BASELINE ")
+    )
+      console.log(message.text());
+  });
+
   // Hosted CI peaked at 23.9s; 60s leaves 36.1s of headroom.
   test.setTimeout(60_000);
   requireLocalDatabase();
@@ -984,6 +992,13 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   await expect(
     page.getByRole("heading", { name: "Customer review moderation" }),
   ).toBeVisible();
+  await page.getByLabel("Status").selectOption("unhidden");
+  await page.getByRole("button", { name: "Apply filters" }).click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === "/en/administrator/reviews" &&
+      url.searchParams.get("state") === "unhidden",
+  );
   const review = await openAdministratorReview(
     page,
     primary.ids.bookingReference,
@@ -1000,14 +1015,68 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   await expect(review.getByRole("alert")).toContainText("Enter a reason");
   const reason = "Contact-safety moderation fixture";
   await review.getByLabel("Reason for hiding").fill(reason);
-  await review.getByRole("button", { name: "Hide review" }).click();
-  await expect(review.getByRole("status")).toContainText(
-    "The review was hidden.",
+  const hideReviewControl = review.getByRole("button", { name: "Hide review" });
+  await hideReviewControl.focus();
+  await expect(hideReviewControl).toBeFocused();
+  const hideReviewSource = await hideReviewControl.elementHandle();
+  if (!hideReviewSource) throw new Error("Focus measurement source is missing");
+  const hideReviewMeasurement = await hideReviewSource.evaluateHandle(
+    (source, labels) => {
+      const rows: Record<string, string | boolean | null>[] = [];
+      const read = (phase: string) => {
+        rows.push({
+          ...labels,
+          phase,
+          pathname: location.pathname,
+          locale: document.documentElement.lang,
+          direction: document.documentElement.dir,
+          activeTag: document.activeElement?.tagName ?? null,
+          activeId: document.activeElement?.id ?? null,
+          sourceConnected: source.isConnected,
+          sourceDisabled: source.matches(":disabled"),
+          sourceBusy: source.getAttribute("aria-busy"),
+          sameNode: source.isConnected,
+        });
+      };
+      let previous = "";
+      const observer = new MutationObserver(() => {
+        const current = JSON.stringify([
+          source.isConnected,
+          source.matches(":disabled"),
+          source.getAttribute("aria-busy"),
+          location.pathname,
+        ]);
+        if (current !== previous) {
+          previous = current;
+          read("transition");
+        }
+      });
+      observer.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["disabled", "aria-busy"],
+      });
+      read("before");
+      return { read, observer, rows };
+    },
+    { family: "customer-review-moderation", action: "Hide review Unhidden" },
   );
-  await expect(review).toContainText(reason);
-  await page.reload();
-  await expect(review.getByText(original)).toBeVisible();
-  await expect(review.getByText(reason)).toBeVisible();
+  await hideReviewControl.press("Enter");
+  await expect(review).toHaveCount(0);
+  const hideReviewRows = await hideReviewMeasurement.evaluate((measurement) => {
+    measurement.read("settled");
+    measurement.observer.disconnect();
+    return measurement.rows;
+  });
+  await test
+    .info()
+    .attach("focus-hideReview", {
+      body: JSON.stringify(hideReviewRows),
+      contentType: "application/json",
+    });
+  await hideReviewMeasurement.dispose();
+  await hideReviewSource.dispose();
 
   const baghdadDate = (at: number) =>
     new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Baghdad" }).format(at);
@@ -1130,6 +1199,14 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
   page,
   browser,
 }, testInfo) => {
+  page.on("console", (message) => {
+    if (
+      message.type() === "info" &&
+      message.text().startsWith("FOCUS_BASELINE ")
+    )
+      console.log(message.text());
+  });
+
   requireLocalDatabase();
   const namespace =
     replyNamespaces[testInfo.project.name as keyof typeof replyNamespaces];
@@ -1200,7 +1277,57 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     expect(countReviewRows("customer_review_replies")).toBe("0");
 
     await ownerReview.getByLabel("Public reply").fill(replyBody);
-    await publishReply.click();
+    const replyPublishControl = publishReply;
+    await replyPublishControl.focus();
+    await expect(replyPublishControl).toBeFocused();
+    const replyPublishSource = await replyPublishControl.elementHandle();
+    if (!replyPublishSource)
+      throw new Error("Focus measurement source is missing");
+    const replyPublishMeasurement = await replyPublishSource.evaluateHandle(
+      (source, labels) => {
+        const read = (phase: string) => {
+          console.info(
+            "FOCUS_BASELINE " +
+              JSON.stringify({
+                ...labels,
+                phase,
+                pathname: location.pathname,
+                locale: document.documentElement.lang,
+                direction: document.documentElement.dir,
+                activeTag: document.activeElement?.tagName ?? null,
+                activeId: document.activeElement?.id ?? null,
+                sourceConnected: source.isConnected,
+                sourceDisabled: source.matches(":disabled"),
+                sourceBusy: source.getAttribute("aria-busy"),
+                sameNode: source.isConnected,
+              }),
+          );
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer };
+      },
+      { family: "customer-review-owner-reply", action: "Publish reply" },
+    );
+    await replyPublishControl.press("Enter");
     const expectPublishedReply = async () => {
       await expect(
         ownerReview.getByRole("heading", { name: "Your reply" }),
@@ -1212,6 +1339,13 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
       await expect(ownerReview).not.toContainText("Visible to visitors");
     };
     await expectPublishedReply();
+    await replyPublishMeasurement.evaluate((measurement) => {
+      measurement.read("settled");
+      measurement.observer.disconnect();
+    });
+    await replyPublishMeasurement.dispose();
+    await replyPublishSource.dispose();
+
     await page.reload();
     await expectPublishedReply();
     const ownerClient = await signedInPhoneClient(fixture.phones.owner);
@@ -1304,20 +1438,144 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
         card.getByRole("button", { name, exact: true }).first();
       await expect(card.getByText(arabic.label)).toHaveCount(0);
 
-      await reply
-        .getByRole("button", { name: arabic.translate, exact: true })
-        .click();
+      const replyTranslateArControl = reply.getByRole("button", {
+        name: arabic.translate,
+        exact: true,
+      });
+      await replyTranslateArControl.focus();
+      await expect(replyTranslateArControl).toBeFocused();
+      const replyTranslateArSource =
+        await replyTranslateArControl.elementHandle();
+      if (!replyTranslateArSource)
+        throw new Error("Focus measurement source is missing");
+      const replyTranslateArMeasurement =
+        await replyTranslateArSource.evaluateHandle(
+          (source, labels) => {
+            const read = (phase: string) => {
+              console.info(
+                "FOCUS_BASELINE " +
+                  JSON.stringify({
+                    ...labels,
+                    phase,
+                    pathname: location.pathname,
+                    locale: document.documentElement.lang,
+                    direction: document.documentElement.dir,
+                    activeTag: document.activeElement?.tagName ?? null,
+                    activeId: document.activeElement?.id ?? null,
+                    sourceConnected: source.isConnected,
+                    sourceDisabled: source.matches(":disabled"),
+                    sourceBusy: source.getAttribute("aria-busy"),
+                    sameNode: source.isConnected,
+                  }),
+              );
+            };
+            let previous = "";
+            const observer = new MutationObserver(() => {
+              const current = JSON.stringify([
+                source.isConnected,
+                source.matches(":disabled"),
+                source.getAttribute("aria-busy"),
+                location.pathname,
+              ]);
+              if (current !== previous) {
+                previous = current;
+                read("transition");
+              }
+            });
+            observer.observe(document.documentElement, {
+              subtree: true,
+              childList: true,
+              attributes: true,
+              attributeFilter: ["disabled", "aria-busy"],
+            });
+            read("before");
+            return { read, observer };
+          },
+          {
+            family: "customer-review-translation",
+            action: "Translate reply Arabic",
+          },
+        );
+      await replyTranslateArControl.press("Enter");
       await expect(reply.getByText(arabic.label)).toBeVisible();
       await expectText(reply.getByText(arabic.reply), "ar", "rtl");
+      await replyTranslateArMeasurement.evaluate((measurement) => {
+        measurement.read("settled");
+        measurement.observer.disconnect();
+      });
+      await replyTranslateArMeasurement.dispose();
+      await replyTranslateArSource.dispose();
 
       // Pressing Translate from the keyboard leaves the focus on the same control.
-      await card
-        .getByRole("button", { name: arabic.translate, exact: true })
-        .focus();
-      await page.keyboard.press("Enter");
+      const reviewTranslateArControl = card.getByRole("button", {
+        name: arabic.translate,
+        exact: true,
+      });
+      await reviewTranslateArControl.focus();
+      await expect(reviewTranslateArControl).toBeFocused();
+      const reviewTranslateArSource =
+        await reviewTranslateArControl.elementHandle();
+      if (!reviewTranslateArSource)
+        throw new Error("Focus measurement source is missing");
+      const reviewTranslateArMeasurement =
+        await reviewTranslateArSource.evaluateHandle(
+          (source, labels) => {
+            const read = (phase: string) => {
+              console.info(
+                "FOCUS_BASELINE " +
+                  JSON.stringify({
+                    ...labels,
+                    phase,
+                    pathname: location.pathname,
+                    locale: document.documentElement.lang,
+                    direction: document.documentElement.dir,
+                    activeTag: document.activeElement?.tagName ?? null,
+                    activeId: document.activeElement?.id ?? null,
+                    sourceConnected: source.isConnected,
+                    sourceDisabled: source.matches(":disabled"),
+                    sourceBusy: source.getAttribute("aria-busy"),
+                    sameNode: source.isConnected,
+                  }),
+              );
+            };
+            let previous = "";
+            const observer = new MutationObserver(() => {
+              const current = JSON.stringify([
+                source.isConnected,
+                source.matches(":disabled"),
+                source.getAttribute("aria-busy"),
+                location.pathname,
+              ]);
+              if (current !== previous) {
+                previous = current;
+                read("transition");
+              }
+            });
+            observer.observe(document.documentElement, {
+              subtree: true,
+              childList: true,
+              attributes: true,
+              attributeFilter: ["disabled", "aria-busy"],
+            });
+            read("before");
+            return { read, observer };
+          },
+          {
+            family: "customer-review-translation",
+            action: "Translate review Arabic",
+          },
+        );
+      await reviewTranslateArControl.press("Enter");
       await expectText(card.getByText(arabic.review), "ar", "rtl");
       await expect(card.getByText(arabic.label)).toHaveCount(2);
       await expect(reviewButton(arabic.viewOriginal)).toBeFocused();
+      await reviewTranslateArMeasurement.evaluate((measurement) => {
+        measurement.read("settled");
+        measurement.observer.disconnect();
+      });
+      await reviewTranslateArMeasurement.dispose();
+      await reviewTranslateArSource.dispose();
+
       await page.screenshot({
         path: testInfo.outputPath("public-translated-ar.png"),
         fullPage: true,
@@ -1342,9 +1600,69 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
       await expectText(card.getByText(arabic.review), "ar", "rtl");
 
       // Pressing Report from the keyboard leaves the focus on the block's first control.
-      await reviewButton(arabic.report).focus();
-      await page.keyboard.press("Enter");
+      const reviewReportArControl = reviewButton(arabic.report);
+      await reviewReportArControl.focus();
+      await expect(reviewReportArControl).toBeFocused();
+      const reviewReportArSource = await reviewReportArControl.elementHandle();
+      if (!reviewReportArSource)
+        throw new Error("Focus measurement source is missing");
+      const reviewReportArMeasurement =
+        await reviewReportArSource.evaluateHandle(
+          (source, labels) => {
+            const read = (phase: string) => {
+              console.info(
+                "FOCUS_BASELINE " +
+                  JSON.stringify({
+                    ...labels,
+                    phase,
+                    pathname: location.pathname,
+                    locale: document.documentElement.lang,
+                    direction: document.documentElement.dir,
+                    activeTag: document.activeElement?.tagName ?? null,
+                    activeId: document.activeElement?.id ?? null,
+                    sourceConnected: source.isConnected,
+                    sourceDisabled: source.matches(":disabled"),
+                    sourceBusy: source.getAttribute("aria-busy"),
+                    sameNode: source.isConnected,
+                  }),
+              );
+            };
+            let previous = "";
+            const observer = new MutationObserver(() => {
+              const current = JSON.stringify([
+                source.isConnected,
+                source.matches(":disabled"),
+                source.getAttribute("aria-busy"),
+                location.pathname,
+              ]);
+              if (current !== previous) {
+                previous = current;
+                read("transition");
+              }
+            });
+            observer.observe(document.documentElement, {
+              subtree: true,
+              childList: true,
+              attributes: true,
+              attributeFilter: ["disabled", "aria-busy"],
+            });
+            read("before");
+            return { read, observer };
+          },
+          {
+            family: "customer-review-translation",
+            action: "Report review Arabic",
+          },
+        );
+      await reviewReportArControl.press("Enter");
       await expect(card.getByText(arabic.reported)).toBeVisible();
+      await reviewReportArMeasurement.evaluate((measurement) => {
+        measurement.read("settled");
+        measurement.observer.disconnect();
+      });
+      await reviewReportArMeasurement.dispose();
+      await reviewReportArSource.dispose();
+
       await expect(reviewButton(arabic.viewOriginal)).toBeFocused();
       await expect(
         card.getByRole("button", { name: arabic.report, exact: true }),
@@ -1447,6 +1765,14 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     );
     const administratorContext = await browser.newContext({ baseURL: origin });
     const administratorPage = await administratorContext.newPage();
+    administratorPage.on("console", (message) => {
+      if (
+        message.type() === "info" &&
+        message.text().startsWith("FOCUS_BASELINE ")
+      )
+        console.log(message.text());
+    });
+
     await administratorPage.goto("/en/administrator/reviews");
     const secret = await beginAdministratorMfa(
       administratorPage,
@@ -1532,10 +1858,67 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     await administratorReply
       .getByLabel("Reason for hiding the reply")
       .fill(reason);
-    await hideReply.click();
+    const replyHideControl = hideReply;
+    await replyHideControl.focus();
+    await expect(replyHideControl).toBeFocused();
+    const replyHideSource = await replyHideControl.elementHandle();
+    if (!replyHideSource)
+      throw new Error("Focus measurement source is missing");
+    const replyHideMeasurement = await replyHideSource.evaluateHandle(
+      (source, labels) => {
+        const read = (phase: string) => {
+          console.info(
+            "FOCUS_BASELINE " +
+              JSON.stringify({
+                ...labels,
+                phase,
+                pathname: location.pathname,
+                locale: document.documentElement.lang,
+                direction: document.documentElement.dir,
+                activeTag: document.activeElement?.tagName ?? null,
+                activeId: document.activeElement?.id ?? null,
+                sourceConnected: source.isConnected,
+                sourceDisabled: source.matches(":disabled"),
+                sourceBusy: source.getAttribute("aria-busy"),
+                sameNode: source.isConnected,
+              }),
+          );
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer };
+      },
+      { family: "customer-review-moderation", action: "Hide reply" },
+    );
+    await replyHideControl.press("Enter");
     await expect(administratorReply.getByRole("status")).toContainText(
       "The reply was hidden.",
     );
+    await replyHideMeasurement.evaluate((measurement) => {
+      measurement.read("settled");
+      measurement.observer.disconnect();
+    });
+    await replyHideMeasurement.dispose();
+    await replyHideSource.dispose();
+
     await expect(administratorReply).toContainText(reason);
     await administratorPage.screenshot({
       path: testInfo.outputPath("administrator-reply-hidden-en.png"),

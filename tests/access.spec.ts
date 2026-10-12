@@ -480,8 +480,64 @@ async function saveOwnerApplicationDraft(
   for (const label of [copy.garden, copy.parking]) {
     await page.getByLabel(label).check();
   }
-  await page.getByRole("button", { name: copy.saveDraft }).click();
+  const draftControl = page.getByRole("button", { name: copy.saveDraft });
+  await draftControl.focus();
+  await expect(draftControl).toBeFocused();
+  const draftSource = await draftControl.elementHandle();
+  if (!draftSource) throw new Error("Focus measurement source is missing");
+  const draftMeasurement = await draftSource.evaluateHandle(
+    (source, labels) => {
+      const read = (phase: string) => {
+        console.info(
+          "FOCUS_BASELINE " +
+            JSON.stringify({
+              ...labels,
+              phase,
+              pathname: location.pathname,
+              locale: document.documentElement.lang,
+              direction: document.documentElement.dir,
+              activeTag: document.activeElement?.tagName ?? null,
+              activeId: document.activeElement?.id ?? null,
+              sourceConnected: source.isConnected,
+              sourceDisabled: source.matches(":disabled"),
+              sourceBusy: source.getAttribute("aria-busy"),
+              sameNode: source.isConnected,
+            }),
+        );
+      };
+      let previous = "";
+      const observer = new MutationObserver(() => {
+        const current = JSON.stringify([
+          source.isConnected,
+          source.matches(":disabled"),
+          source.getAttribute("aria-busy"),
+          location.pathname,
+        ]);
+        if (current !== previous) {
+          previous = current;
+          read("transition");
+        }
+      });
+      observer.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["disabled", "aria-busy"],
+      });
+      read("before");
+      return { read, observer };
+    },
+    { family: "owner-application-form", action: "Save draft" },
+  );
+  await draftControl.press("Enter");
   await expect(page.getByRole("status")).toContainText(copy.saved);
+  await draftMeasurement.evaluate((measurement) => {
+    measurement.read("settled");
+    measurement.observer.disconnect();
+  });
+  await draftMeasurement.dispose();
+  await draftSource.dispose();
+
   await page.reload();
 }
 
@@ -653,6 +709,19 @@ function registerOwnedJourney(
   }
 }
 
+test.beforeEach(async ({ context }) => {
+  context.on("page", (page) => {
+    page.on("console", (message) => {
+      if (
+        message.type() === "info" &&
+        message.text().startsWith("FOCUS_BASELINE ")
+      ) {
+        console.log(message.text());
+      }
+    });
+  });
+});
+
 test.describe.configure({ mode: "serial" });
 
 test("the fictional booking-request back door is unavailable", async ({
@@ -738,16 +807,126 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
           ? originalIdentityBytes
           : Buffer.from("%PDF-1.7\nprivate-test-document\n%%EOF"),
     });
-    await card.getByRole("button", { name: "Upload document" }).click();
+    const uploadControl = card.getByRole("button", { name: "Upload document" });
+    await uploadControl.focus();
+    await expect(uploadControl).toBeFocused();
+    const uploadSource = await uploadControl.elementHandle();
+    if (!uploadSource) throw new Error("Focus measurement source is missing");
+    const uploadMeasurement = await uploadSource.evaluateHandle(
+      (source, labels) => {
+        const read = (phase: string) => {
+          console.info(
+            "FOCUS_BASELINE " +
+              JSON.stringify({
+                ...labels,
+                phase,
+                pathname: location.pathname,
+                locale: document.documentElement.lang,
+                direction: document.documentElement.dir,
+                activeTag: document.activeElement?.tagName ?? null,
+                activeId: document.activeElement?.id ?? null,
+                sourceConnected: source.isConnected,
+                sourceDisabled: source.matches(":disabled"),
+                sourceBusy: source.getAttribute("aria-busy"),
+                sameNode: source.isConnected,
+              }),
+          );
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer };
+      },
+      { family: "owner-application-form", action: "Upload document" },
+    );
+    await uploadControl.press("Enter");
     await expect(card.getByRole("status")).toContainText(
       browserFixtures.en.application.uploaded,
     );
+    await uploadMeasurement.evaluate((measurement) => {
+      measurement.read("settled");
+      measurement.observer.disconnect();
+    });
+    await uploadMeasurement.dispose();
+    await uploadSource.dispose();
+
     await expect(
       page.getByRole("article", { name: label }).getByText(filename),
     ).toBeVisible();
   }
 
-  await page.getByRole("button", { name: "Submit application" }).click();
+  const applicationSubmitControl = page.getByRole("button", {
+    name: "Submit application",
+  });
+  await applicationSubmitControl.focus();
+  await expect(applicationSubmitControl).toBeFocused();
+  const applicationSubmitSource =
+    await applicationSubmitControl.elementHandle();
+  if (!applicationSubmitSource)
+    throw new Error("Focus measurement source is missing");
+  const applicationSubmitMeasurement =
+    await applicationSubmitSource.evaluateHandle(
+      (source, labels) => {
+        const read = (phase: string) => {
+          console.info(
+            "FOCUS_BASELINE " +
+              JSON.stringify({
+                ...labels,
+                phase,
+                pathname: location.pathname,
+                locale: document.documentElement.lang,
+                direction: document.documentElement.dir,
+                activeTag: document.activeElement?.tagName ?? null,
+                activeId: document.activeElement?.id ?? null,
+                sourceConnected: source.isConnected,
+                sourceDisabled: source.matches(":disabled"),
+                sourceBusy: source.getAttribute("aria-busy"),
+                sameNode: source.isConnected,
+              }),
+          );
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer };
+      },
+      { family: "owner-application-form", action: "Submit application" },
+    );
+  await applicationSubmitControl.press("Enter");
   await expect(
     page.locator(".owner-review-status").getByText("Submitted for review"),
   ).toBeVisible();
@@ -755,6 +934,13 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
   await expect(
     page.getByRole("button", { name: "Submit application" }),
   ).toHaveCount(0);
+  await applicationSubmitMeasurement.evaluate((measurement) => {
+    measurement.read("settled");
+    measurement.observer.disconnect();
+  });
+  await applicationSubmitMeasurement.dispose();
+  await applicationSubmitSource.dispose();
+
   await expect(page.getByRole("button", { name: /publish/i })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /booking/i })).toHaveCount(0);
 
@@ -1420,8 +1606,71 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await page.getByLabel("Guest capacity").fill("10");
   await page.getByLabel("Bedrooms").fill("4");
   await page.getByLabel("Bathrooms").fill("3");
-  await page.getByLabel("Latitude").fill("36.408333");
-  await page.getByLabel("Longitude").fill("44.385834");
+  await page.context().grantPermissions(["geolocation"]);
+  await page
+    .context()
+    .setGeolocation({ latitude: 36.408333, longitude: 44.385834 });
+  const locationControl = page.getByRole("button", {
+    name: "Use this device\'s location",
+  });
+  await locationControl.focus();
+  await expect(locationControl).toBeFocused();
+  const locationSource = await locationControl.elementHandle();
+  if (!locationSource) throw new Error("Focus measurement source is missing");
+  const locationMeasurement = await locationSource.evaluateHandle(
+    (source, labels) => {
+      const read = (phase: string) => {
+        console.info(
+          "FOCUS_BASELINE " +
+            JSON.stringify({
+              ...labels,
+              phase,
+              pathname: location.pathname,
+              locale: document.documentElement.lang,
+              direction: document.documentElement.dir,
+              activeTag: document.activeElement?.tagName ?? null,
+              activeId: document.activeElement?.id ?? null,
+              sourceConnected: source.isConnected,
+              sourceDisabled: source.matches(":disabled"),
+              sourceBusy: source.getAttribute("aria-busy"),
+              sameNode: source.isConnected,
+            }),
+        );
+      };
+      let previous = "";
+      const observer = new MutationObserver(() => {
+        const current = JSON.stringify([
+          source.isConnected,
+          source.matches(":disabled"),
+          source.getAttribute("aria-busy"),
+          location.pathname,
+        ]);
+        if (current !== previous) {
+          previous = current;
+          read("transition");
+        }
+      });
+      observer.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["disabled", "aria-busy"],
+      });
+      read("before");
+      return { read, observer };
+    },
+    { family: "cottage-location-fields", action: "Use device location" },
+  );
+  await locationControl.press("Enter");
+  await expect(page.getByLabel("Latitude")).toHaveValue("36.408333");
+  await expect(page.getByLabel("Longitude")).toHaveValue("44.385834");
+  await locationMeasurement.evaluate((measurement) => {
+    measurement.read("settled");
+    measurement.observer.disconnect();
+  });
+  await locationMeasurement.dispose();
+  await locationSource.dispose();
+
   await page.getByLabel("I checked this point is the cottage").check();
   await page
     .getByLabel("Private directions")
@@ -1762,10 +2011,66 @@ test("an approved owner continues the first Cottage Profile and submits a privat
 
     await page.keyboard.press("Space");
     await expect(confirmation).toBeChecked();
-    await save.click();
+    const scheduleControl = save;
+    await scheduleControl.focus();
+    await expect(scheduleControl).toBeFocused();
+    const scheduleSource = await scheduleControl.elementHandle();
+    if (!scheduleSource) throw new Error("Focus measurement source is missing");
+    const scheduleMeasurement = await scheduleSource.evaluateHandle(
+      (source, labels) => {
+        const read = (phase: string) => {
+          console.info(
+            "FOCUS_BASELINE " +
+              JSON.stringify({
+                ...labels,
+                phase,
+                pathname: location.pathname,
+                locale: document.documentElement.lang,
+                direction: document.documentElement.dir,
+                activeTag: document.activeElement?.tagName ?? null,
+                activeId: document.activeElement?.id ?? null,
+                sourceConnected: source.isConnected,
+                sourceDisabled: source.matches(":disabled"),
+                sourceBusy: source.getAttribute("aria-busy"),
+                sameNode: source.isConnected,
+              }),
+          );
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer };
+      },
+      { family: "cottage-shift-schedule-editor", action: "Save schedule" },
+    );
+    await scheduleControl.press("Enter");
     await expect(
       scheduleForm.getByRole("status").filter({ hasText: copy.saved }),
     ).toBeVisible();
+    await scheduleMeasurement.evaluate((measurement) => {
+      measurement.read("settled");
+      measurement.observer.disconnect();
+    });
+    await scheduleMeasurement.dispose();
+    await scheduleSource.dispose();
+
     await expect(confirmation).not.toBeChecked();
     await page.reload();
     await expect(morningStart).toHaveValue("09:00");
@@ -1987,13 +2292,142 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await page.goto("/en/administrator/access");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("Local-test-password-2026");
-  await page.getByLabel("Password").press("Enter");
+  const administratorContinueControl = page.getByRole("button", {
+    name: "Continue",
+    exact: true,
+  });
+  await administratorContinueControl.focus();
+  await expect(administratorContinueControl).toBeFocused();
+  const administratorContinueSource =
+    await administratorContinueControl.elementHandle();
+  if (!administratorContinueSource)
+    throw new Error("Focus measurement source is missing");
+  const administratorContinueMeasurement =
+    await administratorContinueSource.evaluateHandle(
+      (source, labels) => {
+        const rows: Record<string, string | boolean | null>[] = [];
+        const read = (phase: string) => {
+          rows.push({
+            ...labels,
+            phase,
+            pathname: location.pathname,
+            locale: document.documentElement.lang,
+            direction: document.documentElement.dir,
+            activeTag: document.activeElement?.tagName ?? null,
+            activeId: document.activeElement?.id ?? null,
+            sourceConnected: source.isConnected,
+            sourceDisabled: source.matches(":disabled"),
+            sourceBusy: source.getAttribute("aria-busy"),
+            sameNode: source.isConnected,
+          });
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer, rows };
+      },
+      { family: "administrator-access-form", action: "Continue" },
+    );
+  await administratorContinueControl.press("Enter");
+  await expect(page.getByLabel("Authenticator app code")).toBeVisible();
+  const administratorContinueRows =
+    await administratorContinueMeasurement.evaluate((measurement) => {
+      measurement.read("settled");
+      measurement.observer.disconnect();
+      return measurement.rows;
+    });
+  await test.info().attach("focus-administratorContinue", {
+    body: JSON.stringify(administratorContinueRows),
+    contentType: "application/json",
+  });
+  await administratorContinueMeasurement.dispose();
+  await administratorContinueSource.dispose();
+
   const secret = await page.getByTestId("mfa-secret").textContent();
   if (!secret) throw new Error("MFA enrollment returned no secret");
   const failedAttemptedAfter = new Date().toISOString();
   await page.getByLabel("Authenticator app code").fill("12");
-  await page.getByLabel("Authenticator app code").press("Enter");
+  const administratorRejectedControl = page.getByRole("button", {
+    name: "Verify",
+    exact: true,
+  });
+  await administratorRejectedControl.focus();
+  await expect(administratorRejectedControl).toBeFocused();
+  const administratorRejectedSource =
+    await administratorRejectedControl.elementHandle();
+  if (!administratorRejectedSource)
+    throw new Error("Focus measurement source is missing");
+  const administratorRejectedMeasurement =
+    await administratorRejectedSource.evaluateHandle(
+      (source, labels) => {
+        const read = (phase: string) => {
+          console.info(
+            "FOCUS_BASELINE " +
+              JSON.stringify({
+                ...labels,
+                phase,
+                pathname: location.pathname,
+                locale: document.documentElement.lang,
+                direction: document.documentElement.dir,
+                activeTag: document.activeElement?.tagName ?? null,
+                activeId: document.activeElement?.id ?? null,
+                sourceConnected: source.isConnected,
+                sourceDisabled: source.matches(":disabled"),
+                sourceBusy: source.getAttribute("aria-busy"),
+                sameNode: source.isConnected,
+              }),
+          );
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer };
+      },
+      { family: "administrator-access-form", action: "Verify rejected" },
+    );
+  await administratorRejectedControl.press("Enter");
   await expect(page.getByText(/code could not be confirmed/)).toBeVisible();
+  await administratorRejectedMeasurement.evaluate((measurement) => {
+    measurement.read("settled");
+    measurement.observer.disconnect();
+  });
+  await administratorRejectedMeasurement.dispose();
+  await administratorRejectedSource.dispose();
+
   const failedAudit = await currentAudit(
     actorUserId,
     failedAttemptedAfter,
@@ -2006,9 +2440,71 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     secret: OTPAuth.Secret.fromBase32(secret),
   }).generate();
   await page.getByLabel("Authenticator app code").fill(code);
-  await page.getByLabel("Authenticator app code").press("Enter");
+  const administratorVerifyControl = page.getByRole("button", {
+    name: "Verify",
+    exact: true,
+  });
+  await administratorVerifyControl.focus();
+  await expect(administratorVerifyControl).toBeFocused();
+  const administratorVerifySource =
+    await administratorVerifyControl.elementHandle();
+  if (!administratorVerifySource)
+    throw new Error("Focus measurement source is missing");
+  const administratorVerifyMeasurement =
+    await administratorVerifySource.evaluateHandle(
+      (source, labels) => {
+        const read = (phase: string) => {
+          console.info(
+            "FOCUS_BASELINE " +
+              JSON.stringify({
+                ...labels,
+                phase,
+                pathname: location.pathname,
+                locale: document.documentElement.lang,
+                direction: document.documentElement.dir,
+                activeTag: document.activeElement?.tagName ?? null,
+                activeId: document.activeElement?.id ?? null,
+                sourceConnected: source.isConnected,
+                sourceDisabled: source.matches(":disabled"),
+                sourceBusy: source.getAttribute("aria-busy"),
+                sameNode: source.isConnected,
+              }),
+          );
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer };
+      },
+      { family: "administrator-access-form", action: "Verify success" },
+    );
+  await administratorVerifyControl.press("Enter");
 
   await expect(page.getByText(/Administrator access is ready/)).toBeVisible();
+  await administratorVerifyMeasurement.evaluate((measurement) => {
+    measurement.read("settled");
+    measurement.observer.disconnect();
+  });
+  await administratorVerifyMeasurement.dispose();
+  await administratorVerifySource.dispose();
+
   const audit = await currentAudit(
     actorUserId,
     attemptedAfter,
@@ -2336,12 +2832,71 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     const createLink = identityDocument.getByRole("button", {
       name: copy.createLink,
     });
-    await tabTo(page, createLink);
-    await page.keyboard.press("Enter");
+    const secureLinkControl = createLink;
+    await secureLinkControl.focus();
+    await expect(secureLinkControl).toBeFocused();
+    const secureLinkSource = await secureLinkControl.elementHandle();
+    if (!secureLinkSource)
+      throw new Error("Focus measurement source is missing");
+    const secureLinkMeasurement = await secureLinkSource.evaluateHandle(
+      (source, labels) => {
+        const read = (phase: string) => {
+          console.info(
+            "FOCUS_BASELINE " +
+              JSON.stringify({
+                ...labels,
+                phase,
+                pathname: location.pathname,
+                locale: document.documentElement.lang,
+                direction: document.documentElement.dir,
+                activeTag: document.activeElement?.tagName ?? null,
+                activeId: document.activeElement?.id ?? null,
+                sourceConnected: source.isConnected,
+                sourceDisabled: source.matches(":disabled"),
+                sourceBusy: source.getAttribute("aria-busy"),
+                sameNode: source.isConnected,
+              }),
+          );
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer };
+      },
+      {
+        family: "owner-application-review-queue",
+        action: "Create secure link",
+      },
+    );
+    await secureLinkControl.press("Enter");
     const secureLink = identityDocument.getByRole("link", {
       name: copy.openDocument,
     });
     await expect(secureLink).toBeVisible();
+    await secureLinkMeasurement.evaluate((measurement) => {
+      measurement.read("settled");
+      measurement.observer.disconnect();
+    });
+    await secureLinkMeasurement.dispose();
+    await secureLinkSource.dispose();
+
     const viewport = page.viewportSize();
     if (!viewport) throw new Error("Browser viewport is unavailable");
     expect(
@@ -3498,18 +4053,197 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
   assertIsolatedLocalAccessDatabase();
   const before = await listAllAccessFixtureUsers(auditClient.auth.admin);
   expect(findAccessFixtureUser(before, phone)).toBeUndefined();
-  async function verify(target: Page) {
+  async function verify(target: Page, moveDuringSend = false) {
     await target.getByLabel("Iraqi phone number").fill(phone);
-    await target
-      .getByRole("button", { name: "Send verification code" })
-      .click();
-    await expect(target.getByLabel("Verification code")).toBeVisible();
+    const phoneSendControl = target.getByRole("button", {
+      name: "Send verification code",
+    });
+    await phoneSendControl.focus();
+    await expect(phoneSendControl).toBeFocused();
+    const phoneSendSource = await phoneSendControl.elementHandle();
+    if (!phoneSendSource)
+      throw new Error("Focus measurement source is missing");
+    const phoneSendMeasurement = await phoneSendSource.evaluateHandle(
+      (source, labels) => {
+        const rows: Record<string, string | boolean | null>[] = [];
+        const read = (phase: string) => {
+          rows.push({
+            ...labels,
+            phase,
+            pathname: location.pathname,
+            locale: document.documentElement.lang,
+            direction: document.documentElement.dir,
+            activeTag: document.activeElement?.tagName ?? null,
+            activeId: document.activeElement?.id ?? null,
+            sourceConnected: source.isConnected,
+            sourceDisabled: source.matches(":disabled"),
+            sourceBusy: source.getAttribute("aria-busy"),
+            sameNode: source.isConnected,
+          });
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer, rows };
+      },
+      { family: "phone-access-form", action: "Send verification code" },
+    );
+    const departureSource = await target
+      .getByLabel("Iraqi phone number")
+      .elementHandle();
+    if (!departureSource) throw new Error("Phone departure source is missing");
+    const sendRoute = target.url();
+    let releaseSendResponse: () => void = () => {};
+    const sendRelease = new Promise<void>((resolve) => {
+      releaseSendResponse = resolve;
+    });
+    let recordSendResponse: () => void = () => {};
+    const sendFetched = new Promise<void>((resolve) => {
+      recordSendResponse = resolve;
+    });
+    if (moveDuringSend) {
+      await target.route(sendRoute, async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        const response = await route.fetch();
+        recordSendResponse();
+        await sendRelease;
+        await route.fulfill({ response });
+      });
+    }
+    try {
+      await phoneSendControl.press("Enter");
+      if (moveDuringSend) {
+        await sendFetched;
+        await expect(phoneSendControl).toBeDisabled();
+        await expect(phoneSendControl).toHaveAttribute("aria-busy", "true");
+        expect(
+          await phoneSendSource.evaluate((source) => source.isConnected),
+        ).toBe(true);
+        await phoneSendMeasurement.evaluate((measurement) =>
+          measurement.read("held-pending"),
+        );
+        const elsewhere = target.getByLabel("Iraqi phone number");
+        await expect(elsewhere).toBeEnabled();
+        await elsewhere.focus();
+        await expect(elsewhere).toBeFocused();
+        await phoneSendMeasurement.evaluate((measurement) =>
+          measurement.read("moved-intentionally"),
+        );
+        releaseSendResponse();
+      }
+      await expect(target.getByLabel("Verification code")).toBeVisible();
+    } finally {
+      releaseSendResponse();
+      if (moveDuringSend) await target.unroute(sendRoute);
+    }
+    const phoneSendRows = await phoneSendMeasurement.evaluate(
+      (measurement, departure) => {
+        measurement.read("settled");
+        const settled = measurement.rows.at(-1);
+        if (settled) settled.departureTargetConnected = departure.isConnected;
+        measurement.observer.disconnect();
+        return measurement.rows;
+      },
+      departureSource,
+    );
+    await departureSource.dispose();
+    await test.info().attach("focus-phoneSend", {
+      body: JSON.stringify(phoneSendRows),
+      contentType: "application/json",
+    });
+    await phoneSendMeasurement.dispose();
+    await phoneSendSource.dispose();
+
     await target.getByLabel("Verification code").fill("123456");
-    await target.getByRole("button", { name: "Verify", exact: true }).click();
+    const phoneVerifyControl = target.getByRole("button", {
+      name: "Verify",
+      exact: true,
+    });
+    await phoneVerifyControl.focus();
+    await expect(phoneVerifyControl).toBeFocused();
+    const phoneVerifySource = await phoneVerifyControl.elementHandle();
+    if (!phoneVerifySource)
+      throw new Error("Focus measurement source is missing");
+    const phoneVerifyMeasurement = await phoneVerifySource.evaluateHandle(
+      (source, labels) => {
+        const rows: Record<string, string | boolean | null>[] = [];
+        const read = (phase: string) => {
+          rows.push({
+            ...labels,
+            phase,
+            pathname: location.pathname,
+            locale: document.documentElement.lang,
+            direction: document.documentElement.dir,
+            activeTag: document.activeElement?.tagName ?? null,
+            activeId: document.activeElement?.id ?? null,
+            sourceConnected: source.isConnected,
+            sourceDisabled: source.matches(":disabled"),
+            sourceBusy: source.getAttribute("aria-busy"),
+            sameNode: source.isConnected,
+          });
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer, rows };
+      },
+      { family: "phone-access-form", action: "Verify route" },
+    );
+    await phoneVerifyControl.press("Enter");
+    await expect(
+      target.getByRole("heading", { name: "My bookings", exact: true }),
+    ).toBeVisible();
+    const phoneVerifyRows = await phoneVerifyMeasurement.evaluate(
+      (measurement) => {
+        measurement.read("settled");
+        measurement.observer.disconnect();
+        return measurement.rows;
+      },
+    );
+    await test.info().attach("focus-phoneVerify", {
+      body: JSON.stringify(phoneVerifyRows),
+      contentType: "application/json",
+    });
+    await phoneVerifyMeasurement.dispose();
+    await phoneVerifySource.dispose();
   }
   await page.goto("/en/bookings");
   await expect(page).toHaveURL(/\/en\/access\?returnTo=%2Fen%2Fbookings/);
-  await verify(page);
+  await verify(page, true);
   await expect(
     page.getByRole("heading", { name: "My bookings", exact: true }),
   ).toBeVisible();
@@ -3544,8 +4278,66 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
     page.getByRole("heading", { name: "Become a Cottage Owner" }),
   ).toBeVisible();
   expect(accountContext().role).toBe("customer");
-  await page.getByRole("button", { name: "Start owner application" }).click();
+  const enrollControl = page.getByRole("button", {
+    name: "Start owner application",
+  });
+  await enrollControl.focus();
+  await expect(enrollControl).toBeFocused();
+  const enrollSource = await enrollControl.elementHandle();
+  if (!enrollSource) throw new Error("Focus measurement source is missing");
+  const enrollMeasurement = await enrollSource.evaluateHandle(
+    (source, labels) => {
+      const read = (phase: string) => {
+        console.info(
+          "FOCUS_BASELINE " +
+            JSON.stringify({
+              ...labels,
+              phase,
+              pathname: location.pathname,
+              locale: document.documentElement.lang,
+              direction: document.documentElement.dir,
+              activeTag: document.activeElement?.tagName ?? null,
+              activeId: document.activeElement?.id ?? null,
+              sourceConnected: source.isConnected,
+              sourceDisabled: source.matches(":disabled"),
+              sourceBusy: source.getAttribute("aria-busy"),
+              sameNode: source.isConnected,
+            }),
+        );
+      };
+      let previous = "";
+      const observer = new MutationObserver(() => {
+        const current = JSON.stringify([
+          source.isConnected,
+          source.matches(":disabled"),
+          source.getAttribute("aria-busy"),
+          location.pathname,
+        ]);
+        if (current !== previous) {
+          previous = current;
+          read("transition");
+        }
+      });
+      observer.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["disabled", "aria-busy"],
+      });
+      read("before");
+      return { read, observer };
+    },
+    { family: "owner-enrollment-form", action: "Start owner application" },
+  );
+  await enrollControl.press("Enter");
   await expect(page).toHaveURL(/\/en\/owner\/application$/);
+  await enrollMeasurement.evaluate((measurement) => {
+    measurement.read("settled");
+    measurement.observer.disconnect();
+  });
+  await enrollMeasurement.dispose();
+  await enrollSource.dispose();
+
   expect(accountContext()).toEqual({
     user_id: userId,
     role: "cottage_owner",

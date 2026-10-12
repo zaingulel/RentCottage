@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as OTPAuth from "otpauth";
+import { administratorRecordsMessages } from "../src/i18n/administrator-records-messages";
 import { SupabaseOwnerApplicationRepository } from "../src/owner-application/supabase-owner-application";
 
 const { createLocalSupabaseConcurrencyHarness } = createRequire(
@@ -218,6 +219,14 @@ test.beforeAll(async ({}, testInfo) => {
 test("an administrator discovers accounts and approval records with authoritative counts and restricted documents in every locale", async ({
   page,
 }) => {
+  page.on("console", (message) => {
+    if (
+      message.type() === "info" &&
+      message.text().startsWith("FOCUS_BASELINE ")
+    ) {
+      console.log(message.text());
+    }
+  });
   const fixture = reviewFixture;
   const applications = count(
     "select count(*) from public.owner_applications where status in ('submitted','under_review');",
@@ -268,6 +277,68 @@ test("an administrator discovers accounts and approval records with authoritativ
       locale === "en" ? "ltr" : "rtl",
     );
     await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    const recordSearchControl = page.getByRole("button", {
+      name: administratorRecordsMessages[locale].search,
+      exact: true,
+    });
+    await recordSearchControl.focus();
+    await expect(recordSearchControl).toBeFocused();
+    const recordSearchSource = await recordSearchControl.elementHandle();
+    if (!recordSearchSource)
+      throw new Error("Focus measurement source is missing");
+    const recordSearchMeasurement = await recordSearchSource.evaluateHandle(
+      (source, labels) => {
+        const read = (phase: string) => {
+          console.info(
+            "FOCUS_BASELINE " +
+              JSON.stringify({
+                ...labels,
+                phase,
+                pathname: location.pathname,
+                locale: document.documentElement.lang,
+                direction: document.documentElement.dir,
+                activeTag: document.activeElement?.tagName ?? null,
+                activeId: document.activeElement?.id ?? null,
+                sourceConnected: source.isConnected,
+                sourceDisabled: source.matches(":disabled"),
+                sourceBusy: source.getAttribute("aria-busy"),
+                sameNode: source.isConnected,
+              }),
+          );
+        };
+        let previous = "";
+        const observer = new MutationObserver(() => {
+          const current = JSON.stringify([
+            source.isConnected,
+            source.matches(":disabled"),
+            source.getAttribute("aria-busy"),
+            location.pathname,
+          ]);
+          if (current !== previous) {
+            previous = current;
+            read("transition");
+          }
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["disabled", "aria-busy"],
+        });
+        read("before");
+        return { read, observer };
+      },
+      { family: "administrator-records", action: "Search records" },
+    );
+    await recordSearchControl.press("Enter");
+    await expect(recordSearchControl).toBeEnabled();
+    await recordSearchMeasurement.evaluate((measurement) => {
+      measurement.read("settled");
+      measurement.observer.disconnect();
+    });
+    await recordSearchMeasurement.dispose();
+    await recordSearchSource.dispose();
+
     const applicationButton = page.getByRole("button", {
       name: new RegExp(`^${applicationLabel}:`),
     });
