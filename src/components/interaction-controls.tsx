@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type {
-  ButtonHTMLAttributes,
   ComponentProps,
   InputHTMLAttributes,
   ReactNode,
@@ -8,75 +7,16 @@ import type {
   TextareaHTMLAttributes,
 } from "react";
 
-type NativeButtonProps = Omit<
-  ButtonHTMLAttributes<HTMLButtonElement>,
-  "aria-pressed" | "children" | "className"
-> & {
-  children: ReactNode;
-};
+export {
+  ActionButton,
+  ActionFocusTarget,
+  prepareActionFocusNavigation,
+} from "./action-button";
 
 function withoutKind<Props extends { kind: string }>(props: Props) {
   const nativeProps = { ...props };
   Reflect.deleteProperty(nativeProps, "kind");
   return nativeProps as Omit<Props, "kind">;
-}
-
-type ActionButtonProps =
-  | (NativeButtonProps & {
-      kind: "primary";
-      width: "content" | "full";
-      pending?: boolean;
-    })
-  | (NativeButtonProps & {
-      kind: "secondary";
-      width?: "content" | "full";
-      size: "compact" | "regular";
-      pending?: boolean;
-    })
-  | (NativeButtonProps & {
-      kind: "toggle";
-      pressed: boolean;
-      size: "compact" | "regular";
-    });
-
-export function ActionButton(props: ActionButtonProps) {
-  if (props.kind === "toggle") {
-    const { pressed, size, ...buttonProps } = withoutKind(props);
-    return (
-      <button
-        {...buttonProps}
-        aria-pressed={pressed}
-        className={`action action-toggle action-${size}`}
-      />
-    );
-  }
-
-  if (props.kind === "secondary") {
-    const {
-      pending = false,
-      width = "content",
-      size,
-      ...buttonProps
-    } = withoutKind(props);
-    return (
-      <button
-        {...buttonProps}
-        aria-busy={pending || undefined}
-        className={`action action-secondary action-${size} action-${width}`}
-        disabled={buttonProps.disabled || pending}
-      />
-    );
-  }
-
-  const { pending = false, width, ...buttonProps } = withoutKind(props);
-  return (
-    <button
-      {...buttonProps}
-      aria-busy={pending || undefined}
-      className={`action action-primary action-regular action-${width}`}
-      disabled={buttonProps.disabled || pending}
-    />
-  );
 }
 
 type ActionLinkProps = Omit<

@@ -335,6 +335,9 @@ its own; the block it sits in sets the space around it.
   named successor when the control is removed or remains disabled. A control made busy by another action does not
   claim focus. Callers name successors by ID; a missing target never falls back to the page body or an arbitrary
   control.
+- A connected source that is transiently disabled keeps its focus intent; keep its target heading connected
+  during pending and render the matching local `ActionFocusTarget` only when the caller's existing pending state
+  or result says the action has settled, authorizing the named successor if the source remains disabled.
 - Existing headings, status text and landmarks explicitly named as busy-action successors use `tabIndex={-1}`
   and `action-focus-target`. When focused, `.action-focus-target` has a `3px` outline in `var(--green)` with a
   `3px` offset. These non-control targets keep their existing semantics, copy and layout and stay outside the
