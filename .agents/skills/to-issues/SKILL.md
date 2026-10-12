@@ -12,7 +12,8 @@ routing, body shape, publish, and verify are identical).
 Claude may invoke this skill, but Step 4 (owner approval) is a HARD gate on every ordinary model-invoked
 proposal: create NOTHING on the board until the owner approves. Exceptions, none owned or gated by
 `/to-issues`: a follow-up card, in `Backlog`, for work an approved job surfaces and genuinely cannot finish,
-filed under the "Owner gates" rule in `AGENTS.md`; an issue the day-after sweep triage filed under its own manual
+filed under the "Owner gates" rule in `AGENTS.md`; where the documentation routines are active and the settings file
+does not hold `"docSweep": false`, an issue the day-after sweep triage filed under its own manual
 (`docs/SWEEP-TRIAGE.md`), which the `resume` intake cards in `Backlog`; and any further exception
 `docs/ISSUE-TRACKER.md` records. An exception skips the step 4 approval gate, not the links rule: an
 issue created with gh still records blockers and parents as built-in links (step 6), never as body text. The sweep

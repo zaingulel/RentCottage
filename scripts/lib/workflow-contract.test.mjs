@@ -6,11 +6,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { gitEnvironment, MANIFEST_PATH, readManifest, regionText, verifyManifest } from './factory-sync.mjs';
-import { installs, presentRuntimes, SEATS } from './runtimes.mjs';
+import { greptileOn, installs, isGreptilePath, presentRuntimes, SEATS, SETTINGS_PATH, sweepOmits, sweepOn } from './runtimes.mjs';
 import { blockReason } from './unsafe-git.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const PRESENT = presentRuntimes(ROOT);
+const GREPTILE = greptileOn(ROOT);
+const SWEEP = sweepOn(ROOT);
 const without = (runtime) => !PRESENT.includes(runtime) && `the settings file names no ${runtime} runtime`;
 const RESUME = readFileSync(resolve(ROOT, '.agents/skills/resume/SKILL.md'), 'utf8');
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -475,7 +477,7 @@ const FIXED_PRODUCT_DOCUMENTS = [
 ];
 
 test('the fixed product documents exist', () => {
-  const missing = FIXED_PRODUCT_DOCUMENTS.filter((path) => !existsSync(resolve(ROOT, path)));
+  const missing = FIXED_PRODUCT_DOCUMENTS.filter((path) => !sweepOmits(SWEEP, path) && !existsSync(resolve(ROOT, path)));
   assert.deepEqual(missing, [], `the shared workflow points at these fixed product documents, which are missing: ${missing.join(', ')}`);
 });
 
@@ -520,22 +522,24 @@ test('ANTI-REGRESSION: every installed git guard hook refuses the hook check the
   }
 });
 
-test('the review line has one specified format, and the template and skills point at it', () => {
-  // Hand-written from the owner-approved format and slot, never extracted from a repo file, so
-  // a drift in the manual's example or the template cannot silently redefine what the test accepts.
-  const REVIEW_LINE =
+test('the review line has two specified forms, and the template and skills point at them', () => {
+  // Hand-written from the owner-approved forms and slot, never extracted from a repo file, so
+  // a drift in the manual's examples or the template cannot silently redefine what the test accepts.
+  const BASE_LINE =
+    /^Review: tier=(document|code|sign-off) rounds=([1-9]\d*) raised=(0|[1-9]\d*) fixed=(0|[1-9]\d*) dismissed=(0|[1-9]\d*) deferred=(0|[1-9]\d*)\s*$/;
+  const ADD_ON_LINE =
     /^Review: tier=(document|code|sign-off) rounds=([1-9]\d*) raised=(0|[1-9]\d*) fixed=(0|[1-9]\d*) dismissed=(0|[1-9]\d*) deferred=(0|[1-9]\d*) greptile_rounds=(0|[1-9]\d*) greptile_raised=(0|[1-9]\d*) greptile_true=(0|[1-9]\d*)\s*$/;
-  const REVIEW_SLOT =
-    'Review: tier= rounds= raised= fixed= dismissed= deferred= greptile_rounds= greptile_raised= greptile_true=';
+  const REVIEW_SLOT = 'Review: tier= rounds= raised= fixed= dismissed= deferred=';
   const assertValidLine = (line, where) => {
-    const m = REVIEW_LINE.exec(line ?? '');
-    assert.ok(m, `${where}: example review line ${JSON.stringify(line)} no longer matches the approved format`);
+    const m = BASE_LINE.exec(line ?? '') ?? ADD_ON_LINE.exec(line ?? '');
+    assert.ok(m, `${where}: example review line ${JSON.stringify(line)} no longer matches either approved form`);
     const [rounds, raised, fixed, dismissed, deferred, gRounds, gRaised, gTrue] = m.slice(2).map(Number);
     assert.equal(
       raised,
       fixed + dismissed + deferred,
       `${where}: example review line has raised not equal to fixed plus dismissed plus deferred`,
     );
+    if (m.length === 7) return;
     assert.ok(gRounds <= rounds, `${where}: example review line has greptile_rounds greater than rounds`);
     assert.ok(gRaised <= raised, `${where}: example review line has greptile_raised greater than raised`);
     assert.ok(gTrue <= gRaised, `${where}: example review line has greptile_true greater than greptile_raised`);
@@ -554,7 +558,17 @@ test('the review line has one specified format, and the template and skills poin
   };
 
   const PREFIX = 'Review: tier=sign-off rounds=7 raised=16 fixed=13 dismissed=2 deferred=1';
-  assertValidLine(`${PREFIX} greptile_rounds=0 greptile_raised=0 greptile_true=0`, 'no-Greptile fixture');
+  assertValidLine(PREFIX, 'base-form fixture');
+  assertValidLine(`${PREFIX} greptile_rounds=0 greptile_raised=0 greptile_true=0`, 'no-Greptile add-on fixture');
+  assert.throws(
+    () => assertValidLine('Review: tier=sign-off rounds=7 raised=17 fixed=13 dismissed=2 deferred=1', 'fixture'),
+    /raised not equal to fixed plus dismissed plus deferred/,
+    'a base-form line whose raised does not add up was accepted',
+  );
+  for (const between of [`${PREFIX} greptile_rounds=2`, `${PREFIX} greptile_rounds=2 greptile_raised=1`]) {
+    assert.ok(!BASE_LINE.test(between) && !ADD_ON_LINE.test(between), `${between} matches a specified form`);
+    assert.throws(() => assertValidLine(between, 'fixture'), /matches either approved form/, `${between} was accepted`);
+  }
   for (const [broken, message] of [
     [`${PREFIX} greptile_rounds=8 greptile_raised=1 greptile_true=1`, /greptile_rounds greater than rounds/],
     [`${PREFIX} greptile_rounds=2 greptile_raised=17 greptile_true=1`, /greptile_raised greater than raised/],
@@ -577,14 +591,24 @@ test('the review line has one specified format, and the template and skills poin
   assert.ok(heading >= 0, 'docs/AI-WORKFLOW.md lost its "## The review line" section');
   const next = manual.findIndex((l, i) => i > heading && l.startsWith('## '));
   const section = manual.slice(heading, next === -1 ? undefined : next);
-  const fence = section.indexOf('```');
-  assert.ok(fence >= 0, 'the review line section in docs/AI-WORKFLOW.md lost its fenced example');
-  assertValidLine(section[fence + 1], 'docs/AI-WORKFLOW.md');
+  const fences = section.flatMap((l, i) => (l.startsWith('```') ? [i] : []));
+  assert.equal(
+    fences.length,
+    4,
+    'the review line section in docs/AI-WORKFLOW.md must hold exactly two fenced examples, the base form then the add-on form',
+  );
+  const [base, addOn] = [section[fences[0] + 1], section[fences[2] + 1]];
+  assertValidLine(base, 'docs/AI-WORKFLOW.md base example');
+  assert.ok(BASE_LINE.test(base), 'the first fenced example in docs/AI-WORKFLOW.md is not the base form');
+  assertValidLine(addOn, 'docs/AI-WORKFLOW.md add-on example');
+  assert.ok(ADD_ON_LINE.test(addOn), 'the second fenced example in docs/AI-WORKFLOW.md is not the add-on form');
 
   const template = readFileSync(resolve(ROOT, '.github/pull_request_template.md'), 'utf8');
-  assertValidLine(/for example `([^`]*)`/.exec(template)?.[1], '.github/pull_request_template.md');
+  const example = /for example `([^`]*)`/.exec(template)?.[1];
+  assertValidLine(example, '.github/pull_request_template.md');
+  assert.ok(BASE_LINE.test(example), 'the pull request template example is not the base form');
   assert.deepEqual(
-    template.split('\n').filter((l) => REVIEW_LINE.test(l)),
+    template.split('\n').filter((l) => BASE_LINE.test(l) || ADD_ON_LINE.test(l)),
     [],
     'the pull request template has a line a parser would read as a real review line',
   );
@@ -807,6 +831,7 @@ const vendoredCopy = (path) =>
 // Paths outside the manifest that shared code or prose names in every adopter, each with the reason it may.
 const ADOPTER_PATHS = {
   [MANIFEST_PATH]: 'the manifest itself, which lists every shared file but not its own path',
+  [SETTINGS_PATH]: 'the repository\'s own settings file, which no manifest lists and the shared settings readers name',
   'package.json': 'the npm scripts every adopter defines and the shared hooks and tests run',
   'src/': 'the product source root every adopter keeps',
   'scripts/lib/board-config.mjs': 'the product board configuration the shared board scripts load',
@@ -854,7 +879,7 @@ test('no shared file names a path only this repository has', () => {
   for (const entry of entries) {
     const { path } = entry;
     // Vendored skills and their copies are replaced whole and never edited in place, so this scan skips them.
-    if (vendoredCopy(path) || !installs(PRESENT, path)) continue;
+    if (vendoredCopy(path) || !installs(PRESENT, path) || (!GREPTILE && isGreptilePath(path)) || sweepOmits(SWEEP, path)) continue;
     let text = readFileSync(resolve(ROOT, path), 'utf8');
     if ('region' in entry) text = regionText(text, path);
     const joined = [...text.matchAll(JOINED_LITERALS)].map(([, run]) =>

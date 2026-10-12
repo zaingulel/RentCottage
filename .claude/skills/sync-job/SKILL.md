@@ -69,6 +69,45 @@ reviewer charters only where both run. To stop running a runtime, remove its sea
 remaining runtime, commit, then sync: the sync removes each of the other runtime's files that holds exactly the bytes it
 recorded and refuses, by name, one that holds anything else. To start running one, name it, commit and sync.
 
+**How a repository turns the external review add-on on or off.** The same settings file may carry `greptile`, `true` or
+`false`; without it, as with `false`, the add-on is off. The add-on is an outside review of a `sign-off` tier change,
+which the `resume` skill requests under "6. Verify and review". Its own files are the `greptile` skill, that skill's
+`.claude/skills/` copy and the reviewer's configuration; `scripts/lib/runtimes.mjs` names their paths. A sync writes
+them only where the add-on is on and keeps every entry in the manifest, and the contract test requires each of their
+paths to hold nothing where it is off and refuses anything found there. To turn the add-on on, the owner first connects
+the repository to the review service in that service's own dashboard, which no sync does; then set `"greptile": true`,
+commit and sync. To turn it off, set `false` or remove the key, commit, then sync: the sync removes each of the
+add-on's files that holds exactly the bytes it recorded and refuses, by name, one that holds anything else. That job is
+still delivered under the value `main` held, so where its tier is `sign-off` it owes the external review although its
+own worktree no longer holds the add-on's skill; the `resume` skill says, under "6. Verify and review", how it reads
+that skill from the fetched `main`. The reviewer's configuration is what keeps the service to the reviews a session
+requests, and it leaves the branch with the other two files, so the owner also disables the repository in the
+service's dashboard: once that job's external review has settled where its tier requires one, never before, because a
+request the service does not answer leaves the draft unsettled, and at once where its tier requires none. A copy of
+the tool older than this rule refuses the key, so the sync that installs this rule runs before the key is added; that
+sync writes the add-on's files whatever the setting, and the contract test then reports them as expected absent until
+the repository either turns the add-on on, or commits the run's result, runs the sync again, which the copy just
+installed runs and which removes them, and squashes the two commits as "When a run leaves `adopters` behind" does.
+
+**How a repository turns the documentation sweep off.** The same settings file may carry `docSweep`, `true` or
+`false`; without it, as with `true`, the sweep is on. Turning it off leaves out the six files of the `sweep-scope`
+check: its workflow, its command and that command's modules and test; `scripts/lib/runtimes.mjs` names their paths.
+A sync writes them unless the sweep is off and keeps every entry in the manifest, and where it is off the contract
+test requires each of their paths to hold nothing, refuses anything found there, and no longer requires
+`docs/DOC-SWEEP.md` and `docs/SWEEP-TRIAGE.md`. A repository that turns the sweep off runs neither the sweep nor its
+triage, because nothing there holds a routine's branch to the scope table, and no instruction treats either routine as
+active there, whatever its Conventions table says: each instruction that reads that table's documentation routines row
+also reads this key. The repository still keeps that row truthful, as its own record of what is scheduled. To turn the
+sweep off, in this order: stop both routines; remove `sweep-scope` from the checks the branch ruleset requires, a
+ruleset change the `resume` skill holds to the owner's sign-off and a read-back under "6. Verify and review", because a
+required check whose workflow has left `main` never reports and every later pull request then waits on it; then set
+`"docSweep": false`, commit and sync: the sync removes each of the six files that holds exactly the bytes it recorded
+and refuses, by name, one that holds anything else. A copy of the tool older than this rule refuses the key, so the
+sync that installs this rule runs before the key is added; that sync writes the six files as every earlier one did, and
+the repository then sets the key, commits, runs the sync again, which the copy just installed runs and which removes
+them, and squashes these commits as "When a run leaves `adopters` behind" does. To turn the sweep on again, restore the
+two manuals, remove the key or set `true`, commit and sync, then require `sweep-scope` again before either routine runs.
+
 **What a repository needs.** The supported profiles are Claude Code alone, Codex alone, or both with cross-family
 review; nothing installs the workflow for a customer. It needs a private repository whose default branch is `main`, the
 two branch rulesets with the administrator bypass of the required check that the direct documentation route depends on,
@@ -79,4 +118,6 @@ of the `lint` script in its `package.json`. And its document lint command, `scri
 reference, link or `CLAUDE.md` citation whose target `installs` in `scripts/lib/runtimes.mjs` says the repository does
 not install, and reads `CLAUDE.md` only where Claude Code runs; its `scripts/lib/doc-lint.test.mjs` then copies
 `scripts/lib/runtimes.mjs` into the scratch repository it builds. The shared documents still name both runtimes, and the
-shared link and citation tests apply the same rule themselves.
+shared link and citation tests apply the same rule themselves. A repository that turns the documentation sweep off
+makes one more change of its own: its document lint command accepts a path reference or link whose target `sweepOmits`
+in `scripts/lib/runtimes.mjs` says the repository leaves out, as the shared link test does.

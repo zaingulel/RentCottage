@@ -543,6 +543,142 @@ test('ANTI-REGRESSION: a tree that names one runtime verifies without the other\
   );
 });
 
+// The Greptile add-on's three paths, written out by hand, and the bytes these tests put there. Each hash was computed
+// by `printf '<bytes>' | shasum -a 256`, never by the code under test.
+const GREPTILE_SKILL = '.agents/skills/greptile/SKILL.md';
+const GREPTILE_SKILL_COPY = '.claude/skills/greptile/SKILL.md';
+const GREPTILE_CONFIG = '.greptile/config.json';
+const GREPTILE_PATHS = [GREPTILE_SKILL, GREPTILE_SKILL_COPY, GREPTILE_CONFIG];
+const SKILL_TEXT = 'greptile skill\n';
+const SKILL_SHA256 = '21672778c2efb166916a1ce3bbfd9a4558bcf0439d66e49a695fda389fcab5be';
+const CONFIG_TEXT = '{"skipReview":"AUTOMATIC"}\n';
+const CONFIG_SHA256 = '511e51cd4d2427e9c0821b17aa31e9bb8ba90bd5607bbe211b935e7e545083ec';
+const OTHER_TEXT = 'other\n';
+const OTHER_SHA256 = '7e4fa2eb8c7ac089739d5defc4489fad68a100d92082ca35c6b40a4524821f87';
+const GREPTILE_FILES = [
+  [GREPTILE_SKILL, SKILL_TEXT, SKILL_SHA256],
+  [GREPTILE_SKILL_COPY, SKILL_TEXT, SKILL_SHA256],
+  [GREPTILE_CONFIG, CONFIG_TEXT, CONFIG_SHA256],
+];
+const ADD_ON_OFF = 'absent (the settings file does not turn the Greptile add-on on)';
+const GREPTILE_ON = { version: 1, seats: {}, greptile: true };
+const GREPTILE_OFF = { version: 1, seats: {}, greptile: false };
+
+test('ANTI-REGRESSION: a tree that does not turn the Greptile add-on on verifies without its files and refuses anything at their paths, and a tree that turns it on still refuses a missing or changed add-on file', (t) => {
+  // settings left out writes no settings file.
+  const tree = (settings) => {
+    const root = mkdtempSync(join(tmpdir(), 'factory-sync-'));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    put(root, 'docs/a.txt', 'hello\n');
+    writeManifest(root, [...GREPTILE_FILES.map(([path, , sha256]) => ({ path, sha256 })), { path: 'docs/a.txt', sha256: HELLO_SHA256 }]);
+    if (settings !== undefined) put(root, SETTINGS, JSON.stringify(settings));
+    return root;
+  };
+
+  for (const [name, settings] of [
+    ['no settings file', undefined],
+    ['greptile false', GREPTILE_OFF],
+    ['no greptile key', { version: 1, seats: {} }],
+  ]) {
+    const root = tree(settings);
+    assert.deepEqual(verifyManifest(root), [], `${name}: none of the add-on's files`);
+    for (const [path, text, sha256] of GREPTILE_FILES) {
+      put(root, path, text);
+      assert.deepEqual(verifyManifest(root), [{ path, expected: ADD_ON_OFF, actual: sha256 }], `${name}: the recorded bytes at ${path}`);
+      put(root, path, OTHER_TEXT);
+      assert.deepEqual(verifyManifest(root), [{ path, expected: ADD_ON_OFF, actual: OTHER_SHA256 }], `${name}: other bytes at ${path}`);
+      rmSync(join(root, path));
+    }
+    rmSync(join(root, 'docs/a.txt'));
+    assert.deepEqual(verifyManifest(root), [{ path: 'docs/a.txt', expected: HELLO_SHA256, actual: 'missing' }], `${name}: a missing file of every install`);
+  }
+
+  const on = tree(GREPTILE_ON);
+  for (const [path, text] of GREPTILE_FILES) put(on, path, text);
+  assert.deepEqual(verifyManifest(on), [], 'the add-on on, every file present');
+  for (const [path, text, sha256] of GREPTILE_FILES) {
+    rmSync(join(on, path));
+    assert.deepEqual(verifyManifest(on), [{ path, expected: sha256, actual: 'missing' }], `the add-on on: ${path} missing`);
+    put(on, path, OTHER_TEXT);
+    assert.deepEqual(verifyManifest(on), [{ path, expected: sha256, actual: OTHER_SHA256 }], `the add-on on: ${path} changed`);
+    put(on, path, text);
+  }
+
+  for (const greptile of [true, false]) {
+    const codexOnly = tree({ version: 1, runtimes: ['codex'], seats: {}, greptile });
+    if (greptile) for (const [path, text] of GREPTILE_FILES) put(codexOnly, path, text);
+    else put(codexOnly, GREPTILE_SKILL_COPY, SKILL_TEXT);
+    assert.deepEqual(
+      verifyManifest(codexOnly),
+      [{ path: GREPTILE_SKILL_COPY, expected: absentFor('claude'), actual: SKILL_SHA256 }],
+      `codex alone, greptile ${greptile}: the runtime is the cause at the Claude copy`,
+    );
+  }
+});
+
+// The documentation sweep's six shared paths, written out by hand; each fixture file holds hello, so no hash is
+// computed by the code under test.
+const SWEEP_PATHS = [
+  '.github/workflows/sweep-scope.yml',
+  'scripts/lib/sweep-scope-corpus.mjs',
+  'scripts/lib/sweep-scope-evaluate.mjs',
+  'scripts/lib/sweep-scope.mjs',
+  'scripts/lib/sweep-scope.test.mjs',
+  'scripts/sweep-scope-check.mjs',
+];
+const SWEEP_OFF_CAUSE = 'absent (the settings file turns the documentation sweep off)';
+const SWEEP_ON = { version: 1, seats: {}, docSweep: true };
+const SWEEP_OFF = { version: 1, seats: {}, docSweep: false };
+
+test('ANTI-REGRESSION: a tree that turns the documentation sweep off verifies without its files and refuses anything at their paths, and a tree that does not turn it off still refuses a missing or changed sweep file', (t) => {
+  // settings left out writes no settings file.
+  const tree = (settings) => {
+    const root = mkdtempSync(join(tmpdir(), 'factory-sync-'));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    put(root, 'docs/a.txt', 'hello\n');
+    writeManifest(root, [...SWEEP_PATHS.map((path) => ({ path, sha256: HELLO_SHA256 })), { path: 'docs/a.txt', sha256: HELLO_SHA256 }]);
+    if (settings !== undefined) put(root, SETTINGS, JSON.stringify(settings));
+    return root;
+  };
+
+  const off = tree(SWEEP_OFF);
+  assert.deepEqual(verifyManifest(off), [], 'the sweep off: none of its files');
+  for (const path of SWEEP_PATHS) {
+    put(off, path, 'hello\n');
+    assert.deepEqual(verifyManifest(off), [{ path, expected: SWEEP_OFF_CAUSE, actual: HELLO_SHA256 }], `the recorded bytes at ${path}`);
+    put(off, path, OTHER_TEXT);
+    assert.deepEqual(verifyManifest(off), [{ path, expected: SWEEP_OFF_CAUSE, actual: OTHER_SHA256 }], `other bytes at ${path}`);
+    rmSync(join(off, path));
+  }
+  rmSync(join(off, 'docs/a.txt'));
+  assert.deepEqual(verifyManifest(off), [{ path: 'docs/a.txt', expected: HELLO_SHA256, actual: 'missing' }], 'a missing file of every install');
+
+  for (const [name, settings] of [
+    ['no settings file', undefined],
+    ['no docSweep key', { version: 1, seats: {} }],
+    ['docSweep true', SWEEP_ON],
+  ]) {
+    const held = tree(settings);
+    for (const path of SWEEP_PATHS) put(held, path, 'hello\n');
+    assert.deepEqual(verifyManifest(held), [], `${name}: every sweep file present`);
+    for (const path of SWEEP_PATHS) {
+      rmSync(join(held, path));
+      assert.deepEqual(verifyManifest(held), [{ path, expected: HELLO_SHA256, actual: 'missing' }], `${name}: ${path} missing`);
+      put(held, path, OTHER_TEXT);
+      assert.deepEqual(verifyManifest(held), [{ path, expected: HELLO_SHA256, actual: OTHER_SHA256 }], `${name}: ${path} changed`);
+      put(held, path, 'hello\n');
+    }
+  }
+
+  const codexOnly = tree({ version: 1, runtimes: ['codex'], seats: {}, docSweep: false });
+  put(codexOnly, SWEEP_PATHS[0], 'hello\n');
+  assert.deepEqual(
+    verifyManifest(codexOnly),
+    [{ path: SWEEP_PATHS[0], expected: SWEEP_OFF_CAUSE, actual: HELLO_SHA256 }],
+    'codex alone, the sweep off: the sweep is the cause at a sweep file',
+  );
+});
+
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'factory-sync.mjs');
 const ZERO_SHA256 = '0'.repeat(64);
 
@@ -960,6 +1096,76 @@ test('a sync into a target that names one runtime writes only that runtime\'s fi
   }
 });
 
+// A sync fixture whose source also shares the Greptile add-on's three files.
+const greptileFixture = (t) => seatSyncFixture(t, Object.fromEntries(GREPTILE_FILES.map(([path, text]) => [path, text])));
+
+test('a sync into a target that does not turn the Greptile add-on on writes none of its files, records every entry, and verifies clean', (t) => {
+  // The manifest text a sync must leave in the target: every entry of the source's, the add-on's among them.
+  const recorded = (fixture) => {
+    const { canonical, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
+    assert.deepEqual(entries.map(({ path }) => path), ['AGENTS.md', 'docs/a.txt', 'scripts/run.sh', ...GREPTILE_PATHS]);
+    return `${JSON.stringify({ canonical, syncedFrom: git(fixture.source, 'rev-parse', 'HEAD'), entries }, null, 2)}\n`;
+  };
+
+  for (const [name, settings] of [
+    ['no settings file', null],
+    ['greptile false', GREPTILE_OFF],
+  ]) {
+    const fixture = greptileFixture(t);
+    const at = (path) => join(fixture.target, path);
+    if (settings !== null) put(fixture.target, SETTINGS, JSON.stringify(settings));
+
+    assert.deepEqual(fixture.sync(), { files: 2, regions: 1, removed: [], omitted: 3 }, name);
+
+    assert.equal(readFileSync(at('docs/a.txt'), 'utf8'), 'hello v2\n', name);
+    for (const path of GREPTILE_PATHS) assert.equal(existsSync(at(path)), false, `${name}: ${path} belongs to an add-on the target does not turn on`);
+    assert.equal(readFileSync(at(MANIFEST), 'utf8'), recorded(fixture), name);
+    assert.deepEqual(verifyManifest(fixture.target), [], name);
+  }
+
+  const fixture = greptileFixture(t);
+  const at = (path) => join(fixture.target, path);
+  put(fixture.target, SETTINGS, JSON.stringify(GREPTILE_ON));
+
+  assert.deepEqual(fixture.sync(), { files: 5, regions: 1, removed: [], omitted: 0 });
+
+  for (const [path, text] of GREPTILE_FILES) assert.equal(readFileSync(at(path), 'utf8'), text, path);
+  assert.equal(readFileSync(at(MANIFEST), 'utf8'), recorded(fixture));
+  assert.deepEqual(verifyManifest(fixture.target), []);
+});
+
+// A sync fixture whose source also shares the documentation sweep's six files.
+const sweepFixture = (t) => seatSyncFixture(t, Object.fromEntries(SWEEP_PATHS.map((path) => [path, 'hello\n'])));
+
+test('a sync into a target that turns the documentation sweep off writes none of its files, records every entry, and verifies clean', (t) => {
+  // The manifest text a sync must leave in the target: every entry of the source's, the sweep's among them.
+  const recorded = (fixture) => {
+    const { canonical, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
+    assert.deepEqual(entries.map(({ path }) => path), ['AGENTS.md', 'docs/a.txt', 'scripts/run.sh', ...SWEEP_PATHS]);
+    return `${JSON.stringify({ canonical, syncedFrom: git(fixture.source, 'rev-parse', 'HEAD'), entries }, null, 2)}\n`;
+  };
+
+  const off = sweepFixture(t);
+  const atOff = (path) => join(off.target, path);
+  put(off.target, SETTINGS, JSON.stringify(SWEEP_OFF));
+
+  assert.deepEqual(off.sync(), { files: 2, regions: 1, removed: [], omitted: 6 });
+
+  assert.equal(readFileSync(atOff('docs/a.txt'), 'utf8'), 'hello v2\n');
+  for (const path of SWEEP_PATHS) assert.equal(existsSync(atOff(path)), false, `${path} belongs to the sweep the target turns off`);
+  assert.equal(readFileSync(atOff(MANIFEST), 'utf8'), recorded(off));
+  assert.deepEqual(verifyManifest(off.target), []);
+
+  const fixture = sweepFixture(t);
+  const at = (path) => join(fixture.target, path);
+
+  assert.deepEqual(fixture.sync(), { files: 8, regions: 1, removed: [], omitted: 0 }, 'no settings file');
+
+  for (const path of SWEEP_PATHS) assert.equal(readFileSync(at(path), 'utf8'), 'hello\n', path);
+  assert.equal(readFileSync(at(MANIFEST), 'utf8'), recorded(fixture));
+  assert.deepEqual(verifyManifest(fixture.target), []);
+});
+
 // An adopter repository holding the two seats with the given bytes, a manifest that lists them with seatDefaults,
 // when given, and a settings file naming seats; null leaves the settings file out.
 function renderTree(t, { claude = CLAUDE_SHARED, codex = CODEX_SHARED, seats = SEAT_SETTINGS, seatDefaults, origin = ADOPTER_URL } = {}) {
@@ -1369,6 +1575,61 @@ test('a sync after a target stops naming a runtime removes that runtime\'s files
 
   commitAll(fixture.target);
   assert.deepEqual(fixture.sync(), { files: 3, regions: 1, removed: [], omitted: 1 });
+  assert.deepEqual(snapshot(fixture.target), after);
+});
+
+// The canonical changes the reviewer's configuration between the two syncs, so the bytes the target holds are the ones
+// its own committed manifest recorded and not the ones the fetched manifest records.
+test('a sync after a target turns the Greptile add-on off removes its files that hold the recorded bytes, and nothing else', (t) => {
+  const fixture = greptileFixture(t);
+  put(fixture.target, SETTINGS, JSON.stringify(GREPTILE_ON));
+  assert.deepEqual(fixture.sync(), { files: 5, regions: 1, removed: [], omitted: 0 });
+  put(fixture.target, '.greptile/own.json', 'own\n');
+  put(fixture.target, SETTINGS, JSON.stringify(GREPTILE_OFF));
+  commitAll(fixture.target);
+  put(fixture.source, GREPTILE_CONFIG, '{"skipReview":"NEVER"}\n');
+  recordSource(fixture.source, [...SOURCE_ENTRIES, ...GREPTILE_PATHS.map((path) => ({ path, sha256: ZERO_SHA256 }))]);
+  const before = snapshot(fixture.target);
+  // snapshot keys its paths with the platform's separator.
+  const removed = GREPTILE_PATHS.map((path) => join(path));
+  const manifest = join(MANIFEST);
+
+  assert.deepEqual(fixture.sync(), { files: 2, regions: 1, removed: GREPTILE_PATHS, omitted: 3 });
+
+  const after = snapshot(fixture.target);
+  assert.deepEqual(Object.keys(after), Object.keys(before).filter((path) => !removed.includes(path)));
+  for (const path of Object.keys(after)) if (path !== manifest) assert.equal(after[path], before[path], path);
+  assert.equal(JSON.parse(readFileSync(join(fixture.target, MANIFEST), 'utf8')).entries.length, 6, 'the record must keep every entry');
+  assert.deepEqual(verifyManifest(fixture.target), []);
+
+  commitAll(fixture.target);
+  assert.deepEqual(fixture.sync(), { files: 2, regions: 1, removed: [], omitted: 3 });
+  assert.deepEqual(snapshot(fixture.target), after);
+});
+
+test('a sync after a target turns the documentation sweep off removes its files that hold the recorded bytes, and nothing else', (t) => {
+  const fixture = sweepFixture(t);
+  assert.deepEqual(fixture.sync(), { files: 8, regions: 1, removed: [], omitted: 0 });
+  put(fixture.target, 'scripts/lib/own.mjs', 'own\n');
+  put(fixture.target, SETTINGS, JSON.stringify(SWEEP_OFF));
+  commitAll(fixture.target);
+  put(fixture.source, SWEEP_PATHS[3], 'hello v2\n');
+  recordSource(fixture.source, [...SOURCE_ENTRIES, ...SWEEP_PATHS.map((path) => ({ path, sha256: ZERO_SHA256 }))]);
+  const before = snapshot(fixture.target);
+  // snapshot keys its paths with the platform's separator.
+  const removed = SWEEP_PATHS.map((path) => join(path));
+  const manifest = join(MANIFEST);
+
+  assert.deepEqual(fixture.sync(), { files: 2, regions: 1, removed: SWEEP_PATHS, omitted: 6 });
+
+  const after = snapshot(fixture.target);
+  assert.deepEqual(Object.keys(after), Object.keys(before).filter((path) => !removed.includes(path)));
+  for (const path of Object.keys(after)) if (path !== manifest) assert.equal(after[path], before[path], path);
+  assert.equal(JSON.parse(readFileSync(join(fixture.target, MANIFEST), 'utf8')).entries.length, 9, 'the record must keep every entry');
+  assert.deepEqual(verifyManifest(fixture.target), []);
+
+  commitAll(fixture.target);
+  assert.deepEqual(fixture.sync(), { files: 2, regions: 1, removed: [], omitted: 6 });
   assert.deepEqual(snapshot(fixture.target), after);
 });
 
@@ -1784,7 +2045,7 @@ test('--from prints how many entries it left out', (t) => {
   assert.equal(run.status, 0, run.stderr);
   assert.deepEqual(run.stdout.split('\n'), [
     `factory-sync: wrote 3 files and 1 regions from ${fixture.source} into ${fixture.target}`,
-    'factory-sync: left out 1 entries of a runtime the settings file does not name',
+    'factory-sync: left out 1 entries the settings file leaves out',
     'factory-sync: removed 0 retired files',
     '',
   ]);

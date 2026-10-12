@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { join, resolve, sep } from 'node:path';
 import { blockReason } from './unsafe-git.mjs';
 
-const REASON_CREATE = "gh pr create without --draft skips the draft review: open it as a draft (--draft/-d) so Greptile reviews it before CI runs";
+const REASON_CREATE = "gh pr create without --draft skips the draft stage: open it as a draft (--draft/-d) so it is settled before CI runs";
 const REASON_MERGE = 'gh pr merge: only the delivery form `gh pr merge --auto --squash --delete-branch <number>`, alone in its command segment, is allowed; --auto lets GitHub merge once the required test check is green, and because the allow list runs that prefix unprompted anything else in the segment (--admin, a reordered or missing flag, a quoted, substituted or variable word, a wrapper) is refused';
 const REASON_READY = 'gh pr ready: only `gh pr ready <number>` and `gh pr ready <number> --undo`, alone in their command segment, are allowed; the allow list runs that prefix unprompted, so anything else in the segment (a quoted, substituted or variable word, a redirection, a wrapper) is refused';
 const REASON_COMMIT_NO_VERIFY = 'git commit --no-verify skips the pre-commit gates';

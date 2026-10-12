@@ -1,8 +1,8 @@
 # Inactive documentation sweep
 
 This is the version-controlled manual for a possible cloud documentation sweep. The routine is **not active**.
-The checked-in guard workflow runs on pull-request events and immediately no-ops ordinary branches. That workflow
-and its scope checker are executable contract material, not proof that the maintenance routine, a schedule,
+The checked-in guard workflow starts on pull-request events and skips its one job on ordinary branches. That
+workflow and its scope checker are executable contract material, not proof that the maintenance routine, a schedule,
 publication authority, provider environment, or hosted required-check protection has been configured.
 
 ## Purpose
@@ -56,18 +56,18 @@ extractor finds its visible spelling as a whole token in the base tree; the chec
 only through the newly rendered destination count rather than refusing a legitimate edit around text the repository
 already carries. Its individual record remains internal and is not printed.
 
-`.github/workflows/sweep-scope.yml` runs on pull-request events, no-ops branches outside the sweep and triage
-prefixes, executes the tracked checker from the base branch, and never runs code from the pull-request tree. Its
-parser packages are exact production pins in the base branch's `package.json` and `package-lock.json`:
-`htmlparser2@10.1.0`, `mdast-util-from-markdown@2.0.3`, `mdast-util-gfm@3.1.0`, and
-`micromark-extension-gfm@3.0.0`. Only a judged branch installs the base branch's entire locked production dependency
-tree, which includes those four exact parser pins, with `npm ci --omit=dev --ignore-scripts --no-audit --no-fund`
-from that base-owned lock. The workflow has read-only
-repository permission, disables persisted checkout credentials, and reads the pull request's commits only as Git
-objects. An unavailable npm registry therefore leaves the check failed and unavailable rather than bypassed; rerun
-it after the registry service is restored. That YAML is not enforcement proof. Before publication is authorized,
-the owner must separately configure a
-source-bound hosted `sweep-scope` protection with no administrator bypass and verify the setting live.
+`.github/workflows/sweep-scope.yml` starts on pull-request events and skips its one job on a branch outside the
+sweep and triage prefixes, so no runner starts and GitHub reports the required check as passing. On a sweep or
+triage branch the job executes the tracked checker from the base branch and never runs code from the pull-request
+tree. Its parser packages are exact production pins in the base branch's `package.json` and `package-lock.json`:
+`htmlparser2@10.1.0`, `mdast-util-from-markdown@2.0.3`, `mdast-util-gfm@3.1.0`, and `micromark-extension-gfm@3.0.0`.
+Only a judged branch installs the base branch's entire locked production dependency tree, which includes those four
+exact parser pins, with `npm ci --omit=dev --ignore-scripts --no-audit --no-fund` from that base-owned lock. The
+workflow has read-only repository permission, disables persisted checkout credentials, and reads the pull request's
+commits only as Git objects. An unavailable npm registry therefore leaves the check failed and unavailable rather
+than bypassed; rerun it after the registry service is restored. That YAML is not enforcement proof. Before
+publication is authorized, the owner must separately configure a source-bound hosted `sweep-scope` protection with
+no administrator bypass and verify the setting live.
 
 The check closes the spellings on which it knows that parser and GitHub disagree, set out here; a disagreement not
 named here leaves it blind, and this sentence is the only control for it. Before it reads raw HTML, the check

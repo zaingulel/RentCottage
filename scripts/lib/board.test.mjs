@@ -598,13 +598,14 @@ test('parseBoardPage throws on a duplicate Status or routing value on one card',
 // Guard 5. Every page must be the configured project's. #572: an absence probe once
 // asked a different project than the board read it was confirming.
 test('parseBoardPage throws when a page is not the configured, open project', () => {
+  const wrongProjectNumber = BOARD_PROJECT_NUMBER + 1;
   assert.throws(
     () => parseMutated((project, user) => { user.login = 'someone-else'; }),
     new RegExp(`answered for user "someone-else".*BOARD_OWNER is "${BOARD_OWNER}".*board-config\\.mjs`, 's'),
   );
   assert.throws(
-    () => parseMutated((project) => { project.number = 7; }),
-    new RegExp(`answered for project 7.*BOARD_PROJECT_NUMBER is ${BOARD_PROJECT_NUMBER}.*board-config\\.mjs`, 's'),
+    () => parseMutated((project) => { project.number = wrongProjectNumber; }),
+    new RegExp(`answered for project ${wrongProjectNumber}.*BOARD_PROJECT_NUMBER is ${BOARD_PROJECT_NUMBER}.*board-config\\.mjs`, 's'),
   );
   assert.throws(
     () => parseMutated((project) => { project.id = '   '; }),

@@ -55,8 +55,9 @@ passed local receipt can in one bounded case stand for a check the hosted run al
 same rule in [the `resume` skill](../.agents/skills/resume/SKILL.md) under "8. Deliver", and the pull request body
 says when it was used.
 
-A second check, `sweep-scope` in `.github/workflows/sweep-scope.yml`, required where the documentation routines are
-active, exists because the documentation sweep and its day-after triage land their own pull requests and no one reads
+A second check, `sweep-scope` in `.github/workflows/sweep-scope.yml`, is carried unless the repository's settings file
+turns the documentation sweep off, and a repository that carries it requires it where the documentation routines are
+active. It exists because the documentation sweep and its day-after triage land their own pull requests and no one reads
 them first. It runs from `main` rather than from the pull request it judges, and holds those branches to the scope table
 both routines answer to; [the head of `scripts/sweep-scope-check.mjs`](../scripts/sweep-scope-check.mjs) and
 [`docs/DOC-SWEEP.md`](DOC-SWEEP.md) own what it refuses and its limits.
@@ -88,4 +89,4 @@ both routines answer to; [the head of `scripts/sweep-scope-check.mjs`](../script
 - `docs/TESTING-STRATEGY.md`: the evidence authority.
 - `docs/CODING-STANDARDS.md`: the cost standard for tests and tools.
 - `scripts/run-log.mjs`: the logger every check runs through.
-- `.github/workflows/sweep-scope.yml` and `scripts/sweep-scope-check.mjs`: the documentation routines' scope check.
+- `.github/workflows/sweep-scope.yml` and `scripts/sweep-scope-check.mjs`: the documentation routines' scope check, where the sweep is not turned off.

@@ -24,10 +24,13 @@
 // Only the canonical's manifest holds `adopters`, the repositories that carry a copy. Every reader takes a manifest
 // without it and holds one that is present to an array of "owner/repo" names; nothing is decided by the list.
 //
-// A tree's settings file may name the runtimes it runs; runtimes.mjs says which entry belongs to which runtime. An
-// entry of a runtime the settings file leaves out is left out of the tree: every manifest keeps every entry, a sync
-// writes only the entries of the named runtimes, and the path of a left-out entry must hold nothing. A tree with no
-// settings file, or one that names no runtimes, runs both and leaves nothing out.
+// A tree's settings file may name the runtimes it runs, may turn the Greptile add-on on and may turn the documentation
+// sweep off; runtimes.mjs says which entry belongs to which runtime, to the add-on and to the sweep. An entry of a
+// runtime the settings file leaves out, of the add-on where the settings file does not turn it on, or of the sweep
+// where it turns it off, is left out of the tree: every manifest keeps every entry, a sync writes only the entries the
+// tree installs, and the path of a left-out entry must hold nothing. A tree with no settings file, or one that names no
+// runtimes, runs both; one with no settings file, or whose settings file does not hold `"greptile": true`, leaves the
+// add-on's entries out; one whose settings file holds `"docSweep": false` leaves the sweep's entries out.
 //
 // verifyManifest reports anything a left-out entry's path holds, whatever its bytes, and nothing where it holds
 // nothing. It holds every other entry to its record, with one exception: a seat the tree's settings file or the
@@ -37,7 +40,7 @@
 // nothing else. seatDefaults is a witness the entry's hash checks, never trusted input. The settings file is read
 // only as a regular file under no symlinked directory, and it and seatDefaults throw when malformed or when they
 // name a seat the manifest does not list. A tree with neither takes the strict path alone, and a missing or changed
-// file of a named runtime is refused like any other.
+// file of a named runtime, of the add-on where it is on, or of the sweep where it is not off, is refused like any other.
 //
 // syncInto copies the entries from a canonical source checkout into an adopter target. Everything it writes comes
 // from the source's freshly fetched origin main commit, never from the source's working tree, index or disk
@@ -75,8 +78,8 @@
 // that a case-insensitive or Unicode-normalising disk reads as one the fetched manifest shares, is refused by name.
 // It removes no directory and no other file.
 //
-// An entry of a runtime the target's settings file leaves out is never written, and the manifest the sync records
-// still lists it. Its path is proven and cleared as a retired path is, against the record of the target's committed
+// An entry the target leaves out, of a runtime its settings file does not name, of the Greptile add-on where that
+// file does not turn it on or of the documentation sweep where that file turns it off, is never written, and the manifest the sync records still lists it. Its path is proven and cleared as a retired path is, against the record of the target's committed
 // manifest where that lists the path and of the fetched manifest otherwise: a file committed with exactly those bytes
 // is removed, a path holding nothing is skipped, and anything else is refused by name before any write, so a
 // left-out seat that still holds overridden values is rendered back or removed first. The sync returns how many
@@ -120,7 +123,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { checkContained, installs, kindOf, readSettingsFile, runtimeOf, RUNTIMES, SETTINGS_PATH } from './runtimes.mjs';
+import { checkContained, installs, isGreptilePath, isSweepPath, kindOf, readSettingsFile, runtimeOf, RUNTIMES, SETTINGS_PATH, SWEEP_DEFAULT } from './runtimes.mjs';
 import { overrideProblems, parseSettings, seatsByPath, seatsRecord, substituteSeatSettings } from './seat-settings.mjs';
 
 export const MANIFEST_PATH = '.agents/factory-manifest.json';
@@ -311,20 +314,27 @@ function valueOf(entry, data) {
   return sha256('region' in entry ? regionText(data.toString('utf8'), entry.path) : data);
 }
 
-// The settings file of the tree at root, as { runtimes, overrides }: the runtimes it names and a Map from seat path
-// to the values it names; every runtime and an empty Map when the tree has none. Refuses, before any read, one
-// under a symlinked directory or one that is not a regular file; then one that fails its own validation or names a
-// seat the manifest does not list as a file; remedy, when given, ends that last refusal.
+// The settings file of the tree at root, as { runtimes, greptile, docSweep, overrides }: the runtimes it names, whether
+// it turns the Greptile add-on on, whether it leaves the documentation sweep on, and a Map from seat path to the values
+// it names; every runtime, the add-on off, the sweep on and an empty Map when the tree has none. Refuses, before any
+// read, one under a symlinked directory or one that is not a regular file; then one that fails its own validation or
+// names a seat the manifest does not list as a file; remedy, when given, ends that last refusal.
 function treeSettings(root, manifest, remedy) {
   const text = readSettingsFile(root);
-  if (text === undefined) return { runtimes: RUNTIMES, overrides: new Map() };
-  const { runtimes, seats: overrides } = parseSettings(text, SETTINGS_PATH);
+  if (text === undefined) return { runtimes: RUNTIMES, greptile: false, docSweep: SWEEP_DEFAULT, overrides: new Map() };
+  const { runtimes, greptile, docSweep, seats: overrides } = parseSettings(text, SETTINGS_PATH);
   checkSeatsListed(overrides.keys(), manifest.entries, SETTINGS_PATH, remedy);
-  return { runtimes, overrides };
+  return { runtimes, greptile, docSweep, overrides };
 }
 
-// Why the path of an entry whose runtime the settings file leaves out must hold nothing.
-const leftOutCause = (path) => `the settings file names no ${runtimeOf(path)} runtime`;
+// Why a tree with these settings must hold nothing at the path of an entry, or null where it installs the entry: the
+// entry's runtime is not named or, failing that, the entry is the Greptile add-on's and the add-on is off or, failing
+// that, the entry is one of the documentation sweep's six files and the sweep is off.
+function leftOutCause({ runtimes, greptile, docSweep }, path) {
+  if (!installs(runtimes, path)) return `the settings file names no ${runtimeOf(path)} runtime`;
+  if (!greptile && isGreptilePath(path)) return 'the settings file does not turn the Greptile add-on on';
+  return !docSweep && isSweepPath(path) ? 'the settings file turns the documentation sweep off' : null;
+}
 
 const NOT_RENDERED = 'seat settings not rendered; run node scripts/factory-sync.mjs --render';
 
@@ -349,16 +359,18 @@ function overriddenSeatValue(root, entry, named = {}, recorded = {}) {
 
 // Every entry whose disk state differs from its record, as { path, expected, actual }; actual is the
 // disk value or the problem that stands in for it, for an overridden seat what overriddenSeatValue gives, or, for
-// a file whose bytes match, its executable state. An entry of a runtime the settings file leaves out differs
-// whenever its path holds anything. A manifest passed without seatDefaults records none.
+// a file whose bytes match, its executable state. An entry the settings file leaves out differs whenever its path
+// holds anything. A manifest passed without seatDefaults records none.
 export function verifyManifest(root, manifest = readManifest(root)) {
   const modes = indexModes(root);
-  const { runtimes, overrides } = treeSettings(root, manifest);
+  const settings = treeSettings(root, manifest);
+  const { overrides } = settings;
   const defaults = manifest.seatDefaults ?? new Map();
   return manifest.entries.flatMap((entry) => {
     const { value, problem, executable } = entryState(root, entry, modes);
-    if (!installs(runtimes, entry.path)) {
-      return problem === 'missing' ? [] : [{ path: entry.path, expected: `absent (${leftOutCause(entry.path)})`, actual: value ?? problem }];
+    const cause = leftOutCause(settings, entry.path);
+    if (cause !== null) {
+      return problem === 'missing' ? [] : [{ path: entry.path, expected: `absent (${cause})`, actual: value ?? problem }];
     }
     const overridden = value !== undefined && (overrides.has(entry.path) || defaults.has(entry.path));
     const actual = overridden ? overriddenSeatValue(root, entry, overrides.get(entry.path), defaults.get(entry.path)) : value ?? problem;
@@ -616,8 +628,8 @@ export function fetchMain(source) {
 
 // Syncs the source's manifest entries into the target, per the contract at the top of this file. fetchMain, the
 // function above or a stand-in, fetches the source's origin main and returns its commit; it throws when the fetch
-// fails. Returns the counts written, the paths removed, sorted, and the number of entries left out because the
-// target's settings file does not name their runtime, as { files, regions, removed, omitted }.
+// fails. Returns the counts written, the paths removed, sorted, and the number of entries the target's settings file
+// leaves out, as { files, regions, removed, omitted }.
 export function syncInto({ source, target, canonical: requested, fetchMain }) {
   const previous = previousManifest(target);
   const canonical = resolveCanonical(previous, requested);
@@ -656,9 +668,11 @@ export function syncInto({ source, target, canonical: requested, fetchMain }) {
   if (targetChanges) throw new Error(`the target has uncommitted changes at shared paths: ${targetChanges}`);
 
   const root = realpathSync(target);
-  const { runtimes, overrides } = treeSettings(root, manifest, UNSHARED_SEAT);
-  const installed = manifest.entries.filter(({ path }) => installs(runtimes, path));
-  const leftOut = manifest.entries.filter(({ path }) => !installs(runtimes, path));
+  const settings = treeSettings(root, manifest, UNSHARED_SEAT);
+  const { overrides } = settings;
+  const causes = manifest.entries.map((entry) => ({ entry, cause: leftOutCause(settings, entry.path) }));
+  const installed = causes.filter(({ cause }) => cause === null).map(({ entry }) => entry);
+  const leftOut = causes.filter(({ cause }) => cause !== null);
   for (const entry of installed) {
     checkContained(root, entry.path);
     if (!('region' in entry)) checkReplaceable(join(root, entry.path), entry.path);
@@ -670,7 +684,7 @@ export function syncInto({ source, target, canonical: requested, fetchMain }) {
     root,
     [
       ...retired.map((entry) => ({ entry, cause: 'the manifest no longer shares it' })),
-      ...leftOut.map((entry) => ({ entry: previous?.entries.find(({ path }) => path === entry.path) ?? entry, cause: leftOutCause(entry.path) })),
+      ...leftOut.map(({ entry, cause }) => ({ entry: previous?.entries.find(({ path }) => path === entry.path) ?? entry, cause })),
     ],
     installed,
   );

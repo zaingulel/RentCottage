@@ -4,7 +4,7 @@
 // The guard judges a pull request the sweep or triage routine opened, so the enforcer must not come
 // from the pull request it judges: the workflow runs on pull_request_target, checks out the base
 // branch, installs only that branch's own locked production dependencies, executes nothing from the
-// pull request's tree, and passes at once off a sweep or triage branch, which is why the lock's own
+// pull request's tree, and skips its job off a sweep or triage branch, which is why the lock's own
 // shape is pinned here too. Tracked bytes do not prove a maintenance routine, schedule, required
 // check, or publication environment is active. Each assertion goes red if the corresponding line is
 // removed (`docs/TESTING-STRATEGY.md`, a deterministic guard over the committed bytes).
@@ -16,9 +16,12 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { load } from 'js-yaml';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const WORKFLOW = readFileSync(resolve(ROOT, '.github/workflows/sweep-scope.yml'), 'utf8');
+const JOBS = load(WORKFLOW).jobs;
+const JOB = JOBS['sweep-scope'];
 const PARSER_PINS = {
   htmlparser2: '10.1.0',
   'mdast-util-from-markdown': '2.0.3',
@@ -42,7 +45,7 @@ test('the workflow pins every action to its approved immutable revision', () => 
   assert.doesNotMatch(WORKFLOW, /^\s+- uses: actions\/(?:checkout|setup-node)@v\d+$/m);
 });
 
-test('the check runs from the base branch on pull_request_target, on every pull request event the suite uses', () => {
+test('the workflow starts from the base branch on pull_request_target, on every pull request event the suite uses', () => {
   assert.match(WORKFLOW, /^on:\n  pull_request_target:\n    types: \[opened, synchronize, reopened, ready_for_review\]\n/m);
   assert.doesNotMatch(WORKFLOW, /^\s+ref:/m, 'a ref on the checkout would fetch the pull request\'s tree');
   assert.match(WORKFLOW, /fetch-depth: 0/);
@@ -61,14 +64,12 @@ test('the check executes nothing from the pull request and holds a read-only tok
   assert.match(WORKFLOW, /node scripts\/sweep-scope-check\.mjs "\$BASE_SHA" "\$HEAD_SHA"/);
 });
 
-test('the only install is the base tree\'s production lock, run for a judged pull request alone', () => {
-  assert.deepEqual(WORKFLOW.match(/\bnpm\b.*/g), ['npm ci --omit=dev --ignore-scripts --no-audit --no-fund']);
-  assert.match(WORKFLOW, /^      - if: steps\.gate\.outputs\.judge == 'true'\n        run: npm ci /m);
-  assert.equal(
-    (WORKFLOW.match(/if: steps\.gate\.outputs\.judge == 'true'/g) ?? []).length,
-    4,
-    'the checkout, the setup, the install and the check all wait on the gate',
-  );
+// The parser the semantic half needs is installed, so the job is no longer install-free; what keeps
+// the property is where the packages come from. One production install off the base tree's own lock,
+// with no lifecycle script.
+test('the only install is the base tree\'s production lock', () => {
+  assert.deepEqual(JOB.steps.map((step) => step.run).filter((run) => /\bnpm\b/.test(run ?? '')),
+    ['npm ci --omit=dev --ignore-scripts --no-audit --no-fund']);
 });
 
 function lockedDependencyPath(lock, packagePath, dependency) {
@@ -158,22 +159,41 @@ test('the parser closure adds no lifecycle scripts to RentCottage\'s existing sc
   assert.deepEqual(scriptPackages, BASELINE_SCRIPT_PACKAGES);
 });
 
-function runBlock(which) {
-  const chunks = WORKFLOW.split(/^ {8}run: \|\n/m).slice(1);
-  assert.equal(chunks.length, 2, 'the gate and the check are the file\'s only multi-line run blocks');
-  const body = [];
-  for (const line of chunks[which === 'gate' ? 0 : 1].split('\n')) {
-    if (!line.startsWith(' '.repeat(10))) break;
-    body.push(line.slice(10));
-  }
-  return body.join('\n');
-}
+// A job its `if:` skips still reports a passing required check, so the condition is the whole
+// decision: a sweep or triage branch it missed would merge unjudged, which is why both prefixes are
+// pinned. The workflow holds this one job, so no other job can report under the check's name. The
+// exact key sets leave nothing else able to skip the job or a step, so a job that starts always
+// reaches the check. A fork names its own branch: the condition compares it as a value, and no step
+// may read it.
+test('the job condition alone reads the branch name and decides the job, and a started job skips no step', () => {
+  assert.deepEqual(Object.keys(JOBS), ['sweep-scope']);
+  assert.equal(JOB.if, "startsWith(github.head_ref, 'docs-sweep/') || startsWith(github.head_ref, 'docs-triage/')");
+  assert.deepEqual(Object.keys(JOB).sort(), ['if', 'runs-on', 'steps', 'timeout-minutes']);
+  assert.deepEqual(JOB.steps.map((step) => Object.keys(step).sort()),
+    [['uses', 'with'], ['uses', 'with'], ['run'], ['env', 'run']]);
+  assert.doesNotMatch(JSON.stringify(JOB.steps), /head_ref|head\.ref/);
+});
 
-function installCommand() {
-  const match = WORKFLOW.match(/^        run: (npm ci .*)$/m);
-  assert.ok(match, 'the install step must have a single-line npm ci command');
-  return match[1];
-}
+// GitHub pastes a `${{ }}` expression into the script text before bash reads it, which would run a
+// value carrying a backtick or a `;`; reaching a value through `env:` and a quoted variable cannot.
+test('fork-controlled values reach the shell through env, never interpolated into a run block', () => {
+  for (const { run } of JOB.steps) if (run) assert.doesNotMatch(run, /\$\{\{/);
+  assert.deepEqual(JOB.steps.at(-1).env, {
+    HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
+    BASE_SHA: '${{ github.event.pull_request.base.sha }}',
+  });
+});
+
+// The check's run block is executed, not pattern-matched, for the branch it can decide without a
+// network call.
+test('a judged branch whose head is missing fails loud instead of passing on an empty check', () => {
+  const result = spawnSync('bash', ['-c', JOB.steps.at(-1).run], {
+    env: { ...process.env, HEAD_SHA: '0'.repeat(40), BASE_SHA: 'unused' },
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /was not fetched/);
+});
 
 function fakeCommand(directory, name, body) {
   const path = join(directory, name);
@@ -181,37 +201,11 @@ function fakeCommand(directory, name, body) {
   chmodSync(path, 0o755);
 }
 
-test('fork-controlled values reach the shell through env, never interpolated into a run block', () => {
-  for (const block of ['gate', 'check']) assert.doesNotMatch(runBlock(block), /\$\{\{/);
-  assert.doesNotMatch(WORKFLOW, /^\s+run: .*\$\{\{/m, 'a single-line run may not interpolate either');
-  assert.match(WORKFLOW, /^      - id: gate\n        env:\n          HEAD_REF: \$\{\{ github\.event\.pull_request\.head\.ref \}\}$/m);
-  assert.match(WORKFLOW, /^        env:\n          HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}\n          BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}$/m);
-});
-
-test('an ordinary branch exits through the first gate without installing or checking', () => {
-  const directory = mkdtempSync(join(tmpdir(), 'sweep-scope-ordinary-'));
-  const output = join(directory, 'output');
-  const result = spawnSync('bash', ['-c', runBlock('gate')], {
-    env: { ...process.env, HEAD_REF: 'job/318', GITHUB_OUTPUT: output },
-    encoding: 'utf8',
-  });
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /job\/318 is not a sweep or triage branch/);
-  assert.equal(readFileSync(output, 'utf8'), 'judge=false\n');
-});
-
 test('a judged branch installs the base production lock with lifecycle scripts disabled', () => {
   const directory = mkdtempSync(join(tmpdir(), 'sweep-scope-install-'));
-  const output = join(directory, 'output');
   const commandLog = join(directory, 'command-log');
   fakeCommand(directory, 'npm', 'printf \'%s\\n\' "$@" > "$COMMAND_LOG"');
-  const gate = spawnSync('bash', ['-c', runBlock('gate')], {
-    env: { ...process.env, HEAD_REF: 'docs-sweep/2026-09-21', GITHUB_OUTPUT: output },
-    encoding: 'utf8',
-  });
-  assert.equal(gate.status, 0, gate.stderr);
-  assert.equal(readFileSync(output, 'utf8'), 'judge=true\n');
-  const install = spawnSync('bash', ['-c', installCommand()], {
+  const install = spawnSync('bash', ['-c', JOB.steps[2].run], {
     env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, COMMAND_LOG: commandLog },
     encoding: 'utf8',
   });
@@ -222,7 +216,7 @@ test('a judged branch installs the base production lock with lifecycle scripts d
 test('a registry failure stops the judged install closed', () => {
   const directory = mkdtempSync(join(tmpdir(), 'sweep-scope-registry-'));
   fakeCommand(directory, 'npm', 'echo "registry unavailable" >&2\nexit 42');
-  const result = spawnSync('bash', ['-c', installCommand()], {
+  const result = spawnSync('bash', ['-c', JOB.steps[2].run], {
     env: { ...process.env, PATH: `${directory}:${process.env.PATH}` },
     encoding: 'utf8',
   });
@@ -230,25 +224,6 @@ test('a registry failure stops the judged install closed', () => {
   assert.match(result.stderr, /registry unavailable/);
 });
 
-// The triage lands on the same allowlist as the sweep, so a triage branch must reach the check:
-// a gate that only knew the sweep's prefix would let a triage pull request through unjudged.
-for (const head of ['docs-sweep/2026-09-21', 'docs-triage/2026-09-22']) {
-  test(`a ${head.split('/')[0]} branch whose head is missing fails loud instead of passing on an empty check`, () => {
-    const directory = mkdtempSync(join(tmpdir(), 'sweep-scope-missing-head-'));
-    fakeCommand(directory, 'git', 'exit 1');
-    const result = spawnSync('bash', ['-c', runBlock('check')], {
-      env: {
-        ...process.env,
-        PATH: `${directory}:${process.env.PATH}`,
-        HEAD_SHA: '0'.repeat(40),
-        BASE_SHA: 'a'.repeat(40),
-      },
-      encoding: 'utf8',
-    });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /was not fetched/);
-  });
-}
 
 test('the base-owned checker receives the quoted immutable base and head SHAs', () => {
   const directory = mkdtempSync(join(tmpdir(), 'sweep-scope-check-'));
@@ -257,7 +232,7 @@ test('the base-owned checker receives the quoted immutable base and head SHAs', 
   fakeCommand(directory, 'node', 'printf \'%s\\n\' "$@" > "$COMMAND_LOG"');
   const baseSha = 'a'.repeat(40);
   const headSha = 'b'.repeat(40);
-  const result = spawnSync('bash', ['-c', runBlock('check')], {
+  const result = spawnSync('bash', ['-c', JOB.steps.at(-1).run], {
     env: {
       ...process.env,
       PATH: `${directory}:${process.env.PATH}`,
