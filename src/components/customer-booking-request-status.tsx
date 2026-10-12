@@ -24,7 +24,11 @@ import { formatIqd, formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 
 import { BookingRequestProgress } from "./booking-request-progress";
-import { ActionButton, ActionFeedback } from "./interaction-controls";
+import {
+  ActionButton,
+  ActionFeedback,
+  ActionFocusTarget,
+} from "./interaction-controls";
 
 const messages = {
   en: {
@@ -115,6 +119,7 @@ const messages = {
 export function CustomerBookingRequestStatus(props: {
   locale: Locale;
   request: CustomerBookingRequestDisplay;
+  focusSuccessorId?: string;
 }) {
   return (
     <CustomerBookingRequestStatusView
@@ -127,9 +132,11 @@ export function CustomerBookingRequestStatus(props: {
 function CustomerBookingRequestStatusView({
   locale,
   request,
+  focusSuccessorId,
 }: {
   locale: Locale;
   request: CustomerBookingRequestDisplay;
+  focusSuccessorId?: string;
 }) {
   const copy = messages[locale];
   const recoveryCopy = bookingRequestPaymentRecoveryMessages[locale];
@@ -199,6 +206,9 @@ function CustomerBookingRequestStatusView({
       className="customer-booking-request-status"
       aria-labelledby="customer-booking-request-title"
     >
+      {focusSuccessorId && (status === "processing" || !pending) ? (
+        <ActionFocusTarget targetId={focusSuccessorId} />
+      ) : null}
       <h1 id="customer-booking-request-title" className="page-title">
         {copy.title}
       </h1>
@@ -313,6 +323,7 @@ function CustomerBookingRequestStatusView({
           width="full"
           type="button"
           pending={pending}
+          focusSuccessorId={focusSuccessorId}
           onClick={() => void recoverPayment()}
         >
           {request.paymentRecovery?.status === "retryable"
@@ -327,6 +338,7 @@ function CustomerBookingRequestStatusView({
           width="full"
           type="button"
           pending={pending}
+          focusSuccessorId={focusSuccessorId}
           onClick={() => void withdraw()}
         >
           {copy.withdraw}

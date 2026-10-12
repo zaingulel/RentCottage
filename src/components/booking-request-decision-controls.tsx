@@ -55,9 +55,11 @@ export function BookingRequestDecisionControls({
   locale,
   bookingRequestId,
   onStatusChange,
+  focusSuccessorId,
 }: {
   locale: Locale;
   bookingRequestId: string;
+  focusSuccessorId?: string;
   onStatusChange?: (status: BookingRequestStatus) => void;
 }) {
   const copy = messages[locale];
@@ -110,6 +112,7 @@ export function BookingRequestDecisionControls({
         width="full"
         type="button"
         pending={pending}
+        focusSuccessorId={focusSuccessorId}
         onClick={() => act("accept")}
       >
         {copy.accept}
@@ -152,6 +155,7 @@ export function BookingRequestDecisionControls({
           width="full"
           type="submit"
           pending={pending}
+          focusSuccessorId={focusSuccessorId}
         >
           {copy.decline}
         </ActionButton>

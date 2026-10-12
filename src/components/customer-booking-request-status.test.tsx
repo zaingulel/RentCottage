@@ -18,8 +18,10 @@ vi.mock("@/booking-request/payment-recovery-actions", () => ({
   recoverBookingRequestPayment,
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
+vi.mock("@/access/actions", () => ({ signOutAccount: vi.fn() }));
 
 import { CustomerBookingRequestStatus } from "./customer-booking-request-status";
+import { AccountAccessRecovery } from "./account-access-recovery";
 import {
   customerDisplayFixtures,
   customerRecoveryDisplayFixtures,
@@ -510,6 +512,62 @@ it("refreshes unresolved recovery into its persisted blocked state without inven
   );
   await waitFor(() => expect(refresh).toHaveBeenCalled());
   expect(screen.queryByText("Booking confirmed")).not.toBeInTheDocument();
+});
+
+it("hands owned recovery focus to the account-unavailable landmark", async () => {
+  refresh.mockClear();
+  let finish!: (value: { status: "blocked" }) => void;
+  recoverBookingRequestPayment.mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const targetId = "customer-booking-request-detail";
+  const returnTo = "/en/booking-requests/RC-REQ-AAAAAAAAAAAAAAAA";
+  const view = render(
+    <CustomerBookingRequestStatus
+      locale="en"
+      request={{
+        ...customerDisplayFixtures["payment-required-open"],
+        paymentRecovery: { status: "available" },
+      }}
+      focusSuccessorId={targetId}
+    />,
+  );
+  const recover = screen.getByRole("button", {
+    name: "Use simulated replacement payment",
+  });
+  recover.focus();
+  fireEvent.click(recover);
+  expect(recover).toBeDisabled();
+  expect(refresh).not.toHaveBeenCalled();
+  finish({ status: "blocked" });
+  await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
+  view.rerender(
+    <AccountAccessRecovery
+      locale="en"
+      status="unavailable"
+      returnTo={returnTo}
+      focusTargetId={targetId}
+    />,
+  );
+  expect(recover).not.toBeInTheDocument();
+  const main = screen.getByRole("main");
+  expect(main).toHaveFocus();
+  expect(main).toHaveAttribute("tabindex", "-1");
+  expect(
+    screen.getByRole("heading", {
+      name: "Account access is unavailable. Please try again.",
+    }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Try again" })).toHaveAttribute(
+    "href",
+    returnTo,
+  );
+  expect(screen.getByRole("button", { name: "Sign out" })).toHaveAttribute(
+    "type",
+    "submit",
+  );
 });
 
 describe("Customer payment recovery command identity", () => {

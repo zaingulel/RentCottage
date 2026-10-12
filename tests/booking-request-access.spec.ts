@@ -946,6 +946,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await expect(
       arabicNotice.getByText("مرفوض", { exact: true }),
     ).toBeVisible();
+    await expect(
+      ownerPage.locator("#owner-booking-requests-heading"),
+    ).toBeFocused();
     const declineArRows = await declineArMeasurement.evaluate((measurement) => {
       measurement.read("settled");
       measurement.observer.disconnect();
@@ -1025,6 +1028,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
     );
     await withdrawCkbControl.press("Enter");
     await expect(page.locator(".status-banner")).toContainText("کشێنراوەتەوە");
+    await expect(page.getByRole("main")).toBeFocused();
     const withdrawCkbRows = await withdrawCkbMeasurement.evaluate(
       (measurement) => {
         measurement.read("settled");
@@ -1108,6 +1112,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await expect(
       ownerNotice.getByText("Declined", { exact: true }),
     ).toBeVisible();
+    await expect(
+      ownerPage.locator("#owner-booking-requests-heading"),
+    ).toBeFocused();
     const declineEnRows = await declineEnMeasurement.evaluate((measurement) => {
       measurement.read("settled");
       measurement.observer.disconnect();
@@ -1199,6 +1206,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await withdrawEnControl.press("Enter");
     await expect(page.locator(".status-banner")).toContainText("Processing");
     await expect(page.locator(".status-banner")).toContainText("Withdrawn");
+    await expect(page.getByRole("main")).toBeFocused();
     const withdrawEnRows = await withdrawEnMeasurement.evaluate(
       (measurement) => {
         measurement.read("settled");
@@ -1344,6 +1352,12 @@ test("a verified Customer double-submit creates one Pending request and one mini
           .getByText("Payment confirmation pending", { exact: true })
           .first(),
       ).toBeVisible();
+      expect(
+        await ownerMainSource.evaluate(
+          (source) => source === document.querySelector("main"),
+        ),
+      ).toBe(true);
+      await expect(ownerDetailPage.getByRole("main")).toBeFocused();
       const ownerAcceptRows = await ownerAcceptMeasurement.evaluate(
         (measurement) => {
           measurement.read("settled");
@@ -1784,6 +1798,12 @@ test("a verified Customer double-submit creates one Pending request and one mini
           exact: true,
         }),
       ).toBeVisible({ timeout: 15000 });
+      expect(
+        await ownerMainSource.evaluate(
+          (source) => source === document.querySelector("main"),
+        ),
+      ).toBe(true);
+      await expect(ownerDetailPage.getByRole("main")).toBeFocused();
       const ownerMainRows = await ownerMainMeasurement.evaluate(
         (measurement) => {
           measurement.read("confirmed-replacement");
@@ -2345,6 +2365,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
               action: "Use replacement payment",
             },
           );
+        const customerMainSource = await page.getByRole("main").elementHandle();
+        if (!customerMainSource)
+          throw new Error("Customer detail main focus source is missing");
         await paymentRecoveryControl.press("Enter");
         // Refresh can remount the status view and clear its local action error.
         // Observe the durable interrupted outcome and the authoritative visible state.
@@ -2364,6 +2387,12 @@ test("a verified Customer double-submit creates one Pending request and one mini
         ).toBeVisible();
         await expect(page.getByRole("status")).toContainText("not confirmed");
         await expect(page.getByRole("status")).toContainText("remain held");
+        expect(
+          await customerMainSource.evaluate(
+            (source) => source === document.querySelector("main"),
+          ),
+        ).toBe(true);
+        await expect(page.getByRole("main")).toBeFocused();
         const paymentRecoveryRows = await paymentRecoveryMeasurement.evaluate(
           (measurement) => {
             measurement.read("settled");
@@ -2429,6 +2458,13 @@ test("a verified Customer double-submit creates one Pending request and one mini
         await expect(
           page.getByRole("heading", { name: "Confirmed booking" }),
         ).toBeVisible({ timeout: 15000 });
+        expect(
+          await customerMainSource.evaluate(
+            (source) => source === document.querySelector("main"),
+          ),
+        ).toBe(true);
+        await expect(page.getByRole("main")).toBeFocused();
+        await customerMainSource.dispose();
         await expect(failureNotice.getByRole("status")).toContainText(
           "Booking confirmed",
           { timeout: 15000 },
