@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
 
 import * as fixtures from "./access-browser-fixtures.mjs";
+import { accessJourneyOtpEntries } from "./access-journey-fixtures.mjs";
 
 const demoEnvironment = {
   APP_ENVIRONMENT: "test",
@@ -455,6 +457,221 @@ test("demo inventory readback rejects missing units and leaked private reasons",
     assert.throws(
       () => fixtures.assertDemoInventoryReadback(data),
       /Demo inventory readback/,
+    );
+  }
+});
+
+test("browser account fixtures are disjoint by file and project", async () => {
+  // Phone and name ownership is the approved plan's table, independent of allocation.
+  const ownership = [
+    [
+      "access",
+      "mobile",
+      "+9647530000000",
+      "+9647540000000",
+      "Mobile Access Review Fixture",
+      "Mobile Review Fixture Cottage",
+      "Mobile Access Booking Fixture",
+      "Mobile Booking Fixture Cottage",
+    ],
+    [
+      "access",
+      "desktop",
+      "+9647530000001",
+      "+9647540000001",
+      "Desktop Access Review Fixture",
+      "Desktop Review Fixture Cottage",
+      "Desktop Access Booking Fixture",
+      "Desktop Booking Fixture Cottage",
+    ],
+    [
+      "access",
+      "worker",
+      "+9647530000002",
+      "+9647540000002",
+      "Worker Access Review Fixture",
+      "Worker Review Fixture Cottage",
+      "Worker Access Booking Fixture",
+      "Worker Booking Fixture Cottage",
+    ],
+    [
+      "booking-request",
+      "mobile",
+      "+9647570000000",
+      "+9647520000000",
+      "+9647592700000",
+      "booking-request Mobile Booking Fixture",
+      "booking-request Mobile Booking Fixture Cottage",
+    ],
+    [
+      "booking-request",
+      "desktop",
+      "+9647570000001",
+      "+9647520000001",
+      "+9647592700001",
+      "booking-request Desktop Booking Fixture",
+      "booking-request Desktop Booking Fixture Cottage",
+    ],
+    [
+      "booking-request",
+      "worker",
+      "+9647570000002",
+      "+9647520000002",
+      "+9647592700002",
+      "booking-request Worker Booking Fixture",
+      "booking-request Worker Booking Fixture Cottage",
+    ],
+    [
+      "messaging",
+      "mobile",
+      "+9647580000000",
+      "+9647560000000",
+      "messaging Mobile Booking Fixture",
+      "messaging Mobile Booking Fixture Cottage",
+    ],
+    [
+      "messaging",
+      "desktop",
+      "+9647580000001",
+      "+9647560000001",
+      "messaging Desktop Booking Fixture",
+      "messaging Desktop Booking Fixture Cottage",
+    ],
+    [
+      "messaging",
+      "worker",
+      "+9647580000002",
+      "+9647560000002",
+      "messaging Worker Booking Fixture",
+      "messaging Worker Booking Fixture Cottage",
+    ],
+    [
+      "scheduled-expiry",
+      "worker",
+      "+9647592800002",
+      "+9647592900002",
+      "scheduled-expiry Worker Booking Fixture",
+      "scheduled-expiry Worker Booking Fixture Cottage",
+    ],
+  ];
+  const phones = [];
+  const names = [];
+  for (const [owner, project, ...expected] of ownership) {
+    const fixture = fixtures.accessBrowserFixture(project, owner);
+    const actual =
+      owner === "access"
+        ? [
+            fixture.reviewOwnerPhone,
+            fixture.bookingOwnerPhone,
+            fixture.reviewLegalName,
+            fixture.reviewCottageName,
+            fixture.bookingLegalName,
+            fixture.bookingCottageName,
+          ]
+        : [
+            fixture.bookingOwnerPhone,
+            fixture.customerPhone,
+            ...(owner === "booking-request"
+              ? [fixture.secondaryCustomerPhone]
+              : []),
+            fixture.bookingLegalName,
+            fixture.bookingCottageName,
+          ];
+    assert.deepEqual(actual, expected, `${owner}/${project}`);
+    assert.equal(fixture.exactAddress, "Synthetic private fixture address");
+    phones.push(...actual.filter((value) => value.startsWith("+")));
+    names.push(...actual.filter((value) => !value.startsWith("+")));
+  }
+  const otherOwnedPhones = [
+    "+9647510000000",
+    "+9647510000001",
+    "+9647510000002",
+    "+9647550000000",
+    "+9647550000001",
+    "+9647550000002",
+    "+9647592500000",
+    "+9647592500001",
+    "+9647592500002",
+    "+9647592600000",
+    "+9647592600001",
+    "+9647592600002",
+    "+9647500000008",
+    "+9647500000009",
+  ];
+  const journeyPhones = accessJourneyOtpEntries().map(([phone]) => `+${phone}`);
+  const allPhones = [...phones, ...otherOwnedPhones, ...journeyPhones];
+  assert.equal(new Set(allPhones).size, allPhones.length);
+  assert.equal(new Set(names).size, names.length);
+  const config = readFileSync("supabase/config.toml", "utf8");
+  const otpSection = config.match(
+    /\[auth\.sms\.test_otp\]\n([\s\S]*?)(?=\n\[|$)/,
+  )?.[1];
+  assert.ok(otpSection, "synthetic OTP section must exist");
+  const passwordOnlyPhones = new Set([
+    "+9647580000000",
+    "+9647580000001",
+    "+9647580000002",
+    "+9647592800002",
+    "+9647592900002",
+  ]);
+  for (const phone of [...phones, ...otherOwnedPhones]) {
+    if (!passwordOnlyPhones.has(phone)) {
+      assert.match(
+        otpSection,
+        new RegExp(`^${phone.slice(1)} = "123456"$`, "m"),
+      );
+    }
+  }
+  const historySource = readFileSync("tests/booking-history.spec.ts", "utf8");
+  assert.match(historySource, /const customerPhone = "\+9647500000008"/);
+  assert.match(historySource, /const ownerPhone = "\+9647500000009"/);
+  const accessSource = readFileSync("tests/access.spec.ts", "utf8");
+  for (const [project, phone] of [
+    ["mobile", "+9647592600000"],
+    ["desktop", "+9647592600001"],
+    ["worker", "+9647592600002"],
+  ]) {
+    assert.ok(accessSource.includes(`${project}: "${phone}"`));
+  }
+  assert.match(
+    accessSource,
+    /const customerPhone = quoteCustomerPhone\(testInfo.project.name\)/,
+  );
+  for (const unknown of [
+    "",
+    "unknown",
+    "../worker",
+    "worker'; select 1;--",
+    "__proto__",
+    null,
+    {},
+  ]) {
+    assert.throws(
+      () => fixtures.accessBrowserFixture(unknown),
+      /Unknown access browser fixture project/,
+    );
+    assert.throws(
+      () => fixtures.accessBrowserFixture("worker", unknown),
+      /Unknown access browser fixture owner/,
+    );
+    for (const prepare of [
+      fixtures.createAccessBrowserFixtures,
+      fixtures.validateAccessBrowserFixtures,
+    ]) {
+      await assert.rejects(
+        prepare({ projects: ["worker", unknown] }),
+        /Unknown access browser fixture project/,
+      );
+      await assert.rejects(
+        prepare({ projects: ["worker"], owner: unknown }),
+        /Unknown access browser fixture owner/,
+      );
+    }
+  }
+  for (const project of ["mobile", "desktop"]) {
+    assert.throws(
+      () => fixtures.accessBrowserFixture(project, "scheduled-expiry"),
+      /require worker project/,
     );
   }
 });

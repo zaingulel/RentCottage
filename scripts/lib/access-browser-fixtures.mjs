@@ -52,12 +52,43 @@ const projectIndex = new Map(
   ACCESS_BROWSER_PROJECTS.map((project, index) => [project, index]),
 );
 
-export function accessBrowserFixture(project) {
+export function accessBrowserFixture(project, owner = "access") {
   const index = projectIndex.get(project);
   if (index === undefined) {
     throw new Error(`Unknown access browser fixture project: ${project}`);
   }
+  if (
+    !["access", "booking-request", "messaging", "scheduled-expiry"].includes(
+      owner,
+    )
+  ) {
+    throw new Error(`Unknown access browser fixture owner: ${owner}`);
+  }
+  if (owner === "scheduled-expiry" && project !== "worker") {
+    throw new Error("Scheduled expiry browser fixtures require worker project");
+  }
   const label = `${project[0].toUpperCase()}${project.slice(1)}`;
+  if (owner !== "access") {
+    return {
+      project,
+      exactAddress: "Synthetic private fixture address",
+      bookingOwnerPhone: {
+        "booking-request": `+964757000000${index}`,
+        messaging: `+964758000000${index}`,
+        "scheduled-expiry": "+9647592800002",
+      }[owner],
+      bookingLegalName: `${owner} ${label} Booking Fixture`,
+      bookingCottageName: `${owner} ${label} Booking Fixture Cottage`,
+      customerPhone: {
+        "booking-request": `+964752000000${index}`,
+        messaging: `+964756000000${index}`,
+        "scheduled-expiry": "+9647592900002",
+      }[owner],
+      ...(owner === "booking-request"
+        ? { secondaryCustomerPhone: `+964759270000${index}` }
+        : {}),
+    };
+  }
   return {
     project,
     exactAddress: "Synthetic private fixture address",
@@ -969,19 +1000,24 @@ async function createPublishedBookingFixture({
 
 export async function createAccessBrowserFixtures({
   projects,
+  owner = "access",
   privilegedClient,
   publishableKey,
   reviewerClient,
   url,
 }) {
-  for (const project of projects) {
-    const fixture = accessBrowserFixture(project);
-    await createSubmittedReviewFixture({
-      fixture,
-      privilegedClient,
-      publishableKey,
-      url,
-    });
+  const fixtures = projects.map((project) =>
+    accessBrowserFixture(project, owner),
+  );
+  for (const fixture of fixtures) {
+    if (owner === "access") {
+      await createSubmittedReviewFixture({
+        fixture,
+        privilegedClient,
+        publishableKey,
+        url,
+      });
+    }
     await createPublishedBookingFixture({
       fixture,
       privilegedClient,
@@ -1001,71 +1037,77 @@ async function fixtureIdentity(privilegedClient, phone, description) {
 
 export async function validateAccessBrowserFixtures({
   projects,
+  owner = "access",
   privilegedClient,
   publishableKey,
   url,
 }) {
-  for (const project of projects) {
-    const fixture = accessBrowserFixture(project);
-    const reviewIdentity = await fixtureIdentity(
-      privilegedClient,
-      fixture.reviewOwnerPhone,
-      `${project} access review fixture is incomplete`,
-    );
-    const reviewOwnerClient = await signInFixtureOwner({
-      url,
-      publishableKey,
-      identity: reviewIdentity,
-      phone: fixture.reviewOwnerPhone,
-      description: `${project} access review fixture is incomplete`,
-    });
-    const reviewApplication = requireData(
-      await reviewOwnerClient
-        .from("owner_applications")
-        .select("id,status,legal_name")
-        .maybeSingle(),
-      `${project} access review fixture is incomplete: missing submitted Owner Application`,
-    );
-    if (
-      reviewApplication.status !== "submitted" ||
-      reviewApplication.legal_name !== fixture.reviewLegalName
-    ) {
-      throw new Error(
-        `${project} access review fixture is incomplete: expected submitted Owner Application`,
+  const fixtures = projects.map((project) =>
+    accessBrowserFixture(project, owner),
+  );
+  for (const fixture of fixtures) {
+    const { project } = fixture;
+    if (owner === "access") {
+      const reviewIdentity = await fixtureIdentity(
+        privilegedClient,
+        fixture.reviewOwnerPhone,
+        `${project} access review fixture is incomplete`,
       );
-    }
-    const documentResult = await reviewOwnerClient
-      .from("owner_verification_documents")
-      .select("kind,object_path,original_filename")
-      .eq("application_id", reviewApplication.id);
-    if (documentResult.error) throw documentResult.error;
-    const byKind = new Map(
-      documentResult.data.map((document) => [document.kind, document]),
-    );
-    for (const [kind, filename] of documents) {
-      const document = byKind.get(kind);
-      if (!document || document.original_filename !== filename) {
+      const reviewOwnerClient = await signInFixtureOwner({
+        url,
+        publishableKey,
+        identity: reviewIdentity,
+        phone: fixture.reviewOwnerPhone,
+        description: `${project} access review fixture is incomplete`,
+      });
+      const reviewApplication = requireData(
+        await reviewOwnerClient
+          .from("owner_applications")
+          .select("id,status,legal_name")
+          .maybeSingle(),
+        `${project} access review fixture is incomplete: missing submitted Owner Application`,
+      );
+      if (
+        reviewApplication.status !== "submitted" ||
+        reviewApplication.legal_name !== fixture.reviewLegalName
+      ) {
         throw new Error(
-          `${project} access review fixture is incomplete: missing ${filename} record`,
+          `${project} access review fixture is incomplete: expected submitted Owner Application`,
         );
       }
-      const downloaded = await privilegedClient.storage
-        .from("owner-verification")
-        .download(document.object_path);
-      if (downloaded.error || !downloaded.data) {
-        throw new Error(
-          `${project} access review fixture is incomplete: missing ${filename} object`,
-          { cause: downloaded.error },
-        );
-      }
-      if (filename === "licence.pdf") {
-        const prefix = Buffer.from(await downloaded.data.arrayBuffer())
-          .subarray(0, 4)
-          .toString();
-        if (prefix !== "%PDF") {
+      const documentResult = await reviewOwnerClient
+        .from("owner_verification_documents")
+        .select("kind,object_path,original_filename")
+        .eq("application_id", reviewApplication.id);
+      if (documentResult.error) throw documentResult.error;
+      const byKind = new Map(
+        documentResult.data.map((document) => [document.kind, document]),
+      );
+      for (const [kind, filename] of documents) {
+        const document = byKind.get(kind);
+        if (!document || document.original_filename !== filename) {
           throw new Error(
-            `${project} access review fixture is incomplete: licence.pdf is not a PDF`,
+            `${project} access review fixture is incomplete: missing ${filename} record`,
           );
+        }
+        const downloaded = await privilegedClient.storage
+          .from("owner-verification")
+          .download(document.object_path);
+        if (downloaded.error || !downloaded.data) {
+          throw new Error(
+            `${project} access review fixture is incomplete: missing ${filename} object`,
+            { cause: downloaded.error },
+          );
+        }
+        if (filename === "licence.pdf") {
+          const prefix = Buffer.from(await downloaded.data.arrayBuffer())
+            .subarray(0, 4)
+            .toString();
+          if (prefix !== "%PDF") {
+            throw new Error(
+              `${project} access review fixture is incomplete: licence.pdf is not a PDF`,
+            );
+          }
         }
       }
     }

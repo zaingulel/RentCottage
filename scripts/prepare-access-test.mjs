@@ -8,6 +8,7 @@ import {
 } from "./lib/access-fixture-users.mjs";
 import {
   ACCESS_BROWSER_PROJECTS,
+  accessBrowserFixture,
   createAccessBrowserFixtures,
   createDemoBrowserFixtures,
   requireDemoEnvironment,
@@ -84,7 +85,26 @@ if (demoEnvironmentError) {
     { profile: "mobile", phone: "+9647520000000" },
     { profile: "desktop", phone: "+9647520000001" },
     { profile: "worker", phone: "+9647520000002" },
+    ...(!isDemo && requestedProjects.includes("worker")
+      ? [
+          {
+            profile: "worker",
+            phone: accessBrowserFixture("worker", "scheduled-expiry")
+              .customerPhone,
+          },
+        ]
+      : []),
   ].filter(({ profile }) => requestedProjects.includes(profile));
+  const browserOwners = [
+    "access",
+    "booking-request",
+    "messaging",
+    "scheduled-expiry",
+  ];
+  const projectsForOwner = (owner) =>
+    owner === "scheduled-expiry"
+      ? requestedProjects.filter((project) => project === "worker")
+      : requestedProjects;
   const requiredDocumentKinds = [
     "identity",
     "authority_to_rent",
@@ -223,12 +243,15 @@ if (demoEnvironmentError) {
         url,
       });
     } else {
-      await validateAccessBrowserFixtures({
-        projects: requestedProjects,
-        privilegedClient: client,
-        publishableKey,
-        url,
-      });
+      for (const owner of browserOwners) {
+        await validateAccessBrowserFixtures({
+          projects: projectsForOwner(owner),
+          owner,
+          privilegedClient: client,
+          publishableKey,
+          url,
+        });
+      }
     }
     console.log(
       isDemo
@@ -653,13 +676,16 @@ if (demoEnvironmentError) {
       url,
     });
   } else {
-    await createAccessBrowserFixtures({
-      projects: requestedProjects,
-      privilegedClient: client,
-      publishableKey,
-      reviewerClient,
-      url,
-    });
+    for (const owner of browserOwners) {
+      await createAccessBrowserFixtures({
+        projects: projectsForOwner(owner),
+        owner,
+        privilegedClient: client,
+        publishableKey,
+        reviewerClient,
+        url,
+      });
+    }
   }
   if (concurrentRegistrationChecked) {
     console.log(

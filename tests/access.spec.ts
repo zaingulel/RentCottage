@@ -420,15 +420,15 @@ async function currentDocumentAccessAudit(
   return data;
 }
 
-function journeyPhone(projectName: string, digits: [string, string, string]) {
-  const suffixes: Record<string, string> = {
-    mobile: digits[0],
-    desktop: digits[1],
-    worker: digits[2],
+function quoteCustomerPhone(projectName: string) {
+  const phones: Record<string, string> = {
+    mobile: "+9647592600000",
+    desktop: "+9647592600001",
+    worker: "+9647592600002",
   };
-  const suffix = suffixes[projectName];
-  if (!suffix) throw new Error(`Unmapped Playwright project: ${projectName}`);
-  return `+964750000000${suffix}`;
+  const phone = phones[projectName];
+  if (!phone) throw new Error(`Unmapped Playwright project: ${projectName}`);
+  return phone;
 }
 
 async function openOwnerApplication(
@@ -3295,7 +3295,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(
     page.getByRole("button", { name: "Send Booking Request" }),
   ).toHaveCount(0);
-  const customerPhone = journeyPhone(testInfo.project.name, ["0", "9", "9"]);
+  const customerPhone = quoteCustomerPhone(testInfo.project.name);
   const englishRequest = new URL(page.url());
   const requestSlug = englishRequest.pathname.split("/").at(-1);
   const signIn = page

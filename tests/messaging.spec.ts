@@ -6,25 +6,23 @@ import { createClient } from "@supabase/supabase-js";
 type MessagingBrowserFixture = {
   readonly bookingCottageName: string;
   readonly bookingOwnerPhone: string;
+  readonly customerPhone: string;
 };
 
 const { accessBrowserFixture } = createRequire(import.meta.url)(
   "../scripts/lib/access-browser-fixtures.mjs",
 ) as {
-  accessBrowserFixture(project: string): MessagingBrowserFixture;
-};
-
-const customerPhones: Record<string, string> = {
-  mobile: "+9647560000000",
-  desktop: "+9647560000001",
-  worker: "+9647560000002",
+  accessBrowserFixture(
+    project: string,
+    owner: "messaging",
+  ): MessagingBrowserFixture;
 };
 
 test("booking customer keeps the original while using fictional translations across directions", async ({
   page,
 }, testInfo) => {
-  const phone = customerPhones[testInfo.project.name];
-  if (!phone) throw new Error("Messaging browser fixture project is unknown");
+  const fixture = accessBrowserFixture(testInfo.project.name, "messaging");
+  const phone = fixture.customerPhone;
   const url = process.env.SUPABASE_URL;
   const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !publishableKey) {
@@ -32,7 +30,6 @@ test("booking customer keeps the original while using fictional translations acr
       "Messaging browser fixture database credentials are missing",
     );
   }
-  const fixture = accessBrowserFixture(testInfo.project.name);
   const fixtureOwner = createClient(url, publishableKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });

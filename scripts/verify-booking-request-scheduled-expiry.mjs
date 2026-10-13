@@ -28,6 +28,7 @@ export function main(args, environment = process.env) {
   harness.guardDisposableLocalDatabase();
 
   if (args[0] === "--seed") {
+    const fixture = accessBrowserFixture("worker", "scheduled-expiry");
     // SQL arrangement mirrors admission, isolated effect, and explicit recording.
     const paymentEvidenceSql =
       "-- BEGIN PAYMENT EVIDENCE FIXTURE\n" +
@@ -58,12 +59,12 @@ begin
       on localizations.publication_id = publications.id and localizations.locale = 'en'
     where listings.state = 'published'
       and public.is_cottage_publicly_discoverable(profiles.id)
-      and profiles.name = '${accessBrowserFixture("worker").bookingCottageName}'
+      and profiles.name = '${fixture.bookingCottageName}'
       and shifts.position = (select min(earliest.position) from public.cottage_shifts earliest
         where earliest.schedule_revision_id = profiles.current_shift_schedule_id);
   select users.id into strict customer_id
     from auth.users users join public.account_contexts contexts on contexts.user_id = users.id
-    where users.phone = '9647520000002' and contexts.role = 'customer' and users.phone_confirmed_at is not null;
+    where users.phone = '${fixture.customerPhone.slice(1)}' and contexts.role = 'customer' and users.phone_confirmed_at is not null;
   insert into public.cottage_inventory_availability (schedule_revision_id, unit_kind, unit_id, service_day, state)
     values (cottage.schedule_id, 'shift', cottage.shift_id, cottage.service_day, 'open')
     on conflict (schedule_revision_id, unit_kind, unit_id, service_day) do update set state = 'open';
