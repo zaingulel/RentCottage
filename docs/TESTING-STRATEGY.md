@@ -185,6 +185,17 @@ change and goes to the owner with those figures.
 
 Focused checks run while building and between review rounds, each through
 `node scripts/run-log.mjs <label words> -- <command>`; the `resume` skill owns the receipt and rerun mechanics.
+
+Inside a Claude Code job worktree, a focused Node run names its test file through a quoted pattern when the
+path contains the letters `git`:
+`node scripts/run-log.mjs <label words> -- node --test --test-name-pattern='^<full title>$' 'scripts/lib/unsafe-g*.test.mjs'`.
+Node expands the file pattern itself. Anchor the full test title at both ends and escape its regular-expression
+characters, such as parentheses. Claude Code's worktree check can misread `scripts/lib/unsafe-git.test.mjs` as a
+git command it cannot verify; the `resume` skill owns that check under "3. Start the job". Verify that the pattern
+matches only the intended file and that the completed run reports a nonzero matched test count. If that form is
+also refused, append `2>&1 | tail -10` to the same command to keep the counts visible. The `run-log` receipt
+remains authoritative for the command's own exit code; the pipeline's exit status is not evidence of success.
+
 The full local check runs once before push: `node scripts/run-log.mjs convergence -- npm run verify`, which selects
 its route from the changed paths (`npm run verify -- --plan` prints that route without running it) and runs every
 selected group; `npm run verify -- --full` runs every group regardless of the changed paths.
