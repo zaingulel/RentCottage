@@ -23,14 +23,6 @@ const customerPhones: Record<string, string> = {
 test("booking customer keeps the original while using fictional translations across directions", async ({
   page,
 }, testInfo) => {
-  page.on("console", (message) => {
-    if (
-      message.type() === "info" &&
-      message.text().startsWith("FOCUS_BASELINE ")
-    ) {
-      console.log(message.text());
-    }
-  });
   const phone = customerPhones[testInfo.project.name];
   if (!phone) throw new Error("Messaging browser fixture project is unknown");
   const url = process.env.SUPABASE_URL;
@@ -87,52 +79,6 @@ test("booking customer keeps the original while using fictional translations acr
   });
   await startControl.focus();
   await expect(startControl).toBeFocused();
-  const startSource = await startControl.elementHandle();
-  if (!startSource) throw new Error("Focus measurement source is missing");
-  const startMeasurement = await startSource.evaluateHandle(
-    (source, labels) => {
-      const read = (phase: string) => {
-        console.info(
-          "FOCUS_BASELINE " +
-            JSON.stringify({
-              ...labels,
-              phase,
-              pathname: location.pathname,
-              locale: document.documentElement.lang,
-              direction: document.documentElement.dir,
-              activeTag: document.activeElement?.tagName ?? null,
-              activeId: document.activeElement?.id ?? null,
-              sourceConnected: source.isConnected,
-              sourceDisabled: source.matches(":disabled"),
-              sourceBusy: source.getAttribute("aria-busy"),
-              sameNode: source.isConnected,
-            }),
-        );
-      };
-      let previous = "";
-      const observer = new MutationObserver(() => {
-        const current = JSON.stringify([
-          source.isConnected,
-          source.matches(":disabled"),
-          source.getAttribute("aria-busy"),
-          location.pathname,
-        ]);
-        if (current !== previous) {
-          previous = current;
-          read("transition");
-        }
-      });
-      observer.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ["disabled", "aria-busy"],
-      });
-      read("before");
-      return { read, observer };
-    },
-    { family: "messaging-start", action: "Start conversation" },
-  );
   await startControl.press("Enter");
   await expect(page).toHaveURL(/\/en\/messages\/[0-9a-f-]{36}\?/);
   await expect(
@@ -146,12 +92,6 @@ test("booking customer keeps the original while using fictional translations acr
       "You can send contact details once this booking has a valid payment.",
     ),
   ).toBeVisible();
-  await startMeasurement.evaluate((measurement) => {
-    measurement.read("settled");
-    measurement.observer.disconnect();
-  });
-  await startMeasurement.dispose();
-  await startSource.dispose();
   const conversationId = new URL(page.url()).pathname.split("/").at(-1);
   const bookingHref = await page
     .getByRole("link", { name: "Booking request" })
@@ -173,52 +113,6 @@ test("booking customer keeps the original while using fictional translations acr
   const sendEnControl = page.getByRole("button", { name: "Send message" });
   await sendEnControl.focus();
   await expect(sendEnControl).toBeFocused();
-  const sendEnSource = await sendEnControl.elementHandle();
-  if (!sendEnSource) throw new Error("Focus measurement source is missing");
-  const sendEnMeasurement = await sendEnSource.evaluateHandle(
-    (source, labels) => {
-      const read = (phase: string) => {
-        console.info(
-          "FOCUS_BASELINE " +
-            JSON.stringify({
-              ...labels,
-              phase,
-              pathname: location.pathname,
-              locale: document.documentElement.lang,
-              direction: document.documentElement.dir,
-              activeTag: document.activeElement?.tagName ?? null,
-              activeId: document.activeElement?.id ?? null,
-              sourceConnected: source.isConnected,
-              sourceDisabled: source.matches(":disabled"),
-              sourceBusy: source.getAttribute("aria-busy"),
-              sameNode: source.isConnected,
-            }),
-        );
-      };
-      let previous = "";
-      const observer = new MutationObserver(() => {
-        const current = JSON.stringify([
-          source.isConnected,
-          source.matches(":disabled"),
-          source.getAttribute("aria-busy"),
-          location.pathname,
-        ]);
-        if (current !== previous) {
-          previous = current;
-          read("transition");
-        }
-      });
-      observer.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ["disabled", "aria-busy"],
-      });
-      read("before");
-      return { read, observer };
-    },
-    { family: "messaging-conversation", action: "Send English" },
-  );
   await sendEnControl.press("Enter");
   const message = page
     .getByRole("list", { name: "Messages" })
@@ -229,64 +123,11 @@ test("booking customer keeps the original while using fictional translations acr
     "هل يمكننا استخدام الحديقة؟",
   );
   await expect(sendEnControl).toBeFocused();
-  await sendEnMeasurement.evaluate((measurement) => {
-    measurement.read("settled");
-    measurement.observer.disconnect();
-  });
-  await sendEnMeasurement.dispose();
-  await sendEnSource.dispose();
   const translateEnControl = message.getByRole("button", {
     name: "Automatic translation",
   });
   await translateEnControl.focus();
   await expect(translateEnControl).toBeFocused();
-  const translateEnSource = await translateEnControl.elementHandle();
-  if (!translateEnSource)
-    throw new Error("Focus measurement source is missing");
-  const translateEnMeasurement = await translateEnSource.evaluateHandle(
-    (source, labels) => {
-      const read = (phase: string) => {
-        console.info(
-          "FOCUS_BASELINE " +
-            JSON.stringify({
-              ...labels,
-              phase,
-              pathname: location.pathname,
-              locale: document.documentElement.lang,
-              direction: document.documentElement.dir,
-              activeTag: document.activeElement?.tagName ?? null,
-              activeId: document.activeElement?.id ?? null,
-              sourceConnected: source.isConnected,
-              sourceDisabled: source.matches(":disabled"),
-              sourceBusy: source.getAttribute("aria-busy"),
-              sameNode: source.isConnected,
-            }),
-        );
-      };
-      let previous = "";
-      const observer = new MutationObserver(() => {
-        const current = JSON.stringify([
-          source.isConnected,
-          source.matches(":disabled"),
-          source.getAttribute("aria-busy"),
-          location.pathname,
-        ]);
-        if (current !== previous) {
-          previous = current;
-          read("transition");
-        }
-      });
-      observer.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ["disabled", "aria-busy"],
-      });
-      read("before");
-      return { read, observer };
-    },
-    { family: "messaging-conversation", action: "Translate English" },
-  );
   await translateEnControl.press("Enter");
   await expect(message).toContainText("Could we use the garden?");
   await expect(message).toContainText(
@@ -295,12 +136,6 @@ test("booking customer keeps the original while using fictional translations acr
   await expect(
     message.getByRole("button", { name: "View original" }),
   ).toBeFocused();
-  await translateEnMeasurement.evaluate((measurement) => {
-    measurement.read("settled");
-    measurement.observer.disconnect();
-  });
-  await translateEnMeasurement.dispose();
-  await translateEnSource.dispose();
   await message.getByRole("button", { name: "View original" }).click();
   await expect(message.locator("p[dir=rtl]")).toHaveText(
     "هل يمكننا استخدام الحديقة؟",
@@ -310,52 +145,6 @@ test("booking customer keeps the original while using fictional translations acr
   });
   await reportEnControl.focus();
   await expect(reportEnControl).toBeFocused();
-  const reportEnSource = await reportEnControl.elementHandle();
-  if (!reportEnSource) throw new Error("Focus measurement source is missing");
-  const reportEnMeasurement = await reportEnSource.evaluateHandle(
-    (source, labels) => {
-      const read = (phase: string) => {
-        console.info(
-          "FOCUS_BASELINE " +
-            JSON.stringify({
-              ...labels,
-              phase,
-              pathname: location.pathname,
-              locale: document.documentElement.lang,
-              direction: document.documentElement.dir,
-              activeTag: document.activeElement?.tagName ?? null,
-              activeId: document.activeElement?.id ?? null,
-              sourceConnected: source.isConnected,
-              sourceDisabled: source.matches(":disabled"),
-              sourceBusy: source.getAttribute("aria-busy"),
-              sameNode: source.isConnected,
-            }),
-        );
-      };
-      let previous = "";
-      const observer = new MutationObserver(() => {
-        const current = JSON.stringify([
-          source.isConnected,
-          source.matches(":disabled"),
-          source.getAttribute("aria-busy"),
-          location.pathname,
-        ]);
-        if (current !== previous) {
-          previous = current;
-          read("transition");
-        }
-      });
-      observer.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ["disabled", "aria-busy"],
-      });
-      read("before");
-      return { read, observer };
-    },
-    { family: "messaging-conversation", action: "Report English" },
-  );
   await reportEnControl.press("Enter");
   await expect(message.getByRole("status")).toContainText(
     "Translation reported.",
@@ -363,12 +152,6 @@ test("booking customer keeps the original while using fictional translations acr
   await expect(
     message.getByRole("button", { name: "View translation" }),
   ).toBeFocused();
-  await reportEnMeasurement.evaluate((measurement) => {
-    measurement.read("settled");
-    measurement.observer.disconnect();
-  });
-  await reportEnMeasurement.dispose();
-  await reportEnSource.dispose();
 
   await openHeaderPanel(page, "language");
   await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
@@ -390,61 +173,9 @@ test("booking customer keeps the original while using fictional translations acr
   const sendArControl = page.getByRole("button", { name: "إرسال الرسالة" });
   await sendArControl.focus();
   await expect(sendArControl).toBeFocused();
-  const sendArSource = await sendArControl.elementHandle();
-  if (!sendArSource) throw new Error("Focus measurement source is missing");
-  const sendArMeasurement = await sendArSource.evaluateHandle(
-    (source, labels) => {
-      const read = (phase: string) => {
-        console.info(
-          "FOCUS_BASELINE " +
-            JSON.stringify({
-              ...labels,
-              phase,
-              pathname: location.pathname,
-              locale: document.documentElement.lang,
-              direction: document.documentElement.dir,
-              activeTag: document.activeElement?.tagName ?? null,
-              activeId: document.activeElement?.id ?? null,
-              sourceConnected: source.isConnected,
-              sourceDisabled: source.matches(":disabled"),
-              sourceBusy: source.getAttribute("aria-busy"),
-              sameNode: source.isConnected,
-            }),
-        );
-      };
-      let previous = "";
-      const observer = new MutationObserver(() => {
-        const current = JSON.stringify([
-          source.isConnected,
-          source.matches(":disabled"),
-          source.getAttribute("aria-busy"),
-          location.pathname,
-        ]);
-        if (current !== previous) {
-          previous = current;
-          read("transition");
-        }
-      });
-      observer.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ["disabled", "aria-busy"],
-      });
-      read("before");
-      return { read, observer };
-    },
-    { family: "messaging-conversation", action: "Send Arabic" },
-  );
   await sendArControl.press("Enter");
   await expect(page.getByLabel("الرسالة", { exact: true })).toHaveValue("");
   await expect(sendArControl).toBeFocused();
-  await sendArMeasurement.evaluate((measurement) => {
-    measurement.read("settled");
-    measurement.observer.disconnect();
-  });
-  await sendArMeasurement.dispose();
-  await sendArSource.dispose();
   await openHeaderPanel(page, "language");
   await page.getByRole("banner").getByRole("link", { name: "English" }).focus();
   await page.keyboard.press("Tab");

@@ -202,52 +202,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
     .getByRole("button", { name: "Clear selection", exact: true });
   await periodClearControl.focus();
   await expect(periodClearControl).toBeFocused();
-  const periodClearSource = await periodClearControl.elementHandle();
-  if (!periodClearSource)
-    throw new Error("Focus measurement source is missing");
-  const periodClearMeasurement = await periodClearSource.evaluateHandle(
-    (source, labels) => {
-      const rows: Record<string, string | boolean | number | null>[] = [];
-      const read = (phase: string) => {
-        rows.push({
-          family: labels.family,
-          action: labels.action,
-          phase,
-          pathname: location.pathname,
-          locale: document.documentElement.lang,
-          direction: document.documentElement.dir,
-          activeTag: document.activeElement?.tagName ?? null,
-          activeId: document.activeElement?.id ?? null,
-          sourceConnected: source.isConnected,
-          sourceDisabled: source.matches(":disabled"),
-          sourceBusy: source.getAttribute("aria-busy"),
-          sameNode: source.isConnected,
-        });
-      };
-      let previous = "";
-      const observer = new MutationObserver(() => {
-        const current = JSON.stringify([
-          source.isConnected,
-          source.matches(":disabled"),
-          source.getAttribute("aria-busy"),
-          location.pathname,
-        ]);
-        if (current !== previous) {
-          previous = current;
-          read("transition");
-        }
-      });
-      observer.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ["disabled", "aria-busy"],
-      });
-      read("before");
-      return { read, observer, rows };
-    },
-    { family: "cottage-booking-period-picker", action: "Clear selection" },
-  );
   await periodClearControl.press("Enter");
   await expect(page).toHaveURL(
     (url) => url.searchParams.getAll("selection").length === 0,
@@ -265,19 +219,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
       exact: true,
     }),
   ).toBeFocused();
-  const periodClearRows = await periodClearMeasurement.evaluate(
-    (measurement) => {
-      measurement.read("settled");
-      measurement.observer.disconnect();
-      return measurement.rows;
-    },
-  );
-  await test.info().attach("focus-periodClear", {
-    body: JSON.stringify(periodClearRows),
-    contentType: "application/json",
-  });
-  await periodClearMeasurement.dispose();
-  await periodClearSource.dispose();
   await page.goto(`/en/cottages/${slug}?${query.toString()}`);
   expect(new URL(page.url()).searchParams.getAll("selection")).toEqual([
     `${requestedDay}:shift:${shift.position}`,
@@ -368,71 +309,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await expect(periodToggleControl).toBeFocused();
     const periodToggleSource = await periodToggleControl.elementHandle();
     if (!periodToggleSource)
-      throw new Error("Focus measurement source is missing");
-    const periodToggleMeasurement = await periodToggleSource.evaluateHandle(
-      (source, labels) => {
-        const rows: Record<string, string | boolean | number | null>[] = [];
-        const read = (phase: string) => {
-          const placeholders = [
-            ...(source
-              .closest("aside")
-              ?.querySelectorAll("button[aria-busy=true]") ?? []),
-          ];
-          rows.push({
-            family: labels.family,
-            action: "Quote and Message pending placeholders",
-            phase,
-            pathname: location.pathname,
-            locale: document.documentElement.lang,
-            direction: document.documentElement.dir,
-            pendingPlaceholderCount: placeholders.length,
-            pendingPlaceholdersDisabled:
-              placeholders.length === 2 &&
-              placeholders.every((button) => button.matches(":disabled")),
-          });
-
-          rows.push({
-            family: labels.family,
-            action: labels.action,
-            phase,
-            pathname: location.pathname,
-            locale: document.documentElement.lang,
-            direction: document.documentElement.dir,
-            activeTag: document.activeElement?.tagName ?? null,
-            activeId: document.activeElement?.id ?? null,
-            sourceConnected: source.isConnected,
-            sourceDisabled: source.matches(":disabled"),
-            sourceBusy: source.getAttribute("aria-busy"),
-            sameNode: source.isConnected,
-          });
-        };
-        let previous = "";
-        const observer = new MutationObserver(() => {
-          const current = JSON.stringify([
-            source.isConnected,
-            source.matches(":disabled"),
-            source.getAttribute("aria-busy"),
-            location.pathname,
-          ]);
-          if (current !== previous) {
-            previous = current;
-            read("transition");
-          }
-        });
-        observer.observe(document.documentElement, {
-          subtree: true,
-          childList: true,
-          attributes: true,
-          attributeFilter: ["disabled", "aria-busy"],
-        });
-        read("before");
-        return { read, observer, rows };
-      },
-      {
-        family: "cottage-booking-period-picker",
-        action: "Toggle available period",
-      },
-    );
+      throw new Error("Focus source is missing");
     await periodToggleControl.press("Enter");
     await expect(
       page.getByRole("link", { name: copy.quote, exact: true }),
@@ -444,18 +321,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
         (source) => document.activeElement === source,
       ),
     ).toBe(true);
-    const periodToggleRows = await periodToggleMeasurement.evaluate(
-      (measurement) => {
-        measurement.read("settled");
-        measurement.observer.disconnect();
-        return measurement.rows;
-      },
-    );
-    await test.info().attach("focus-periodToggle", {
-      body: JSON.stringify(periodToggleRows),
-      contentType: "application/json",
-    });
-    await periodToggleMeasurement.dispose();
     await periodToggleSource.dispose();
 
     await page.getByRole("link", { name: copy.quote }).click();
@@ -491,65 +356,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
   });
   await inlineSendControl.focus();
   await expect(inlineSendControl).toBeFocused();
-  const inlineSendSource = await inlineSendControl.elementHandle();
-  if (!inlineSendSource) throw new Error("Focus measurement source is missing");
-  const inlineSendMeasurement = await inlineSendSource.evaluateHandle(
-    (source, labels) => {
-      const rows: Record<string, string | boolean | number | null>[] = [];
-      const read = (phase: string) => {
-        rows.push({
-          family: labels.family,
-          action: labels.action,
-          phase,
-          pathname: location.pathname,
-          locale: document.documentElement.lang,
-          direction: document.documentElement.dir,
-          activeTag: document.activeElement?.tagName ?? null,
-          activeId: document.activeElement?.id ?? null,
-          sourceConnected: source.isConnected,
-          sourceDisabled: source.matches(":disabled"),
-          sourceBusy: source.getAttribute("aria-busy"),
-          sameNode: source.isConnected,
-        });
-      };
-      let previous = "";
-      const observer = new MutationObserver(() => {
-        const current = JSON.stringify([
-          source.isConnected,
-          source.matches(":disabled"),
-          source.getAttribute("aria-busy"),
-          location.pathname,
-        ]);
-        if (current !== previous) {
-          previous = current;
-          read("transition");
-        }
-      });
-      observer.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ["disabled", "aria-busy"],
-      });
-      read("before");
-      return { read, observer, rows };
-    },
-    { family: "phone-access-form", action: "Inline Send verification code" },
-  );
   await inlineSendControl.press("Enter");
   const verificationCode = page.getByLabel("Verification code");
   await expect(verificationCode).toBeVisible();
-  const inlineSendRows = await inlineSendMeasurement.evaluate((measurement) => {
-    measurement.read("settled");
-    measurement.observer.disconnect();
-    return measurement.rows;
-  });
-  await test.info().attach("focus-inlineSend", {
-    body: JSON.stringify(inlineSendRows),
-    contentType: "application/json",
-  });
-  await inlineSendMeasurement.dispose();
-  await inlineSendSource.dispose();
 
   await verificationCode.fill("123456");
   const inlineVerifyControl = page.getByRole("button", {
@@ -558,52 +367,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
   });
   await inlineVerifyControl.focus();
   await expect(inlineVerifyControl).toBeFocused();
-  const inlineVerifySource = await inlineVerifyControl.elementHandle();
-  if (!inlineVerifySource)
-    throw new Error("Focus measurement source is missing");
-  const inlineVerifyMeasurement = await inlineVerifySource.evaluateHandle(
-    (source, labels) => {
-      const rows: Record<string, string | boolean | number | null>[] = [];
-      const read = (phase: string) => {
-        rows.push({
-          family: labels.family,
-          action: labels.action,
-          phase,
-          pathname: location.pathname,
-          locale: document.documentElement.lang,
-          direction: document.documentElement.dir,
-          activeTag: document.activeElement?.tagName ?? null,
-          activeId: document.activeElement?.id ?? null,
-          sourceConnected: source.isConnected,
-          sourceDisabled: source.matches(":disabled"),
-          sourceBusy: source.getAttribute("aria-busy"),
-          sameNode: source.isConnected,
-        });
-      };
-      let previous = "";
-      const observer = new MutationObserver(() => {
-        const current = JSON.stringify([
-          source.isConnected,
-          source.matches(":disabled"),
-          source.getAttribute("aria-busy"),
-          location.pathname,
-        ]);
-        if (current !== previous) {
-          previous = current;
-          read("transition");
-        }
-      });
-      observer.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ["disabled", "aria-busy"],
-      });
-      read("before");
-      return { read, observer, rows };
-    },
-    { family: "phone-access-form", action: "Inline Verify" },
-  );
   const inlineRequestUrl = page.url();
   const inlineRequestFrame = page.getByRole("region", {
     name: "Send your Booking Request",
@@ -615,19 +378,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await expect(
     page.getByRole("heading", { name: "Send your Booking Request" }),
   ).toBeVisible();
-  const inlineVerifyRows = await inlineVerifyMeasurement.evaluate(
-    (measurement) => {
-      measurement.read("settled");
-      measurement.observer.disconnect();
-      return measurement.rows;
-    },
-  );
-  await test.info().attach("focus-inlineVerify", {
-    body: JSON.stringify(inlineVerifyRows),
-    contentType: "application/json",
-  });
-  await inlineVerifyMeasurement.dispose();
-  await inlineVerifySource.dispose();
 
   // Same-route completion refreshes the account header before switching language.
   await expect(
@@ -674,52 +424,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
   });
   await requestSubmitControl.focus();
   await expect(requestSubmitControl).toBeFocused();
-  const requestSubmitSource = await requestSubmitControl.elementHandle();
-  if (!requestSubmitSource)
-    throw new Error("Focus measurement source is missing");
-  const requestSubmitMeasurement = await requestSubmitSource.evaluateHandle(
-    (source, labels) => {
-      const rows: Record<string, string | boolean | number | null>[] = [];
-      const read = (phase: string) => {
-        rows.push({
-          family: labels.family,
-          action: labels.action,
-          phase,
-          pathname: location.pathname,
-          locale: document.documentElement.lang,
-          direction: document.documentElement.dir,
-          activeTag: document.activeElement?.tagName ?? null,
-          activeId: document.activeElement?.id ?? null,
-          sourceConnected: source.isConnected,
-          sourceDisabled: source.matches(":disabled"),
-          sourceBusy: source.getAttribute("aria-busy"),
-          sameNode: source.isConnected,
-        });
-      };
-      let previous = "";
-      const observer = new MutationObserver(() => {
-        const current = JSON.stringify([
-          source.isConnected,
-          source.matches(":disabled"),
-          source.getAttribute("aria-busy"),
-          location.pathname,
-        ]);
-        if (current !== previous) {
-          previous = current;
-          read("transition");
-        }
-      });
-      observer.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ["disabled", "aria-busy"],
-      });
-      read("before");
-      return { read, observer, rows };
-    },
-    { family: "booking-request-form", action: "Submit duplicate request" },
-  );
   const submitRouteUrl = page.url();
   let releaseSubmitResponse: () => void = () => {};
   const submitRelease = new Promise<void>((resolve) => {
@@ -764,19 +468,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
     releaseSubmitResponse();
     await page.unroute(submitRouteUrl, holdSubmitResponse);
   }
-  const requestSubmitRows = await requestSubmitMeasurement.evaluate(
-    (measurement) => {
-      measurement.read("settled");
-      measurement.observer.disconnect();
-      return measurement.rows;
-    },
-  );
-  await test.info().attach("focus-requestSubmit", {
-    body: JSON.stringify(requestSubmitRows),
-    contentType: "application/json",
-  });
-  await requestSubmitMeasurement.dispose();
-  await requestSubmitSource.dispose();
 
   await expect(page.getByText(/does not reserve/)).toHaveCount(0);
   await expect(page.getByText("Owner response deadline")).toBeVisible();
@@ -917,52 +608,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
     });
     await declineArControl.focus();
     await expect(declineArControl).toBeFocused();
-    const declineArSource = await declineArControl.elementHandle();
-    if (!declineArSource)
-      throw new Error("Focus measurement source is missing");
-    const declineArMeasurement = await declineArSource.evaluateHandle(
-      (source, labels) => {
-        const rows: Record<string, string | boolean | number | null>[] = [];
-        const read = (phase: string) => {
-          rows.push({
-            family: labels.family,
-            action: labels.action,
-            phase,
-            pathname: location.pathname,
-            locale: document.documentElement.lang,
-            direction: document.documentElement.dir,
-            activeTag: document.activeElement?.tagName ?? null,
-            activeId: document.activeElement?.id ?? null,
-            sourceConnected: source.isConnected,
-            sourceDisabled: source.matches(":disabled"),
-            sourceBusy: source.getAttribute("aria-busy"),
-            sameNode: source.isConnected,
-          });
-        };
-        let previous = "";
-        const observer = new MutationObserver(() => {
-          const current = JSON.stringify([
-            source.isConnected,
-            source.matches(":disabled"),
-            source.getAttribute("aria-busy"),
-            location.pathname,
-          ]);
-          if (current !== previous) {
-            previous = current;
-            read("transition");
-          }
-        });
-        observer.observe(document.documentElement, {
-          subtree: true,
-          childList: true,
-          attributes: true,
-          attributeFilter: ["disabled", "aria-busy"],
-        });
-        read("before");
-        return { read, observer, rows };
-      },
-      { family: "booking-request-decision-controls", action: "Decline Arabic" },
-    );
     await declineArControl.press("Enter");
     await expect(
       arabicNotice.getByText("مرفوض", { exact: true }),
@@ -970,17 +615,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await expect(
       ownerPage.locator("#owner-booking-requests-heading"),
     ).toBeFocused();
-    const declineArRows = await declineArMeasurement.evaluate((measurement) => {
-      measurement.read("settled");
-      measurement.observer.disconnect();
-      return measurement.rows;
-    });
-    await test.info().attach("focus-declineAr", {
-      body: JSON.stringify(declineArRows),
-      contentType: "application/json",
-    });
-    await declineArMeasurement.dispose();
-    await declineArSource.dispose();
 
     await ownerPage.reload();
     await expect(
@@ -1001,68 +635,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
     });
     await withdrawCkbControl.focus();
     await expect(withdrawCkbControl).toBeFocused();
-    const withdrawCkbSource = await withdrawCkbControl.elementHandle();
-    if (!withdrawCkbSource)
-      throw new Error("Focus measurement source is missing");
-    const withdrawCkbMeasurement = await withdrawCkbSource.evaluateHandle(
-      (source, labels) => {
-        const rows: Record<string, string | boolean | number | null>[] = [];
-        const read = (phase: string) => {
-          rows.push({
-            family: labels.family,
-            action: labels.action,
-            phase,
-            pathname: location.pathname,
-            locale: document.documentElement.lang,
-            direction: document.documentElement.dir,
-            activeTag: document.activeElement?.tagName ?? null,
-            activeId: document.activeElement?.id ?? null,
-            sourceConnected: source.isConnected,
-            sourceDisabled: source.matches(":disabled"),
-            sourceBusy: source.getAttribute("aria-busy"),
-            sameNode: source.isConnected,
-          });
-        };
-        let previous = "";
-        const observer = new MutationObserver(() => {
-          const current = JSON.stringify([
-            source.isConnected,
-            source.matches(":disabled"),
-            source.getAttribute("aria-busy"),
-            location.pathname,
-          ]);
-          if (current !== previous) {
-            previous = current;
-            read("transition");
-          }
-        });
-        observer.observe(document.documentElement, {
-          subtree: true,
-          childList: true,
-          attributes: true,
-          attributeFilter: ["disabled", "aria-busy"],
-        });
-        read("before");
-        return { read, observer, rows };
-      },
-      { family: "customer-booking-request-status", action: "Withdraw Sorani" },
-    );
     await withdrawCkbControl.press("Enter");
     await expect(page.locator(".status-banner")).toContainText("کشێنراوەتەوە");
     await expect(page.getByRole("main")).toBeFocused();
-    const withdrawCkbRows = await withdrawCkbMeasurement.evaluate(
-      (measurement) => {
-        measurement.read("settled");
-        measurement.observer.disconnect();
-        return measurement.rows;
-      },
-    );
-    await test.info().attach("focus-withdrawCkb", {
-      body: JSON.stringify(withdrawCkbRows),
-      contentType: "application/json",
-    });
-    await withdrawCkbMeasurement.dispose();
-    await withdrawCkbSource.dispose();
 
     await page.reload();
     await expect(
@@ -1080,55 +655,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
     });
     await declineEnControl.focus();
     await expect(declineEnControl).toBeFocused();
-    const declineEnSource = await declineEnControl.elementHandle();
-    if (!declineEnSource)
-      throw new Error("Focus measurement source is missing");
-    const declineEnMeasurement = await declineEnSource.evaluateHandle(
-      (source, labels) => {
-        const rows: Record<string, string | boolean | number | null>[] = [];
-        const read = (phase: string) => {
-          rows.push({
-            family: labels.family,
-            action: labels.action,
-            phase,
-            pathname: location.pathname,
-            locale: document.documentElement.lang,
-            direction: document.documentElement.dir,
-            activeTag: document.activeElement?.tagName ?? null,
-            activeId: document.activeElement?.id ?? null,
-            sourceConnected: source.isConnected,
-            sourceDisabled: source.matches(":disabled"),
-            sourceBusy: source.getAttribute("aria-busy"),
-            sameNode: source.isConnected,
-          });
-        };
-        let previous = "";
-        const observer = new MutationObserver(() => {
-          const current = JSON.stringify([
-            source.isConnected,
-            source.matches(":disabled"),
-            source.getAttribute("aria-busy"),
-            location.pathname,
-          ]);
-          if (current !== previous) {
-            previous = current;
-            read("transition");
-          }
-        });
-        observer.observe(document.documentElement, {
-          subtree: true,
-          childList: true,
-          attributes: true,
-          attributeFilter: ["disabled", "aria-busy"],
-        });
-        read("before");
-        return { read, observer, rows };
-      },
-      {
-        family: "booking-request-decision-controls",
-        action: "Decline English",
-      },
-    );
     await declineEnControl.press("Enter");
     await expect(
       ownerNotice.getByText("Declined", { exact: true }),
@@ -1136,17 +662,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await expect(
       ownerPage.locator("#owner-booking-requests-heading"),
     ).toBeFocused();
-    const declineEnRows = await declineEnMeasurement.evaluate((measurement) => {
-      measurement.read("settled");
-      measurement.observer.disconnect();
-      return measurement.rows;
-    });
-    await test.info().attach("focus-declineEn", {
-      body: JSON.stringify(declineEnRows),
-      contentType: "application/json",
-    });
-    await declineEnMeasurement.dispose();
-    await declineEnSource.dispose();
 
     await ownerPage.reload();
     await expect(
@@ -1175,72 +690,10 @@ test("a verified Customer double-submit creates one Pending request and one mini
     });
     await withdrawEnControl.focus();
     await expect(withdrawEnControl).toBeFocused();
-    const withdrawEnSource = await withdrawEnControl.elementHandle();
-    if (!withdrawEnSource)
-      throw new Error("Focus measurement source is missing");
-    const withdrawEnMeasurement = await withdrawEnSource.evaluateHandle(
-      (source, labels) => {
-        const rows: Record<string, string | boolean | number | null>[] = [];
-        const read = (phase: string) => {
-          rows.push({
-            family: labels.family,
-            action: labels.action,
-            phase,
-            pathname: location.pathname,
-            locale: document.documentElement.lang,
-            direction: document.documentElement.dir,
-            activeTag: document.activeElement?.tagName ?? null,
-            activeId: document.activeElement?.id ?? null,
-            sourceConnected: source.isConnected,
-            sourceDisabled: source.matches(":disabled"),
-            sourceBusy: source.getAttribute("aria-busy"),
-            sameNode: source.isConnected,
-          });
-        };
-        let previous = "";
-        const observer = new MutationObserver(() => {
-          const current = JSON.stringify([
-            source.isConnected,
-            source.matches(":disabled"),
-            source.getAttribute("aria-busy"),
-            location.pathname,
-          ]);
-          if (current !== previous) {
-            previous = current;
-            read("transition");
-          }
-        });
-        observer.observe(document.documentElement, {
-          subtree: true,
-          childList: true,
-          attributes: true,
-          attributeFilter: ["disabled", "aria-busy"],
-        });
-        read("before");
-        return { read, observer, rows };
-      },
-      {
-        family: "customer-booking-request-status",
-        action: "Withdraw English processing",
-      },
-    );
     await withdrawEnControl.press("Enter");
     await expect(page.locator(".status-banner")).toContainText("Processing");
     await expect(page.locator(".status-banner")).toContainText("Withdrawn");
     await expect(page.getByRole("main")).toBeFocused();
-    const withdrawEnRows = await withdrawEnMeasurement.evaluate(
-      (measurement) => {
-        measurement.read("settled");
-        measurement.observer.disconnect();
-        return measurement.rows;
-      },
-    );
-    await test.info().attach("focus-withdrawEn", {
-      body: JSON.stringify(withdrawEnRows),
-      contentType: "application/json",
-    });
-    await withdrawEnMeasurement.dispose();
-    await withdrawEnSource.dispose();
 
     const resubmittedReference = await submitAnotherRequest("en");
     await page.goto(`/en/booking-requests/${resubmittedReference}`);
@@ -1259,102 +712,13 @@ test("a verified Customer double-submit creates one Pending request and one mini
         .getByRole("main")
         .elementHandle();
       if (!ownerMainSource)
-        throw new Error("Owner detail main measurement source is missing");
-      const ownerMainMeasurement = await ownerMainSource.evaluateHandle(
-        (source) => {
-          const rows: Record<string, string | boolean | null>[] = [];
-          const read = (phase: string) =>
-            rows.push({
-              family: "booking-request-decision-controls",
-              action: "Owner detail main identity",
-              phase,
-              pathname: location.pathname,
-              locale: document.documentElement.lang,
-              direction: document.documentElement.dir,
-              activeTag: document.activeElement?.tagName ?? null,
-              activeId: document.activeElement?.id ?? null,
-              sourceConnected: source.isConnected,
-              sourceDisabled: source.matches(":disabled"),
-              sourceBusy: source.getAttribute("aria-busy"),
-              sameNode: document.querySelector("main") === source,
-            });
-          let previous = JSON.stringify([
-            source.isConnected,
-            document.querySelector("main") === source,
-          ]);
-          const observer = new MutationObserver(() => {
-            const current = JSON.stringify([
-              source.isConnected,
-              document.querySelector("main") === source,
-            ]);
-            if (current !== previous) {
-              previous = current;
-              read("replacement");
-            }
-          });
-          observer.observe(document.documentElement, {
-            subtree: true,
-            childList: true,
-          });
-          read("before-accept");
-          return { read, observer, rows };
-        },
-      );
+        throw new Error("Owner detail main source is missing");
       const ownerAcceptControl = ownerDetailPage.getByRole("button", {
         name: "Accept complete request",
         exact: true,
       });
       await ownerAcceptControl.focus();
       await expect(ownerAcceptControl).toBeFocused();
-      const ownerAcceptSource = await ownerAcceptControl.elementHandle();
-      if (!ownerAcceptSource)
-        throw new Error("Focus measurement source is missing");
-      const ownerAcceptMeasurement = await ownerAcceptSource.evaluateHandle(
-        (source, labels) => {
-          const rows: Record<string, string | boolean | number | null>[] = [];
-          const read = (phase: string) => {
-            rows.push({
-              family: labels.family,
-              action: labels.action,
-              phase,
-              pathname: location.pathname,
-              locale: document.documentElement.lang,
-              direction: document.documentElement.dir,
-              activeTag: document.activeElement?.tagName ?? null,
-              activeId: document.activeElement?.id ?? null,
-              sourceConnected: source.isConnected,
-              sourceDisabled: source.matches(":disabled"),
-              sourceBusy: source.getAttribute("aria-busy"),
-              sameNode: source.isConnected,
-            });
-          };
-          let previous = "";
-          const observer = new MutationObserver(() => {
-            const current = JSON.stringify([
-              source.isConnected,
-              source.matches(":disabled"),
-              source.getAttribute("aria-busy"),
-              location.pathname,
-            ]);
-            if (current !== previous) {
-              previous = current;
-              read("transition");
-            }
-          });
-          observer.observe(document.documentElement, {
-            subtree: true,
-            childList: true,
-            attributes: true,
-            attributeFilter: ["disabled", "aria-busy"],
-          });
-          read("before");
-          return { read, observer, rows };
-        },
-        {
-          family: "booking-request-decision-controls",
-          action: "Accept mounted owner detail",
-        },
-      );
       await ownerAcceptControl.press("Enter");
       // The Customer stays mounted across the independent Owner action.
       await expect(page.getByRole("status")).toContainText(
@@ -1379,22 +743,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
         ),
       ).toBe(true);
       await expect(ownerDetailPage.getByRole("main")).toBeFocused();
-      const ownerAcceptRows = await ownerAcceptMeasurement.evaluate(
-        (measurement) => {
-          measurement.read("settled");
-          measurement.observer.disconnect();
-          return measurement.rows;
-        },
-      );
-      await test.info().attach("focus-ownerAccept", {
-        body: JSON.stringify(ownerAcceptRows),
-        contentType: "application/json",
-      });
-      await ownerAcceptMeasurement.dispose();
-      await ownerAcceptSource.dispose();
-      await ownerMainMeasurement.evaluate((measurement) =>
-        measurement.read("capture-processing"),
-      );
 
       const ownerBookingLink = {
         en: "Open confirmed booking",
@@ -1590,60 +938,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
                 const conversationOpenControl = conversation;
                 await conversationOpenControl.focus();
                 await expect(conversationOpenControl).toBeFocused();
-                const conversationOpenSource =
-                  await conversationOpenControl.elementHandle();
-                if (!conversationOpenSource)
-                  throw new Error("Focus measurement source is missing");
-                const conversationOpenMeasurement =
-                  await conversationOpenSource.evaluateHandle(
-                    (source, labels) => {
-                      const rows: Record<
-                        string,
-                        string | boolean | number | null
-                      >[] = [];
-                      const read = (phase: string) => {
-                        rows.push({
-                          family: labels.family,
-                          action: labels.action,
-                          phase,
-                          pathname: location.pathname,
-                          locale: document.documentElement.lang,
-                          direction: document.documentElement.dir,
-                          activeTag: document.activeElement?.tagName ?? null,
-                          activeId: document.activeElement?.id ?? null,
-                          sourceConnected: source.isConnected,
-                          sourceDisabled: source.matches(":disabled"),
-                          sourceBusy: source.getAttribute("aria-busy"),
-                          sameNode: source.isConnected,
-                        });
-                      };
-                      let previous = "";
-                      const observer = new MutationObserver(() => {
-                        const current = JSON.stringify([
-                          source.isConnected,
-                          source.matches(":disabled"),
-                          source.getAttribute("aria-busy"),
-                          location.pathname,
-                        ]);
-                        if (current !== previous) {
-                          previous = current;
-                          read("transition");
-                        }
-                      });
-                      observer.observe(document.documentElement, {
-                        subtree: true,
-                        childList: true,
-                        attributes: true,
-                        attributeFilter: ["disabled", "aria-busy"],
-                      });
-                      read("before");
-                      return { read, observer, rows };
-                    },
-                    {
-                      family: "messaging-booking-link",
-                      action: "Open booking conversation",
-                    },
-                  );
                 await conversationOpenControl.press("Enter");
                 await expect(surface).toHaveURL(
                   /\/en\/messages\/[0-9a-f-]{36}/,
@@ -1661,18 +955,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
                     level: 1,
                   }),
                 ).toBeFocused();
-                const conversationOpenRows =
-                  await conversationOpenMeasurement.evaluate((measurement) => {
-                    measurement.read("settled");
-                    measurement.observer.disconnect();
-                    return measurement.rows;
-                  });
-                await test.info().attach("focus-conversationOpen", {
-                  body: JSON.stringify(conversationOpenRows),
-                  contentType: "application/json",
-                });
-                await conversationOpenMeasurement.dispose();
-                await conversationOpenSource.dispose();
                 await surface.goto(originalRequestUrl);
                 await expect(
                   surface.getByRole("heading", { name: copy.paidHeading }),
@@ -1832,18 +1114,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
         ),
       ).toBe(true);
       await expect(ownerDetailPage.getByRole("main")).toBeFocused();
-      const ownerMainRows = await ownerMainMeasurement.evaluate(
-        (measurement) => {
-          measurement.read("confirmed-replacement");
-          measurement.observer.disconnect();
-          return measurement.rows;
-        },
-      );
-      await test.info().attach("focus-ownerMain", {
-        body: JSON.stringify(ownerMainRows),
-        contentType: "application/json",
-      });
-      await ownerMainMeasurement.dispose();
       await ownerMainSource.dispose();
 
       // The upgrade backfill helper shares identity with live producers. Exercise
@@ -1972,76 +1242,12 @@ test("a verified Customer double-submit creates one Pending request and one mini
       });
       await confirmationRetryControl.focus();
       await expect(confirmationRetryControl).toBeFocused();
-      const confirmationRetrySource =
-        await confirmationRetryControl.elementHandle();
-      if (!confirmationRetrySource)
-        throw new Error("Focus measurement source is missing");
-      const confirmationRetryMeasurement =
-        await confirmationRetrySource.evaluateHandle(
-          (source, labels) => {
-            const rows: Record<string, string | boolean | number | null>[] = [];
-            const read = (phase: string) => {
-              rows.push({
-                family: labels.family,
-                action: labels.action,
-                phase,
-                pathname: location.pathname,
-                locale: document.documentElement.lang,
-                direction: document.documentElement.dir,
-                activeTag: document.activeElement?.tagName ?? null,
-                activeId: document.activeElement?.id ?? null,
-                sourceConnected: source.isConnected,
-                sourceDisabled: source.matches(":disabled"),
-                sourceBusy: source.getAttribute("aria-busy"),
-                sameNode: source.isConnected,
-              });
-            };
-            let previous = "";
-            const observer = new MutationObserver(() => {
-              const current = JSON.stringify([
-                source.isConnected,
-                source.matches(":disabled"),
-                source.getAttribute("aria-busy"),
-                location.pathname,
-              ]);
-              if (current !== previous) {
-                previous = current;
-                read("transition");
-              }
-            });
-            observer.observe(document.documentElement, {
-              subtree: true,
-              childList: true,
-              attributes: true,
-              attributeFilter: ["disabled", "aria-busy"],
-            });
-            read("before");
-            return { read, observer, rows };
-          },
-          {
-            family: "notification-retry-control",
-            action: "Retry confirmed notice",
-          },
-        );
       await confirmationRetryControl.press("Enter");
       await expect(paidDetails.getByRole("status")).toHaveText("Pending");
       await expect(
         paidDetails.getByRole("button", { name: "Retry confirmation notice" }),
       ).toHaveCount(0);
       await expect(paidDetails.getByRole("status")).toBeFocused();
-      const confirmationRetryRows = await confirmationRetryMeasurement.evaluate(
-        (measurement) => {
-          measurement.read("settled");
-          measurement.observer.disconnect();
-          return measurement.rows;
-        },
-      );
-      await test.info().attach("focus-confirmationRetry", {
-        body: JSON.stringify(confirmationRetryRows),
-        contentType: "application/json",
-      });
-      await confirmationRetryMeasurement.dispose();
-      await confirmationRetrySource.dispose();
 
       await expect(
         paidDetails.getByText("IQD 185,000", { exact: true }),
@@ -2342,58 +1548,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
         });
         await paymentRecoveryControl.focus();
         await expect(paymentRecoveryControl).toBeFocused();
-        const paymentRecoverySource =
-          await paymentRecoveryControl.elementHandle();
-        if (!paymentRecoverySource)
-          throw new Error("Focus measurement source is missing");
-        const paymentRecoveryMeasurement =
-          await paymentRecoverySource.evaluateHandle(
-            (source, labels) => {
-              const rows: Record<string, string | boolean | number | null>[] =
-                [];
-              const read = (phase: string) => {
-                rows.push({
-                  family: labels.family,
-                  action: labels.action,
-                  phase,
-                  pathname: location.pathname,
-                  locale: document.documentElement.lang,
-                  direction: document.documentElement.dir,
-                  activeTag: document.activeElement?.tagName ?? null,
-                  activeId: document.activeElement?.id ?? null,
-                  sourceConnected: source.isConnected,
-                  sourceDisabled: source.matches(":disabled"),
-                  sourceBusy: source.getAttribute("aria-busy"),
-                  sameNode: source.isConnected,
-                });
-              };
-              let previous = "";
-              const observer = new MutationObserver(() => {
-                const current = JSON.stringify([
-                  source.isConnected,
-                  source.matches(":disabled"),
-                  source.getAttribute("aria-busy"),
-                  location.pathname,
-                ]);
-                if (current !== previous) {
-                  previous = current;
-                  read("transition");
-                }
-              });
-              observer.observe(document.documentElement, {
-                subtree: true,
-                childList: true,
-                attributes: true,
-                attributeFilter: ["disabled", "aria-busy"],
-              });
-              read("before");
-              return { read, observer, rows };
-            },
-            {
-              family: "customer-booking-request-status",
-              action: "Use replacement payment",
-            },
-          );
         const customerMainSource = await page.getByRole("main").elementHandle();
         if (!customerMainSource)
           throw new Error("Customer detail main focus source is missing");
@@ -2422,19 +1576,6 @@ test("a verified Customer double-submit creates one Pending request and one mini
           ),
         ).toBe(true);
         await expect(page.getByRole("main")).toBeFocused();
-        const paymentRecoveryRows = await paymentRecoveryMeasurement.evaluate(
-          (measurement) => {
-            measurement.read("settled");
-            measurement.observer.disconnect();
-            return measurement.rows;
-          },
-        );
-        await test.info().attach("focus-paymentRecovery", {
-          body: JSON.stringify(paymentRecoveryRows),
-          contentType: "application/json",
-        });
-        await paymentRecoveryMeasurement.dispose();
-        await paymentRecoverySource.dispose();
 
         expect(observeFailure().confirmations).toBe(0);
         harness.runSql(

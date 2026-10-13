@@ -409,57 +409,9 @@ test.describe("retained cancellation and refund controls", () => {
       });
       await payoutCommandControl.focus();
       await expect(payoutCommandControl).toBeFocused();
-      const payoutCommandSource = await payoutCommandControl.elementHandle();
-      if (!payoutCommandSource)
-        throw new Error("Focus measurement source is missing");
-      const payoutCommandMeasurement = await payoutCommandSource.evaluateHandle(
-        (source, labels) => {
-          const rows: Record<string, string | boolean | null>[] = [];
-          const read = (phase: string) =>
-            rows.push({
-              ...labels,
-              phase,
-              pathname: location.pathname,
-              locale: document.documentElement.lang,
-              direction: document.documentElement.dir,
-              activeTag: document.activeElement?.tagName ?? null,
-              activeId: document.activeElement?.id ?? null,
-              sourceConnected: source.isConnected,
-              sourceDisabled: source.matches(":disabled"),
-              sourceBusy: source.getAttribute("aria-busy"),
-              sameNode: source.isConnected,
-            });
-          let previous = "";
-          const observer = new MutationObserver(() => {
-            const current = JSON.stringify([
-              source.isConnected,
-              source.matches(":disabled"),
-              source.getAttribute("aria-busy"),
-              location.pathname,
-            ]);
-            if (current !== previous) {
-              previous = current;
-              read("transition");
-            }
-          });
-          observer.observe(document.documentElement, {
-            subtree: true,
-            childList: true,
-            attributes: true,
-            attributeFilter: ["disabled", "aria-busy"],
-          });
-          read("before");
-          return { read, observer, rows };
-        },
-        { family: "booking-management-controls", action: action },
-      );
       await payoutCommandControl.press("Enter");
-      return {
-        measurement: payoutCommandMeasurement,
-        source: payoutCommandSource,
-      };
     };
-    const payoutHoldObservation = await command(
+    await command(
       "place_hold",
       "PRIVATE payout review",
     );
@@ -467,23 +419,8 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByRole("heading", { name: p.title, exact: true }),
     ).toBeFocused();
-    const payoutHoldRows = await payoutHoldObservation.measurement.evaluate(
-      (measurement) => {
-        measurement.read("settled");
-        measurement.observer.disconnect();
-        return measurement.rows;
-      },
-    );
-    await test
-      .info()
-      .attach("focus-payoutHold", {
-        body: JSON.stringify(payoutHoldRows),
-        contentType: "application/json",
-      });
-    await payoutHoldObservation.measurement.dispose();
-    await payoutHoldObservation.source.dispose();
 
-    const payoutDisputeObservation = await command(
+    await command(
       "open_dispute",
       "PRIVATE dispute review",
     );
@@ -491,20 +428,6 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByRole("heading", { name: p.title, exact: true }),
     ).toBeFocused();
-    const payoutDisputeRows =
-      await payoutDisputeObservation.measurement.evaluate((measurement) => {
-        measurement.read("settled");
-        measurement.observer.disconnect();
-        return measurement.rows;
-      });
-    await test
-      .info()
-      .attach("focus-payoutDispute", {
-        body: JSON.stringify(payoutDisputeRows),
-        contentType: "application/json",
-      });
-    await payoutDisputeObservation.measurement.dispose();
-    await payoutDisputeObservation.source.dispose();
 
     const resolution = page.getByRole("form", { name: p.resolve_dispute });
     await resolution.getByLabel(p.outcome).selectOption("owner_won");
@@ -517,73 +440,14 @@ test.describe("retained cancellation and refund controls", () => {
     });
     await payoutResolveControl.focus();
     await expect(payoutResolveControl).toBeFocused();
-    const payoutResolveSource = await payoutResolveControl.elementHandle();
-    if (!payoutResolveSource)
-      throw new Error("Focus measurement source is missing");
-    const payoutResolveMeasurement = await payoutResolveSource.evaluateHandle(
-      (source, labels) => {
-        const rows: Record<string, string | boolean | null>[] = [];
-        const read = (phase: string) =>
-          rows.push({
-            ...labels,
-            phase,
-            pathname: location.pathname,
-            locale: document.documentElement.lang,
-            direction: document.documentElement.dir,
-            activeTag: document.activeElement?.tagName ?? null,
-            activeId: document.activeElement?.id ?? null,
-            sourceConnected: source.isConnected,
-            sourceDisabled: source.matches(":disabled"),
-            sourceBusy: source.getAttribute("aria-busy"),
-            sameNode: source.isConnected,
-          });
-        let previous = "";
-        const observer = new MutationObserver(() => {
-          const current = JSON.stringify([
-            source.isConnected,
-            source.matches(":disabled"),
-            source.getAttribute("aria-busy"),
-            location.pathname,
-          ]);
-          if (current !== previous) {
-            previous = current;
-            read("transition");
-          }
-        });
-        observer.observe(document.documentElement, {
-          subtree: true,
-          childList: true,
-          attributes: true,
-          attributeFilter: ["disabled", "aria-busy"],
-        });
-        read("before");
-        return { read, observer, rows };
-      },
-      { family: "booking-management-controls", action: "resolve_dispute" },
-    );
     await payoutResolveControl.press("Enter");
     await expect(page.getByText(p.resolved, { exact: true })).toBeVisible();
     await expect(
       page.getByRole("heading", { name: p.title, exact: true }),
     ).toBeFocused();
-    const payoutResolveRows = await payoutResolveMeasurement.evaluate(
-      (measurement) => {
-        measurement.read("settled");
-        measurement.observer.disconnect();
-        return measurement.rows;
-      },
-    );
-    await test
-      .info()
-      .attach("focus-payoutResolve", {
-        body: JSON.stringify(payoutResolveRows),
-        contentType: "application/json",
-      });
-    await payoutResolveMeasurement.dispose();
-    await payoutResolveSource.dispose();
 
     await expect(page.getByText(p.held, { exact: true })).toBeVisible();
-    const payoutBlockedObservation = await command(
+    await command(
       "settle",
       "Held settlement check",
     );
@@ -596,20 +460,6 @@ test.describe("retained cancellation and refund controls", () => {
         exact: true,
       }),
     ).toBeFocused();
-    const payoutBlockedRows =
-      await payoutBlockedObservation.measurement.evaluate((measurement) => {
-        measurement.read("settled");
-        measurement.observer.disconnect();
-        return measurement.rows;
-      });
-    await test
-      .info()
-      .attach("focus-payoutBlocked", {
-        body: JSON.stringify(payoutBlockedRows),
-        contentType: "application/json",
-      });
-    await payoutBlockedObservation.measurement.dispose();
-    await payoutBlockedObservation.source.dispose();
 
     expect(
       harness.runSql(
@@ -618,7 +468,7 @@ test.describe("retained cancellation and refund controls", () => {
     ).toBe("0");
     await assertResponsiveDetails(page, "platform_administrator");
     await page.goto(`/en/administrator/payments/${reference}`);
-    const payoutReleaseObservation = await command(
+    await command(
       "release_hold",
       "PRIVATE review complete",
     );
@@ -626,22 +476,8 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByRole("heading", { name: p.title, exact: true }),
     ).toBeFocused();
-    const payoutReleaseRows =
-      await payoutReleaseObservation.measurement.evaluate((measurement) => {
-        measurement.read("settled");
-        measurement.observer.disconnect();
-        return measurement.rows;
-      });
-    await test
-      .info()
-      .attach("focus-payoutRelease", {
-        body: JSON.stringify(payoutReleaseRows),
-        contentType: "application/json",
-      });
-    await payoutReleaseObservation.measurement.dispose();
-    await payoutReleaseObservation.source.dispose();
 
-    const payoutSettleObservation = await command(
+    await command(
       "settle",
       "PRIVATE settlement approval",
     );
@@ -657,21 +493,6 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByRole("heading", { name: p.title, exact: true }),
     ).toBeFocused();
-    const payoutSettleRows = await payoutSettleObservation.measurement.evaluate(
-      (measurement) => {
-        measurement.read("settled");
-        measurement.observer.disconnect();
-        return measurement.rows;
-      },
-    );
-    await test
-      .info()
-      .attach("focus-payoutSettle", {
-        body: JSON.stringify(payoutSettleRows),
-        contentType: "application/json",
-      });
-    await payoutSettleObservation.measurement.dispose();
-    await payoutSettleObservation.source.dispose();
 
     const settlementViewport = page.viewportSize()!;
     const settlementObservations: {
@@ -887,50 +708,6 @@ test.describe("retained cancellation and refund controls", () => {
     });
     await cancelCustomerControl.focus();
     await expect(cancelCustomerControl).toBeFocused();
-    const cancelCustomerSource = await cancelCustomerControl.elementHandle();
-    if (!cancelCustomerSource)
-      throw new Error("Focus measurement source is missing");
-    const cancelCustomerMeasurement = await cancelCustomerSource.evaluateHandle(
-      (source, labels) => {
-        const rows: Record<string, string | boolean | null>[] = [];
-        const read = (phase: string) =>
-          rows.push({
-            ...labels,
-            phase,
-            pathname: location.pathname,
-            locale: document.documentElement.lang,
-            direction: document.documentElement.dir,
-            activeTag: document.activeElement?.tagName ?? null,
-            activeId: document.activeElement?.id ?? null,
-            sourceConnected: source.isConnected,
-            sourceDisabled: source.matches(":disabled"),
-            sourceBusy: source.getAttribute("aria-busy"),
-            sameNode: source.isConnected,
-          });
-        let previous = "";
-        const observer = new MutationObserver(() => {
-          const current = JSON.stringify([
-            source.isConnected,
-            source.matches(":disabled"),
-            source.getAttribute("aria-busy"),
-            location.pathname,
-          ]);
-          if (current !== previous) {
-            previous = current;
-            read("transition");
-          }
-        });
-        observer.observe(document.documentElement, {
-          subtree: true,
-          childList: true,
-          attributes: true,
-          attributeFilter: ["disabled", "aria-busy"],
-        });
-        read("before");
-        return { read, observer, rows };
-      },
-      { family: "booking-management-controls", action: "Customer cancel" },
-    );
     await cancelCustomerControl.press("Enter");
     await expect(
       page.getByRole("heading", { name: "Cancelled booking", exact: true }),
@@ -938,21 +715,6 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByRole("heading", { name: messages.en.cancelled, exact: true }),
     ).toBeFocused();
-    const cancelCustomerRows = await cancelCustomerMeasurement.evaluate(
-      (measurement) => {
-        measurement.read("settled");
-        measurement.observer.disconnect();
-        return measurement.rows;
-      },
-    );
-    await test
-      .info()
-      .attach("focus-cancelCustomer", {
-        body: JSON.stringify(cancelCustomerRows),
-        contentType: "application/json",
-      });
-    await cancelCustomerMeasurement.dispose();
-    await cancelCustomerSource.dispose();
 
     await expect(
       page.getByRole("heading", { name: "Full refund required", exact: true }),
@@ -998,6 +760,13 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByText("Private address", { exact: true }),
     ).toHaveCount(0);
+    const cancelledMain = page.locator("#customer-booking-request-detail");
+    await cancelledMain.focus();
+    await expect(cancelledMain).toBeFocused();
+    await page.screenshot({
+      path: test.info().outputPath("cancelled-full-width-main-focus-en.png"),
+      fullPage: true,
+    });
   });
   test("owner must supply a reason and retains the no-payout cancellation outcome", async ({
     page,
@@ -1018,50 +787,6 @@ test.describe("retained cancellation and refund controls", () => {
     });
     await cancelOwnerControl.focus();
     await expect(cancelOwnerControl).toBeFocused();
-    const cancelOwnerSource = await cancelOwnerControl.elementHandle();
-    if (!cancelOwnerSource)
-      throw new Error("Focus measurement source is missing");
-    const cancelOwnerMeasurement = await cancelOwnerSource.evaluateHandle(
-      (source, labels) => {
-        const rows: Record<string, string | boolean | null>[] = [];
-        const read = (phase: string) =>
-          rows.push({
-            ...labels,
-            phase,
-            pathname: location.pathname,
-            locale: document.documentElement.lang,
-            direction: document.documentElement.dir,
-            activeTag: document.activeElement?.tagName ?? null,
-            activeId: document.activeElement?.id ?? null,
-            sourceConnected: source.isConnected,
-            sourceDisabled: source.matches(":disabled"),
-            sourceBusy: source.getAttribute("aria-busy"),
-            sameNode: source.isConnected,
-          });
-        let previous = "";
-        const observer = new MutationObserver(() => {
-          const current = JSON.stringify([
-            source.isConnected,
-            source.matches(":disabled"),
-            source.getAttribute("aria-busy"),
-            location.pathname,
-          ]);
-          if (current !== previous) {
-            previous = current;
-            read("transition");
-          }
-        });
-        observer.observe(document.documentElement, {
-          subtree: true,
-          childList: true,
-          attributes: true,
-          attributeFilter: ["disabled", "aria-busy"],
-        });
-        read("before");
-        return { read, observer, rows };
-      },
-      { family: "booking-management-controls", action: "Owner cancel Arabic" },
-    );
     await cancelOwnerControl.press("Enter");
     await expect(
       page.getByRole("heading", { name: messages.ar.cancelled, exact: true }),
@@ -1069,21 +794,6 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByRole("heading", { name: messages.ar.cancelled, exact: true }),
     ).toBeFocused();
-    const cancelOwnerRows = await cancelOwnerMeasurement.evaluate(
-      (measurement) => {
-        measurement.read("settled");
-        measurement.observer.disconnect();
-        return measurement.rows;
-      },
-    );
-    await test
-      .info()
-      .attach("focus-cancelOwner", {
-        body: JSON.stringify(cancelOwnerRows),
-        contentType: "application/json",
-      });
-    await cancelOwnerMeasurement.dispose();
-    await cancelOwnerSource.dispose();
 
     await expect(
       page.getByText(messages.ar.noPayout, { exact: true }),
@@ -1122,54 +832,6 @@ test.describe("retained cancellation and refund controls", () => {
       });
       await exceptionFirstControl.focus();
       await expect(exceptionFirstControl).toBeFocused();
-      const exceptionFirstSource = await exceptionFirstControl.elementHandle();
-      if (!exceptionFirstSource)
-        throw new Error("Focus measurement source is missing");
-      const exceptionFirstMeasurement =
-        await exceptionFirstSource.evaluateHandle(
-          (source, labels) => {
-            const rows: Record<string, string | boolean | null>[] = [];
-            const read = (phase: string) =>
-              rows.push({
-                ...labels,
-                phase,
-                pathname: location.pathname,
-                locale: document.documentElement.lang,
-                direction: document.documentElement.dir,
-                activeTag: document.activeElement?.tagName ?? null,
-                activeId: document.activeElement?.id ?? null,
-                sourceConnected: source.isConnected,
-                sourceDisabled: source.matches(":disabled"),
-                sourceBusy: source.getAttribute("aria-busy"),
-                sameNode: source.isConnected,
-              });
-            let previous = "";
-            const observer = new MutationObserver(() => {
-              const current = JSON.stringify([
-                source.isConnected,
-                source.matches(":disabled"),
-                source.getAttribute("aria-busy"),
-                location.pathname,
-              ]);
-              if (current !== previous) {
-                previous = current;
-                read("transition");
-              }
-            });
-            observer.observe(document.documentElement, {
-              subtree: true,
-              childList: true,
-              attributes: true,
-              attributeFilter: ["disabled", "aria-busy"],
-            });
-            read("before");
-            return { read, observer, rows };
-          },
-          {
-            family: "booking-management-controls",
-            action: "Approve price and fee exception",
-          },
-        );
       await exceptionFirstControl.press("Enter");
       await expectAmount(
         page.getByRole("list", { name: messages.en.approved }),
@@ -1183,21 +845,6 @@ test.describe("retained cancellation and refund controls", () => {
       await expect(
         page.getByRole("heading", { name: messages.en.title, exact: true }),
       ).toBeFocused();
-      const exceptionFirstRows = await exceptionFirstMeasurement.evaluate(
-        (measurement) => {
-          measurement.read("settled");
-          measurement.observer.disconnect();
-          return measurement.rows;
-        },
-      );
-      await test
-        .info()
-        .attach("focus-exceptionFirst", {
-          body: JSON.stringify(exceptionFirstRows),
-          contentType: "application/json",
-        });
-      await exceptionFirstMeasurement.dispose();
-      await exceptionFirstSource.dispose();
 
       await participant(ownerContext, owner, baseURL);
       const ownerPage = await ownerContext.newPage();
@@ -1239,53 +886,6 @@ test.describe("retained cancellation and refund controls", () => {
       });
       await exceptionFeeControl.focus();
       await expect(exceptionFeeControl).toBeFocused();
-      const exceptionFeeSource = await exceptionFeeControl.elementHandle();
-      if (!exceptionFeeSource)
-        throw new Error("Focus measurement source is missing");
-      const exceptionFeeMeasurement = await exceptionFeeSource.evaluateHandle(
-        (source, labels) => {
-          const rows: Record<string, string | boolean | null>[] = [];
-          const read = (phase: string) =>
-            rows.push({
-              ...labels,
-              phase,
-              pathname: location.pathname,
-              locale: document.documentElement.lang,
-              direction: document.documentElement.dir,
-              activeTag: document.activeElement?.tagName ?? null,
-              activeId: document.activeElement?.id ?? null,
-              sourceConnected: source.isConnected,
-              sourceDisabled: source.matches(":disabled"),
-              sourceBusy: source.getAttribute("aria-busy"),
-              sameNode: source.isConnected,
-            });
-          let previous = "";
-          const observer = new MutationObserver(() => {
-            const current = JSON.stringify([
-              source.isConnected,
-              source.matches(":disabled"),
-              source.getAttribute("aria-busy"),
-              location.pathname,
-            ]);
-            if (current !== previous) {
-              previous = current;
-              read("transition");
-            }
-          });
-          observer.observe(document.documentElement, {
-            subtree: true,
-            childList: true,
-            attributes: true,
-            attributeFilter: ["disabled", "aria-busy"],
-          });
-          read("before");
-          return { read, observer, rows };
-        },
-        {
-          family: "booking-management-controls",
-          action: "Approve fee-only exception",
-        },
-      );
       await exceptionFeeControl.press("Enter");
       await expect(
         page.getByRole("list", { name: messages.en.approved }).locator("li"),
@@ -1293,21 +893,6 @@ test.describe("retained cancellation and refund controls", () => {
       await expect(
         page.getByRole("heading", { name: messages.en.title, exact: true }),
       ).toBeFocused();
-      const exceptionFeeRows = await exceptionFeeMeasurement.evaluate(
-        (measurement) => {
-          measurement.read("settled");
-          measurement.observer.disconnect();
-          return measurement.rows;
-        },
-      );
-      await test
-        .info()
-        .attach("focus-exceptionFee", {
-          body: JSON.stringify(exceptionFeeRows),
-          contentType: "application/json",
-        });
-      await exceptionFeeMeasurement.dispose();
-      await exceptionFeeSource.dispose();
 
       expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
       await ownerPage.goto(`${baseURL}/en/owner/booking-requests/${reference}`);
@@ -1334,55 +919,6 @@ test.describe("retained cancellation and refund controls", () => {
       });
       await cancelAdministratorControl.focus();
       await expect(cancelAdministratorControl).toBeFocused();
-      const cancelAdministratorSource =
-        await cancelAdministratorControl.elementHandle();
-      if (!cancelAdministratorSource)
-        throw new Error("Focus measurement source is missing");
-      const cancelAdministratorMeasurement =
-        await cancelAdministratorSource.evaluateHandle(
-          (source, labels) => {
-            const rows: Record<string, string | boolean | null>[] = [];
-            const read = (phase: string) =>
-              rows.push({
-                ...labels,
-                phase,
-                pathname: location.pathname,
-                locale: document.documentElement.lang,
-                direction: document.documentElement.dir,
-                activeTag: document.activeElement?.tagName ?? null,
-                activeId: document.activeElement?.id ?? null,
-                sourceConnected: source.isConnected,
-                sourceDisabled: source.matches(":disabled"),
-                sourceBusy: source.getAttribute("aria-busy"),
-                sameNode: source.isConnected,
-              });
-            let previous = "";
-            const observer = new MutationObserver(() => {
-              const current = JSON.stringify([
-                source.isConnected,
-                source.matches(":disabled"),
-                source.getAttribute("aria-busy"),
-                location.pathname,
-              ]);
-              if (current !== previous) {
-                previous = current;
-                read("transition");
-              }
-            });
-            observer.observe(document.documentElement, {
-              subtree: true,
-              childList: true,
-              attributes: true,
-              attributeFilter: ["disabled", "aria-busy"],
-            });
-            read("before");
-            return { read, observer, rows };
-          },
-          {
-            family: "booking-management-controls",
-            action: "Administrator privileged cancel Sorani",
-          },
-        );
       await cancelAdministratorControl.press("Enter");
       await expect(
         page.getByRole("heading", {
@@ -1393,20 +929,6 @@ test.describe("retained cancellation and refund controls", () => {
       await expect(
         page.getByRole("heading", { name: messages.ckb.cancelled, exact: true }),
       ).toBeFocused();
-      const cancelAdministratorRows =
-        await cancelAdministratorMeasurement.evaluate((measurement) => {
-          measurement.read("settled");
-          measurement.observer.disconnect();
-          return measurement.rows;
-        });
-      await test
-        .info()
-        .attach("focus-cancelAdministrator", {
-          body: JSON.stringify(cancelAdministratorRows),
-          contentType: "application/json",
-        });
-      await cancelAdministratorMeasurement.dispose();
-      await cancelAdministratorSource.dispose();
 
       await expect(
         page.getByText(messages.ckb.noPayout, { exact: true }),
