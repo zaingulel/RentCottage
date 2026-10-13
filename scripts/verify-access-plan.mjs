@@ -240,7 +240,6 @@ function browserJourneys({ ownedJourneys, phase, partition, shard }) {
           "tests/customer-reviews.spec.ts",
           "--project=mobile",
           "--project=desktop",
-          ...(builtOnce ? ["--config=playwright.next-prebuilt.config.ts"] : []),
           "--workers=1",
           "--output=playwright-report/access-next",
         ];
@@ -269,12 +268,47 @@ function browserJourneys({ ownedJourneys, phase, partition, shard }) {
         environment: "worker",
       });
     }
-    steps.push({
-      group: "browser",
-      command: "npx",
-      args: nextArgs,
-      environment: "next",
-    });
+    const nextInvocations = builtOnce
+      ? [
+          [
+            [
+              "tests/booking-history.spec.ts",
+              "tests/messaging.spec.ts",
+              "tests/customer-reviews.spec.ts",
+            ],
+            2,
+            "parallel",
+          ],
+          [
+            [
+              "tests/access.spec.ts",
+              "tests/booking-request-access.spec.ts",
+              "tests/administrator-payment-history.spec.ts",
+              "tests/administrator-records.spec.ts",
+            ],
+            1,
+            "exclusive",
+          ],
+        ].map(([files, workers, portion]) => [
+          "playwright",
+          "test",
+          ...files,
+          "--project=mobile",
+          "--project=desktop",
+          "--config=playwright.next-prebuilt.config.ts",
+          `--workers=${workers}`,
+          "--retries=0",
+          `--output=playwright-report/access-next-${portion}`,
+        ])
+      : [nextArgs];
+    for (const args of nextInvocations) {
+      steps.push({
+        group: "browser",
+        command: "npx",
+        args,
+        environment: "next",
+      });
+    }
   }
 
   steps.push(
@@ -343,12 +377,46 @@ function browserJourneys({ ownedJourneys, phase, partition, shard }) {
         environment: "worker",
       });
     }
-    steps.push({
-      group: "browser",
-      command: "npx",
-      args: workerArgs,
-      environment: "worker",
-    });
+    const workerInvocations = builtOnce
+      ? [
+          [
+            [
+              "tests/access.spec.ts",
+              "tests/messaging.spec.ts",
+              "tests/customer-reviews.spec.ts",
+            ],
+            2,
+            "parallel",
+          ],
+          [
+            [
+              "tests/booking-request-access.spec.ts",
+              "tests/administrator-payment-history.spec.ts",
+              "tests/administrator-records.spec.ts",
+              "tests/booking-cancellation-refund.spec.ts",
+            ],
+            1,
+            "exclusive",
+          ],
+        ].map(([files, workers, portion]) => [
+          "playwright",
+          "test",
+          ...files,
+          "--project=worker",
+          "--config=playwright.worker-prebuilt.config.ts",
+          `--workers=${workers}`,
+          "--retries=0",
+          `--output=playwright-report/access-worker-${portion}`,
+        ])
+      : [workerArgs];
+    for (const args of workerInvocations) {
+      steps.push({
+        group: "browser",
+        command: "npx",
+        args,
+        environment: "worker",
+      });
+    }
   }
   if (ownedJourneys || partition === "worker") return steps;
   steps.push(

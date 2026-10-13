@@ -14,7 +14,6 @@ import { describe, expect, it, vi } from "vitest";
 import { main } from "./verify-access.mjs";
 import { accessStepPlan } from "./verify-access-plan.mjs";
 import {
-  browserCommands,
   clientSecretScanCommand,
   commands,
   databaseCheckCommands,
@@ -26,10 +25,10 @@ import {
   localCredentials,
   mainWithPreparedProject,
   nextFixtureCommands,
+  nextJourneyCommand,
   ownedRun,
   ownershipCommand,
   plannedCommands,
-  prebuiltNextJourneyCommand,
   resetCommand,
   scheduledExpiryVerifyCommand,
   scheduledJourneyCommand,
@@ -40,8 +39,144 @@ import {
   stopCommand,
   successfulRun,
   workerBuildCommand,
+  workerFixtureCommands,
+  workerJourneyCommand,
   workerPreparationCommands,
 } from "./verify-access-command-doubles.mjs";
+
+const localJourneyCommands = [
+  [
+    "npx",
+    [
+      "playwright",
+      "test",
+      "tests/booking-history.spec.ts",
+      "tests/messaging.spec.ts",
+      "tests/customer-reviews.spec.ts",
+      "--project=mobile",
+      "--project=desktop",
+      "--config=playwright.next-prebuilt.config.ts",
+      "--workers=2",
+      "--retries=0",
+      "--output=playwright-report/access-next-parallel",
+    ],
+  ],
+  [
+    "npx",
+    [
+      "playwright",
+      "test",
+      "tests/access.spec.ts",
+      "tests/booking-request-access.spec.ts",
+      "tests/administrator-payment-history.spec.ts",
+      "tests/administrator-records.spec.ts",
+      "--project=mobile",
+      "--project=desktop",
+      "--config=playwright.next-prebuilt.config.ts",
+      "--workers=1",
+      "--retries=0",
+      "--output=playwright-report/access-next-exclusive",
+    ],
+  ],
+  [
+    "npx",
+    [
+      "playwright",
+      "test",
+      "tests/access.spec.ts",
+      "tests/messaging.spec.ts",
+      "tests/customer-reviews.spec.ts",
+      "--project=worker",
+      "--config=playwright.worker-prebuilt.config.ts",
+      "--workers=2",
+      "--retries=0",
+      "--output=playwright-report/access-worker-parallel",
+    ],
+  ],
+  [
+    "npx",
+    [
+      "playwright",
+      "test",
+      "tests/booking-request-access.spec.ts",
+      "tests/administrator-payment-history.spec.ts",
+      "tests/administrator-records.spec.ts",
+      "tests/booking-cancellation-refund.spec.ts",
+      "--project=worker",
+      "--config=playwright.worker-prebuilt.config.ts",
+      "--workers=1",
+      "--retries=0",
+      "--output=playwright-report/access-worker-exclusive",
+    ],
+  ],
+];
+const browserCommands = [
+  ...nextFixtureCommands,
+  workerBuildCommand,
+  clientSecretScanCommand,
+  ...localJourneyCommands.slice(0, 2),
+  ...workerFixtureCommands,
+  ...localJourneyCommands.slice(2),
+  scheduledJourneyCommand,
+  scheduledExpiryVerifyCommand,
+];
+
+it("local browser groups parallelize owned files and isolate global mutations", async () => {
+  for (const mode of [[], ["--browser"]]) {
+    const run = successfulRun();
+    expect(await mainWithPreparedProject(mode, { environment: {}, run })).toBe(
+      0,
+    );
+    const journeys = commands(run).filter(
+      ([, args]) => args[0] === "playwright",
+    );
+    if (mode.length === 0) journeys.shift(); // The database fixture contract precedes browser work.
+    expect(journeys).toEqual([
+      ...localJourneyCommands,
+      scheduledJourneyCommand,
+    ]);
+    expect(commands(run).filter(([command]) => command === "npm")).toEqual([
+      workerBuildCommand,
+      clientSecretScanCommand,
+    ]);
+    expect(commands(run).slice(-2)).toEqual([ownershipCommand, stopCommand]);
+    for (const [offset, original] of [
+      [0, nextJourneyCommand],
+      [2, workerJourneyCommand],
+    ]) {
+      const parallel = journeys[offset][1].filter((arg) =>
+        arg.startsWith("tests/"),
+      );
+      const exclusive = journeys[offset + 1][1].filter((arg) =>
+        arg.startsWith("tests/"),
+      );
+      expect([...parallel, ...exclusive].sort()).toEqual(
+        original[1].filter((arg) => arg.startsWith("tests/")).sort(),
+      );
+      expect(new Set([...parallel, ...exclusive]).size).toBe(
+        parallel.length + exclusive.length,
+      );
+      for (const file of exclusive) expect(parallel).not.toContain(file);
+      expect(journeys[offset][1]).toContain("--workers=2");
+      expect(journeys[offset + 1][1]).toContain("--workers=1");
+      expect(journeys[offset][1]).toContain("--retries=0");
+      expect(journeys[offset + 1][1]).toContain("--retries=0");
+    }
+    expect(journeys[0][1]).not.toContain("tests/access.spec.ts");
+    expect(journeys[1][1]).toContain("tests/access.spec.ts");
+    expect(
+      journeys[2][1].filter((arg) => arg === "tests/access.spec.ts"),
+    ).toHaveLength(1);
+    expect(journeys[3][1]).not.toContain("tests/access.spec.ts");
+    expect(
+      new Set(
+        journeys.map(([, args]) =>
+          args.find((arg) => arg.startsWith("--output=")),
+        ),
+      ).size,
+    ).toBe(5);
+  }
+});
 
 function ownedJourneyCommands(phase) {
   const grep =
@@ -1139,14 +1274,14 @@ describe("access verification command", () => {
       args.includes("--project=mobile"),
     );
     expect(builds).toHaveLength(1);
-    expect(nextJourneys).toHaveLength(1);
-    expect(nextJourneys[0][1]).toContain(
-      "--config=playwright.next-prebuilt.config.ts",
-    );
+    expect(nextJourneys).toHaveLength(2);
+    for (const [, args] of nextJourneys) {
+      expect(args).toContain("--config=playwright.next-prebuilt.config.ts");
+    }
     expect(run.mock.calls.indexOf(builds[0])).toBeLessThan(
       run.mock.calls.indexOf(nextJourneys[0]),
     );
-    expect(workers).toHaveLength(2);
+    expect(workers).toHaveLength(3);
     for (const worker of workers) {
       expect(worker[1]).toContain(
         "--config=playwright.worker-prebuilt.config.ts",
@@ -1314,8 +1449,8 @@ describe("access verification command", () => {
       "scripts/verify-booking-request-capture-concurrency.mjs",
     ];
     const nextCommand = [
-      prebuiltNextJourneyCommand[0],
-      ...prebuiltNextJourneyCommand[1],
+      localJourneyCommands[0][0],
+      ...localJourneyCommands[0][1],
     ];
     const fixtureCommand = [
       "node",
@@ -1354,7 +1489,7 @@ describe("access verification command", () => {
           ...nextFixtureCommands,
           workerBuildCommand,
           clientSecretScanCommand,
-          prebuiltNextJourneyCommand,
+          localJourneyCommands[0],
         ],
       },
       {

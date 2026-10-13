@@ -168,6 +168,40 @@ describe("access verification command", () => {
         }),
       ).toBe(0);
       const actual = commands(run);
+      const browserInvocations = actual.filter(
+        ([, args]) => args[0] === "playwright",
+      );
+      if (mode === "--browser") {
+        for (const [, args] of browserInvocations) {
+          expect(args.filter((arg) => arg.startsWith("--workers="))).toEqual([
+            "--workers=1",
+          ]);
+          expect(args.some((arg) => arg.startsWith("--retries="))).toBe(false);
+          expect(
+            args.some((arg) =>
+              /access-(?:next|worker)-(?:parallel|exclusive)$/.test(arg),
+            ),
+          ).toBe(false);
+        }
+        if (partition === "next") {
+          expect(browserInvocations).toHaveLength(2);
+          expect(browserInvocations[0][1]).toContain("--list");
+          expect(browserInvocations[1][1]).toContain(`--shard=${shard}`);
+        } else if (partition === "worker") {
+          expect(browserInvocations).toHaveLength(2);
+          for (const [, args] of browserInvocations) {
+            expect(args.filter((arg) => arg.startsWith("tests/"))).toEqual(
+              workerFilesByShard[shard],
+            );
+            expect(args.some((arg) => arg.startsWith("--shard="))).toBe(false);
+          }
+        } else {
+          expect(browserInvocations).toEqual([scheduledJourneyCommand]);
+          expect(
+            browserInvocations[0][1].filter((arg) => arg.startsWith("tests/")),
+          ).toHaveLength(6);
+        }
+      }
       expect(actual.slice(0, 3)).toEqual([
         startCommand,
         ownershipCommand,
