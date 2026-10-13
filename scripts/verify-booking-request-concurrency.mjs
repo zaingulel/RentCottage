@@ -1698,6 +1698,101 @@ commit;`;
         `The key-collision race changed its attempt or payment effects: ${collisionRetained}`,
       );
     }
+    await prepareRetirementRace("retirement-message", 72, false);
+    await runSql(`
+    update public.cottage_inventory_availability availability set state = 'closed'
+    from public.test_booking_request_concurrency_fixture base,
+      public.test_booking_request_retirement_fixture race
+    where race.label = 'retirement-message-old'
+      and availability.schedule_revision_id = base.schedule_id
+      and availability.unit_id = base.shift_id and availability.unit_kind = 'shift'
+      and availability.service_day = race.service_day;
+  `);
+    const messageAdmission = await startSession(`
+    begin;
+    select conversations.id from public.messaging_conversations conversations
+    join public.test_booking_request_retirement_fixture race
+      on race.conversation_id = conversations.id
+    where race.label = 'retirement-message-old' for update of conversations;
+    select 'RC_RETIREMENT_MESSAGE_CONVERSATION_LOCKED';
+  `);
+    await waitForMarker(
+      messageAdmission,
+      "RC_RETIREMENT_MESSAGE_CONVERSATION_LOCKED",
+    );
+    const messageReplacement = await startSession(
+      `
+    set application_name = 'rc-retirement-message-replacement';
+    begin;
+    set local role service_role;
+    ${retirementReplacementSql("retirement-message")}
+    commit;
+  `,
+      true,
+    );
+    await waitForLock("rc-retirement-message-replacement", messageReplacement);
+    messageAdmission.child.stdin.write(`
+    set local role service_role;
+    create temporary table retirement_message_result as
+    select public.admit_messaging_message(
+      '${customerId}', conversation_id, gen_random_uuid(), 'en', 'Is the cottage available?'
+    ) as result from public.test_booking_request_retirement_fixture
+    where label = 'retirement-message-old';
+    reset role;
+    do $message_observer$
+    begin
+      if (select count(*) from retirement_message_result admitted
+        join public.messaging_messages messages on messages.id = (admitted.result ->> 'messageId')::uuid
+        join public.test_booking_request_retirement_fixture race on race.conversation_id = messages.conversation_id
+        where admitted.result ->> 'status' = 'sent' and race.label = 'retirement-message-old'
+          and messages.sender_user_id = '${customerId}'
+          and messages.original_body = 'Is the cottage available?') <> 1 then
+        raise exception 'Message admission did not retain one real sent message';
+      end if;
+    end;
+    $message_observer$;
+    select 'RC_RETIREMENT_MESSAGE_ADMITTED';
+  `);
+    await waitForMarker(messageAdmission, "RC_RETIREMENT_MESSAGE_ADMITTED");
+    await finishSession(messageAdmission, { action: "rollback" });
+    await finishSession(messageReplacement);
+    const messageRetired = await runSql(`
+    select count(*) from public.test_booking_request_retirement_fixture race
+    join public.booking_request_submission_attempts attempts on attempts.id = race.attempt_id
+    join public.booking_request_submission_attempts replacement
+      on replacement.id = (race.replacement_result ->> 'attemptId')::uuid
+    where race.label = 'retirement-message-old'
+      and race.replacement_result ->> 'status' = 'ready'
+      and attempts.state = 'expired' and not attempts.intent_dedupe_active
+      and public.messaging_submission_attempt_is_resolved(attempts.id)
+      and to_jsonb(attempts) - array['state','intent_dedupe_active','updated_at']
+        = race.original_attempt - array['state','intent_dedupe_active','updated_at']
+      and replacement.conversation_id = race.conversation_id
+      and replacement.state = 'authorizing' and replacement.payment_snapshot is null
+      and (select count(*) from public.booking_request_submission_attempts bound
+        where bound.conversation_id = race.conversation_id) = 2
+      and not exists (
+        select 1 from public.booking_request_authorization_claims claims
+        where claims.attempt_id in (attempts.id, replacement.id)
+      )
+      and not exists (
+        select 1 from public.payment_provider_operations operations
+        where operations.payment_lifecycle_id in (attempts.payment_lifecycle_id, replacement.payment_lifecycle_id)
+      )
+      and not exists (
+        select 1 from public.booking_requests requests
+        where requests.payment_lifecycle_id in (attempts.payment_lifecycle_id, replacement.payment_lifecycle_id)
+      )
+      and not exists (
+        select 1 from public.cottage_booking_period_commitments commitments
+        where commitments.customer_user_id = '${customerId}'
+      );
+  `);
+    if (messageRetired !== "1") {
+      throw new Error(
+        `Message/prepare race changed retirement or payment effects: ${messageRetired}`,
+      );
+    }
     await runSql(`
     insert into public.test_booking_request_time_boundary_fixture (label, crosses_at, prepare_result, attempt_id)
     select label, clock_timestamp(), prepare_result, attempt_id
@@ -1716,6 +1811,8 @@ commit;`;
       "retirement-cross-attempt-other",
       "retirement-cross-attempt-old-replacement",
       "key-collision-old",
+      "retirement-message-old",
+      "retirement-message-old-replacement",
     ]) {
       await removeBoundaryAttempt(label);
     }
@@ -2606,7 +2703,7 @@ commit;`;
       );
     }
     console.log(
-      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=ledger-finalized-stale-lease-conflict; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending; retirement-claim-first=attempt-lock-wait-then-claim-retained; retirement-first=late-claim-blocked-then-invalid-without-payment; retirement-cross-attempt=customer-lock-wait-then-independent-claim-and-replacement-ready; key-collision=profile-lock-wait-then-invalid-without-late-attempt-lock-and-claim-ready.",
+      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=ledger-finalized-stale-lease-conflict; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending; retirement-claim-first=attempt-lock-wait-then-claim-retained; retirement-first=late-claim-blocked-then-invalid-without-payment; retirement-cross-attempt=customer-lock-wait-then-independent-claim-and-replacement-ready; key-collision=profile-lock-wait-then-invalid-without-late-attempt-lock-and-claim-ready; retirement-message=conversation-lock-wait-message-admitted-then-rollback-and-payment-free-replacement-ready.",
     );
   }
 

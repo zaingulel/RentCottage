@@ -517,7 +517,7 @@ begin
   perform contexts.user_id
   from public.account_contexts contexts
   where contexts.user_id = target_customer_user_id
-  for update;
+  for no key update;
 
   select profiles.id into current_profile_id
   from public.cottage_marketplace_listings listings
