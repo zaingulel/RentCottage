@@ -183,7 +183,7 @@ select is(
   'another Customer cannot open a private booked journey'
 );
 reset role;
-grant select on messaging_paid_conversation to service_role;
+grant select on messaging_paid_conversation to service_role, authenticated;
 select is(
   (select result->>'status' from messaging_paid_conversation),
   'created',
@@ -211,6 +211,30 @@ select is(
   'paid-confirmed',
   'the real confirmation fixture establishes production paid access'
 );
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+with conversation as (
+  select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20) value
+  from messaging_paid_conversation
+)
+select is(jsonb_build_array(value#>'{booking,lifecycleStatus}',value#>'{bookingHistory,0,lifecycleStatus}'),
+  '["confirmed","confirmed"]'::jsonb,'customer messaging current and historical booking lifecycle is confirmed') from conversation;
+with inbox as (
+  select value from jsonb_array_elements(public.list_messaging_conversations(null,null,20,null)->'items') value
+  where value->>'conversationId'=(select result->>'conversationId' from messaging_paid_conversation)
+)
+select is(jsonb_agg(jsonb_build_array(value#>'{booking,lifecycleStatus}',value#>'{bookingHistory,0,lifecycleStatus}')),
+  '[["confirmed","confirmed"]]'::jsonb,'one matching customer inbox row carries confirmed lifecycle in both booking positions') from inbox;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+with conversation as (
+  select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20) value
+  from messaging_paid_conversation
+)
+select is(value#>'{booking,lifecycleStatus}','"confirmed"'::jsonb,'owner reads the same confirmed messaging lifecycle') from conversation;
+select ok((select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20)::text
+  !~ 'Private address|"(exactAddress|ownerPhone|customerPhone|verificationFiles|audit)"' from messaging_paid_conversation),
+  'confirmed messaging projection contains no private booking fields');
+reset role;
 set local role service_role;
 select is(public.admit_messaging_message(
   '10000000-0000-4000-8000-000000001002',
@@ -248,12 +272,17 @@ update public.owner_application_cottage_profiles set current_shift_schedule_id='
 
 select ok((select bool_and(relrowsecurity) from pg_class where oid in ('public.booking_cancellations'::regclass,'public.booking_cancellation_incidents'::regclass,'public.booking_cancellation_administrator_audit'::regclass,'public.booking_notification_events'::regclass)),'all new facts have Row Level Security');
 select ok(not has_table_privilege('service_role','public.booking_cancellations','SELECT') and not has_table_privilege('authenticated','public.booking_notification_events','SELECT'),'API roles cannot directly read restricted cancellation facts');
+select set_config('rentcottage.test_conversation_id',(select result->>'conversationId' from messaging_paid_conversation),true);
 set local role anon;
 select throws_ok($$select public.get_booking_cancellation_facts('60000000-0000-4000-8000-000000001001','customer')$$,'42501',null,'anonymous cancellation is denied');
+select throws_ok($$select public.get_messaging_conversation(current_setting('rentcottage.test_conversation_id')::uuid,null,20)$$,'42501',null,'anonymous cannot read booking messaging lifecycle');
+select throws_ok($$select public.list_messaging_conversations(null,null,20,null)$$,'42501',null,'anonymous cannot read messaging inbox lifecycle');
 reset role;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001003',true);
 set local role authenticated;
 select throws_ok($$select public.get_booking_cancellation_facts('60000000-0000-4000-8000-000000001001','customer')$$,'42501',null,'another customer cannot cancel');
+select throws_ok($$select public.get_messaging_conversation((select (result->>'conversationId')::uuid from messaging_paid_conversation),null,20)$$,'42501',null,'stranger cannot read booking messaging lifecycle');
+select is((select count(*) from jsonb_array_elements(public.list_messaging_conversations(null,null,20,null)->'items') value where value->>'conversationId'=(select result->>'conversationId' from messaging_paid_conversation)),0::bigint,'stranger inbox excludes the booking messaging projection');
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
 select throws_ok($$select public.get_booking_cancellation_facts('60000000-0000-4000-8000-000000001001','cottage_owner')$$,'42501',null,'customer cannot claim owner authority');
 select is((public.get_booking_cancellation_facts('60000000-0000-4000-8000-000000001001','customer')->>'firstStartsAt')::timestamptz,'2101-01-01 05:00+00'::timestamptz,'policy retains the purchased first shift after the current schedule changes');
@@ -284,6 +313,30 @@ select is(jsonb_array_length(public.list_booking_history('customer')),1,'custome
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000001001'),null::jsonb,'retained history does not grant active private access');
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
 select is(jsonb_array_length(public.list_booking_history('cottage_owner')),1,'owner history retains the cancelled booking');
+reset role;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+with conversation as (
+  select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20) value
+  from messaging_paid_conversation
+)
+select is(jsonb_build_array(value#>'{booking,lifecycleStatus}',value#>'{bookingHistory,0,lifecycleStatus}'),
+  '["cancelled","cancelled"]'::jsonb,'customer messaging current and historical booking lifecycle is cancelled') from conversation;
+with inbox as (
+  select value from jsonb_array_elements(public.list_messaging_conversations(null,null,20,null)->'items') value
+  where value->>'conversationId'=(select result->>'conversationId' from messaging_paid_conversation)
+)
+select is(jsonb_agg(jsonb_build_array(value#>'{booking,lifecycleStatus}',value#>'{bookingHistory,0,lifecycleStatus}')),
+  '[["cancelled","cancelled"]]'::jsonb,'one matching customer inbox row carries cancelled lifecycle in both booking positions') from inbox;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+with conversation as (
+  select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20) value
+  from messaging_paid_conversation
+)
+select is(value#>'{booking,lifecycleStatus}','"cancelled"'::jsonb,'owner reads the same cancelled messaging lifecycle') from conversation;
+select ok((select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20)::text
+  !~ 'Private address|"(exactAddress|ownerPhone|customerPhone|verificationFiles|audit)"' from messaging_paid_conversation),
+  'cancelled messaging projection contains no private booking fields');
 reset role;
 select is((select status::text from public.cottage_booking_period_commitments),'cancelled_booking','cancellation ends the active customer conflict');
 select isnt(

@@ -1,6 +1,6 @@
 import Link from "next/link";
+import { messagingBookingStatusLabel } from "@/i18n/messaging-booking-status";
 import { ActionFocusTarget } from "./interaction-controls";
-import { bookingRequestDisplayStatusMessages } from "@/i18n/booking-request-status-messages";
 
 import { formatIraqDateTime } from "@/i18n/format";
 import { messagingMessages } from "@/i18n/messaging-messages";
@@ -55,12 +55,7 @@ export function MessagingInbox({
                   <>
                     <bdi>{item.booking.bookingRequestReference}</bdi>
                     <span className="status-badge">
-                      {
-                        bookingRequestDisplayStatusMessages[locale][
-                          item.booking.paymentStatus ??
-                            item.booking.requestStatus
-                        ]
-                      }
+                      {messagingBookingStatusLabel(locale, item.booking)}
                     </span>
                   </>
                 ) : null}

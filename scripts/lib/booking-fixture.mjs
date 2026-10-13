@@ -178,7 +178,24 @@ delete from public.cottage_profile_source_revisions where profile_id='${r.profil
 const confirmedBookingDeletes = (
   r,
   { workIdentity, listedCottage, users },
-) => `delete from public.fictional_booking_confirmation_notification_effects where booking_request_id='${r.request}';
+) => `do $$
+declare conversation_ids uuid[];
+begin
+  select array_agg(selected.conversation_id) into conversation_ids from (
+    select conversation_id from public.booking_request_submission_attempts where booking_request_id='${r.request}' and conversation_id is not null
+    union
+    select conversation_id from public.messaging_conversation_booking_requests where booking_request_id='${r.request}'
+  ) selected;
+  delete from public.messaging_translation_reports where translation_id in (select translations.id from public.messaging_translations translations join public.messaging_messages messages on messages.id=translations.message_id where messages.conversation_id=any(conversation_ids));
+  delete from public.messaging_translations where message_id in (select id from public.messaging_messages where conversation_id=any(conversation_ids));
+  delete from public.messaging_messages where conversation_id=any(conversation_ids);
+  delete from public.messaging_send_attempts where conversation_id=any(conversation_ids);
+  delete from public.messaging_conversation_booking_requests where conversation_id=any(conversation_ids);
+  update public.booking_request_submission_attempts set conversation_id=null where booking_request_id='${r.request}';
+  delete from public.messaging_conversations where id=any(conversation_ids);
+end;
+$$;
+delete from public.fictional_booking_confirmation_notification_effects where booking_request_id='${r.request}';
 delete from public.booking_confirmation_notification_attempts where ${workIdentity} in (select ${workIdentity} from public.booking_confirmation_notification_work where booking_request_id='${r.request}');
 delete from public.booking_confirmation_notification_work where booking_request_id='${r.request}';
 delete from public.booking_request_payment_history where booking_request_id='${r.request}';

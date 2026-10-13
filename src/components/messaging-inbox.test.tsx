@@ -21,6 +21,7 @@ const item: MessagingInboxItem = {
     bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
     requestStatus: "accepted",
     paymentStatus: "paid-confirmed",
+    lifecycleStatus: "confirmed",
     responseDeadline: "2099-08-21T12:00:00Z",
     firstStartsAt: null,
     lastEndsAt: null,
@@ -31,6 +32,48 @@ const item: MessagingInboxItem = {
   preview: { originalLanguage: "ar", originalBody: "مرحبا" },
 };
 afterEach(cleanup);
+it("renders authoritative inbox booking lifecycle", () => {
+  const { rerender } = render(
+    <MessagingInbox
+      locale="en"
+      items={[
+        {
+          ...item,
+          booking: {
+            ...item.booking!,
+            lifecycleStatus: "cancelled",
+            paymentStatus: "capture-processing",
+          },
+        },
+      ]}
+      nextCursor={null}
+    />,
+  );
+  expect(screen.getByText("Cancelled booking", { exact: true })).toHaveClass(
+    "status-badge",
+  );
+  rerender(
+    <MessagingInbox
+      locale="en"
+      items={[
+        {
+          ...item,
+          booking: {
+            ...item.booking!,
+            lifecycleStatus: null,
+            paymentStatus: "payment-required",
+            contactAllowed: false,
+          },
+        },
+      ]}
+      nextCursor={null}
+    />,
+  );
+  expect(screen.getByText("Payment Required", { exact: true })).toHaveClass(
+    "status-badge",
+  );
+});
+
 it("retains the selected stay on a normal inbox card", () => {
   const query = "from=2101-01-01&guests=4&selection=2101-01-01%3Ashift%3A1";
   render(
@@ -51,9 +94,9 @@ it("retains the selected stay on a normal inbox card", () => {
   );
   expect(link.contains(screen.getByText("مرحبا"))).toBe(false);
 });
-it("presents paid status in Arabic and marks preview language", () => {
+it("presents confirmed lifecycle in Arabic and marks preview language", () => {
   render(<MessagingInbox locale="ar" items={[item]} nextCursor={null} />);
-  expect(screen.getByText(/تم تأكيد الحجز/)).toBeInTheDocument();
+  expect(screen.getByText("حجز مؤكد")).toBeInTheDocument();
   expect(screen.getByText("مرحبا")).toHaveAttribute("lang", "ar");
   expect(screen.getByText("مرحبا").parentElement).toHaveClass("list-row-meta");
   expect(screen.queryByText(/accepted/)).not.toBeInTheDocument();

@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 
+import { messagingBookingStatusLabel } from "@/i18n/messaging-booking-status";
 import { formatIraqDateTime } from "@/i18n/format";
 import { messages } from "@/i18n/messages";
 import { messagingMessages } from "@/i18n/messaging-messages";
-import { bookingRequestDisplayStatusMessages } from "@/i18n/booking-request-status-messages";
 import { directionFor, type Locale } from "@/i18n/routing";
 import {
   reportMessagingTranslation,
@@ -164,12 +164,7 @@ export function MessagingConversation({
               <dt>{copy.booking}</dt>
               <dd>
                 {conversation.booking.bookingRequestReference} ·{" "}
-                {
-                  bookingRequestDisplayStatusMessages[locale][
-                    conversation.booking.paymentStatus ??
-                      conversation.booking.requestStatus
-                  ]
-                }
+                {messagingBookingStatusLabel(locale, conversation.booking)}
               </dd>
             </div>
             <div>
@@ -215,11 +210,7 @@ export function MessagingConversation({
               {conversation.bookingHistory.slice(0, -1).map((booking) => (
                 <li key={booking.bookingRequestReference}>
                   {booking.bookingRequestReference} ·{" "}
-                  {
-                    bookingRequestDisplayStatusMessages[locale][
-                      booking.paymentStatus ?? booking.requestStatus
-                    ]
-                  }
+                  {messagingBookingStatusLabel(locale, booking)}
                 </li>
               ))}
             </ul>

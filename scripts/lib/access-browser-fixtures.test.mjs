@@ -12,6 +12,7 @@ import {
   bookingFixtureSource,
   confirmedBookingAccessFixtureSource,
   confirmedBookingCleanup,
+  customerReviewCleanup,
   confirmedBookingAccessCleanup,
   captureCleanup,
   refundReset,
@@ -724,6 +725,38 @@ test("browser booking fixtures own disjoint graphs and cleanup", () => {
     confirmation: "80000000",
     operation: "81000000",
   };
+  const assertMessagingCleanup = (sql, request) => {
+    assert.ok(
+      sql.includes(
+        `select conversation_id from public.booking_request_submission_attempts where booking_request_id='${request}' and conversation_id is not null`,
+      ),
+    );
+    assert.ok(
+      sql.includes(
+        `select conversation_id from public.messaging_conversation_booking_requests where booking_request_id='${request}'`,
+      ),
+    );
+    const statements = [
+      "select array_agg(selected.conversation_id) into conversation_ids",
+      "delete from public.messaging_translation_reports",
+      "delete from public.messaging_translations",
+      "delete from public.messaging_messages where conversation_id=any(conversation_ids)",
+      "delete from public.messaging_send_attempts where conversation_id=any(conversation_ids)",
+      "delete from public.messaging_conversation_booking_requests where conversation_id=any(conversation_ids)",
+      `update public.booking_request_submission_attempts set conversation_id=null where booking_request_id='${request}'`,
+      "delete from public.messaging_conversations where id=any(conversation_ids)",
+      `delete from public.booking_requests where id='${request}'`,
+    ];
+    let previous = -1;
+    for (const statement of statements) {
+      const position = sql.indexOf(statement);
+      assert.ok(
+        position > previous,
+        `Missing or out-of-order messaging cleanup: ${statement}`,
+      );
+      previous = position;
+    }
+  };
   const ids = [];
   const phones = [];
   const allocations = ownership.map(([file, project]) =>
@@ -796,6 +829,7 @@ test("browser booking fixtures own disjoint graphs and cleanup", () => {
       assert.ok(!sql.includes("000000003501"));
     }
     const confirmed = cleanups[0];
+    assertMessagingCleanup(confirmed, actual.request);
     for (const user of [
       actual.owner,
       actual.customer,
@@ -865,6 +899,19 @@ test("browser booking fixtures own disjoint graphs and cleanup", () => {
     "77",
     "78",
   ]) {
+    const reviewCleanup = customerReviewCleanup(namespace);
+    assertMessagingCleanup(
+      reviewCleanup,
+      `60000000-0000-4000-8000-00000000${namespace}01`,
+    );
+    for (const otherNamespace of ["61", "64"].filter(
+      (other) => other !== namespace,
+    ))
+      assert.ok(
+        !reviewCleanup.includes(
+          `60000000-0000-4000-8000-00000000${otherNamespace}01`,
+        ),
+      );
     for (const prefix of Object.values(primaryPrefixes))
       ids.push(`${prefix}-0000-4000-8000-00000000${namespace}01`);
     for (const row of ["01", "02", "03", "81", "82"])
@@ -902,7 +949,7 @@ test("browser booking fixtures own disjoint graphs and cleanup", () => {
     ],
     [
       confirmedBookingCleanup(),
-      "9439cb5c9125e98c249d18e287c1ab0c75bd40df9a8e40e4125e61f4ade3cdaa",
+      "8911798cf62f96cb15f265e8586710d3f02fbcf71203019cc3b9432756cd5225",
     ],
     [
       confirmedBookingAccessCleanup(),

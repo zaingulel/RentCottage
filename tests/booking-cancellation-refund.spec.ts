@@ -25,6 +25,8 @@ import { bookingManagementMessages as messages } from "../src/i18n/booking-manag
 import { bookingLifecycleMessages } from "../src/i18n/booking-lifecycle-messages";
 import { ownerBookingEarningsMessages as earningsMessages } from "../src/i18n/owner-booking-earnings-messages";
 import { ownerBookingEarnings } from "../src/booking-request/owner-booking-earnings";
+import { messagingMessages } from "../src/i18n/messaging-messages";
+import { customerReviewMessages } from "../src/i18n/customer-review-messages";
 import type { Locale } from "../src/i18n/routing";
 const { createLocalSupabaseConcurrencyHarness } = createRequire(
   import.meta.url,
@@ -44,6 +46,8 @@ const {
     project: string,
   ): Record<
     | "stem"
+    | "profile"
+    | "attempt"
     | "owner"
     | "customer"
     | "third"
@@ -83,8 +87,8 @@ const source = readFileSync(
   "utf8",
 );
 const browserQuote = {
-  cottageName: "Preserved Cottage",
-  houseRules: "Preserved House Rules",
+  cottageName: "Fictional Preserved Cottage",
+  houseRules: "Fictional preserved house rules",
   bookingPriceIqd: 110000,
   serviceFeeIqd: 5000,
   customerTotalIqd: 115000,
@@ -127,6 +131,10 @@ const fixtureSource = bookingFixtureSource(source, {
     "964750000100",
     "CONFIRMATION-HOLD-1",
     "Confirmation Cottage",
+    "Karrada",
+    "Private address",
+    "Fixture description",
+    "Fixture rules",
     "confirmation-auth-",
     "10000000-0000-4000-8000-000000003801",
     "cancellation-admin@example.test",
@@ -140,7 +148,14 @@ const fixture = () =>
     .replaceAll("964750000100", `964750000${identity.stem}`)
     .replaceAll("confirmation-auth-", `confirmation-auth-${identity.stem}-`)
     .replaceAll("CONFIRMATION-HOLD-1", `CANCELLATION-HOLD-${identity.stem}`)
-    .replaceAll("Confirmation Cottage", `cancellation ${identity.stem} Cottage`)
+    .replaceAll(
+      "Confirmation Cottage",
+      `Fictional cancellation ${identity.stem} Cottage`,
+    )
+    .replaceAll("Karrada", "Fictional approximate area")
+    .replaceAll("Private address", "Fictional private address")
+    .replaceAll("Fixture description", "Fictional cottage description")
+    .replaceAll("Fixture rules", "Fictional cottage rules")
     .replaceAll("10000000-0000-4000-8000-000000003801", identity.administrator)
     .replaceAll(
       "cancellation-admin@example.test",
@@ -160,6 +175,23 @@ const fixture = () =>
     );
 let activeAdministratorId: string | null = null;
 
+const connectedStaySql = () => `select jsonb_build_object(
+  'requests',(select jsonb_agg(jsonb_build_object('id',r.id,'customer',r.customer_user_id,'owner',r.owner_user_id,'profile',r.profile_id)) from public.booking_requests r where r.id='${request}'),
+  'snapshots',(select jsonb_agg(to_jsonb(s)) from public.booking_snapshots s join public.booking_requests r on r.booking_snapshot_id=s.id where r.id='${request}'),
+  'ranges',(select jsonb_agg(c.access_ranges::text) from public.cottage_booking_period_commitments c join public.booking_requests r on r.booking_period_commitment_id=c.id where r.id='${request}'),
+  'captures',(select jsonb_agg(to_jsonb(o)) from public.payment_provider_operations o join public.booking_confirmations c on c.capture_operation_id=o.id where c.booking_request_id='${request}'),
+  'attempts',(select jsonb_agg(jsonb_build_object('id',a.id,'request',a.booking_request_id,'conversation',a.conversation_id)) from public.booking_request_submission_attempts a where a.booking_request_id='${request}'),
+  'links',(select coalesce(jsonb_agg(to_jsonb(l)),'[]'::jsonb) from public.messaging_conversation_booking_requests l where l.booking_request_id='${request}'),
+  'conversations',(select coalesce(jsonb_agg(to_jsonb(c)),'[]'::jsonb) from public.messaging_conversations c where c.id in (select l.conversation_id from public.messaging_conversation_booking_requests l where l.booking_request_id='${request}')),
+  'messages',(select coalesce(jsonb_agg(to_jsonb(m) order by m.position),'[]'::jsonb) from public.messaging_messages m where m.conversation_id in (select l.conversation_id from public.messaging_conversation_booking_requests l where l.booking_request_id='${request}')),
+  'refunds',(select coalesce(jsonb_agg(to_jsonb(o) order by o.id),'[]'::jsonb) from public.payment_provider_operations o where o.operation_kind='refund' and o.claim_id in (select c.id from public.booking_request_authorization_claims c join public.booking_request_submission_attempts a on a.id=c.attempt_id where a.booking_request_id='${request}')),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by e.operation_id),'[]'::jsonb) from public.simulated_payment_effects e join public.payment_provider_operations o on o.id=e.operation_id where o.operation_kind='refund' and o.claim_id in (select c.id from public.booking_request_authorization_claims c join public.booking_request_submission_attempts a on a.id=c.attempt_id where a.booking_request_id='${request}')),
+  'deliveredNotices',(select count(*) from public.booking_confirmation_notification_work w where w.booking_request_id='${request}' and w.state='delivered'),
+  'notificationEffects',(select count(*) from public.fictional_booking_confirmation_notification_effects e where e.booking_request_id='${request}')
+);`;
+const observeConnectedStay = () =>
+  JSON.parse(harness.runSql(connectedStaySql()));
+
 const clear = () => {
   const cleanup = confirmedBookingCleanup({
     stem: identity.stem,
@@ -168,9 +200,29 @@ const clear = () => {
     settlement: true,
   });
   harness.guardDisposableLocalDatabase();
+  const conversations = harness.runSql(
+    `select coalesce(jsonb_agg(l.conversation_id),'[]'::jsonb) from public.messaging_conversation_booking_requests l where l.booking_request_id='${request}';`,
+  );
   harness.runSql(
     `delete from auth.sessions where user_id in ('${owner}','${customer}','${identity.third}');delete from auth.identities where user_id in ('${owner}','${customer}','${identity.third}');${cleanup}`,
   );
+  expect(
+    JSON.parse(
+      harness.runSql(`with owned as (select value::uuid id from jsonb_array_elements_text('${conversations}'::jsonb)) select jsonb_build_object(
+    'requests',(select count(*) from public.booking_requests r where r.id='${request}'),
+    'links',(select count(*) from public.messaging_conversation_booking_requests l where l.booking_request_id='${request}' or l.conversation_id in (select id from owned)),
+    'conversations',(select count(*) from public.messaging_conversations c where c.id in (select id from owned)),
+    'messages',(select count(*) from public.messaging_messages m where m.conversation_id in (select id from owned)),
+    'sendAttempts',(select count(*) from public.messaging_send_attempts a where a.conversation_id in (select id from owned))
+  );`),
+    ),
+  ).toEqual({
+    requests: 0,
+    links: 0,
+    conversations: 0,
+    messages: 0,
+    sendAttempts: 0,
+  });
 };
 function connection() {
   harness.guardDisposableLocalDatabase();
@@ -317,15 +369,13 @@ async function captureMetadataViewports(
 }
 async function assertResponsiveDetails(
   page: Page,
-  role: "customer" | "cottage_owner" | "platform_administrator",
+  role: "cottage_owner" | "platform_administrator",
 ) {
   for (const locale of ["en", "ar", "ckb"] as const) {
     const route =
-      role === "customer"
-        ? "booking-requests"
-        : role === "cottage_owner"
-          ? "owner/booking-requests"
-          : "administrator/payments";
+      role === "cottage_owner"
+        ? "owner/booking-requests"
+        : "administrator/payments";
     await page.goto(`/${locale}/${route}/${reference}`);
     await expect(
       page.getByRole("region", { name: messages[locale].title }),
@@ -663,155 +713,408 @@ test.describe("retained cancellation and refund controls", () => {
       ).toBeVisible();
     }
   });
-  test("customer cancels with the disclosed rule and returns through retained history", async ({
-    page,
-    baseURL,
-  }) => {
-    await participant(page.context(), customer, baseURL);
-    await page.goto(`/en/booking-requests/${reference}`);
-    await expect(
-      page.getByRole("heading", { name: "Confirmed booking", exact: true }),
-    ).toBeVisible();
-    const bookingViewport = page.viewportSize()!;
-    const periodLabels = {
-      en: "Booking period",
-      ar: "فترة الحجز",
-      ckb: "ماوەی حجز",
-    };
-    const periodObservations: {
-      locale: string;
-      viewport: string;
-      values: string[][];
-    }[] = [];
-    for (const locale of ["en", "ar", "ckb"] as const) {
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    test(`${locale} connected cancellation stay`, async ({
+      page,
+      baseURL,
+    }, testInfo) => {
+      testInfo.annotations.push({
+        type: "fictional-supplier-outcomes",
+        description:
+          "SQL capture succeeds with fictional-provider provenance. preparePaymentOperations and DurablePaymentSimulator supply succeeded scheduled refunds. Scheduled notices have fictional local-test effects. Local Auth confirms synthetic identities without SMS. Messaging translations are deterministic fictional fixtures; unsupported content keeps the original. No map requests, real payment acceptance, phone delivery or launch readiness are claimed.",
+      });
+      const copy = messages[locale];
+      const lifecycle = bookingLifecycleMessages[locale];
+      const messaging = messagingMessages[locale];
+      const statusWords = {
+        en: { confirmed: "Confirmed booking", cancelled: "Cancelled booking" },
+        ar: { confirmed: "حجز مؤكد", cancelled: "حجز ملغى" },
+        ckb: { confirmed: "حجزی پشتڕاستکراو", cancelled: "حجزی هەڵوەشاوە" },
+      }[locale];
+      const assertMobile = async () => {
+        await expect(page.locator("html")).toHaveAttribute(
+          "dir",
+          locale === "en" ? "ltr" : "rtl",
+        );
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () => document.documentElement.scrollWidth <= window.innerWidth,
+            ),
+          )
+          .toBe(true);
+      };
+      const screenshot = async (name: string) => {
+        const path = testInfo.outputPath(`${name}-${locale}.png`);
+        await page.screenshot({ path, fullPage: true });
+        await testInfo.attach(`${name}-${locale}`, {
+          path,
+          contentType: "image/png",
+        });
+      };
+      await page.setViewportSize({ width: 393, height: 851 });
+      await participant(page.context(), customer, baseURL);
       await page.goto(`/${locale}/booking-requests/${reference}`);
+      const bookingUrl = page.url();
       const confirmed = page.getByRole("region", {
-        name: bookingLifecycleMessages[locale].confirmed,
+        name: lifecycle.confirmed,
         exact: true,
       });
       await expect(confirmed).toContainText(browserQuote.cottageName);
       await expect(confirmed).toHaveCSS("border-top-style", "solid");
-      const period = confirmed.locator("dl > div").filter({
-        has: page.getByText(periodLabels[locale], { exact: true }),
+      await assertMobile();
+      const before = observeConnectedStay();
+      for (const key of [
+        "requests",
+        "snapshots",
+        "ranges",
+        "captures",
+        "attempts",
+      ])
+        expect(before[key]).toHaveLength(1);
+      expect(before.requests[0]).toEqual({
+        id: request,
+        customer,
+        owner,
+        profile: identity.profile,
       });
-      const captures = await captureMetadataViewports(
-        page,
-        confirmed,
-        `confirmed-booking-${locale}`,
-        async () => {
-          await expect
-            .poll(() =>
-              period.locator("dd > span").evaluateAll((entries) =>
-                entries.flatMap((entry) =>
-                  Array.from(entry.querySelectorAll(":scope > bdi"))
-                    .slice(1)
-                    .map((timestamp) => timestamp.getClientRects().length),
+      expect(before.attempts).toEqual([
+        { id: identity.attempt, request, conversation: null },
+      ]);
+      expect(before.captures[0]).toMatchObject({
+        amount_fils: 115000000,
+        current_outcome: "succeeded",
+      });
+      for (const key of [
+        "links",
+        "conversations",
+        "messages",
+        "refunds",
+        "effects",
+      ])
+        expect(before[key]).toEqual([]);
+      if (locale === "en") {
+        const period = confirmed
+          .locator("dl > div")
+          .filter({ has: page.getByText("Booking period", { exact: true }) });
+        const observations = await captureMetadataViewports(
+          page,
+          confirmed,
+          "confirmed-booking-en",
+          async () => {
+            await expect
+              .poll(() =>
+                period.locator("dd > span").evaluateAll((entries) =>
+                  entries.flatMap((entry) =>
+                    Array.from(entry.querySelectorAll(":scope > bdi"))
+                      .slice(1)
+                      .map((timestamp) => timestamp.getClientRects().length),
+                  ),
                 ),
-              ),
-            )
-            .toEqual([1, 1, 1, 1, 1, 1]);
-          return period
-            .locator("dd > span")
-            .evaluateAll((entries) =>
-              entries.map((entry) =>
-                Array.from(
-                  entry.querySelectorAll(":scope > bdi"),
-                  (value) => value.textContent ?? "",
+              )
+              .toEqual([1, 1, 1, 1, 1, 1]);
+            return period
+              .locator("dd > span")
+              .evaluateAll((entries) =>
+                entries.map((entry) =>
+                  Array.from(
+                    entry.querySelectorAll(":scope > bdi"),
+                    (value) => value.textContent ?? "",
+                  ),
                 ),
-              ),
-            );
-        },
+              );
+          },
+        );
+        for (const observation of observations)
+          expect(
+            observation.values,
+            `${observation.viewport} booking period boundaries`,
+          ).toEqual(
+            ["Morning", "Night", "Full day"].map((name) => [
+              name,
+              expect.stringMatching(/\S.*[:：]/),
+              expect.stringMatching(/\S.*[:：]/),
+            ]),
+          );
+      }
+      const open = page.getByRole("button", {
+        name: messaging.open,
+        exact: true,
+      });
+      await open.focus();
+      await expect(open).toBeFocused();
+      await open.press("Enter");
+      await expect(page).toHaveURL(
+        new RegExp(`/${locale}/messages/[0-9a-f-]{36}`),
       );
-      periodObservations.push(
-        ...captures.map((capture) => ({ locale, ...capture })),
+      const conversationId = new URL(page.url()).pathname.split("/").at(-1)!;
+      await expect(
+        page.getByText(`${reference} · ${statusWords.confirmed}`, {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("heading", {
+          name: browserQuote.cottageName,
+          level: 1,
+        }),
+      ).toBeFocused();
+      await expect(
+        page
+          .getByRole("list", { name: messaging.messages, exact: true })
+          .getByRole("listitem"),
+      ).toHaveCount(0);
+      const hostileMessage =
+        'Fictional stay example <img data-fictional-injection="message" src=x onerror="alert(1)">';
+      await page
+        .getByLabel(messaging.languageLabel)
+        .selectOption(locale === "en" ? "ar" : "en");
+      await page
+        .getByLabel(messaging.messageLabel, { exact: true })
+        .fill(hostileMessage);
+      const send = page.getByRole("button", {
+        name: messaging.send,
+        exact: true,
+      });
+      await send.focus();
+      await expect(send).toBeFocused();
+      await send.press("Enter");
+      const message = page
+        .getByRole("list", { name: messaging.messages, exact: true })
+        .getByRole("listitem");
+      await expect(message).toHaveCount(1);
+      await expect(
+        message.getByText(hostileMessage, { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.locator('[data-fictional-injection="message"]'),
+      ).toHaveCount(0);
+      await expect(send).toBeFocused();
+      await message
+        .getByRole("button", {
+          name: messaging.automaticTranslation,
+          exact: true,
+        })
+        .click();
+      await expect(message).toContainText(messaging.translationUnavailable);
+      await expect(
+        message.getByText(hostileMessage, { exact: true }),
+      ).toBeVisible();
+      await assertMobile();
+      await screenshot("connected-messaging-mobile");
+      const linked = observeConnectedStay();
+      for (const key of ["attempts", "links", "conversations", "messages"])
+        expect(linked[key]).toHaveLength(1);
+      expect(linked.attempts).toEqual([
+        { ...before.attempts[0], conversation: conversationId },
+      ]);
+      expect(linked.links[0]).toMatchObject({
+        conversation_id: conversationId,
+        booking_request_id: request,
+        submission_attempt_id: before.attempts[0].id,
+      });
+      expect(linked.conversations[0]).toMatchObject({
+        id: conversationId,
+        customer_user_id: customer,
+        owner_user_id: owner,
+        profile_id: before.requests[0].profile,
+      });
+      expect(linked.messages[0]).toMatchObject({
+        conversation_id: conversationId,
+        sender_user_id: customer,
+        original_body: hostileMessage,
+      });
+      await page.goBack();
+      await expect(page).toHaveURL(bookingUrl);
+      expect(new URL(page.url()).pathname).toBe(
+        `/${locale}/booking-requests/${reference}`,
       );
-    }
-    for (const observation of periodObservations) {
-      expect(
-        observation.values,
-        `${observation.locale} ${observation.viewport} booking period boundaries`,
-      ).toEqual(
-        ["Morning", "Night", "Full day"].map((name) => [
-          name,
-          expect.stringMatching(/\S.*[:：]/),
-          expect.stringMatching(/\S.*[:：]/),
-        ]),
+      await expect(confirmed).toContainText(
+        `CANCELLATION-HOLD-${identity.stem}`,
       );
-    }
-    await page.setViewportSize(bookingViewport);
-    await page.goto(`/en/booking-requests/${reference}`);
-    const form = page.getByRole("form", { name: messages.en.cancel });
-    await expect(form).toContainText("48 hours");
-    await form.getByRole("checkbox").focus();
-    await page.keyboard.press("Space");
-    await page.keyboard.press("Tab");
-    const cancelCustomerControl = form.getByRole("button", {
-      name: messages.en.cancel,
-      exact: true,
-    });
-    await cancelCustomerControl.focus();
-    await expect(cancelCustomerControl).toBeFocused();
-    await cancelCustomerControl.press("Enter");
-    await expect(
-      page.getByRole("heading", { name: "Cancelled booking", exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: messages.en.cancelled, exact: true }),
-    ).toBeFocused();
+      await expect(confirmed).toBeVisible();
+      const form = page.getByRole("form", { name: copy.cancel });
+      await expect(form).toContainText(copy.policy);
+      await form.getByRole("checkbox").focus();
+      await page.keyboard.press("Space");
+      await page.keyboard.press("Tab");
+      const cancel = form.getByRole("button", {
+        name: copy.cancel,
+        exact: true,
+      });
+      await cancel.focus();
+      await expect(cancel).toBeFocused();
+      await cancel.press("Enter");
+      await expect(
+        page.getByRole("heading", { name: copy.cancelled, exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: copy.cancelled, exact: true }),
+      ).toBeFocused();
+      await expect(
+        page.getByRole("heading", { name: copy.fullRequired, exact: true }),
+      ).toBeVisible();
+      await expectAmount(
+        page.getByTestId("verified-refund"),
+        copy.total,
+        "IQD 0",
+      );
+      await assertMobile();
+      await screenshot("connected-refund-pending-mobile");
+      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
+      await page.reload();
+      await expectAmount(
+        page.getByTestId("verified-refund"),
+        copy.total,
+        "IQD 115,000",
+      );
+      await expectAmount(
+        page.getByTestId("verified-refund"),
+        copy.price,
+        "IQD 110,000",
+      );
+      await expectAmount(
+        page.getByTestId("verified-refund"),
+        copy.fee,
+        "IQD 5,000",
+      );
+      const refunded = observeConnectedStay();
+      expect(refunded.refunds).toHaveLength(1);
+      expect(refunded.refunds[0]).toMatchObject({
+        amount_fils: 115000000,
+        current_outcome: "succeeded",
+        payment_lifecycle_id: before.captures[0].payment_lifecycle_id,
+      });
+      expect(refunded.effects).toHaveLength(1);
+      expect(refunded.effects[0]).toMatchObject({
+        operation_id: refunded.refunds[0].id,
+        physical_execution_count: 1,
+      });
+      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
+      const delivered = observeConnectedStay();
+      expect(delivered.refunds).toEqual(refunded.refunds);
+      expect(delivered.effects).toEqual(refunded.effects);
+      // Cancellation, refund requested and refund returned each notify Customer and Cottage Owner.
+      expect(delivered.deliveredNotices).toBe(6);
+      expect(delivered.notificationEffects).toBe(6);
+      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
+      const replayed = observeConnectedStay();
+      expect(replayed.refunds).toEqual(delivered.refunds);
+      expect(replayed.effects).toEqual(delivered.effects);
+      expect(replayed.deliveredNotices).toBe(delivered.deliveredNotices);
+      expect(replayed.notificationEffects).toBe(delivered.notificationEffects);
+      for (const key of ["requests", "snapshots", "ranges", "captures"])
+        expect(replayed[key]).toEqual(before[key]);
+      for (const key of ["attempts", "links", "conversations", "messages"])
+        expect(replayed[key]).toEqual(linked[key]);
+      await page.getByRole("link", { name: copy.history, exact: true }).click();
+      await expect(page).toHaveURL(`/${locale}/bookings`);
+      const retainedBooking = page.getByRole("link", {
+        name: new RegExp(browserQuote.cottageName),
+      });
+      await expect(
+        page.getByRole("listitem").filter({ has: retainedBooking }),
+      ).toContainText(lifecycle.cancelled);
+      await expect(retainedBooking).toHaveAttribute(
+        "href",
+        `/${locale}/booking-requests/${reference}`,
+      );
+      await retainedBooking.click();
+      await expect(
+        page.getByRole("heading", { name: copy.cancelled, exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("Fictional private address", { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByText(identity.ownerPhone, { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("form", { name: customerReviewMessages[locale].title }),
+      ).toHaveCount(0);
+      await expect(
+        page
+          .getByRole("region", {
+            name: lifecycle.title,
+            exact: true,
+          })
+          .getByText(lifecycle.reviewClosed, {
+            exact: true,
+          }),
+      ).toBeVisible();
+      await assertMobile();
+      await screenshot("connected-refund-returned-mobile");
+      if (locale === "en") {
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        const cancelledMain = page.locator("#customer-booking-request-detail");
+        await page.keyboard.press("Tab");
+        await cancelledMain.focus();
+        await expect(cancelledMain).toBeFocused();
+        await expect(cancelledMain).toHaveCSS("outline-offset", "-3px");
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () => document.documentElement.scrollWidth <= window.innerWidth,
+            ),
+          )
+          .toBe(true);
+        await screenshot("cancelled-full-width-main-focus-desktop");
+        await page.setViewportSize({ width: 393, height: 851 });
+      }
+      await page
+        .getByRole("button", { name: messaging.open, exact: true })
+        .click();
+      await expect(page).toHaveURL(`/${locale}/messages/${conversationId}`);
+      await expect(
+        page.getByText(`${reference} · ${statusWords.cancelled}`, {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(
+        page
+          .getByRole("list", { name: messaging.messages, exact: true })
+          .getByText(hostileMessage, { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.locator('[data-fictional-injection="message"]'),
+      ).toHaveCount(0);
+      await expect(
+        page.getByText(messaging.contactAllowed, { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("Fictional private address", { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByText(identity.ownerPhone, { exact: true }),
+      ).toHaveCount(0);
+      await assertMobile();
+      await screenshot("connected-retained-messaging-mobile");
+      const inbox = page.getByRole("link", {
+        name: messaging.inbox,
+        exact: true,
+      });
+      await inbox.focus();
+      await expect(inbox).toBeFocused();
+      await inbox.press("Enter");
+      await expect(page).toHaveURL(new RegExp(`/${locale}/messages(?:\\?|$)`));
+      const inboxRow = page.getByRole("listitem").filter({
+        has: page.locator(`a[href="/${locale}/messages/${conversationId}"]`),
+      });
+      await expect(inboxRow).toHaveCount(1);
+      await expect(
+        inboxRow.getByText(statusWords.cancelled, { exact: true }),
+      ).toBeVisible();
+      await expect(
+        inboxRow.getByText(statusWords.cancelled, { exact: true }),
+      ).toHaveClass("status-badge");
+      await assertMobile();
+      await screenshot("connected-cancelled-inbox-mobile");
 
-    await expect(
-      page.getByRole("heading", { name: "Full refund required", exact: true }),
-    ).toBeVisible();
-    await expectAmount(
-      page.getByTestId("verified-refund"),
-      messages.en.total,
-      "IQD 0",
-    );
-    await expect(
-      page.getByText("Private address", { exact: true }),
-    ).toHaveCount(0);
-    await expect(
-      page.getByText(identity.ownerPhone, { exact: true }),
-    ).toHaveCount(0);
-    await page.getByRole("link", { name: messages.en.history }).click();
-    await expect(page).toHaveURL("/en/bookings");
-    await expect(
-      page.getByRole("heading", { name: "My bookings", exact: true }),
-    ).toBeVisible();
-    const retainedBooking = page.getByRole("link", {
-      name: /Preserved Cottage/,
+      const retained = observeConnectedStay();
+      for (const key of ["attempts", "links", "conversations", "messages"])
+        expect(retained[key]).toEqual(linked[key]);
     });
-    await expect(
-      page.getByRole("listitem").filter({ has: retainedBooking }),
-    ).toContainText("Cancelled booking");
-    await expect(retainedBooking).toHaveAttribute(
-      "href",
-      `/en/booking-requests/${reference}`,
-    );
-    await retainedBooking.click();
-    await expect(
-      page.getByRole("heading", { name: "Cancelled booking", exact: true }),
-    ).toBeVisible();
-    await assertResponsiveDetails(page, "customer");
-    expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
-    await page.goto(`/en/booking-requests/${reference}`);
-    await expectAmount(
-      page.getByTestId("verified-refund"),
-      messages.en.total,
-      "IQD 115,000",
-    );
-    await expect(
-      page.getByText("Private address", { exact: true }),
-    ).toHaveCount(0);
-    const cancelledMain = page.locator("#customer-booking-request-detail");
-    await cancelledMain.focus();
-    await expect(cancelledMain).toBeFocused();
-    await expect(cancelledMain).toHaveCSS("outline-offset", "-3px");
-    await page.screenshot({
-      path: test.info().outputPath("cancelled-full-width-main-focus-en.png"),
-      fullPage: true,
-    });
-  });
+  }
   test("owner must supply a reason and retains the no-payout cancellation outcome", async ({
     page,
     baseURL,
@@ -988,7 +1291,7 @@ test.describe("retained cancellation and refund controls", () => {
         }),
       ).toHaveCount(0);
       await expect(
-        ownerPage.getByText("Private address", { exact: true }),
+        ownerPage.getByText("Fictional private address", { exact: true }),
       ).toHaveCount(0);
       const queues = administratorQueuesMessages.en;
       const expectRow = async (label: string, locale: Locale = "en") =>
