@@ -4,6 +4,7 @@ import {
   paymentOperationFixture,
   recoveryPermitFixture,
 } from "../../tests/fixtures/payment-recovery.fixtures";
+import type { PaymentExpiryOperationFact } from "./booking-request-payment-observation";
 import {
   bookingRequestPaymentFactsFrom,
   SupabaseBookingRequestPaymentObservationRepository,
@@ -15,6 +16,110 @@ it("validates complete facts independently of JSON key order", () => {
       Object.fromEntries(Object.entries(facts).reverse()),
     ),
   ).toEqual(facts);
+});
+it("rejects case-only duplicate payment attempt IDs", () => {
+  const facts = paymentFactsFixture();
+  const [lowercase, uppercase, distinct] = [
+    "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+    "A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11",
+    "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+  ].map((id) => ({ ...facts.attempts[0], id }));
+  for (const entry of [lowercase, uppercase]) {
+    expect(
+      bookingRequestPaymentFactsFrom(paymentFactsFixture({ attempts: [entry] }))
+        .attempts,
+    ).toEqual([entry]);
+  }
+  expect(
+    bookingRequestPaymentFactsFrom(
+      paymentFactsFixture({ attempts: [uppercase, distinct] }),
+    ).attempts,
+  ).toEqual([uppercase, distinct]);
+  expect(() =>
+    bookingRequestPaymentFactsFrom(
+      paymentFactsFixture({ attempts: [lowercase, uppercase] }),
+    ),
+  ).toThrow("Payment facts are invalid");
+});
+it("rejects case-only duplicate payment operation IDs", () => {
+  const [lowercase, uppercase, distinct] = [
+    "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+    "A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11",
+    "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+  ].map((id) => paymentOperationFixture({ id }));
+  for (const entry of [lowercase, uppercase]) {
+    expect(
+      bookingRequestPaymentFactsFrom(
+        paymentFactsFixture({ operations: [entry] }),
+      ).operations,
+    ).toEqual([entry]);
+  }
+  expect(
+    bookingRequestPaymentFactsFrom(
+      paymentFactsFixture({ operations: [uppercase, distinct] }),
+    ).operations,
+  ).toEqual([uppercase, distinct]);
+  expect(() =>
+    bookingRequestPaymentFactsFrom(
+      paymentFactsFixture({ operations: [lowercase, uppercase] }),
+    ),
+  ).toThrow("Payment facts are invalid");
+});
+it("rejects case-only duplicate payment expiry operation IDs", () => {
+  const facts = paymentFactsFixture();
+  const [lowercase, uppercase, distinct] = [
+    "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+    "A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11",
+    "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+  ].map(
+    (id): PaymentExpiryOperationFact => ({
+      id,
+      owner: "expiry",
+      authorizationLifecycleId: facts.originalLifecycleId,
+      kind: "refund",
+      captureId: facts.originalCaptureId,
+      providerOperationId: null,
+      valid: true,
+      permit: {
+        purpose: "booking-request-payment-required-corrective-refund",
+        expiryWorkId: facts.bookingRequestId,
+        expiryOperationId: id,
+        idempotencyKey: "refund:1",
+        notBefore: "2026-09-06T12:00:00.000Z",
+        binding: {
+          bookingRequestId: facts.bookingRequestId,
+          captureProviderOperationId: facts.originalCaptureId!,
+          paymentLifecycleId: facts.originalLifecycleId,
+          captureLogicalOperationId: "capture",
+          capturePhysicalAttemptId: "capture:1",
+          captureMovementReference: "movement",
+          captureOccurredAt: "2026-09-06T12:01:00.000Z",
+          refundLogicalOperationId: "refund",
+          refundPhysicalAttemptId: "refund:1",
+          amountFils: facts.amountFils,
+          currency: "IQD",
+          providerIdentity: facts.providerIdentity,
+        },
+      },
+    }),
+  );
+  for (const entry of [lowercase, uppercase]) {
+    expect(
+      bookingRequestPaymentFactsFrom(
+        paymentFactsFixture({ expiryOperations: [entry] }),
+      ).expiryOperations,
+    ).toEqual([entry]);
+  }
+  expect(
+    bookingRequestPaymentFactsFrom(
+      paymentFactsFixture({ expiryOperations: [uppercase, distinct] }),
+    ).expiryOperations,
+  ).toEqual([uppercase, distinct]);
+  expect(() =>
+    bookingRequestPaymentFactsFrom(
+      paymentFactsFixture({ expiryOperations: [lowercase, uppercase] }),
+    ),
+  ).toThrow("Payment facts are invalid");
 });
 it.each([
   undefined,
