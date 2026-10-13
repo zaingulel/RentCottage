@@ -100,14 +100,6 @@
   overflow-wrap: anywhere;
 }
 
-.content a:focus-visible,
-.content button:focus-visible,
-.content input:focus-visible,
-.content select:focus-visible {
-  outline: 3px solid var(--focus-outline);
-  outline-offset: 3px;
-}
-
 @media (max-width: 40rem) {
   .card dl div,
   .detailList div {

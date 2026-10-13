@@ -73,8 +73,9 @@ Isolate clock, date and price runs with `bdi dir="ltr"`, and original names with
 next-day words remain beside the endpoint. Reuse the established palette, Changa headings and Karla/Almarai body
 fonts through their existing tokens.
 
-Schedule-form controls use the shared green-inner, cream-outer focus treatment in the
+Schedule-form controls use the shared cream separator, green ring and cream outer outline in the
 [design system's accessibility conventions](../DESIGN-SYSTEM.md#accessibility-conventions).
+The 2px separator keeps focus distinct on green controls; the outline has a 4px offset.
 Enabled controls and error states require actual contrast and keyboard verification.
 
 ## Migration admission and rollback

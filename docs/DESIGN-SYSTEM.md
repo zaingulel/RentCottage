@@ -97,10 +97,10 @@ the code keeps them.
   literals. The radio button mark is a circle.
 - There is no elevation shadow. A surface is set apart by its background and its `1px` `--line` border;
   `text-shadow` and `drop-shadow()` are not used.
-- `box-shadow` draws state rings only, each with no offset and no blur: `--shadow-focus` is the opaque green
-  inner band around a keyboard-focused control or handoff target; `--shadow-focus-inset` is its 6px inset form;
-  `--shadow-invalid` surrounds an invalid field, mark or option; and `--shadow-pressed` sits inside a pressed
-  toggle. A ring adds to the focus outline described under Accessibility conventions and never replaces it.
+- `box-shadow` draws state rings only, each with no offset and no blur: `--shadow-focus` composes a 2px opaque
+  cream separator and a 4px opaque green shadow around a keyboard-focused control or ordinary handoff target.
+  The first shadow paints above the second, leaving 2px of green beyond the separator. `--shadow-invalid`
+  surrounds an invalid field, mark or option; and `--shadow-pressed` sits inside a pressed toggle. A ring adds to the focus outline described under Accessibility conventions and never replaces it.
   A focused pressed toggle composes `var(--shadow-focus), var(--shadow-pressed)` to retain its inset edge.
 - Every `z-index` is one of four layers, lowest first: `--layer-raised` for content above a backdrop in its own
   block, as the hero copy is above its shade; `--layer-overlap` for a block that overlaps the one before it, as
@@ -327,12 +327,12 @@ its own; the block it sits in sets the space around it.
 ## Accessibility conventions
 
 - Hide text visually but keep it for assistive technology with `.visually-hidden`.
-- Keyboard focus uses two opaque bands: forest-green `--focus-ring` (`#22402f`) inside cream
-  `--focus-outline` (`#fffcf5`). The green shadow fills the outline offset; the cream outline covers its outer
-  edge. Shared `.action`, `.action-link`, `.form-control`, `.choice-control` marks and `.disclosure` summaries
-  have a `2px` cream outline with a `2px` offset, leaving `2px` of green inside. Other buttons, inputs, selects,
-  textareas and links use `3px`/`3px`. The two bands contrast at least 9:1 with each other; the green band reaches
-  at least 3:1 on bright surfaces. Measure the rendered bands against their actual adjacent surfaces, including
+- Keyboard focus uses opaque forest-green `--focus-ring` (`#22402f`) and cream `--focus-outline` (`#fffcf5`).
+  From the control outward, a `2px` cream separator keeps the `2px` green ring distinct on green controls, then
+  a cream outline surrounds it. Shared `.action`, `.action-link`, `.form-control`, `.choice-control` marks and
+  `.disclosure` summaries have a `2px` cream outline; other buttons, inputs, selects, textareas and links use
+  `3px`. Both have a `4px` outline offset. The green and cream bands contrast at least 9:1 with each other;
+  the green band reaches at least 3:1 on bright surfaces. Measure the rendered bands against their actual adjacent surfaces, including
   perimeter pixels over photographs and gradients; the token ratios alone do not prove visibility there.
 - Focused fields and disclosure summaries have a green border. Invalid fields and choice marks retain their red
   error border and semantics; keyboard focus replaces the translucent invalid halo with the two bands, and blur
@@ -352,13 +352,13 @@ its own; the block it sits in sets the space around it.
   described above: supply it only for a ready named successor and omit it while pending or for untargeted feedback.
 - Existing headings, status text and landmarks explicitly named as busy-action successors use `tabIndex={-1}`
   and `action-focus-target`. When focus is visible after keyboard interaction, including a programmatic
-  keyboard handoff, `.action-focus-target:focus-visible` uses the green inner band and cream `3px` outline with a
-  `3px` offset. Fresh ordinary pointer focus on these targets does not draw an outline. These non-control targets
-  keep their existing semantics, copy and layout and stay outside the sequential Tab order. Verify each new
+  keyboard handoff, `.action-focus-target:focus-visible` uses the cream separator, green ring and cream `3px`
+  outline with a `4px` offset. Fresh ordinary pointer focus on these targets does not draw an outline. These
+  non-control targets keep their existing semantics, copy and layout and stay outside the sequential Tab order. Verify each new
   target's visible focus and contrast against its actual adjacent surface in the running view. Viewport-width
-  non-control targets add `action-focus-target-inset`: its `outline-offset: -3px` puts cream in the outermost
-  `3px` inside the target and its `6px` green inset shadow leaves the next `3px` inward green. Both bands stay
-  inside the viewport; inset contrast needs rendered verification.
+  non-control targets add `action-focus-target-inset`: this exception uses a green `3px` outline at
+  `outline-offset: -3px` without a shadow on the existing light page surfaces. The outline stays inside the
+  viewport and paints above the existing non-positioned opaque page background; inset contrast needs rendered verification.
 - Moving focus elsewhere, Tab intent, an outside pointer action, browser history navigation, window blur or
   pagehide permanently cancels owned focus, even if the element the person moved to later disappears. An action
   that navigates must explicitly opt into a handoff to a named destination target after its commit; ordinary

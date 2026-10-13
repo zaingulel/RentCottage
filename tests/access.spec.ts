@@ -1762,7 +1762,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
                 : control;
               if (!target) throw new Error("Schedule control has no target");
               const rect = target.getBoundingClientRect();
-              const innerBand = style.boxShadow.match(/^rgba?\([^)]+\)/)?.[0];
+              const innerBand = style.boxShadow.match(/rgba?\([^)]+\)/g)?.[1];
               return {
                 name: control.getAttribute("name") ?? control.textContent,
                 enabled: !control.matches(":disabled"),
@@ -1818,9 +1818,11 @@ test("an approved owner continues the first Cottage Profile and submits a privat
           expect(focused.focusVisible).toBe(true);
           expect(focused.outlineStyle).toBe("solid");
           expect(focused.outlineWidth).toBe("2px");
-          expect(focused.outlineOffset).toBe("2px");
+          expect(focused.outlineOffset).toBe("4px");
           expect(focused.outline).toBe("rgb(255, 252, 245)");
-          expect(focused.boxShadow).toBe("rgb(34, 64, 47) 0px 0px 0px 3px");
+          expect(focused.boxShadow).toBe(
+            "rgb(255, 252, 245) 0px 0px 0px 2px, rgb(34, 64, 47) 0px 0px 0px 4px",
+          );
           expect(focused.innerBandContrast).toBeGreaterThanOrEqual(3);
           if (
             (locale === "en" && testInfo.project.name === "desktop") ||

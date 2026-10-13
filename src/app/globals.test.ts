@@ -48,7 +48,7 @@ const listedTokens = new Set(
 const scaledProperty =
   /^(?:(?:margin|padding|inset)(?:-[a-z-]+)?|(?:row-|column-)?gap|top|right|bottom|left|font|font-size|line-height|letter-spacing)$/;
 const scaleToken =
-  /^(?:(?:space|font-size)-\d+|radius-(?:control|card|mark)|shadow-(?:focus(?:-inset)?|invalid|pressed))$/;
+  /^(?:(?:space|font-size)-\d+|radius-(?:control|card|mark)|shadow-(?:focus|invalid|pressed))$/;
 
 function blank(text: string) {
   return text.replace(/[^\n]/g, " ");
@@ -476,7 +476,9 @@ describe("stylesheet shape and layer tokens", () => {
     expect(
       rings.filter(
         (token) =>
-          !/^--[\w-]+: (?:inset )?0 0 0 \d+px var\(--[a-z-]+\)$/.test(token),
+          !/^--[\w-]+: (?:inset )?0 0 0 \d+px var\(--[a-z-]+\)(?:, (?:inset )?0 0 0 \d+px var\(--[a-z-]+\))*$/.test(
+            token,
+          ),
       ),
     ).toEqual([]);
   });

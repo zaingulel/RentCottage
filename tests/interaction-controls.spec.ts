@@ -1,4 +1,4 @@
-import { expect, type Locator, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { build } from "esbuild";
 
 import { readApplicationStylesheet } from "./fixtures/application-stylesheet";
@@ -49,10 +49,10 @@ test("locale actions expose native semantics and visible interaction states", as
     ]),
   ).toEqual([
     "3px",
-    "3px",
+    "4px",
     "solid",
     "rgb(255, 252, 245)",
-    "rgb(34, 64, 47) 0px 0px 0px 3px",
+    "rgb(255, 252, 245) 0px 0px 0px 2px, rgb(34, 64, 47) 0px 0px 0px 4px",
   ]);
 
   await arabic.click();
@@ -145,6 +145,31 @@ function computed(
       return names.map((name) => style.getPropertyValue(name));
     },
     [properties, pseudoElement] as const,
+  );
+}
+
+async function samplePixels(
+  page: Page,
+  points: readonly { x: number; y: number }[],
+) {
+  const screenshot = await page.screenshot({ scale: "css" });
+  return page.evaluate(
+    async ({ data, points }) => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${data}`;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext("2d")!;
+      context.drawImage(image, 0, 0);
+      return points.map(({ x, y }) =>
+        Array.from(
+          context.getImageData(Math.floor(x), Math.floor(y), 1, 1).data,
+        ).slice(0, 3),
+      );
+    },
+    { data: screenshot.toString("base64"), points },
   );
 }
 
@@ -270,9 +295,9 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
     const focusedField = await computed(reference, focusRing);
     expect(focusedField).toEqual([
       "2px",
-      "2px",
+      "4px",
       "rgb(255, 252, 245)",
-      "rgb(34, 64, 47) 0px 0px 0px 3px",
+      "rgb(255, 252, 245) 0px 0px 0px 2px, rgb(34, 64, 47) 0px 0px 0px 4px",
     ]);
     const [focusedFieldBorder] = await computed(reference, [
       "border-top-color",
@@ -410,6 +435,65 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
   await summary.focus();
   await page.keyboard.press("Enter");
   await expect(disclosure).toHaveJSProperty("open", true);
+
+  const fixtureRoot = page.locator("#fixture-root");
+  const fixtureStyle = await fixtureRoot.evaluate((element: HTMLElement) => {
+    const original = element.style.cssText;
+    element.style.padding = "16px";
+    element.style.background = "#fffcf5";
+    return original;
+  });
+  const primary = page.getByRole("button", { name: "Save fixture" });
+  await page.mouse.move(0, 0);
+  await page.keyboard.press("Tab");
+  await primary.scrollIntoViewIfNeeded();
+  await primary.evaluate((element: HTMLElement) => element.blur());
+  await expect(primary).not.toBeFocused();
+  const bounds = (await primary.boundingBox())!;
+  const bandPoints = [1, 3, 5].map((distance) => ({
+    x: bounds.x - distance,
+    y: bounds.y + bounds.height / 2,
+  }));
+  expect(await samplePixels(page, bandPoints)).toEqual([
+    [255, 252, 245],
+    [255, 252, 245],
+    [255, 252, 245],
+  ]);
+  await primary.focus();
+  await expect(primary).toBeFocused();
+  expect(
+    await primary.evaluate((element) => element.matches(":focus-visible")),
+  ).toBe(true);
+  expect(await primary.boundingBox()).toEqual(bounds);
+  expect(await samplePixels(page, bandPoints)).toEqual([
+    [255, 252, 245],
+    [34, 64, 47],
+    [255, 252, 245],
+  ]);
+  await fixtureRoot.evaluate((element: HTMLElement, original) => {
+    element.style.cssText = original;
+  }, fixtureStyle);
+
+  await page.emulateMedia({ forcedColors: "active" });
+  await summary.focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(summary).toBeFocused();
+  expect(
+    await summary.evaluate((element) => element.matches(":focus-visible")),
+  ).toBe(true);
+  const [forcedWidth, forcedStyle, forcedOutline, forcedBackground] =
+    await computed(summary, [
+      "outline-width",
+      "outline-style",
+      "outline-color",
+      "background-color",
+    ]);
+  expect(Number.parseFloat(forcedWidth)).toBeGreaterThan(0);
+  expect(forcedStyle).toBe("solid");
+  expect(forcedOutline).not.toBe("rgba(0, 0, 0, 0)");
+  expect(forcedOutline).not.toBe(forcedBackground);
+  await page.emulateMedia({ forcedColors: "none" });
 
   if (testInfo.project.name === "desktop") {
     await page.screenshot({
@@ -665,10 +749,10 @@ test("busy action focus preserves native blocking and explicit successors", asyn
           ]),
         ).toEqual([
           "3px",
-          "3px",
+          "4px",
           "solid",
           "rgb(255, 252, 245)",
-          "rgb(34, 64, 47) 0px 0px 0px 3px",
+          "rgb(255, 252, 245) 0px 0px 0px 2px, rgb(34, 64, 47) 0px 0px 0px 4px",
         ]);
         const colors = await target.evaluate((element) => {
           let surface = element.parentElement!;
@@ -676,10 +760,14 @@ test("busy action focus preserves native blocking and explicit successors", asyn
             getComputedStyle(surface).backgroundColor === "rgba(0, 0, 0, 0)"
           )
             surface = surface.parentElement!;
+          const band =
+            getComputedStyle(element).boxShadow.match(/rgb\([^)]*\)/g)?.[1];
+          if (!band)
+            throw new Error(
+              "Focused handoff target has no opaque green shadow band",
+            );
           return {
-            band: getComputedStyle(element).boxShadow.match(
-              /^rgb\([^)]*\)/,
-            )![0],
+            band,
             background: getComputedStyle(surface).backgroundColor,
           };
         });
@@ -702,15 +790,73 @@ test("busy action focus preserves native blocking and explicit successors", asyn
           (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05),
         ).toBeGreaterThanOrEqual(3);
         if (scenario === "main") {
-          await target.evaluate((element) =>
-            element.classList.add("action-focus-target-inset"),
+          const originalFixture = await target.evaluateHandle(
+            (element: HTMLElement) => {
+              const original = {
+                style: element.style.cssText,
+                className: element.className,
+                children: Array.from(element.childNodes),
+              };
+              element.classList.add("action-focus-target-inset");
+              element.style.width = "192px";
+              element.style.height = "64px";
+              const child = document.createElement("div");
+              child.dataset.focusPaintFixture = "";
+              child.style.cssText =
+                "width: 100%; height: 64px; margin: 0; padding: 0; border: 0; background: var(--background)";
+              element.replaceChildren(child);
+              return original;
+            },
           );
+          const child = target.locator("[data-focus-paint-fixture]");
+          expect(await computed(target, ["position", "z-index"])).toEqual([
+            "static",
+            "auto",
+          ]);
+          expect(await computed(child, ["position", "z-index"])).toEqual([
+            "static",
+            "auto",
+          ]);
+          await target.scrollIntoViewIfNeeded();
+          await expect(target).toBeFocused();
           expect(
-            await computed(target, ["outline-offset", "box-shadow"]),
-          ).toEqual(["-3px", "rgb(34, 64, 47) 0px 0px 0px 6px inset"]);
-          await target.evaluate((element) =>
-            element.classList.remove("action-focus-target-inset"),
-          );
+            await target.evaluate((element) =>
+              element.matches(":focus-visible"),
+            ),
+          ).toBe(true);
+          const insetBounds = (await target.boundingBox())!;
+          expect(insetBounds.width).toBe(192);
+          expect(insetBounds.height).toBe(64);
+          expect(await child.boundingBox()).toEqual(insetBounds);
+          expect(
+            await samplePixels(page, [
+              {
+                x: insetBounds.x + insetBounds.width / 2,
+                y: insetBounds.y + 1,
+              },
+              {
+                x: insetBounds.x + insetBounds.width / 2,
+                y: insetBounds.y + insetBounds.height - 1,
+              },
+            ]),
+          ).toEqual([
+            [34, 64, 47],
+            [34, 64, 47],
+          ]);
+          expect(
+            await computed(target, [
+              "outline-width",
+              "outline-offset",
+              "outline-color",
+              "box-shadow",
+            ]),
+          ).toEqual(["3px", "-3px", "rgb(34, 64, 47)", "none"]);
+          await target.evaluate((element: HTMLElement, original) => {
+            element.replaceChildren(...original.children);
+            element.style.cssText = original.style;
+            element.className = original.className;
+          }, originalFixture);
+          await originalFixture.dispose();
         }
         if (scenario === "replacement") {
           await elsewhere.click();
