@@ -440,7 +440,7 @@ describe("stylesheet shape and layer tokens", () => {
     expect(
       offScaleHits(
         /^box-shadow$/,
-        /^(?:var\(--shadow-[a-z-]+\),?|none|inherit)$/,
+        /^(?:var\(--shadow-[a-z]+\),?|none|inherit)$/,
       ),
     ).toEqual([]);
   });
