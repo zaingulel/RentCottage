@@ -93,6 +93,11 @@ downgrade it. An asserted-but-unexecuted mutation is a review finding.
 - Reuse an existing valid domain fixture or create one through the real production transition, keeping the
   payment, authorization and lifecycle guards intact; validate it through the production reader before a browser
   or Worker journey.
+- Every database-backed browser file, including scheduled files, owns the synthetic accounts, Cottages and fixed
+  booking graphs it creates, reads or clears. Concurrent files and their mobile/desktop projects use disjoint
+  participants and mutable records; an exclusive file may reuse its own dataset across sequential projects.
+  The shared preparation reviewer belongs to preparation, so journeys never sign in as or modify it. Immutable
+  catalog data may be shared; the demo remains separate from test fixtures.
 - Validate each new database observer query at the disposable database seam before an expensive journey: qualify
   ambiguous columns and assert row cardinality.
 - Keep an expensive fixture alive across related assertions only when isolation is proven and a failure still
@@ -207,6 +212,23 @@ check; when one of the four fails the others still finish and the run stops befo
 GitHub-hosted baseline runs the same steps one at a time. A local run that includes the browser group builds once,
 inside the access run after the Next.js fixtures; the Next.js journeys, the Worker journeys and the shell checks all
 serve that build. Each hosted browser portion builds what it serves.
+The ordinary unpartitioned local browser group runs each runtime's parallel portion before its exclusive portion,
+then the scheduled portion. All use zero retries and the same build; each portion has a separate report directory.
+The journey names below identify files under `tests/` with the `.spec.ts` suffix.
+
+| Runtime and portion | Journeys | Workers |
+|---|---|---|
+| Next.js parallel | `booking-history`, `messaging`, `customer-reviews` | 2 |
+| Next.js exclusive | `access`, `booking-request-access`, `administrator-payment-history`, `administrator-records` | 1 |
+| Worker parallel | `access`, `messaging`, `customer-reviews` | 2 |
+| Worker exclusive | `booking-request-access`, `administrator-payment-history`, `administrator-records`, `booking-cancellation-refund` | 1 |
+| Worker scheduled | `worker-scheduled-expiry`, `worker-scheduled-capture`, `worker-scheduled-refund`, `worker-scheduled-completion`, `worker-scheduled-reminder`, `worker-scheduled-request-notification` | 1 |
+
+Local Playwright runs tests within each file sequentially; `access.spec.ts` keeps its explicit serial declaration.
+Next.js access is exclusive across mobile and desktop because they share translation controls and administrator
+selectors. Hosted runs keep full parallelism within files and the existing shard selections; the owned-journey
+proof modes keep their existing worker and retry settings.
+
 A TypeScript product change selects the baseline route; a database object the database group; a booking or payment
 Integrity Core object or concurrency program adds the booking and payment concurrency programs; presentation,
 Worker and Playwright paths the browser group; an unlisted path stops the run until it is listed in
