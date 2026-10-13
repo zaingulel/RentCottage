@@ -58,7 +58,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(348);
+select plan(352);
 
 set local role anon;
 select throws_ok(
@@ -913,6 +913,55 @@ create temporary table stale_preparation_before as
 select to_jsonb(attempts) as record
 from public.booking_request_submission_attempts attempts
 where attempts.id = (select (result->>'attemptId')::uuid from prepared_submission);
+create temporary table usable_replacement_quote as
+select public.get_public_booking_quote_with_fingerprint(
+  'en', 'cottage-30000000000040008000000000003201',
+  '{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":2}]}'::jsonb
+) as quote;
+select is((select quote->>'status' from usable_replacement_quote), 'quoted',
+  'a different-day replacement has a real current quote while preparation remains usable');
+create temporary table usable_replacement_submission as
+select submission || jsonb_build_object(
+  'discoveryQuery', '{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":2}]}'::jsonb,
+  'quoteFingerprint', quote->>'quoteFingerprint',
+  'contentVersion', quote->'contentVersion', 'termsVersion', quote->'termsVersion',
+  'bookingPriceIqd', quote->'bookingPriceIqd', 'serviceFeeIqd', quote->'serviceFeeIqd',
+  'customerTotalIqd', quote->'customerTotalIqd', 'firstStartsAt', quote#>>'{items,0,startsAt}'
+) as submission
+from journey_submission cross join usable_replacement_quote;
+grant select on usable_replacement_submission to service_role;
+set local role service_role;
+select is(public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113708',
+  (select submission from usable_replacement_submission)
+)->>'status', 'invalid', 'a usable preparation refuses a fresh different-intent replacement in its conversation');
+reset role;
+select results_eq(
+  $$select to_jsonb(attempts) = baseline.record,
+      not public.messaging_submission_attempt_is_resolved(attempts.id)
+    from public.booking_request_submission_attempts attempts cross join stale_preparation_before baseline
+    where attempts.id = (select (result->>'attemptId')::uuid from prepared_submission)$$,
+  $$values (true,true)$$,
+  'a refused replacement retains the usable preparation exactly unchanged and unresolved'
+);
+select results_eq(
+  $$select
+      (select count(*)::integer from public.booking_request_submission_attempts
+        where customer_user_id = '00000000-0000-0000-0000-000000003202'),
+      (select count(*)::integer from public.booking_request_authorization_claims
+        where customer_user_id = '00000000-0000-0000-0000-000000003202'),
+      (select count(*)::integer from public.payment_provider_operations operations
+        where operations.payment_lifecycle_id in (
+          select attempts.payment_lifecycle_id from public.booking_request_submission_attempts attempts
+          where attempts.customer_user_id = '00000000-0000-0000-0000-000000003202'
+        )),
+      (select count(*)::integer from public.booking_requests
+        where customer_user_id = '00000000-0000-0000-0000-000000003202'),
+      (select count(*)::integer from public.cottage_booking_period_commitments
+        where customer_user_id = '00000000-0000-0000-0000-000000003202')$$,
+  $$values (1,0,0,0,0)$$,
+  'usable preparation refusal retains one attempt and creates no claim, provider call, request or hold'
+);
 set local role service_role;
 select is(public.prepare_booking_request_submission(
   '00000000-0000-0000-0000-000000003202',
