@@ -13,6 +13,7 @@ import {
   cottageProfileStatusLabel,
 } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
+import { ActionFocusTarget } from "./interaction-controls";
 
 const idle: CottageProfileActionState = { status: "idle" };
 
@@ -43,7 +44,17 @@ export function CottageProfileOverview({
       <div className="application-section-heading">
         <span>01</span>
         <div>
-          <h1>{title}</h1>
+          <h1
+            id="cottage-profile-overview-title"
+            tabIndex={-1}
+            className="action-focus-target"
+          >
+            {title}
+          </h1>
+          <ActionFocusTarget
+            targetId="cottage-profile-overview-title"
+            navigation
+          />
           <p>{intro}</p>
         </div>
       </div>

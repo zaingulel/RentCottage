@@ -1564,12 +1564,21 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await page.getByLabel("Iraqi phone number").fill(phone);
   await page.getByRole("button", { name: "Send verification code" }).click();
   await page.getByLabel("Verification code").fill("123456");
-  await page.getByRole("button", { name: "Verify" }).click();
+  const approvedOwnerVerify = page.getByRole("button", {
+    name: "Verify",
+    exact: true,
+  });
+  await approvedOwnerVerify.focus();
+  await expect(approvedOwnerVerify).toBeFocused();
+  await approvedOwnerVerify.press("Enter");
   await expect(page).toHaveURL(/\/en\/owner\/cottages$/);
 
   await expect(
     page.getByRole("heading", { name: "Your cottages" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Your cottages", exact: true }),
+  ).toBeFocused();
   await expect(page.getByText("Started in Owner Application")).toBeVisible();
   await page
     .getByRole("button", { name: "Create another cottage draft" })
@@ -2523,6 +2532,11 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await administratorVerifyControl.press("Enter");
 
   await expect(page.getByText(/Administrator access is ready/)).toBeVisible();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Administrator access is ready" }),
+  ).toBeFocused();
   await administratorVerifyMeasurement.evaluate((measurement) => {
     measurement.read("settled");
     measurement.observer.disconnect();
@@ -4256,6 +4270,9 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
     await expect(
       target.getByRole("heading", { name: "My bookings", exact: true }),
     ).toBeVisible();
+    await expect(
+      target.getByRole("heading", { name: "My bookings", exact: true }),
+    ).toBeFocused();
     const phoneVerifyRows = await phoneVerifyMeasurement.evaluate(
       (measurement) => {
         measurement.read("settled");
@@ -4360,6 +4377,7 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
   );
   await enrollControl.press("Enter");
   await expect(page).toHaveURL(/\/en\/owner\/application$/);
+  await expect(page.locator("#owner-application-title")).toBeFocused();
   await enrollMeasurement.evaluate((measurement) => {
     measurement.read("settled");
     measurement.observer.disconnect();

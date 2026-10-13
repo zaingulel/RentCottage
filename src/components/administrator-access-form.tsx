@@ -19,6 +19,7 @@ import {
   ActionFocusTarget,
   ActionLink,
   FormControl,
+  prepareActionFocusNavigation,
 } from "./interaction-controls";
 import { useExclusiveAction } from "./use-exclusive-action";
 
@@ -44,6 +45,7 @@ export function AdministratorAccessForm({
 }) {
   const router = useRouter();
   const copy = accessMessages[locale];
+  const verifyButtonId = useId();
   const authenticatorInputId = useId();
   const resultFocusId = useId();
   const [email, setEmail] = useState("");
@@ -95,6 +97,7 @@ export function AdministratorAccessForm({
       setMessage(copy.administratorReady);
       const destination = safeAdministratorReturnDestination(locale, returnTo);
       if (destination) {
+        prepareActionFocusNavigation(verifyButtonId);
         router.replace(destination);
         router.refresh();
       }
@@ -189,6 +192,7 @@ export function AdministratorAccessForm({
             width="full"
             type="submit"
             pending={pending}
+            id={verifyButtonId}
             focusSuccessorId={resultFocusId}
           >
             {copy.verify}

@@ -150,9 +150,14 @@ export function ConfirmedBookingDetails({
     >
       <header>
         <div>
-          <h1 id="confirmed-booking-heading" className="page-title">
+          <h1
+            id="confirmed-booking-heading"
+            tabIndex={-1}
+            className="page-title action-focus-target"
+          >
             {bookingLifecycleMessages[locale][lifecycleStatus]}
           </h1>
+          <ActionFocusTarget targetId="confirmed-booking-heading" navigation />
           <p>{access.cottageName}</p>
           <strong>{access.bookingReference}</strong>
         </div>

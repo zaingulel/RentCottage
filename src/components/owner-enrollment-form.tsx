@@ -1,10 +1,14 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useId, useState } from "react";
+import { unstable_rethrow, useRouter } from "next/navigation";
 import { enrollOwner } from "@/access/actions";
 import { accessMessages } from "@/i18n/access-messages";
 import type { Locale } from "@/i18n/routing";
-import { ActionButton, ActionFeedback } from "./interaction-controls";
+import {
+  ActionButton,
+  ActionFeedback,
+  prepareActionFocusNavigation,
+} from "./interaction-controls";
 import { useExclusiveAction } from "./use-exclusive-action";
 export function OwnerEnrollmentForm({
   locale,
@@ -15,14 +19,21 @@ export function OwnerEnrollmentForm({
 }) {
   const copy = accessMessages[locale];
   const router = useRouter();
+  const enrollButtonId = useId();
   const { pending, run } = useExclusiveAction();
   const [message, setMessage] = useState("");
   async function enroll() {
     setMessage("");
     let result;
+    let abortNavigation: (() => void) | undefined;
     try {
-      result = await run(() => enrollOwner({ locale, returnTo }));
-    } catch {
+      result = await run(() => {
+        abortNavigation = prepareActionFocusNavigation(enrollButtonId);
+        return enrollOwner({ locale, returnTo });
+      });
+    } catch (error) {
+      unstable_rethrow(error);
+      abortNavigation?.();
       setMessage(copy.sessionUnavailable);
       return;
     }
@@ -30,10 +41,12 @@ export function OwnerEnrollmentForm({
     if (result.status === "enrolled") {
       router.replace(result.destination);
       router.refresh();
-    } else
+    } else {
+      abortNavigation?.();
       setMessage(
         result.status === "unavailable" ? copy.sessionUnavailable : copy.denied,
       );
+    }
   }
   return (
     <section>
@@ -45,6 +58,7 @@ export function OwnerEnrollmentForm({
         type="button"
         pending={pending}
         onClick={enroll}
+        id={enrollButtonId}
       >
         {copy.enroll}
       </ActionButton>

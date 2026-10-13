@@ -3,6 +3,7 @@ import type { CottageDiscoveryFacetsResult } from "@/cottage-discovery/supabase-
 import { messages } from "@/i18n/messages";
 import type { Locale } from "@/i18n/routing";
 
+import { ActionFocusTarget } from "./interaction-controls";
 import { CottageDiscoveryForm } from "./cottage-discovery-form";
 
 interface MarketplaceShellProps {
@@ -27,7 +28,14 @@ export function MarketplaceShell({ locale, facets }: MarketplaceShellProps) {
         />
         <div className="retreat-shade" />
         <div className="retreat-copy">
-          <h1>{copy.heroTitle}</h1>
+          <h1
+            id="marketplace-hero-title"
+            tabIndex={-1}
+            className="action-focus-target"
+          >
+            {copy.heroTitle}
+          </h1>
+          <ActionFocusTarget targetId="marketplace-hero-title" navigation />
           <p>{copy.heroSubtitle}</p>
         </div>
       </section>

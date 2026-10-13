@@ -249,6 +249,10 @@ textarea {
   outline-offset: 3px;
 }
 
+.action-focus-target-inset:focus {
+  outline-offset: -3px;
+}
+
 .form-control:focus-visible,
 .disclosure > summary:focus-visible {
   border-color: var(--gold);

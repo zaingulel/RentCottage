@@ -1,20 +1,31 @@
+import type { ReactNode } from "react";
+
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { requestPhone, verifyPhone, submitBookingRequest } = vi.hoisted(() => ({
-  requestPhone: vi.fn(),
-  verifyPhone: vi.fn(),
-  submitBookingRequest: vi.fn(),
-}));
+const { completePhone, requestPhone, verifyPhone, submitBookingRequest } =
+  vi.hoisted(() => ({
+    completePhone: vi.fn(),
+    requestPhone: vi.fn(),
+    verifyPhone: vi.fn(),
+    submitBookingRequest: vi.fn(),
+  }));
 
 vi.mock("@/booking-request/actions", () => ({ submitBookingRequest }));
 vi.mock("@/access/actions", () => ({
+  completePhoneAccess: completePhone,
   requestPhoneAccess: requestPhone,
   verifyPhoneAccess: verifyPhone,
 }));
 
+import RequestLayout from "@/app/[locale]/request/[slug]/layout";
+import { messages } from "@/i18n/messages";
+import { BookingQuoteView } from "./booking-quote";
+import { NotFoundScreen } from "./not-found-screen";
+
 import type { PublicBookingQuote } from "@/booking-quote/booking-quote";
+import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
 import { bookingQuoteMessages } from "@/i18n/booking-quote-messages";
 import { bookingRequestMessages } from "@/i18n/booking-request-messages";
 import {
@@ -65,6 +76,54 @@ function policyProps(locale: Locale) {
   };
 }
 
+const queryString =
+  "from=2099-08-21&to=2099-08-21&guests=4&selection=2099-08-21%3Ashift%3A2";
+const returnTo = `/en/request/${quote.slug}?${queryString}`;
+const discoveryQuery: CottageDiscoveryQuery = {
+  from: "2099-08-21",
+  to: "2099-08-21",
+  guests: 4,
+  amenities: [],
+  selections: [{ serviceDay: "2099-08-21", kind: "shift", position: 2 }],
+};
+
+function inlineForm(insideCutoff = false) {
+  return (
+    <BookingRequestForm
+      customerReady={false}
+      discoveryQuery={discoveryQuery}
+      idempotencyKey="11111111-1111-4111-8111-111111111111"
+      locale="en"
+      quote={quote}
+      returnTo={returnTo}
+      {...policyProps("en")}
+      uiPolicy={{ ...uiPolicy, insideCutoff }}
+    />
+  );
+}
+
+async function requestFrame(children: ReactNode) {
+  return await RequestLayout({
+    children,
+    params: Promise.resolve({ locale: "en", slug: quote.slug }),
+  });
+}
+
+async function enterAndVerify(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(
+    screen.getByLabelText("Iraqi phone number"),
+    "+9647500000000",
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Send verification code" }),
+  );
+  await user.type(screen.getByLabelText("Verification code"), "123456");
+  const verify = screen.getByRole("button", { name: "Verify" });
+  act(() => verify.focus());
+  await user.keyboard("{Enter}");
+  return verify;
+}
+
 describe("Booking Request form", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -72,6 +131,12 @@ describe("Booking Request form", () => {
     "focuses the inline verification successor when insideCutoff is %s",
     async (insideCutoff) => {
       requestPhone.mockResolvedValue({ status: "code_sent" });
+      let resolveCompletion!: (value: { status: "completed" }) => void;
+      completePhone.mockReturnValue(
+        new Promise((resolve) => {
+          resolveCompletion = resolve;
+        }),
+      );
       let resolveVerification!: (value: { status: "authenticated" }) => void;
       verifyPhone.mockReturnValue(
         new Promise((resolve) => {
@@ -79,25 +144,10 @@ describe("Booking Request form", () => {
         }),
       );
       const user = userEvent.setup();
-      render(
-        <BookingRequestForm
-          customerReady={false}
-          discoveryQuery={{
-            from: "2099-08-21",
-            to: "2099-08-21",
-            guests: 4,
-            amenities: [],
-            selections: [
-              { serviceDay: "2099-08-21", kind: "shift", position: 2 },
-            ],
-          }}
-          idempotencyKey="11111111-1111-4111-8111-111111111111"
-          locale="en"
-          quote={quote}
-          {...policyProps("en")}
-          uiPolicy={{ ...uiPolicy, insideCutoff }}
-        />,
-      );
+      render(await requestFrame(inlineForm(insideCutoff)));
+      const frame = screen.getByRole("region", {
+        name: bookingRequestMessages.en.formTitle,
+      });
       await user.type(
         screen.getByLabelText("Iraqi phone number"),
         "+9647500000000",
@@ -110,15 +160,28 @@ describe("Booking Request form", () => {
       act(() => verify.focus());
       await user.keyboard("{Enter}");
       expect(verify).toBeDisabled();
+      expect(frame).not.toHaveFocus();
 
       await act(async () => resolveVerification({ status: "authenticated" }));
+      expect(completePhone).toHaveBeenCalledExactlyOnceWith(
+        "en",
+        returnTo,
+        true,
+      );
+      await act(async () => resolveCompletion({ status: "completed" }));
+      expect(
+        screen.getByRole("region", {
+          name: bookingRequestMessages.en.formTitle,
+        }),
+      ).toBe(frame);
+      expect(frame.isConnected).toBe(true);
+      expect(frame).toHaveFocus();
 
       expect(verify).not.toBeInTheDocument();
       if (insideCutoff) {
         expect(screen.getByRole("alert")).toHaveTextContent(
           bookingRequestMessages.en.cutoffPassed,
         );
-        expect(screen.getByRole("alert")).toHaveFocus();
         expect(
           screen.queryByLabelText("Customer name"),
         ).not.toBeInTheDocument();
@@ -126,8 +189,178 @@ describe("Booking Request form", () => {
           screen.queryByRole("button", { name: "Send Booking Request" }),
         ).not.toBeInTheDocument();
       } else {
-        expect(screen.getByLabelText("Customer name")).toHaveFocus();
+        expect(screen.getByLabelText("Customer name")).toBeVisible();
+        expect(
+          screen.getByRole("button", { name: "Send Booking Request" }),
+        ).toBeEnabled();
       }
+      expect(submitBookingRequest).not.toHaveBeenCalled();
+    },
+  );
+
+  it("retains the request region when cutoff changes before inline completion", async () => {
+    requestPhone.mockResolvedValue({ status: "code_sent" });
+    verifyPhone.mockResolvedValue({ status: "authenticated" });
+    let resolveCompletion!: (value: { status: "completed" }) => void;
+    completePhone.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCompletion = resolve;
+      }),
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(await requestFrame(inlineForm()));
+    const frame = screen.getByRole("region", {
+      name: bookingRequestMessages.en.formTitle,
+    });
+    await enterAndVerify(user);
+    expect(completePhone).toHaveBeenCalledExactlyOnceWith("en", returnTo, true);
+    await act(async () => rerender(await requestFrame(inlineForm(true))));
+    await act(async () => resolveCompletion({ status: "completed" }));
+    expect(
+      screen.getByRole("region", { name: bookingRequestMessages.en.formTitle }),
+    ).toBe(frame);
+    expect(frame.isConnected).toBe(true);
+    expect(frame).toHaveFocus();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      bookingRequestMessages.en.cutoffPassed,
+    );
+    expect(screen.queryByLabelText("Customer name")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Send Booking Request" }),
+    ).not.toBeInTheDocument();
+    expect(submitBookingRequest).not.toHaveBeenCalled();
+  });
+
+  it("retains completed region focus through a later cutoff without reclaiming departure", async () => {
+    requestPhone.mockResolvedValue({ status: "code_sent" });
+    verifyPhone.mockResolvedValue({ status: "authenticated" });
+    let resolveCompletion!: (value: { status: "completed" }) => void;
+    completePhone.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCompletion = resolve;
+      }),
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <>
+        {await requestFrame(inlineForm())}
+        <button>Outside</button>
+      </>,
+    );
+    const frame = screen.getByRole("region", {
+      name: bookingRequestMessages.en.formTitle,
+    });
+    await enterAndVerify(user);
+    await act(async () => resolveCompletion({ status: "completed" }));
+    expect(frame).toHaveFocus();
+    expect(screen.getByLabelText("Customer name")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Send Booking Request" }),
+    ).toBeEnabled();
+    await act(async () =>
+      rerender(
+        <>
+          {await requestFrame(inlineForm(true))}
+          <button>Outside</button>
+        </>,
+      ),
+    );
+    expect(
+      screen.getByRole("region", { name: bookingRequestMessages.en.formTitle }),
+    ).toBe(frame);
+    expect(frame.isConnected).toBe(true);
+    expect(frame).toHaveFocus();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      bookingRequestMessages.en.cutoffPassed,
+    );
+    expect(screen.queryByLabelText("Customer name")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Send Booking Request" }),
+    ).not.toBeInTheDocument();
+    const outside = screen.getByRole("button", { name: "Outside" });
+    act(() => outside.focus());
+    await act(async () =>
+      rerender(
+        <>
+          {await requestFrame(<NotFoundScreen locale="en" />)}
+          <button>Outside</button>
+        </>,
+      ),
+    );
+    expect(
+      screen.getByRole("region", { name: bookingRequestMessages.en.formTitle }),
+    ).toBe(frame);
+    expect(frame.isConnected).toBe(true);
+    expect(outside).toHaveFocus();
+    expect(
+      screen.getByRole("heading", { name: messages.en.notFoundTitle }),
+    ).toBeVisible();
+    expect(submitBookingRequest).not.toHaveBeenCalled();
+  });
+
+  it.each(["quote unavailable", "not found"] as const)(
+    "keeps the same request region through %s replacement and stale completion",
+    async (replacement) => {
+      requestPhone.mockResolvedValue({ status: "code_sent" });
+      verifyPhone.mockResolvedValue({ status: "authenticated" });
+      let resolveCompletion!: (value: { status: "completed" }) => void;
+      completePhone.mockReturnValue(
+        new Promise((resolve) => {
+          resolveCompletion = resolve;
+        }),
+      );
+      const user = userEvent.setup();
+      const { rerender } = render(await requestFrame(inlineForm()));
+      const frame = screen.getByRole("region", {
+        name: bookingRequestMessages.en.formTitle,
+      });
+      const verify = await enterAndVerify(user);
+      expect(completePhone).toHaveBeenCalledExactlyOnceWith(
+        "en",
+        returnTo,
+        true,
+      );
+      const fallback =
+        replacement === "quote unavailable" ? (
+          <BookingQuoteView
+            locale="en"
+            slug={quote.slug}
+            queryString={queryString}
+            result={{ status: "unavailable" }}
+            discoveryQuery={discoveryQuery}
+            idempotencyKey="11111111-1111-4111-8111-111111111111"
+            customerReady
+            bookingRequestUiPolicy={null}
+            bookingRequestAcceptanceEvidence={null}
+          />
+        ) : (
+          <NotFoundScreen locale="en" />
+        );
+      await act(async () => rerender(await requestFrame(fallback)));
+      expect(verify).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("region", {
+          name: bookingRequestMessages.en.formTitle,
+        }),
+      ).toBe(frame);
+      expect(frame.isConnected).toBe(true);
+      expect(frame).toHaveFocus();
+      await act(async () => resolveCompletion({ status: "completed" }));
+      expect(
+        screen.getByRole("region", {
+          name: bookingRequestMessages.en.formTitle,
+        }),
+      ).toBe(frame);
+      expect(frame.isConnected).toBe(true);
+      expect(frame).toHaveFocus();
+      if (replacement === "quote unavailable")
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          bookingQuoteMessages.en.unavailable,
+        );
+      else
+        expect(
+          screen.getByRole("heading", { name: messages.en.notFoundTitle }),
+        ).toBeVisible();
       expect(submitBookingRequest).not.toHaveBeenCalled();
     },
   );

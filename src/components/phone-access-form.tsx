@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import { unstable_rethrow } from "next/navigation";
 
 import {
   completePhoneAccess,
@@ -15,6 +16,7 @@ import {
   ActionFeedback,
   ActionFocusTarget,
   FormControl,
+  prepareActionFocusNavigation,
 } from "./interaction-controls";
 import { useExclusiveAction } from "./use-exclusive-action";
 
@@ -30,6 +32,7 @@ export function PhoneAccessForm({
   verifiedFocusTargetId?: string;
 }) {
   const copy = accessMessages[locale];
+  const verifyButtonId = useId();
   const codeInputId = useId();
   const verifiedFeedbackId = useId();
   const [phone, setPhone] = useState("");
@@ -62,9 +65,16 @@ export function PhoneAccessForm({
   async function verifyCode() {
     setMessage("");
     let result;
+    let abortNavigation: (() => void) | undefined;
     try {
-      result = await run(() => verifyPhoneAccess({ phone, code }));
-    } catch {
+      result = await run(() => {
+        if (returnTo && !verifiedFocusTargetId)
+          abortNavigation = prepareActionFocusNavigation(verifyButtonId);
+        return verifyPhoneAccess({ phone, code });
+      });
+    } catch (error) {
+      unstable_rethrow(error);
+      abortNavigation?.();
       setMessage(copy.unavailable);
       return;
     }
@@ -72,20 +82,29 @@ export function PhoneAccessForm({
     if (result.status === "authenticated") {
       setStage("verified");
       setMessage(copy.verified);
-      if (returnTo) {
-        try {
-          const destination = await completePhoneAccess(locale, returnTo);
-          if (destination?.status === "unavailable") {
+      try {
+        if (returnTo) {
+          try {
+            const destination = verifiedFocusTargetId
+              ? await completePhoneAccess(locale, returnTo, true)
+              : await completePhoneAccess(locale, returnTo);
+            if (destination?.status === "unavailable") {
+              setStage("code");
+              setMessage(copy.unavailable);
+              abortNavigation?.();
+            }
+          } catch (error) {
+            unstable_rethrow(error);
             setStage("code");
             setMessage(copy.unavailable);
+            abortNavigation?.();
           }
-        } catch {
-          setStage("code");
-          setMessage(copy.unavailable);
         }
+      } finally {
+        onVerified?.();
       }
-      onVerified?.();
     } else {
+      abortNavigation?.();
       setMessage(
         result.status === "role_conflict"
           ? copy.denied
@@ -154,10 +173,10 @@ export function PhoneAccessForm({
             type="button"
             pending={pending}
             onClick={verifyCode}
+            id={verifyButtonId}
             focusSuccessorId={
-              returnTo
-                ? codeInputId
-                : (verifiedFocusTargetId ?? verifiedFeedbackId)
+              verifiedFocusTargetId ??
+              (returnTo ? codeInputId : verifiedFeedbackId)
             }
           >
             {copy.verify}

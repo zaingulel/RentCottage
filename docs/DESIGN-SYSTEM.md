@@ -347,7 +347,8 @@ its own; the block it sits in sets the space around it.
   `3px` offset. These non-control targets keep their existing semantics, copy and layout and stay outside the
   sequential Tab order. The gold rule above continues to govern its listed controls, with the schedule exception
   unchanged. Verify each new target's visible focus and outline contrast against its actual adjacent surface in
-  the running view.
+  the running view. Viewport-width non-control targets add `action-focus-target-inset`, which keeps the
+  green `3px` outline and uses `outline-offset: -3px` so visible focus stays inside the viewport.
 - Moving focus elsewhere, Tab intent, an outside pointer action, browser history navigation, window blur or
   pagehide permanently cancels owned focus, even if the element the person moved to later disappears. An action
   that navigates must explicitly opt into a handoff to a named destination target after its commit; ordinary

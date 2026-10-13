@@ -440,7 +440,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await expect(periodToggleControl).toBeEnabled();
     await expect(periodToggleControl).toBeFocused();
     expect(
-      await periodToggleSource.evaluate((source) => document.activeElement === source),
+      await periodToggleSource.evaluate(
+        (source) => document.activeElement === source,
+      ),
     ).toBe(true);
     const periodToggleRows = await periodToggleMeasurement.evaluate(
       (measurement) => {
@@ -602,6 +604,13 @@ test("a verified Customer double-submit creates one Pending request and one mini
     },
     { family: "phone-access-form", action: "Inline Verify" },
   );
+  const inlineRequestUrl = page.url();
+  const inlineRequestFrame = page.getByRole("region", {
+    name: "Send your Booking Request",
+    exact: true,
+  });
+  const originalRequestFrame = await inlineRequestFrame.elementHandle();
+  if (!originalRequestFrame) throw new Error("Inline request frame is missing");
   await inlineVerifyControl.press("Enter");
   await expect(
     page.getByRole("heading", { name: "Send your Booking Request" }),
@@ -620,11 +629,23 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await inlineVerifyMeasurement.dispose();
   await inlineVerifySource.dispose();
 
-  // Verification completes through the access page; wait for the header to
-  // settle on the request page before switching language.
+  // Same-route completion refreshes the account header before switching language.
   await expect(
     page.getByRole("banner").getByText("Account", { exact: true }),
   ).toBeAttached();
+  await expect(page).toHaveURL(inlineRequestUrl);
+  await expect(inlineRequestFrame).toBeFocused();
+  expect(
+    await originalRequestFrame.evaluate(
+      (frame) => frame.isConnected && frame === document.activeElement,
+    ),
+  ).toBe(true);
+  await expect(page.getByLabel("Customer name")).toBeVisible();
+  await page.screenshot({
+    path: test.info().outputPath("inline-completion-focus-en.png"),
+    fullPage: true,
+  });
+  await originalRequestFrame.dispose();
   const arabic = page
     .getByRole("banner")
     .getByRole("link", { name: "العربية" });

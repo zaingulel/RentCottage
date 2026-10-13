@@ -261,6 +261,7 @@ export function OwnerApplicationForm({
         >
           {copy.title}
         </h1>
+        <ActionFocusTarget targetId="owner-application-title" navigation />
         {submitted && <ActionFocusTarget targetId="owner-application-title" />}
         <p>
           {applicationStatus === "draft"

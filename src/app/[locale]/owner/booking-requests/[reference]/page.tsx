@@ -59,7 +59,17 @@ export default async function OwnerConfirmedBookingPage({
       >
         <ActionFocusTarget targetId="owner-booking-request-detail" />
         <section role="alert">
-          <h1>{unavailableCopy[locale]}</h1>
+          <h1
+            id="owner-booking-request-unavailable-title"
+            tabIndex={-1}
+            className="action-focus-target"
+          >
+            {unavailableCopy[locale]}
+          </h1>
+          <ActionFocusTarget
+            targetId="owner-booking-request-unavailable-title"
+            navigation
+          />
           <Link href={`/${locale}/owner/cottages`}>
             {cottageProfileMessages[locale].overviewTitle}
           </Link>
@@ -118,6 +128,7 @@ export default async function OwnerConfirmedBookingPage({
       className="results-page action-focus-target"
     >
       <ActionFocusTarget targetId="owner-booking-request-detail" />
+      <ActionFocusTarget targetId="owner-booking-request-detail" navigation />
       <OwnerBookingRequestNotifications
         locale={locale}
         notifications={[details.request]}

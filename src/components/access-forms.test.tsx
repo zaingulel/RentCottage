@@ -20,7 +20,8 @@ const {
   verifyPhone: vi.fn(),
 }));
 
-vi.mock("next/navigation", () => ({
+vi.mock("next/navigation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/navigation")>()),
   useRouter: () => ({ refresh, replace }),
 }));
 
@@ -32,6 +33,7 @@ vi.mock("@/access/actions", () => ({
   verifyPlatformAdministratorMfa: verifyAdministrator,
 }));
 
+import { ActionFocusTarget } from "./interaction-controls";
 import { AdministratorAccessForm } from "./administrator-access-form";
 import { PhoneAccessForm } from "./phone-access-form";
 
@@ -681,9 +683,14 @@ describe("access forms", () => {
       factorId: "factor-1",
       challengeId: "challenge-1",
     });
-    verifyAdministrator.mockResolvedValue({ status: "authenticated" });
+    let resolveVerification!: (value: { status: "authenticated" }) => void;
+    verifyAdministrator.mockReturnValue(
+      new Promise((resolve) => {
+        resolveVerification = resolve;
+      }),
+    );
     const user = userEvent.setup();
-    render(
+    const { rerender } = render(
       <AdministratorAccessForm
         locale="en"
         returnTo="/en/administrator/reviews"
@@ -695,13 +702,39 @@ describe("access forms", () => {
     await user.click(screen.getByRole("button", { name: "Continue" }));
     expect(replace).not.toHaveBeenCalled();
     await user.type(screen.getByLabelText("Authenticator app code"), "123456");
-    await user.click(screen.getByRole("button", { name: "Verify" }));
+    const verify = screen.getByRole("button", { name: "Verify" });
+    act(() => verify.focus());
+    await user.keyboard("{Enter}");
+    expect(verify).toBeDisabled();
+    expect(replace).not.toHaveBeenCalled();
+    await act(async () => resolveVerification({ status: "authenticated" }));
 
     expect(replace).toHaveBeenCalledWith("/en/administrator/reviews");
     expect(refresh).toHaveBeenCalledOnce();
     expect(replace.mock.invocationCallOrder[0]).toBeLessThan(
       refresh.mock.invocationCallOrder[0],
     );
+    expect(verify).not.toBeInTheDocument();
+    const origin = window.location.pathname;
+    try {
+      window.history.replaceState(null, "", "/en/administrator/reviews");
+      rerender(
+        <>
+          <h1 id="administrator-reviews-heading" tabIndex={-1}>
+            Customer reviews
+          </h1>
+          <ActionFocusTarget
+            targetId="administrator-reviews-heading"
+            navigation
+          />
+        </>,
+      );
+      expect(
+        screen.getByRole("heading", { name: "Customer reviews" }),
+      ).toHaveFocus();
+    } finally {
+      window.history.replaceState(null, "", origin);
+    }
   });
 
   it("defensively rejects an unsafe administrator return after authenticated MFA", async () => {
@@ -738,8 +771,15 @@ describe("access forms", () => {
   it("reports an identity mismatch as unavailable after phone verification", async () => {
     requestPhone.mockResolvedValue({ status: "code_sent" });
     verifyPhone.mockResolvedValue({ status: "not_authorized" });
+    const onVerified = vi.fn();
     const user = userEvent.setup();
-    render(<PhoneAccessForm locale="en" />);
+    render(
+      <PhoneAccessForm
+        locale="en"
+        returnTo="/en/bookings"
+        onVerified={onVerified}
+      />,
+    );
 
     await user.type(
       screen.getByLabelText("Iraqi phone number"),
@@ -749,10 +789,62 @@ describe("access forms", () => {
       screen.getByRole("button", { name: "Send verification code" }),
     );
     await user.type(screen.getByLabelText("Verification code"), "123456");
-    await user.click(screen.getByRole("button", { name: "Verify" }));
+    const verify = screen.getByRole("button", { name: "Verify" });
+    act(() => verify.focus());
+    await user.keyboard("{Enter}");
 
     expect(
       screen.getByText("Verification is unavailable. Try again."),
     ).toBeVisible();
+    expect(verify).toHaveFocus();
+    expect(completePhone).not.toHaveBeenCalled();
+    expect(onVerified).not.toHaveBeenCalled();
+
+    verifyPhone.mockResolvedValue({ status: "authenticated" });
+    let resolveCompletion!: (value: { status: "unavailable" }) => void;
+    completePhone.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCompletion = resolve;
+      }),
+    );
+    await user.keyboard("{Enter}");
+    expect(verify).not.toBeInTheDocument();
+    expect(completePhone).toHaveBeenCalledExactlyOnceWith("en", "/en/bookings");
+    expect(onVerified).not.toHaveBeenCalled();
+    await act(async () => resolveCompletion({ status: "unavailable" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Verification is unavailable. Try again.",
+    );
+    expect(screen.getByLabelText("Verification code")).toHaveFocus();
+    expect(onVerified).toHaveBeenCalledTimes(1);
+
+    completePhone.mockRejectedValue(new Error("Completion unavailable"));
+    const retryVerify = screen.getByRole("button", { name: "Verify" });
+    act(() => retryVerify.focus());
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Verification is unavailable. Try again.",
+    );
+    expect(retryVerify).toHaveFocus();
+    expect(onVerified).toHaveBeenCalledTimes(2);
+
+    const origin = window.location.pathname;
+    try {
+      window.history.replaceState(null, "", "/en/bookings");
+      render(
+        <>
+          <h1 id="customer-bookings-heading" tabIndex={-1}>
+            My bookings
+          </h1>
+          <ActionFocusTarget targetId="customer-bookings-heading" navigation />
+        </>,
+      );
+      expect(
+        screen.getByRole("heading", { name: "My bookings" }),
+      ).not.toHaveFocus();
+      expect(retryVerify).toHaveFocus();
+    } finally {
+      window.history.replaceState(null, "", origin);
+    }
   });
 });

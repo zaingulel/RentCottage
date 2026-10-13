@@ -209,9 +209,14 @@ function CustomerBookingRequestStatusView({
       {focusSuccessorId && (status === "processing" || !pending) ? (
         <ActionFocusTarget targetId={focusSuccessorId} />
       ) : null}
-      <h1 id="customer-booking-request-title" className="page-title">
+      <h1
+        id="customer-booking-request-title"
+        tabIndex={-1}
+        className="page-title action-focus-target"
+      >
         {copy.title}
       </h1>
+      <ActionFocusTarget targetId="customer-booking-request-title" navigation />
       <p className="status-banner" role="status" aria-live="polite">
         <BookingRequestStatusContent
           locale={locale}

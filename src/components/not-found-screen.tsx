@@ -1,4 +1,7 @@
-import { ActionLink } from "@/components/interaction-controls";
+import {
+  ActionFocusTarget,
+  ActionLink,
+} from "@/components/interaction-controls";
 import { messages } from "@/i18n/messages";
 import type { Locale } from "@/i18n/routing";
 
@@ -13,7 +16,10 @@ export function NotFoundScreen({ locale }: { locale: Locale }) {
       </header>
       <section className="results-intro">
         <p>{copy.brand}</p>
-        <h1>{copy.notFoundTitle}</h1>
+        <h1 id="not-found-title" tabIndex={-1} className="action-focus-target">
+          {copy.notFoundTitle}
+        </h1>
+        <ActionFocusTarget targetId="not-found-title" navigation />
         <span>{copy.notFoundDetail}</span>
       </section>
     </main>

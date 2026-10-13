@@ -4,6 +4,7 @@ import { notFound, unstable_rethrow } from "next/navigation";
 
 import { requireRequestAccount } from "@/access/request-account-context";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
+import { ActionFocusTarget } from "@/components/interaction-controls";
 import { MessagingInbox } from "@/components/messaging-inbox";
 import { MessagingStart } from "@/components/messaging-start";
 import { messagingMessages } from "@/i18n/messaging-messages";
@@ -102,13 +103,20 @@ export default async function MessagesPage({
     );
   }
   const related = cottage ? page.items : [];
+  const showMessageCottage =
+    cottage !== undefined && account.context.role !== "platform_administrator";
   return (
     <main className="results-page page page-record">
-      {cottage && account.context.role !== "platform_administrator" ? (
+      {showMessageCottage ? (
         <section className="messaging-shell">
-          <h1 className="page-title">
+          <h1
+            id="message-cottage-title"
+            tabIndex={-1}
+            className="page-title action-focus-target"
+          >
             {messagingMessages[locale].messageCottage}
           </h1>
+          <ActionFocusTarget targetId="message-cottage-title" navigation />
           {related.length ? (
             <ul>
               {related.map((item) => (
@@ -143,6 +151,7 @@ export default async function MessagesPage({
         nextCursor={page.nextCursor}
         publicSlug={cottage}
         contextQuery={contextQuery}
+        navigationFocus={!showMessageCottage}
       />
     </main>
   );

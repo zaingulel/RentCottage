@@ -6,6 +6,7 @@ import { notFound, redirect, unstable_rethrow } from "next/navigation";
 
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { SupabaseAccountContextStore } from "@/access/supabase-account-access";
+import { ActionFocusTarget } from "@/components/interaction-controls";
 import { OwnerApplicationForm } from "@/components/owner-application-form";
 import { OwnerApplicationReviewStatus } from "@/components/owner-application-review-status";
 import { ownerApplicationMessages } from "@/i18n/owner-application-messages";
@@ -70,7 +71,14 @@ export default async function OwnerApplicationPage({
           <span>{copy.eyebrow}</span>
         </header>
         <section className="access-required-card" role="alert">
-          <h1>{copy.title}</h1>
+          <h1
+            id="owner-application-title"
+            tabIndex={-1}
+            className="action-focus-target"
+          >
+            {copy.title}
+          </h1>
+          <ActionFocusTarget targetId="owner-application-title" navigation />
           <p>{copy.unavailable}</p>
         </section>
       </main>
@@ -84,7 +92,14 @@ export default async function OwnerApplicationPage({
           <span>{copy.eyebrow}</span>
         </header>
         <section className="access-required-card">
-          <h1>{copy.title}</h1>
+          <h1
+            id="owner-application-title"
+            tabIndex={-1}
+            className="action-focus-target"
+          >
+            {copy.title}
+          </h1>
+          <ActionFocusTarget targetId="owner-application-title" navigation />
           <p>{copy.accessRequired}</p>
           <Link href={`/${locale}/owner/access`}>{copy.verifyPhone}</Link>
         </section>

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -209,7 +209,66 @@ it("returns owned focus to an explicit enabled successor without reclaiming depa
   expect(screen.getByRole("heading", { name: "Result" })).not.toHaveFocus();
 });
 
-it("composes React button refs and cleanup while preserving caller handlers and form attributes", () => {
+it("restores a disconnected source to a persistent successor without a target rerender", async () => {
+  const region = (
+    <div
+      id="persistent-successor"
+      role="region"
+      aria-label="Request content"
+      tabIndex={-1}
+    >
+      Request content
+    </div>
+  );
+  const view = (pending: boolean, sourceVisible = true) => (
+    <>
+      {region}
+      <input aria-label="Persistent elsewhere" />
+      {sourceVisible && (
+        <ActionButton
+          kind="primary"
+          width="content"
+          pending={pending}
+          focusSuccessorId="persistent-successor"
+        >
+          Verify persistent
+        </ActionButton>
+      )}
+    </>
+  );
+  const { rerender } = render(view(false));
+  const successor = screen.getByRole("region", { name: "Request content" });
+  const source = screen.getByRole("button", { name: "Verify persistent" });
+  source.focus();
+  fireEvent.click(source);
+  rerender(view(true));
+  expect(source).toBeDisabled();
+  expect(successor).not.toHaveFocus();
+  await act(async () => {
+    rerender(view(true, false));
+  });
+  expect(source.isConnected).toBe(false);
+  expect(screen.getByRole("region", { name: "Request content" })).toBe(successor);
+  expect(successor.isConnected).toBe(true);
+  expect(successor).toHaveFocus();
+
+  rerender(view(false));
+  const nextSource = screen.getByRole("button", { name: "Verify persistent" });
+  nextSource.focus();
+  fireEvent.click(nextSource);
+  rerender(view(true));
+  const elsewhere = screen.getByRole("textbox", { name: "Persistent elsewhere" });
+  await act(async () => {
+    rerender(view(true, false));
+    elsewhere.focus();
+  });
+  expect(nextSource.isConnected).toBe(false);
+  expect(screen.getByRole("region", { name: "Request content" })).toBe(successor);
+  expect(elsewhere).toHaveFocus();
+  expect(successor).not.toHaveFocus();
+});
+
+it("composes React button refs and cleanup while preserving caller handlers and form attributes", async () => {
   const objectRef = createRef<HTMLButtonElement>();
   const cleanup = vi.fn();
   const plainCallbackRef = vi.fn<(node: HTMLButtonElement | null) => void>();
@@ -259,20 +318,24 @@ it("composes React button refs and cleanup while preserving caller handlers and 
   expect(callbackRef).toHaveBeenCalledWith(
     screen.getByRole("button", { name: "Toggle ref" }),
   );
-  rerender(
-    <ActionButton kind="primary" width="content" ref={objectRef}>
-      Save ref
-    </ActionButton>,
-  );
+  await act(async () => {
+    rerender(
+      <ActionButton kind="primary" width="content" ref={objectRef}>
+        Save ref
+      </ActionButton>,
+    );
+  });
   expect(cleanup).toHaveBeenCalledTimes(1);
   expect(callbackRef).toHaveBeenCalledTimes(1);
   expect(plainCallbackRef).toHaveBeenCalledTimes(2);
   expect(plainCallbackRef).toHaveBeenLastCalledWith(null);
-  unmount();
+  await act(async () => {
+    unmount();
+  });
   expect(objectRef.current).toBeNull();
 });
 
-it("hands focus only to a requested navigation and binds abort to its source intent", () => {
+it("hands focus only to a requested navigation and binds abort to its source intent", async () => {
   let abort = () => {};
   const origin = window.location.pathname;
   const view = (
@@ -316,12 +379,16 @@ it("hands focus only to a requested navigation and binds abort to its source int
   ).not.toHaveFocus();
   source.focus();
   fireEvent.click(source);
-  rerender(view("interim"));
+  await act(async () => {
+    rerender(view("interim"));
+  });
   expect(
     screen.getByRole("heading", { name: "Destination" }),
   ).not.toHaveFocus();
   abort();
-  rerender(view("destination"));
+  await act(async () => {
+    rerender(view("destination"));
+  });
   expect(screen.getByRole("heading", { name: "Local step" })).toHaveFocus();
 
   rerender(view("source"));
@@ -332,7 +399,9 @@ it("hands focus only to a requested navigation and binds abort to its source int
   fireEvent.click(newer);
   oldAbort();
   window.history.replaceState(null, "", "/navigation-destination");
-  rerender(view("destination"));
+  await act(async () => {
+    rerender(view("destination"));
+  });
   expect(screen.getByRole("heading", { name: "Destination" })).toHaveFocus();
   window.history.replaceState(null, "", origin);
   rerender(view("source", "destination", false, false));
@@ -345,12 +414,14 @@ it("hands focus only to a requested navigation and binds abort to its source int
   expect(retained).toHaveFocus();
   prepareActionFocusNavigation("navigate-source");
   window.history.replaceState(null, "", "/late-navigation");
-  rerender(view("destination"));
+  await act(async () => {
+    rerender(view("destination"));
+  });
   expect(screen.getByRole("heading", { name: "Destination" })).toHaveFocus();
   window.history.replaceState(null, "", origin);
 });
 
-it("captures focused keyboard activation before a caller immediately removes the source", () => {
+it("captures focused keyboard activation before a caller immediately removes the source", async () => {
   const keyCapture = vi.fn();
   const { rerender } = render(
     <>
@@ -377,12 +448,14 @@ it("captures focused keyboard activation before a caller immediately removes the
   );
   const source = screen.getByRole("button", { name: "Continue keyboard" });
   source.focus();
-  fireEvent.keyDown(source, { key: "Enter" });
+  await act(async () => {
+    fireEvent.keyDown(source, { key: "Enter" });
+  });
   expect(keyCapture).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("heading", { name: "Next step" })).toHaveFocus();
 });
 
-it("ignores unowned busy controls and unavailable targets during initial and ordinary navigation", () => {
+it("ignores unowned busy controls and unavailable targets during initial and ordinary navigation", async () => {
   const origin = window.location.pathname;
   const view = (
     pending: boolean,
@@ -432,7 +505,9 @@ it("ignores unowned busy controls and unavailable targets during initial and ord
   prepareActionFocusNavigation("different-source");
   rerender(view(true));
   source.blur();
-  rerender(view(false, false, true));
+  await act(async () => {
+    rerender(view(false, false, true));
+  });
   expect(
     screen.getByRole("heading", { name: "Ordinary destination" }),
   ).not.toHaveFocus();
@@ -443,7 +518,9 @@ it("ignores unowned busy controls and unavailable targets during initial and ord
   const nextSource = screen.getByRole("button", { name: "Unowned source" });
   nextSource.focus();
   fireEvent.click(nextSource);
-  rerender(view(false, false, true));
+  await act(async () => {
+    rerender(view(false, false, true));
+  });
   expect(
     screen.getByRole("textbox", { name: "Disabled target" }),
   ).not.toHaveFocus();

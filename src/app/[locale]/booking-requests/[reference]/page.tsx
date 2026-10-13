@@ -70,7 +70,17 @@ export default async function CustomerBookingRequestPage({
       >
         <ActionFocusTarget targetId="customer-booking-request-detail" />
         <section role="alert">
-          <h1>{unavailableCopy[locale].title}</h1>
+          <h1
+            id="customer-booking-request-unavailable-title"
+            tabIndex={-1}
+            className="action-focus-target"
+          >
+            {unavailableCopy[locale].title}
+          </h1>
+          <ActionFocusTarget
+            targetId="customer-booking-request-unavailable-title"
+            navigation
+          />
           <Link href={`/${locale}`}>{unavailableCopy[locale].home}</Link>
         </section>
       </main>

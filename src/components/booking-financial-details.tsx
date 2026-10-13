@@ -96,6 +96,7 @@ export function BookingFinancialDetails({
             {c.cancelled}
           </h1>
           <ActionFocusTarget targetId={financialFocusTargetId} />
+          <ActionFocusTarget targetId={financialFocusTargetId} navigation />
           <p>
             {view.cottageName} · <strong>{view.bookingReference}</strong>
           </p>

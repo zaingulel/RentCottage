@@ -329,6 +329,10 @@ export function CustomerReviewModeration({
         >
           {copy.administratorTitle}
         </h1>
+        <ActionFocusTarget
+          targetId="administrator-reviews-heading"
+          navigation
+        />
         <ActionFocusTarget targetId="administrator-reviews-heading" />
         <ReviewFilterForm locale={locale} filters={filters} />
         <ActionFeedback kind="error">
@@ -346,6 +350,10 @@ export function CustomerReviewModeration({
         >
           {copy.administratorTitle}
         </h1>
+        <ActionFocusTarget
+          targetId="administrator-reviews-heading"
+          navigation
+        />
         <ActionFocusTarget targetId="administrator-reviews-heading" />
         <p role={result.status === "unavailable" ? "alert" : undefined}>
           {result.status === "access-required"
@@ -373,6 +381,7 @@ export function CustomerReviewModeration({
       >
         {copy.administratorTitle}
       </h1>
+      <ActionFocusTarget targetId="administrator-reviews-heading" navigation />
       <ActionFocusTarget targetId="administrator-reviews-heading" />
       <ActionLink
         kind="secondary"

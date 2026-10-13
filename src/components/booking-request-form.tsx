@@ -61,8 +61,6 @@ export function BookingRequestForm({
   returnTo?: string;
 }) {
   const copy = bookingRequestMessages[locale];
-  const customerNameInputId = useId();
-  const cutoffFeedbackId = useId();
   const receiptStatusLinkId = useId();
   const quoteNotice = bookingQuoteMessages[locale].notice;
   const firstStartsAt = quote.items[0]?.startsAt ?? "";
@@ -138,9 +136,7 @@ export function BookingRequestForm({
           locale={locale}
           onVerified={() => setVerified(true)}
           returnTo={returnTo}
-          verifiedFocusTargetId={
-            uiPolicy.insideCutoff ? cutoffFeedbackId : customerNameInputId
-          }
+          verifiedFocusTargetId="booking-request-content"
         />
       </section>
     );
@@ -217,9 +213,7 @@ export function BookingRequestForm({
         </ActionLink>
       </OptionGroup>
       {uiPolicy.insideCutoff ? (
-        <ActionFeedback kind="error" focusTargetId={cutoffFeedbackId}>
-          {copy.cutoffPassed}
-        </ActionFeedback>
+        <ActionFeedback kind="error">{copy.cutoffPassed}</ActionFeedback>
       ) : (
         <form
           aria-label={copy.formTitle}
@@ -231,7 +225,6 @@ export function BookingRequestForm({
             <FormControl
               kind="input"
               type="text"
-              id={customerNameInputId}
               autoComplete="name"
               minLength={2}
               maxLength={120}
@@ -240,7 +233,6 @@ export function BookingRequestForm({
               onChange={(event) => setCustomerName(event.target.value)}
             />
           </label>
-          {!pending && <ActionFocusTarget targetId={customerNameInputId} />}
           <label>
             <span>{copy.partySize}</span>
             <FormControl

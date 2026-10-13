@@ -149,10 +149,15 @@ export function ActionButton(props: ActionButtonProps) {
       const cleanup = typeof ref === "function" ? ref(node) : undefined;
       if (ref && typeof ref !== "function") ref.current = node;
       return () => {
+        const intent = node && focusIntent?.source === node ? focusIntent : null;
         buttonRef.current = null;
         if (typeof cleanup === "function") cleanup();
         else if (typeof ref === "function") ref(null);
         else if (ref) ref.current = null;
+        if (node && intent)
+          queueMicrotask(() => {
+            if (!node.isConnected) restoreActionFocus(intent);
+          });
       };
     },
     [ref],
