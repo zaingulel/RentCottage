@@ -183,11 +183,21 @@ function requireLocalDatabase() {
 
 function reviewFixtureCleanup(
   namespace: string,
-  identities: { owner: string; customer: string; other: string },
+  identities: { owner?: string; customer?: string; other?: string },
 ) {
-  return customerReviewCleanup(namespace, {
-    reusedAuthUsers: [identities.owner, identities.customer, identities.other],
-  });
+  const reusedAuthUsers = Object.values(identities).filter(
+    (user): user is string => user !== undefined,
+  );
+  if (
+    reusedAuthUsers.some(
+      (user) =>
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          user,
+        ),
+    )
+  )
+    throw new Error("Customer review cleanup auth identity is invalid");
+  return customerReviewCleanup(namespace, { reusedAuthUsers });
 }
 
 async function seedFixture(
@@ -527,107 +537,171 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   if (!pair) throw new Error("Customer review browser project is unmapped");
   const fixtureHarness = createLocalSupabaseConcurrencyHarness();
   fixtureHarness.guardDisposableLocalDatabase();
-  const serviceDateAnchor = fixtureHarness.runSql(
-    "select (clock_timestamp() at time zone 'Asia/Baghdad')::date;",
-  );
-  expect(serviceDateAnchor).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  const primary = await seedFixture(pair[0], {
-    startDaySql: anchoredServiceDay(serviceDateAnchor, -3),
+  const ownedNamespaces = [
+    ...paginationNamespaces[projectName],
+    upcomingNamespaces[projectName],
+    pair[1],
+    pair[0],
+  ];
+  const url = process.env.SUPABASE_URL;
+  const secret = process.env.SUPABASE_SECRET_KEY;
+  if (!url || !secret)
+    throw new Error("Customer review fixture credentials are missing");
+  const privileged = createClient(url, secret, {
+    auth: { autoRefreshToken: false, persistSession: false },
   });
-  const sharedCottage = {
-    namespace: pair[0],
-    ownerUserId: primary.identities.owner,
-    profileId: primary.ids.profileId,
-    publicSlug: primary.publicSlug,
+  const cleanupOwnedFixtures = async () => {
+    const users = await listAllAccessFixtureUsers(privileged.auth.admin);
+    const owner = findAccessFixtureUser(users, `+964757000${pair[0]}01`)?.id;
+    const identities = ownedNamespaces.map((namespace) => ({
+      owner,
+      customer: findAccessFixtureUser(users, `+964757000${namespace}02`)?.id,
+      other: findAccessFixtureUser(users, `+964757000${namespace}03`)?.id,
+    }));
+    const cleanupSql = ownedNamespaces
+      .map((namespace, index) =>
+        reviewFixtureCleanup(namespace, identities[index]),
+      )
+      .join("");
+    const reusedAuthUsers = [
+      ...new Set(
+        identities.flatMap((identity) =>
+          Object.values(identity).filter(
+            (user): user is string => user !== undefined,
+          ),
+        ),
+      ),
+    ];
+    fixtureHarness.runSql(cleanupSql);
+    const requestIds = ownedNamespaces
+      .map((namespace) => `'60000000-0000-4000-8000-00000000${namespace}01'`)
+      .join(",");
+    const preservedUsers = reusedAuthUsers.map((user) => `'${user}'`).join(",");
+    const cleanupProof = fixtureHarness.runSql(`select jsonb_build_object(
+      'bookingRequests',(select count(*) from public.booking_requests requests
+        where requests.id in (${requestIds})),
+      'customerReviews',(select count(*) from public.customer_reviews reviews
+        where reviews.booking_request_id in (${requestIds})),
+      'authUsers',(select count(*) from auth.users users
+        where users.id=any(array[${preservedUsers}]::uuid[]))
+    );`);
+    expect(JSON.parse(cleanupProof)).toEqual({
+      bookingRequests: 0,
+      customerReviews: 0,
+      authUsers: reusedAuthUsers.length,
+    });
   };
-  const ratingOnly = await seedFixture(pair[1], {
-    sharedCottage,
-    startDaySql: anchoredServiceDay(serviceDateAnchor, -5),
-  });
+  await cleanupOwnedFixtures();
+  try {
+    const serviceDateAnchor = fixtureHarness.runSql(
+      "select (clock_timestamp() at time zone 'Asia/Baghdad')::date;",
+    );
+    expect(serviceDateAnchor).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const primary = await seedFixture(pair[0], {
+      startDaySql: anchoredServiceDay(serviceDateAnchor, -3),
+    });
+    const sharedCottage = {
+      namespace: pair[0],
+      ownerUserId: primary.identities.owner,
+      profileId: primary.ids.profileId,
+      publicSlug: primary.publicSlug,
+    };
+    const ratingOnly = await seedFixture(pair[1], {
+      sharedCottage,
+      startDaySql: anchoredServiceDay(serviceDateAnchor, -5),
+    });
 
-  const bookingPath = `/en/booking-requests/${primary.ids.bookingReference}`;
-  await page.goto(bookingPath);
-  await expect(
-    page.getByRole("heading", { name: "Sign in or create an account" }),
-  ).toBeVisible();
-  await expectIdentityDenied(
-    primary.phones.other,
-    primary.ids.bookingReference,
-  );
-  await expectIdentityDenied(
-    primary.phones.owner,
-    primary.ids.bookingReference,
-  );
+    const bookingPath = `/en/booking-requests/${primary.ids.bookingReference}`;
+    await page.goto(bookingPath);
+    await expect(
+      page.getByRole("heading", { name: "Sign in or create an account" }),
+    ).toBeVisible();
+    await expectIdentityDenied(
+      primary.phones.other,
+      primary.ids.bookingReference,
+    );
+    await expectIdentityDenied(
+      primary.phones.owner,
+      primary.ids.bookingReference,
+    );
 
-  await signInPhone(page, primary.phones.customer, bookingPath);
-  const customerReview = page.getByRole("region", {
-    name: "Review this cottage",
-  });
-  await expect(
-    customerReview.getByRole("heading", { name: "Review this cottage" }),
-  ).toBeVisible();
-  await expect(
-    customerReview.getByText("Review window open until", { exact: false }),
-  ).toBeVisible();
+    await signInPhone(page, primary.phones.customer, bookingPath);
+    const customerReview = page.getByRole("region", {
+      name: "Review this cottage",
+    });
+    await expect(
+      customerReview.getByRole("heading", { name: "Review this cottage" }),
+    ).toBeVisible();
+    await expect(
+      customerReview.getByText("Review window open until", { exact: false }),
+    ).toBeVisible();
 
-  const publicPath = `/en/cottages/${primary.publicSlug}/reviews`;
-  const visitorContext = await browser.newContext({
-    baseURL: new URL(page.url()).origin,
-  });
-  const visitor = await visitorContext.newPage();
-  await visitor.goto(publicPath);
-  await expect(visitor.getByText("No reviews yet.")).toBeVisible();
+    const publicPath = `/en/cottages/${primary.publicSlug}/reviews`;
+    const visitorContext = await browser.newContext({
+      baseURL: new URL(page.url()).origin,
+    });
+    const visitor = await visitorContext.newPage();
+    await visitor.goto(publicPath);
+    await expect(visitor.getByText("No reviews yet.")).toBeVisible();
 
-  await page.getByRole("radio", { name: "5 stars" }).check();
-  await page.getByLabel("Review text (optional)").fill("Call +9647501234567");
-  await page.getByRole("button", { name: "Publish review" }).click();
-  await expect(customerReview.getByRole("alert")).toContainText(
-    "Remove contact details",
-  );
-  await visitor.reload();
-  await expect(visitor.getByText("No reviews yet.")).toBeVisible();
+    await page.getByRole("radio", { name: "5 stars" }).check();
+    await page.getByLabel("Review text (optional)").fill("Call +9647501234567");
+    await page.getByRole("button", { name: "Publish review" }).click();
+    await expect(customerReview.getByRole("alert")).toContainText(
+      "Remove contact details",
+    );
+    await visitor.reload();
+    await expect(visitor.getByText("No reviews yet.")).toBeVisible();
 
-  const original =
-    "Literal <dialog open data-review-probe>unsafe dialog</dialog> & <em>literal emphasis</em> remains unchanged through a long customer review.";
-  const primaryRating = page.getByRole("radio", { name: "5 stars" });
-  await primaryRating.focus();
-  await primaryRating.press("Space");
-  await expect(primaryRating).toBeChecked();
-  await page.getByLabel("Review text (optional)").fill(original);
-  await page.getByLabel("Original language").selectOption("en");
-  await page.getByRole("button", { name: "Publish review" }).click();
-  await expect(
-    page.getByRole("status").filter({ hasText: "Your review was published." }),
-  ).toBeVisible();
-  await page.reload();
-  const authorReview = page.getByRole("region", { name: "Your review" });
-  await expect(authorReview.getByText(original)).toHaveAttribute("lang", "en");
-  await expect(authorReview.getByText(original)).toHaveAttribute("dir", "auto");
-  await expect(authorReview.locator("dialog")).toHaveCount(0);
-  await expect(authorReview.locator("em")).toHaveCount(0);
-  await expect(authorReview.locator("[data-review-probe]")).toHaveCount(0);
-  await expect(authorReview.getByText("Rating: 5 / 5 stars")).toBeVisible();
+    const original =
+      "Literal <dialog open data-review-probe>unsafe dialog</dialog> & <em>literal emphasis</em> remains unchanged through a long customer review.";
+    const primaryRating = page.getByRole("radio", { name: "5 stars" });
+    await primaryRating.focus();
+    await primaryRating.press("Space");
+    await expect(primaryRating).toBeChecked();
+    await page.getByLabel("Review text (optional)").fill(original);
+    await page.getByLabel("Original language").selectOption("en");
+    await page.getByRole("button", { name: "Publish review" }).click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Your review was published." }),
+    ).toBeVisible();
+    await page.reload();
+    const authorReview = page.getByRole("region", { name: "Your review" });
+    await expect(authorReview.getByText(original)).toHaveAttribute(
+      "lang",
+      "en",
+    );
+    await expect(authorReview.getByText(original)).toHaveAttribute(
+      "dir",
+      "auto",
+    );
+    await expect(authorReview.locator("dialog")).toHaveCount(0);
+    await expect(authorReview.locator("em")).toHaveCount(0);
+    await expect(authorReview.locator("[data-review-probe]")).toHaveCount(0);
+    await expect(authorReview.getByText("Rating: 5 / 5 stars")).toBeVisible();
 
-  const ratingContext = await browser.newContext({
-    baseURL: new URL(page.url()).origin,
-  });
-  const ratingPage = await ratingContext.newPage();
-  await signInPhone(
-    ratingPage,
-    ratingOnly.phones.customer,
-    `/en/booking-requests/${ratingOnly.ids.bookingReference}`,
-  );
-  await ratingPage.getByRole("radio", { name: "4 stars" }).check();
-  await ratingPage.getByRole("button", { name: "Publish review" }).click();
-  await expect(
-    ratingPage
-      .getByRole("status")
-      .filter({ hasText: "Your review was published." }),
-  ).toBeVisible();
-  await ratingContext.close();
+    const ratingContext = await browser.newContext({
+      baseURL: new URL(page.url()).origin,
+    });
+    const ratingPage = await ratingContext.newPage();
+    await signInPhone(
+      ratingPage,
+      ratingOnly.phones.customer,
+      `/en/booking-requests/${ratingOnly.ids.bookingReference}`,
+    );
+    await ratingPage.getByRole("radio", { name: "4 stars" }).check();
+    await ratingPage.getByRole("button", { name: "Publish review" }).click();
+    await expect(
+      ratingPage
+        .getByRole("status")
+        .filter({ hasText: "Your review was published." }),
+    ).toBeVisible();
+    await ratingContext.close();
 
-  const interactiveReviews = JSON.parse(
-    primary.harness.runSql(`select jsonb_agg(jsonb_build_object(
+    const interactiveReviews = JSON.parse(
+      primary.harness.runSql(`select jsonb_agg(jsonb_build_object(
       'reviewId',reviews.id,
       'bookingRequestId',reviews.booking_request_id,
       'originalBody',reviews.original_body
@@ -636,44 +710,47 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
     where reviews.booking_request_id in (
       '${primary.ids.requestId}','${ratingOnly.ids.requestId}'
     );`),
-  ) as Array<{
-    reviewId: string;
-    bookingRequestId: string;
-    originalBody: string | null;
-  }>;
-  expect(interactiveReviews).toHaveLength(2);
-  const primaryInteractiveReview = interactiveReviews.find(
-    (review) => review.bookingRequestId === primary.ids.requestId,
-  );
-  expect(primaryInteractiveReview).toMatchObject({ originalBody: original });
-  expect(
-    interactiveReviews.find(
-      (review) => review.bookingRequestId === ratingOnly.ids.requestId,
-    ),
-  ).toMatchObject({ originalBody: null });
+    ) as Array<{
+      reviewId: string;
+      bookingRequestId: string;
+      originalBody: string | null;
+    }>;
+    expect(interactiveReviews).toHaveLength(2);
+    const primaryInteractiveReview = interactiveReviews.find(
+      (review) => review.bookingRequestId === primary.ids.requestId,
+    );
+    expect(primaryInteractiveReview).toMatchObject({ originalBody: original });
+    expect(
+      interactiveReviews.find(
+        (review) => review.bookingRequestId === ratingOnly.ids.requestId,
+      ),
+    ).toMatchObject({ originalBody: null });
 
-  const historicalBodies: string[] = [];
-  const historicalReviewIds: string[] = [];
-  const sharedScheduleRevisionId = `30000000-0000-4000-8000-00000000${pair[0]}01`;
-  for (const [index, namespace] of paginationNamespaces[
-    projectName
-  ].entries()) {
-    const serviceDayOffset = -7 - 2 * index;
-    const startDaySql = anchoredServiceDay(serviceDateAnchor, serviceDayOffset);
-    const reservedOccupancies = primary.harness.runSql(`select count(*)
+    const historicalBodies: string[] = [];
+    const historicalReviewIds: string[] = [];
+    const sharedScheduleRevisionId = `30000000-0000-4000-8000-00000000${pair[0]}01`;
+    for (const [index, namespace] of paginationNamespaces[
+      projectName
+    ].entries()) {
+      const serviceDayOffset = -7 - 2 * index;
+      const startDaySql = anchoredServiceDay(
+        serviceDateAnchor,
+        serviceDayOffset,
+      );
+      const reservedOccupancies = primary.harness.runSql(`select count(*)
       from public.cottage_booking_period_occupancies occupancies
       where occupancies.schedule_revision_id='${sharedScheduleRevisionId}'
         and occupancies.service_day in (${startDaySql},${startDaySql}+1);`);
-    expect(reservedOccupancies).toBe("0");
+      expect(reservedOccupancies).toBe("0");
 
-    const fixture = await seedFixture(namespace, {
-      sharedCottage,
-      startDaySql,
-    });
-    const reviewId = `91000000-0000-4000-8000-00000000${namespace}01`;
-    const originalBody = `Guarded historical review ${index + 1}`;
-    const sourceFacts = JSON.parse(
-      primary.harness.runSql(`select jsonb_build_object(
+      const fixture = await seedFixture(namespace, {
+        sharedCottage,
+        startDaySql,
+      });
+      const reviewId = `91000000-0000-4000-8000-00000000${namespace}01`;
+      const originalBody = `Guarded historical review ${index + 1}`;
+      const sourceFacts = JSON.parse(
+        primary.harness.runSql(`select jsonb_build_object(
         'namespaceRequestCount',(
           select count(*) from public.booking_requests namespace_requests
           where namespace_requests.id='${fixture.ids.requestId}'
@@ -726,36 +803,36 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
       join public.booking_completion_maturity maturity
         on maturity.booking_request_id=requests.id
       where requests.id='${fixture.ids.requestId}';`),
-    ) as {
-      namespaceRequestCount: number;
-      occupancyCount: number;
-      foreignOccupancyKeyCount: number;
-      payment: string;
-      commitmentConfirmed: boolean;
-      confirmationBound: boolean;
-      completionBound: boolean;
-      bodySafe: boolean;
-      submittedAt: string;
-      reviewExpiresAt: string;
-      insideReviewWindow: boolean;
-    };
-    expect(sourceFacts).toMatchObject({
-      namespaceRequestCount: 1,
-      occupancyCount: 5,
-      foreignOccupancyKeyCount: 0,
-      payment: "paid-confirmed",
-      commitmentConfirmed: true,
-      confirmationBound: true,
-      completionBound: true,
-      bodySafe: true,
-      insideReviewWindow: true,
-    });
-    expect(Date.parse(sourceFacts.submittedAt)).toBeLessThan(
-      Date.parse(sourceFacts.reviewExpiresAt),
-    );
+      ) as {
+        namespaceRequestCount: number;
+        occupancyCount: number;
+        foreignOccupancyKeyCount: number;
+        payment: string;
+        commitmentConfirmed: boolean;
+        confirmationBound: boolean;
+        completionBound: boolean;
+        bodySafe: boolean;
+        submittedAt: string;
+        reviewExpiresAt: string;
+        insideReviewWindow: boolean;
+      };
+      expect(sourceFacts).toMatchObject({
+        namespaceRequestCount: 1,
+        occupancyCount: 5,
+        foreignOccupancyKeyCount: 0,
+        payment: "paid-confirmed",
+        commitmentConfirmed: true,
+        confirmationBound: true,
+        completionBound: true,
+        bodySafe: true,
+        insideReviewWindow: true,
+      });
+      expect(Date.parse(sourceFacts.submittedAt)).toBeLessThan(
+        Date.parse(sourceFacts.reviewExpiresAt),
+      );
 
-    const inserted = JSON.parse(
-      primary.harness.runSql(`with inserted as (
+      const inserted = JSON.parse(
+        primary.harness.runSql(`with inserted as (
         insert into public.customer_reviews(
           id,booking_request_id,booking_confirmation_id,profile_id,
           author_user_id,rating,original_language,original_body,submitted_at
@@ -776,364 +853,372 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
         'originalBody',inserted.original_body,
         'submittedAt',inserted.submitted_at
       ) from inserted;`),
-    );
-    expect(inserted).toEqual({
-      reviewId,
-      originalBody,
-      submittedAt: sourceFacts.submittedAt,
+      );
+      expect(inserted).toEqual({
+        reviewId,
+        originalBody,
+        submittedAt: sourceFacts.submittedAt,
+      });
+      historicalBodies.push(originalBody);
+      historicalReviewIds.push(reviewId);
+    }
+    expect(historicalBodies).toHaveLength(19);
+    expect(historicalReviewIds).toHaveLength(19);
+
+    const upcoming = await seedFixture(upcomingNamespaces[projectName], {
+      sharedCottage,
+      startDaySql: anchoredServiceDay(serviceDateAnchor, 1),
+      complete: false,
+      confirm: true,
     });
-    historicalBodies.push(originalBody);
-    historicalReviewIds.push(reviewId);
-  }
-  expect(historicalBodies).toHaveLength(19);
-  expect(historicalReviewIds).toHaveLength(19);
+    const upcomingContext = await browser.newContext({
+      baseURL: new URL(page.url()).origin,
+    });
+    const upcomingPage = await upcomingContext.newPage();
+    await signInPhone(
+      upcomingPage,
+      upcoming.phones.customer,
+      `/en/booking-requests/${upcoming.ids.bookingReference}`,
+    );
+    const upcomingReview = upcomingPage.getByRole("region", {
+      name: "Review this cottage",
+    });
+    await expect(upcomingReview).toContainText(
+      "A review is not available for this booking.",
+    );
+    await expect(
+      upcomingReview.getByRole("button", { name: "Publish review" }),
+    ).toHaveCount(0);
+    await expect(upcomingReview.getByRole("alert")).toHaveCount(0);
+    await upcomingContext.close();
 
-  const upcoming = await seedFixture(upcomingNamespaces[projectName], {
-    sharedCottage,
-    startDaySql: anchoredServiceDay(serviceDateAnchor, 1),
-    complete: false,
-    confirm: true,
-  });
-  const upcomingContext = await browser.newContext({
-    baseURL: new URL(page.url()).origin,
-  });
-  const upcomingPage = await upcomingContext.newPage();
-  await signInPhone(
-    upcomingPage,
-    upcoming.phones.customer,
-    `/en/booking-requests/${upcoming.ids.bookingReference}`,
-  );
-  const upcomingReview = upcomingPage.getByRole("region", {
-    name: "Review this cottage",
-  });
-  await expect(upcomingReview).toContainText(
-    "A review is not available for this booking.",
-  );
-  await expect(
-    upcomingReview.getByRole("button", { name: "Publish review" }),
-  ).toHaveCount(0);
-  await expect(upcomingReview.getByRole("alert")).toHaveCount(0);
-  await upcomingContext.close();
+    const ratingText = {
+      en: "Rating: 5 / 5 stars",
+      ar: "التقييم: 5 / 5 نجوم",
+      ckb: "هەڵسەنگاندن: 5 / 5 ئەستێرە",
+    } as const;
+    const ratingOnlyText = {
+      en: "Rating only",
+      ar: "تقييم رقمي فقط",
+      ckb: "تەنها نمرەی ئەستێرەکان",
+    } as const;
+    const nextReviewText = {
+      en: "Next reviews",
+      ar: "التقييمات التالية",
+      ckb: "هەڵسەنگاندنەکانی دواتر",
+    } as const;
+    const expectedReviewIds = [
+      ...interactiveReviews.map((review) => review.reviewId),
+      ...historicalReviewIds,
+    ];
+    expect(new Set(expectedReviewIds).size).toBe(21);
 
-  const ratingText = {
-    en: "Rating: 5 / 5 stars",
-    ar: "التقييم: 5 / 5 نجوم",
-    ckb: "هەڵسەنگاندن: 5 / 5 ئەستێرە",
-  } as const;
-  const ratingOnlyText = {
-    en: "Rating only",
-    ar: "تقييم رقمي فقط",
-    ckb: "تەنها نمرەی ئەستێرەکان",
-  } as const;
-  const nextReviewText = {
-    en: "Next reviews",
-    ar: "التقييمات التالية",
-    ckb: "هەڵسەنگاندنەکانی دواتر",
-  } as const;
-  const expectedReviewIds = [
-    ...interactiveReviews.map((review) => review.reviewId),
-    ...historicalReviewIds,
-  ];
-  expect(new Set(expectedReviewIds).size).toBe(21);
-
-  const publicClient = createClient(
-    process.env.SUPABASE_URL ?? "",
-    process.env.SUPABASE_PUBLISHABLE_KEY ?? "",
-    { auth: { autoRefreshToken: false, persistSession: false } },
-  );
-  const firstPublicResult = await publicClient.rpc(
-    "list_public_customer_reviews",
-    {
-      target_slug: primary.publicSlug,
-      target_before_at: null,
-      target_before_id: null,
-      target_limit: 20,
-    },
-  );
-  expect(firstPublicResult.error).toBeNull();
-  const firstPublicData = firstPublicResult.data as {
-    status: string;
-    items: Array<{ reviewId: string; originalBody: string | null }>;
-    nextCursor: { submittedAt: string; reviewId: string } | null;
-  };
-  expect(firstPublicData.status).toBe("success");
-  expect(firstPublicData.items).toHaveLength(20);
-  expect(firstPublicData.nextCursor).not.toBeNull();
-  const secondPublicResult = await publicClient.rpc(
-    "list_public_customer_reviews",
-    {
-      target_slug: primary.publicSlug,
-      target_before_at: firstPublicData.nextCursor!.submittedAt,
-      target_before_id: firstPublicData.nextCursor!.reviewId,
-      target_limit: 20,
-    },
-  );
-  expect(secondPublicResult.error).toBeNull();
-  const secondPublicData = secondPublicResult.data as {
-    status: string;
-    items: Array<{ reviewId: string; originalBody: string | null }>;
-    nextCursor: null;
-  };
-  expect(secondPublicData).toMatchObject({
-    status: "success",
-    nextCursor: null,
-  });
-  expect(secondPublicData.items).toHaveLength(1);
-  expect(
-    new Set(
-      [...firstPublicData.items, ...secondPublicData.items].map(
-        (review) => review.reviewId,
+    const publicClient = createClient(
+      process.env.SUPABASE_URL ?? "",
+      process.env.SUPABASE_PUBLISHABLE_KEY ?? "",
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    );
+    const firstPublicResult = await publicClient.rpc(
+      "list_public_customer_reviews",
+      {
+        target_slug: primary.publicSlug,
+        target_before_at: null,
+        target_before_id: null,
+        target_limit: 20,
+      },
+    );
+    expect(firstPublicResult.error).toBeNull();
+    const firstPublicData = firstPublicResult.data as {
+      status: string;
+      items: Array<{ reviewId: string; originalBody: string | null }>;
+      nextCursor: { submittedAt: string; reviewId: string } | null;
+    };
+    expect(firstPublicData.status).toBe("success");
+    expect(firstPublicData.items).toHaveLength(20);
+    expect(firstPublicData.nextCursor).not.toBeNull();
+    const secondPublicResult = await publicClient.rpc(
+      "list_public_customer_reviews",
+      {
+        target_slug: primary.publicSlug,
+        target_before_at: firstPublicData.nextCursor!.submittedAt,
+        target_before_id: firstPublicData.nextCursor!.reviewId,
+        target_limit: 20,
+      },
+    );
+    expect(secondPublicResult.error).toBeNull();
+    const secondPublicData = secondPublicResult.data as {
+      status: string;
+      items: Array<{ reviewId: string; originalBody: string | null }>;
+      nextCursor: null;
+    };
+    expect(secondPublicData).toMatchObject({
+      status: "success",
+      nextCursor: null,
+    });
+    expect(secondPublicData.items).toHaveLength(1);
+    expect(
+      new Set(
+        [...firstPublicData.items, ...secondPublicData.items].map(
+          (review) => review.reviewId,
+        ),
       ),
-    ),
-  ).toEqual(new Set(expectedReviewIds));
-  expect(secondPublicData.items[0]).toMatchObject({
-    reviewId: historicalReviewIds.at(-1),
-    originalBody: historicalBodies.at(-1),
-  });
+    ).toEqual(new Set(expectedReviewIds));
+    expect(secondPublicData.items[0]).toMatchObject({
+      reviewId: historicalReviewIds.at(-1),
+      originalBody: historicalBodies.at(-1),
+    });
 
-  for (const locale of ["en", "ar", "ckb"] as const) {
-    const response = await visitor.goto(
-      `/${locale}/cottages/${primary.publicSlug}/reviews`,
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      const response = await visitor.goto(
+        `/${locale}/cottages/${primary.publicSlug}/reviews`,
+      );
+      expect(response?.ok()).toBe(true);
+      const firstResponseBody = await response!.text();
+      await expect(visitor.getByRole("article")).toHaveCount(20);
+      const primaryPublicReview = visitor
+        .getByRole("article")
+        .filter({ hasText: original });
+      await expect(primaryPublicReview).toHaveCount(1);
+      await expect(primaryPublicReview.getByText(original)).toHaveAttribute(
+        "lang",
+        "en",
+      );
+      await expect(primaryPublicReview.getByText(original)).toHaveAttribute(
+        "dir",
+        "auto",
+      );
+      await expect(
+        primaryPublicReview.getByText(ratingText[locale]),
+      ).toBeVisible();
+      await expect(primaryPublicReview.locator("dialog")).toHaveCount(0);
+      await expect(primaryPublicReview.locator("em")).toHaveCount(0);
+      await expect(
+        primaryPublicReview.locator("[data-review-probe]"),
+      ).toHaveCount(0);
+      const firstPageBodies = await visitor
+        .getByRole("article")
+        .locator("p[dir=auto]")
+        .allTextContents();
+      await visitor.getByRole("link", { name: nextReviewText[locale] }).click();
+      await expect(visitor.getByRole("article")).toHaveCount(1);
+      const secondPageResponse = await visitor.goto(visitor.url());
+      expect(secondPageResponse?.ok()).toBe(true);
+      const secondResponseBody = await secondPageResponse!.text();
+      await expect(visitor.getByRole("article")).toHaveCount(1);
+      const secondPageBodies = await visitor
+        .getByRole("article")
+        .locator("p[dir=auto]")
+        .allTextContents();
+      expect(secondPageBodies).toEqual([historicalBodies.at(-1)]);
+      await expect(
+        visitor.getByRole("link", { name: nextReviewText[locale] }),
+      ).toHaveCount(0);
+      const renderedBodies = [...firstPageBodies, ...secondPageBodies];
+      expect(renderedBodies).toHaveLength(21);
+      expect(new Set(renderedBodies)).toEqual(
+        new Set([original, ratingOnlyText[locale], ...historicalBodies]),
+      );
+      expect(firstResponseBody).not.toContain(primary.identities.customer);
+      expect(firstResponseBody).not.toContain(primary.ids.bookingReference);
+      expect(secondResponseBody).not.toContain(primary.identities.customer);
+      expect(secondResponseBody).not.toContain(primary.ids.bookingReference);
+      await expect(visitor.locator("html")).toHaveAttribute(
+        "dir",
+        locale === "en" ? "ltr" : "rtl",
+      );
+    }
+
+    const administrator = await provisionAdministrator(
+      `customer-reviews-${testInfo.project.name}`,
     );
-    expect(response?.ok()).toBe(true);
-    const firstResponseBody = await response!.text();
-    await expect(visitor.getByRole("article")).toHaveCount(20);
-    const primaryPublicReview = visitor
-      .getByRole("article")
-      .filter({ hasText: original });
-    await expect(primaryPublicReview).toHaveCount(1);
-    await expect(primaryPublicReview.getByText(original)).toHaveAttribute(
-      "lang",
-      "en",
+    await page.context().clearCookies();
+    await page.goto("/en/administrator/reviews");
+    await expect(page).toHaveURL(
+      "/en/administrator/access?returnTo=%2Fen%2Fadministrator%2Freviews",
     );
-    await expect(primaryPublicReview.getByText(original)).toHaveAttribute(
-      "dir",
-      "auto",
+    await expectAdministratorEmailAccess(page, administratorReturnLocales[0]);
+    await expect(page.getByText(primary.ids.bookingReference)).toHaveCount(0);
+    const secret = await beginAdministratorMfa(
+      page,
+      administrator.email,
+      administratorReturnLocales[0],
     );
+    const aal1 = await page.context().newPage();
+    await aal1.goto("/en/administrator/reviews");
     await expect(
-      primaryPublicReview.getByText(ratingText[locale]),
+      aal1.getByText(
+        "Authenticator-verified administrator access is required.",
+      ),
     ).toBeVisible();
-    await expect(primaryPublicReview.locator("dialog")).toHaveCount(0);
-    await expect(primaryPublicReview.locator("em")).toHaveCount(0);
-    await expect(
-      primaryPublicReview.locator("[data-review-probe]"),
-    ).toHaveCount(0);
-    const firstPageBodies = await visitor
-      .getByRole("article")
-      .locator("p[dir=auto]")
-      .allTextContents();
-    await visitor.getByRole("link", { name: nextReviewText[locale] }).click();
-    await expect(visitor.getByRole("article")).toHaveCount(1);
-    const secondPageResponse = await visitor.goto(visitor.url());
-    expect(secondPageResponse?.ok()).toBe(true);
-    const secondResponseBody = await secondPageResponse!.text();
-    await expect(visitor.getByRole("article")).toHaveCount(1);
-    const secondPageBodies = await visitor
-      .getByRole("article")
-      .locator("p[dir=auto]")
-      .allTextContents();
-    expect(secondPageBodies).toEqual([historicalBodies.at(-1)]);
-    await expect(
-      visitor.getByRole("link", { name: nextReviewText[locale] }),
-    ).toHaveCount(0);
-    const renderedBodies = [...firstPageBodies, ...secondPageBodies];
-    expect(renderedBodies).toHaveLength(21);
-    expect(new Set(renderedBodies)).toEqual(
-      new Set([original, ratingOnlyText[locale], ...historicalBodies]),
+    await expect(aal1.getByText(primary.ids.bookingReference)).toHaveCount(0);
+    await expect(aal1.getByRole("article")).toHaveCount(0);
+    await aal1.close();
+    await page.getByLabel("Authenticator app code").fill(
+      new OTPAuth.TOTP({
+        secret: OTPAuth.Secret.fromBase32(secret),
+      }).generate(),
     );
-    expect(firstResponseBody).not.toContain(primary.identities.customer);
-    expect(firstResponseBody).not.toContain(primary.ids.bookingReference);
-    expect(secondResponseBody).not.toContain(primary.identities.customer);
-    expect(secondResponseBody).not.toContain(primary.ids.bookingReference);
-    await expect(visitor.locator("html")).toHaveAttribute(
-      "dir",
-      locale === "en" ? "ltr" : "rtl",
+    await page.getByRole("button", { name: "Verify" }).click();
+    await expect(page).toHaveURL("/en/administrator/reviews");
+    await expect(
+      page.getByRole("heading", { name: "Customer review moderation" }),
+    ).toBeVisible();
+    await page.getByLabel("Status").selectOption("unhidden");
+    await page.getByRole("button", { name: "Apply filters" }).click();
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === "/en/administrator/reviews" &&
+        url.searchParams.get("state") === "unhidden",
     );
-  }
-
-  const administrator = await provisionAdministrator(
-    `customer-reviews-${testInfo.project.name}`,
-  );
-  await page.context().clearCookies();
-  await page.goto("/en/administrator/reviews");
-  await expect(page).toHaveURL(
-    "/en/administrator/access?returnTo=%2Fen%2Fadministrator%2Freviews",
-  );
-  await expectAdministratorEmailAccess(page, administratorReturnLocales[0]);
-  await expect(page.getByText(primary.ids.bookingReference)).toHaveCount(0);
-  const secret = await beginAdministratorMfa(
-    page,
-    administrator.email,
-    administratorReturnLocales[0],
-  );
-  const aal1 = await page.context().newPage();
-  await aal1.goto("/en/administrator/reviews");
-  await expect(
-    aal1.getByText("Authenticator-verified administrator access is required."),
-  ).toBeVisible();
-  await expect(aal1.getByText(primary.ids.bookingReference)).toHaveCount(0);
-  await expect(aal1.getByRole("article")).toHaveCount(0);
-  await aal1.close();
-  await page.getByLabel("Authenticator app code").fill(
-    new OTPAuth.TOTP({
-      secret: OTPAuth.Secret.fromBase32(secret),
-    }).generate(),
-  );
-  await page.getByRole("button", { name: "Verify" }).click();
-  await expect(page).toHaveURL("/en/administrator/reviews");
-  await expect(
-    page.getByRole("heading", { name: "Customer review moderation" }),
-  ).toBeVisible();
-  await page.getByLabel("Status").selectOption("unhidden");
-  await page.getByRole("button", { name: "Apply filters" }).click();
-  await expect(page).toHaveURL(
-    (url) =>
-      url.pathname === "/en/administrator/reviews" &&
-      url.searchParams.get("state") === "unhidden",
-  );
-  const review = await openAdministratorReview(
-    page,
-    primary.ids.bookingReference,
-  );
-  await expect(review).toContainText(primary.ids.bookingReference);
-  await expect(review).toContainText(primary.identities.customer);
-  await expect(review.getByText("Rating: 5 / 5 stars")).toBeVisible();
-  await expect(review.getByText(original)).toHaveAttribute("lang", "en");
-  await expect(review.getByText(original)).toHaveAttribute("dir", "auto");
-  await expect(review.locator("dialog")).toHaveCount(0);
-  await expect(review.locator("em")).toHaveCount(0);
-  await expect(review.locator("[data-review-probe]")).toHaveCount(0);
-  await review.getByRole("button", { name: "Hide review" }).click();
-  await expect(review.getByRole("alert")).toContainText("Enter a reason");
-  const reason = "Contact-safety moderation fixture";
-  await review.getByLabel("Reason for hiding").fill(reason);
-  const hideReviewControl = review.getByRole("button", { name: "Hide review" });
-  await hideReviewControl.focus();
-  await expect(hideReviewControl).toBeFocused();
-  await hideReviewControl.press("Enter");
-  await expect(review).toHaveCount(0);
-  await expect(
-    page.getByRole("heading", { name: "Customer review moderation", level: 1 }),
-  ).toBeFocused();
-
-  const baghdadDate = (at: number) =>
-    new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Baghdad" }).format(at);
-  const from = baghdadDate(Date.now() - 24 * 60 * 60 * 1000);
-  const through = baghdadDate(Date.now());
-  await page.getByLabel("Status").selectOption("hidden");
-  await page.getByLabel("From date (Baghdad)").fill(from);
-  await page.getByLabel("Through date (Baghdad)").fill(through);
-  await page.getByRole("button", { name: "Apply filters" }).click();
-  await expect(page).toHaveURL(
-    `/en/administrator/reviews?state=hidden&from=${from}&through=${through}`,
-  );
-  const hiddenReview = await openAdministratorReview(
-    page,
-    primary.ids.bookingReference,
-  );
-  await expect(hiddenReview.getByText(original)).toBeVisible();
-  await expect(hiddenReview.getByText(reason)).toBeVisible();
-  await expect(page.getByText("Matching reviews")).toBeVisible();
-  await captureReviewFilters(page, "en");
-  for (const locale of ["ar", "ckb"] as const) {
-    await page.goto(`/${locale}/administrator/reviews`);
-    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-    await page
-      .getByLabel(administratorRecordsMessages[locale].status)
-      .selectOption("hidden");
-    await page
-      .getByRole("button", {
-        name: administratorQueuesMessages[locale].apply,
-        exact: true,
-      })
-      .click();
-    await expect(page).toHaveURL(/state=hidden/);
-    const localizedHiddenReview = await openAdministratorReview(
+    const review = await openAdministratorReview(
       page,
       primary.ids.bookingReference,
-      locale,
     );
-    await expect(localizedHiddenReview.getByText(reason)).toBeVisible();
-    await captureReviewFilters(page, locale);
-  }
-
-  const hiddenAuthorContext = await browser.newContext({
-    baseURL: new URL(page.url()).origin,
-  });
-  const hiddenAuthor = await hiddenAuthorContext.newPage();
-  await signInPhone(
-    hiddenAuthor,
-    primary.phones.customer,
-    `/en/booking-requests/${primary.ids.bookingReference}`,
-  );
-  const hiddenAuthorReview = hiddenAuthor.getByRole("region", {
-    name: "Your review",
-  });
-  await expect(hiddenAuthorReview.getByRole("status")).toHaveText(
-    "Hidden by RentCottage",
-  );
-  await expect(hiddenAuthorReview).not.toContainText(
-    "Your review was published.",
-  );
-  await expect(hiddenAuthorReview).not.toContainText("Visible to visitors");
-  await expect(hiddenAuthorReview.getByText(original)).toBeVisible();
-  await expect(hiddenAuthorReview.locator("dialog")).toHaveCount(0);
-  await expect(hiddenAuthorReview.locator("em")).toHaveCount(0);
-  await expect(hiddenAuthorReview.locator("[data-review-probe]")).toHaveCount(
-    0,
-  );
-  await hiddenAuthorContext.close();
-
-  for (const locale of ["en", "ar", "ckb"] as const) {
-    const responseBodies: string[] = [];
-    const recordReviewResponse = async (response: Response) => {
-      if (response.url().includes(`/cottages/${primary.publicSlug}/reviews`)) {
-        responseBodies.push(await response.text().catch(() => ""));
-      }
-    };
-    visitor.on("response", recordReviewResponse);
-    await visitor.goto(`/${locale}/cottages/${primary.publicSlug}/reviews`);
-    await expect(visitor.getByRole("article")).toHaveCount(20);
-    await expect(visitor.getByText(original)).toHaveCount(0);
-    await expect(visitor.locator('a[href*="beforeAt="]')).toHaveCount(0);
-    const visibleBodies = await visitor
-      .getByRole("article")
-      .locator("p[dir=auto]")
-      .allTextContents();
-    expect(new Set(visibleBodies)).toEqual(
-      new Set([ratingOnlyText[locale], ...historicalBodies]),
-    );
-    const rendered = [await visitor.content(), ...responseBodies].join("\n");
-    for (const privateValue of [
-      original,
-      primaryInteractiveReview!.reviewId,
-      primary.ids.bookingReference,
-      primary.identities.customer,
-      administrator.userId,
-      reason,
-    ])
-      expect(rendered).not.toContain(privateValue);
-    visitor.off("response", recordReviewResponse);
-  }
-
-  primary.harness.runSql(
-    "revoke execute on function public.list_public_customer_reviews(text,timestamptz,uuid,integer) from anon,authenticated;",
-  );
-  try {
-    await visitor.goto(publicPath);
+    await expect(review).toContainText(primary.ids.bookingReference);
+    await expect(review).toContainText(primary.identities.customer);
+    await expect(review.getByText("Rating: 5 / 5 stars")).toBeVisible();
+    await expect(review.getByText(original)).toHaveAttribute("lang", "en");
+    await expect(review.getByText(original)).toHaveAttribute("dir", "auto");
+    await expect(review.locator("dialog")).toHaveCount(0);
+    await expect(review.locator("em")).toHaveCount(0);
+    await expect(review.locator("[data-review-probe]")).toHaveCount(0);
+    await review.getByRole("button", { name: "Hide review" }).click();
+    await expect(review.getByRole("alert")).toContainText("Enter a reason");
+    const reason = "Contact-safety moderation fixture";
+    await review.getByLabel("Reason for hiding").fill(reason);
+    const hideReviewControl = review.getByRole("button", {
+      name: "Hide review",
+    });
+    await hideReviewControl.focus();
+    await expect(hideReviewControl).toBeFocused();
+    await hideReviewControl.press("Enter");
+    await expect(review).toHaveCount(0);
     await expect(
-      visitor.getByText("Reviews are unavailable. Refresh and try again.", {
-        exact: true,
+      page.getByRole("heading", {
+        name: "Customer review moderation",
+        level: 1,
       }),
-    ).toBeVisible();
-  } finally {
-    primary.harness.runSql(
-      "grant execute on function public.list_public_customer_reviews(text,timestamptz,uuid,integer) to anon,authenticated;",
-    );
-  }
-  await visitorContext.close();
+    ).toBeFocused();
 
-  try {
+    const baghdadDate = (at: number) =>
+      new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Baghdad" }).format(at);
+    const from = baghdadDate(Date.now() - 24 * 60 * 60 * 1000);
+    const through = baghdadDate(Date.now());
+    await page.getByLabel("Status").selectOption("hidden");
+    await page.getByLabel("From date (Baghdad)").fill(from);
+    await page.getByLabel("Through date (Baghdad)").fill(through);
+    await page.getByRole("button", { name: "Apply filters" }).click();
+    await expect(page).toHaveURL(
+      `/en/administrator/reviews?state=hidden&from=${from}&through=${through}`,
+    );
+    const hiddenReview = await openAdministratorReview(
+      page,
+      primary.ids.bookingReference,
+    );
+    await expect(hiddenReview.getByText(original)).toBeVisible();
+    await expect(hiddenReview.getByText(reason)).toBeVisible();
+    await expect(page.getByText("Matching reviews")).toBeVisible();
+    await captureReviewFilters(page, "en");
+    for (const locale of ["ar", "ckb"] as const) {
+      await page.goto(`/${locale}/administrator/reviews`);
+      await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+      await page
+        .getByLabel(administratorRecordsMessages[locale].status)
+        .selectOption("hidden");
+      await page
+        .getByRole("button", {
+          name: administratorQueuesMessages[locale].apply,
+          exact: true,
+        })
+        .click();
+      await expect(page).toHaveURL(/state=hidden/);
+      const localizedHiddenReview = await openAdministratorReview(
+        page,
+        primary.ids.bookingReference,
+        locale,
+      );
+      await expect(localizedHiddenReview.getByText(reason)).toBeVisible();
+      await captureReviewFilters(page, locale);
+    }
+
+    const hiddenAuthorContext = await browser.newContext({
+      baseURL: new URL(page.url()).origin,
+    });
+    const hiddenAuthor = await hiddenAuthorContext.newPage();
+    await signInPhone(
+      hiddenAuthor,
+      primary.phones.customer,
+      `/en/booking-requests/${primary.ids.bookingReference}`,
+    );
+    const hiddenAuthorReview = hiddenAuthor.getByRole("region", {
+      name: "Your review",
+    });
+    await expect(hiddenAuthorReview.getByRole("status")).toHaveText(
+      "Hidden by RentCottage",
+    );
+    await expect(hiddenAuthorReview).not.toContainText(
+      "Your review was published.",
+    );
+    await expect(hiddenAuthorReview).not.toContainText("Visible to visitors");
+    await expect(hiddenAuthorReview.getByText(original)).toBeVisible();
+    await expect(hiddenAuthorReview.locator("dialog")).toHaveCount(0);
+    await expect(hiddenAuthorReview.locator("em")).toHaveCount(0);
+    await expect(hiddenAuthorReview.locator("[data-review-probe]")).toHaveCount(
+      0,
+    );
+    await hiddenAuthorContext.close();
+
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      const responseBodies: string[] = [];
+      const recordReviewResponse = async (response: Response) => {
+        if (
+          response.url().includes(`/cottages/${primary.publicSlug}/reviews`)
+        ) {
+          responseBodies.push(await response.text().catch(() => ""));
+        }
+      };
+      visitor.on("response", recordReviewResponse);
+      await visitor.goto(`/${locale}/cottages/${primary.publicSlug}/reviews`);
+      await expect(visitor.getByRole("article")).toHaveCount(20);
+      await expect(visitor.getByText(original)).toHaveCount(0);
+      await expect(visitor.locator('a[href*="beforeAt="]')).toHaveCount(0);
+      const visibleBodies = await visitor
+        .getByRole("article")
+        .locator("p[dir=auto]")
+        .allTextContents();
+      expect(new Set(visibleBodies)).toEqual(
+        new Set([ratingOnlyText[locale], ...historicalBodies]),
+      );
+      const rendered = [await visitor.content(), ...responseBodies].join("\n");
+      for (const privateValue of [
+        original,
+        primaryInteractiveReview!.reviewId,
+        primary.ids.bookingReference,
+        primary.identities.customer,
+        administrator.userId,
+        reason,
+      ])
+        expect(rendered).not.toContain(privateValue);
+      visitor.off("response", recordReviewResponse);
+    }
+
+    primary.harness.runSql(
+      "revoke execute on function public.list_public_customer_reviews(text,timestamptz,uuid,integer) from anon,authenticated;",
+    );
+    try {
+      await visitor.goto(publicPath);
+      await expect(
+        visitor.getByText("Reviews are unavailable. Refresh and try again.", {
+          exact: true,
+        }),
+      ).toBeVisible();
+    } finally {
+      primary.harness.runSql(
+        "grant execute on function public.list_public_customer_reviews(text,timestamptz,uuid,integer) to anon,authenticated;",
+      );
+    }
+    await visitorContext.close();
+
     const messagingRows = (requestId: string, conversationId: string) =>
       primary.harness.runSql(`select jsonb_build_object(
         'conversations',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]'::jsonb)
@@ -1237,10 +1322,7 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
       snapshots[0],
     );
   } finally {
-    primary.harness.runSql(
-      reviewFixtureCleanup(pair[1], ratingOnly.identities) +
-        reviewFixtureCleanup(pair[0], primary.identities),
-    );
+    await cleanupOwnedFixtures();
   }
 });
 
