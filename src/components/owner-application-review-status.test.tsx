@@ -106,7 +106,7 @@ describe("Owner Application review status", () => {
           ...review,
           activeRequest: {
             reason: "Confirm the address and the governorate.",
-            requestedFields: ["exact_address", "governorate"],
+            requestedFields: ["exact_address", "governorate", "amenities"],
             requestedDocumentKinds: [],
           },
         }}
@@ -117,6 +117,12 @@ describe("Owner Application review status", () => {
       screen.getByLabelText("Exact private address (optional)"),
     ).not.toBeRequired();
     expect(screen.getByLabelText("Governorate")).toBeRequired();
+    expect(screen.getByLabelText("Garden").closest("label")).toHaveClass(
+      "choice-control",
+    );
+    expect(screen.getByRole("group", { name: "amenities" })).toHaveClass(
+      "option-group",
+    );
   });
 
   it("renders the approved, rejected, expired and suspended states explicitly", () => {

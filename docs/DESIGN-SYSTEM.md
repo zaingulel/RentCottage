@@ -90,9 +90,10 @@ the code keeps them.
   option. `--radius-mark` is 4 pixels and rounds the checkbox mark, which is too small to carry 8 pixels without
   reading as a radio button. `--radius-card` is 10 pixels and rounds every other surface: a card, panel, notice,
   tile, image frame, menu and list row.
-- A selectable option in a group, whether a toggle button (`.action-toggle`) or a bordered option label
-  (`.amenity-options label`), is a control and takes `--radius-control`. The pill is the shape of a status label
-  and of a site header item, never of a selectable option.
+- A selectable option in a group is either a toggle button (`.action-toggle`), which is a control and takes
+  `--radius-control`, or a `ChoiceControl` row of mark and text inside an `OptionGroup`, which has no border or
+  fill of its own. The pill is the shape of a status label and of a site header item, never of a selectable
+  option.
 - A pill is `999px`, a circle is `50%` and a square corner is `0`. They are shapes, not sizes, so they are
   literals. The radio button mark is a circle.
 - There is no elevation shadow. A surface is set apart by its background and its `1px` `--line` border;
@@ -100,7 +101,7 @@ the code keeps them.
 - `box-shadow` draws state rings only, each with no offset and no blur: `--shadow-focus` composes a 2px opaque
   cream separator and a 4px opaque green shadow around a keyboard-focused control or ordinary handoff target.
   The first shadow paints above the second, leaving 2px of green beyond the separator. `--shadow-invalid`
-  surrounds an invalid field, mark or option; and `--shadow-pressed` sits inside a pressed toggle. A ring adds to the focus outline described under Accessibility conventions and never replaces it.
+  surrounds an invalid field or mark; and `--shadow-pressed` sits inside a pressed toggle. A ring adds to the focus outline described under Accessibility conventions and never replaces it.
   A focused pressed toggle composes `var(--shadow-focus), var(--shadow-pressed)` to retain its inset edge.
 - Every `z-index` is one of four layers, lowest first: `--layer-raised` for content above a backdrop in its own
   block, as the hero copy is above its shade; `--layer-overlap` for a block that overlaps the one before it, as

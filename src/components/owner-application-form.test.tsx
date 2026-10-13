@@ -243,7 +243,7 @@ describe("Owner Application form", () => {
     vi.mocked(saveOwnerApplicationAction).mockImplementation(
       async (_previous, formData) => ({
         status: "invalid",
-        fields: ["capacity"],
+        fields: ["capacity", "amenities"],
         values: {
           applicantKind: String(formData.get("applicantKind")),
           legalName: String(formData.get("legalName")),
@@ -293,6 +293,17 @@ describe("Owner Application form", () => {
     ).toHaveTextContent("Check this field.");
     expect(screen.getByLabelText("Garden")).toBeChecked();
     expect(screen.getByLabelText("Parking")).toBeChecked();
+    expect(screen.getByLabelText("Garden")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(screen.getByLabelText("Garden")).toHaveAttribute(
+      "aria-describedby",
+      "owner-application-amenities-error",
+    );
+    expect(
+      document.getElementById("owner-application-amenities-error"),
+    ).toHaveTextContent("Check this field.");
   });
 
   it("shows saved document metadata without exposing a download action", () => {

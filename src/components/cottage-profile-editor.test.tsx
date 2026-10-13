@@ -99,6 +99,12 @@ describe("Cottage Profile editor", () => {
         "Exact address, coordinates and directions stay private and are never shown in the public listing.",
       ),
     ).toBeVisible();
+    expect(screen.getByRole("group", { name: "Known amenities" })).toHaveClass(
+      "option-group",
+    );
+    expect(screen.getByLabelText("Wi-Fi").closest("label")).toHaveClass(
+      "choice-control",
+    );
     expect(
       screen.getByRole("button", { name: "Save private draft" }),
     ).toBeEnabled();

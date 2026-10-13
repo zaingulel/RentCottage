@@ -431,7 +431,7 @@ describe("stylesheet shape and layer tokens", () => {
     expect(pills.length).toBeGreaterThan(0);
     expect(
       pills.filter((selector) =>
-        /\.action-toggle|\.amenity-options/.test(selector),
+        /\.action-toggle|\.choice-control|\.option-group/.test(selector),
       ),
     ).toEqual([]);
   });

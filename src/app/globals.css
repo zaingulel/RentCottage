@@ -643,11 +643,6 @@ input[type="file"].form-control::file-selector-button {
   font-weight: 700;
 }
 
-.amenities-fieldset[aria-invalid="true"] .amenity-options label {
-  border-color: var(--error);
-  box-shadow: var(--shadow-invalid);
-}
-
 .application-fields small,
 .document-upload-form span {
   color: var(--muted);
@@ -655,34 +650,8 @@ input[type="file"].form-control::file-selector-button {
   font-weight: 400;
 }
 
-.amenities-fieldset {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.amenities-fieldset legend {
-  margin-block-end: var(--space-2);
+.owner-application-form .option-group > legend {
   color: var(--green);
-  font-size: var(--font-size-1);
-  font-weight: 700;
-}
-
-.amenity-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.amenity-options label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--surface-field);
-  padding: var(--space-2) var(--space-3);
   font-size: var(--font-size-1);
 }
 
@@ -2011,7 +1980,7 @@ html[lang="ckb"] .result-content h2 {
   margin: 0;
 }
 
-.cottage-profile-form label,
+.cottage-profile-form label:where(:not(.choice-control)),
 .cottage-photo-upload-form label {
   display: grid;
   gap: var(--space-2);
@@ -2258,15 +2227,6 @@ html[lang="ckb"] .result-content h2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.amenity-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-  gap: var(--space-3);
-  border: 0;
-  padding: 0;
-}
-
-.amenity-grid label,
 .cottage-profile-form .exact-point-confirmation {
   display: flex;
   align-items: center;

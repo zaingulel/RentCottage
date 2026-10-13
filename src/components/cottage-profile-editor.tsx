@@ -22,7 +22,12 @@ import {
   cottageProfileStatusLabel,
 } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
-import { ActionFocusTarget, FormControl } from "./interaction-controls";
+import {
+  ActionFocusTarget,
+  ChoiceControl,
+  FormControl,
+  OptionGroup,
+} from "./interaction-controls";
 
 import { CottageLocationFields } from "./cottage-location-fields";
 
@@ -268,20 +273,19 @@ export function CottageProfileEditor({
               />
             </label>
           </div>
-          <fieldset className="amenity-grid">
-            <legend>{copy.amenities}</legend>
+          <OptionGroup legend={copy.amenities} layout="wrap">
             {cottageProfileAmenities.map((amenity) => (
-              <label key={amenity}>
-                <input
-                  type="checkbox"
-                  name="amenities"
-                  value={amenity}
-                  defaultChecked={profile.amenities.includes(amenity)}
-                />
+              <ChoiceControl
+                key={amenity}
+                kind="checkbox"
+                name="amenities"
+                value={amenity}
+                defaultChecked={profile.amenities.includes(amenity)}
+              >
                 {copy[amenity]}
-              </label>
+              </ChoiceControl>
             ))}
-          </fieldset>
+          </OptionGroup>
         </fieldset>
 
         <fieldset
