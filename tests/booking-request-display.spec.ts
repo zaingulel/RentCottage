@@ -1,4 +1,5 @@
 import { bookingRequestPaymentRecoveryMessages } from "../src/i18n/booking-request-status-messages";
+import { ownerBookingRequestMessages } from "../src/i18n/owner-booking-request-messages";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { build } from "esbuild";
 
@@ -373,6 +374,55 @@ test("Customer Booking Request status sits in the record page column under the h
     expect(measured.cardWidth).toBeCloseTo(columnWidth, 0);
     expect(measured.followUpWidth).toBeCloseTo(columnWidth, 0);
     expect(measured.cardTop - measured.columnTop).toBeCloseTo(32, 0);
+    expect(measured.document).toBeLessThanOrEqual(measured.available);
+  }
+});
+
+test("owner Booking Request card details sit beside their labels on desktop and under them on a phone in the page column", async ({
+  page,
+}, testInfo) => {
+  if (testInfo.project.name === "mobile") {
+    await page.setViewportSize({ width: 390, height: 844 });
+  }
+  await mountBookingRequestDisplay(page, testInfo);
+
+  for (const locale of ["en", "ar"] as const) {
+    await page.evaluate((input) => window.renderBookingRequestDisplay(input), {
+      locale,
+      role: "owner" as const,
+      status: "paid-confirmed" as const,
+    });
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
+    // The language attribute changes before the page renders, so the first
+    // label is what shows this language's content is the one being measured.
+    await expect(
+      page
+        .locator("main.page .owner-booking-request-card .fact-list dt")
+        .first(),
+    ).toHaveText(ownerBookingRequestMessages[locale].cottage);
+    await page.evaluate(() => document.fonts.ready);
+    const stacked = testInfo.project.name === "mobile";
+    const valueOffsetFromLabel = expect.poll(() =>
+      page.evaluate((isStacked) => {
+        const fact = document.querySelector(
+          "main.page .owner-booking-request-card .fact-list > div",
+        );
+        const label = fact?.querySelector("dt")?.getBoundingClientRect();
+        const value = fact?.querySelector("dd")?.getBoundingClientRect();
+        if (!label || !value)
+          throw new Error("Owner Booking Request fact list is missing");
+        return value.top - (isStacked ? label.bottom : label.top);
+      }, stacked),
+    );
+    if (stacked) {
+      await valueOffsetFromLabel.toBeGreaterThanOrEqual(0);
+    } else {
+      await valueOffsetFromLabel.toBeCloseTo(0, 0);
+    }
+    const measured = await page.evaluate(() => ({
+      available: document.documentElement.clientWidth,
+      document: document.documentElement.scrollWidth,
+    }));
     expect(measured.document).toBeLessThanOrEqual(measured.available);
   }
 });

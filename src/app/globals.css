@@ -2545,7 +2545,7 @@ html[lang="ckb"] .result-content h2 {
 
 .owner-booking-request-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 23rem), 1fr));
   gap: var(--space-4);
   margin-block-start: var(--space-4);
 }
@@ -2578,29 +2578,12 @@ html[lang="ckb"] .result-content h2 {
   font-weight: 700;
 }
 
-.owner-booking-request-card dl,
-.owner-booking-request-card dl > div {
-  display: grid;
-  gap: var(--space-1);
+.owner-booking-request-card > .fact-list {
+  margin-block: var(--space-4);
 }
 
-.owner-booking-request-card dl {
-  gap: var(--space-3);
-}
-
-.owner-booking-request-card dt {
-  color: var(--muted);
-  font-size: var(--font-size-1);
-}
-
-.owner-booking-request-card dd {
-  margin: 0;
-  overflow-wrap: anywhere;
+.owner-booking-request-card .fact-list dd {
   white-space: pre-wrap;
-}
-
-.owner-booking-request-card dd > span {
-  display: block;
 }
 
 .confirmed-booking-details,

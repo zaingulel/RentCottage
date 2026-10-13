@@ -82,7 +82,7 @@ export function OwnerBookingRequestCard({
           />
         </span>
       </header>
-      <dl>
+      <dl className="fact-list">
         <div>
           <dt>{copy.cottage}</dt>
           <dd>{notification.cottageName}</dd>
@@ -223,7 +223,7 @@ export function OwnerBookingRequestNotifications({
         <h2
           id="owner-booking-requests-heading"
           tabIndex={-1}
-          className="action-focus-target"
+          className="section-title action-focus-target"
         >
           {containsPaymentDisplayState ? copy.paymentTitle : copy.title}
         </h2>

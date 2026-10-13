@@ -44,7 +44,7 @@ function renderBookingRequestDisplay({
       className={
         role === "customer"
           ? "results-page page page-record"
-          : "booking-request-page"
+          : "results-page page"
       }
     >
       {role === "customer" ? (
