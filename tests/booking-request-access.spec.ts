@@ -192,14 +192,10 @@ test("a verified Customer double-submit creates one Pending request and one mini
     { exact: true },
   );
   await expect(missingPeriod).toBeVisible();
-  await expect(
-    page
-      .getByRole("complementary")
-      .getByRole("button", { name: "Clear selection", exact: true }),
-  ).toHaveCount(1);
   const periodClearControl = page
     .getByRole("complementary")
     .getByRole("button", { name: "Clear selection", exact: true });
+  await expect(periodClearControl).toHaveCount(1);
   await periodClearControl.focus();
   await expect(periodClearControl).toBeFocused();
   await periodClearControl.press("Enter");
@@ -934,10 +930,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
                 surface === customerView
               ) {
                 const originalRequestUrl = surface.url();
-                const conversationOpenControl = conversation;
-                await conversationOpenControl.focus();
-                await expect(conversationOpenControl).toBeFocused();
-                await conversationOpenControl.press("Enter");
+                await conversation.focus();
+                await expect(conversation).toBeFocused();
+                await conversation.press("Enter");
                 await expect(surface).toHaveURL(
                   /\/en\/messages\/[0-9a-f-]{36}/,
                 );

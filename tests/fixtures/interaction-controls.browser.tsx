@@ -48,11 +48,7 @@ function BusyActionFixture() {
     setRevision((value) => value + 1),
   );
   Reflect.set(window, "requestBusyNavigation", (id: string) => {
-    Reflect.set(
-      window,
-      "abortBusyNavigation",
-      prepareActionFocusNavigation(id),
-    );
+    prepareActionFocusNavigation(id);
   });
   async function submit() {
     setActions((count) => count + 1);
