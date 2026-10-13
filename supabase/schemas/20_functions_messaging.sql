@@ -788,6 +788,8 @@ CREATE OR REPLACE FUNCTION "public"."messaging_conversation_header"(
         'bookingRequestReference', requests.booking_request_reference,
         'requestStatus', requests.status,
         'paymentStatus', public.booking_request_payment_status(requests),
+        'lifecycleStatus', case when public.messaging_booking_has_paid_access(requests.id)
+          then public.booking_lifecycle_status(requests.id) else null end,
         'responseDeadline', requests.response_deadline,
         'firstStartsAt', periods.first_starts_at,
         'lastEndsAt', periods.last_ends_at,
@@ -805,6 +807,8 @@ CREATE OR REPLACE FUNCTION "public"."messaging_conversation_header"(
         'bookingRequestReference', history_requests.booking_request_reference,
         'requestStatus', history_requests.status,
         'paymentStatus', public.booking_request_payment_status(history_requests),
+        'lifecycleStatus', case when public.messaging_booking_has_paid_access(history_requests.id)
+          then public.booking_lifecycle_status(history_requests.id) else null end,
         'responseDeadline', history_requests.response_deadline,
         'firstStartsAt', history_periods.first_starts_at,
         'lastEndsAt', history_periods.last_ends_at,

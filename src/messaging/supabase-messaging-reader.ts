@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
+  bookingLifecycleStatuses,
+  type BookingLifecycleStatus,
+} from "@/booking-request/booking-lifecycle";
+import {
   isBookingRequestStatus,
   type BookingRequestStatus,
 } from "@/booking-request/booking-request-status";
@@ -22,6 +26,7 @@ export interface MessagingBookingSummary {
   readonly bookingRequestReference: string;
   readonly requestStatus: BookingRequestStatus;
   readonly paymentStatus: PaymentStatus;
+  readonly lifecycleStatus: BookingLifecycleStatus | null;
   readonly responseDeadline: string;
   readonly firstStartsAt: string | null;
   readonly lastEndsAt: string | null;
@@ -130,13 +135,21 @@ function bookingFrom(value: unknown): MessagingBookingSummary | undefined {
       row.paymentStatus === null ||
       paymentStatuses.includes(row.paymentStatus as never)
     ) ||
+    !(
+      row.lifecycleStatus === null ||
+      (typeof row.lifecycleStatus === "string" &&
+        bookingLifecycleStatuses.includes(
+          row.lifecycleStatus as BookingLifecycleStatus,
+        ))
+    ) ||
+    (row.lifecycleStatus === null) !== (row.contactAllowed === false) ||
     !isTimestamp(row.responseDeadline) ||
     !nullableTimestamp(row.firstStartsAt) ||
     !nullableTimestamp(row.lastEndsAt) ||
     !nullableTimestamp(row.writingClosesAt) ||
     typeof row.writingClosed !== "boolean" ||
     typeof row.contactAllowed !== "boolean" ||
-    (row.paymentStatus === "paid-confirmed" &&
+    ((row.paymentStatus === "paid-confirmed" || row.lifecycleStatus !== null) &&
       (row.firstStartsAt === null ||
         row.lastEndsAt === null ||
         row.writingClosesAt === null))

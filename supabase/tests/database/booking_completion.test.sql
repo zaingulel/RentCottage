@@ -197,6 +197,39 @@ select pg_temp.seed_completion_booking((clock_timestamp() at time zone 'Asia/Bag
 select is((select public.booking_request_payment_status(requests) from public.booking_requests requests),'paid-confirmed','fixture is a real paid confirmation');
 select is((select count(*) from public.booking_receipts),2::bigint,'fixture includes both original participant receipts');
 select is((select count(*) from public.payment_provider_observations where result->>'outcome'='succeeded'),1::bigint,'fixture includes authoritative successful capture observation');
+set local role service_role;
+create temp table messaging_paid_conversation as
+select public.open_messaging_conversation_for_booking(
+  '10000000-0000-4000-8000-000000001002','RC-REQ-0000000000001001',
+  '36000000-0000-4000-8000-000000001008'
+) result;
+reset role;
+grant select on messaging_paid_conversation to authenticated;
+select is((select result->>'status' from messaging_paid_conversation),'created','completion fixture retains one real booked conversation');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+with conversation as (
+  select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20) value
+  from messaging_paid_conversation
+)
+select is(jsonb_build_array(value#>'{booking,lifecycleStatus}',value#>'{bookingHistory,0,lifecycleStatus}'),
+  '["confirmed","confirmed"]'::jsonb,'customer messaging current and historical booking lifecycle is confirmed') from conversation;
+with inbox as (
+  select value from jsonb_array_elements(public.list_messaging_conversations(null,null,20,null)->'items') value
+  where value->>'conversationId'=(select result->>'conversationId' from messaging_paid_conversation)
+)
+select is(jsonb_agg(jsonb_build_array(value#>'{booking,lifecycleStatus}',value#>'{bookingHistory,0,lifecycleStatus}')),
+  '[["confirmed","confirmed"]]'::jsonb,'one matching customer inbox row carries confirmed lifecycle in both booking positions') from inbox;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+with conversation as (
+  select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20) value
+  from messaging_paid_conversation
+)
+select is(value#>'{booking,lifecycleStatus}','"confirmed"'::jsonb,'owner reads the same confirmed messaging lifecycle') from conversation;
+select ok((select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20)::text
+  !~ 'Private address|"(exactAddress|ownerPhone|customerPhone|verificationFiles|audit)"' from messaging_paid_conversation),
+  'confirmed messaging projection contains no private booking fields');
+reset role;
 create temp table source_before as select pg_temp.source_history() value;
 savepoint confirmed;
 set local role service_role;
@@ -211,6 +244,31 @@ select is((select count(*) from public.list_due_booking_completions(50)),0::bigi
 reset role;
 select is(pg_temp.source_history(),(select value from source_before),'completion preserves snapshots confirmation receipts inventory capture and all payment history exactly');
 select is((select count(*) from public.booking_lifecycle_outcomes),1::bigint,'completion records one immutable outcome');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+with conversation as (
+  select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20) value
+  from messaging_paid_conversation
+)
+select is(jsonb_build_array(value#>'{booking,lifecycleStatus}',value#>'{bookingHistory,0,lifecycleStatus}'),
+  '["completed","completed"]'::jsonb,'customer messaging current and historical booking lifecycle is completed') from conversation;
+with inbox as (
+  select value from jsonb_array_elements(public.list_messaging_conversations(null,null,20,null)->'items') value
+  where value->>'conversationId'=(select result->>'conversationId' from messaging_paid_conversation)
+)
+select is(jsonb_agg(jsonb_build_array(value#>'{booking,lifecycleStatus}',value#>'{bookingHistory,0,lifecycleStatus}')),
+  '[["completed","completed"]]'::jsonb,'one matching customer inbox row carries completed lifecycle in both booking positions') from inbox;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+with conversation as (
+  select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20) value
+  from messaging_paid_conversation
+)
+select is(value#>'{booking,lifecycleStatus}','"completed"'::jsonb,'owner reads the same completed messaging lifecycle') from conversation;
+select ok((select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20)::text
+  !~ 'Private address|"(exactAddress|ownerPhone|customerPhone|verificationFiles|audit)"' from messaging_paid_conversation),
+  'completed messaging projection contains no private booking fields');
+reset role;
+
 select pg_temp.actor('10000000-0000-4000-8000-000000001002');
 set local role authenticated;
 select is(public.get_booking_completion_eligibility('RC-REQ-0000000000001001','customer')->>'reviewAvailable','true','delayed completion opens review only within original fourteen-day window');
@@ -474,6 +532,46 @@ rollback to before_fixture;
 
 select pg_temp.seed_completion_booking((clock_timestamp() at time zone 'Asia/Baghdad')::date-3,false);
 select is((select count(*) from public.booking_confirmations),0::bigint,'unconfirmed fixture stops before real confirmation finalization');
+set local role service_role;
+create temp table messaging_paid_conversation as
+select public.open_messaging_conversation_for_booking(
+  '10000000-0000-4000-8000-000000001002','RC-REQ-0000000000001001',
+  '36000000-0000-4000-8000-000000001009'
+) result;
+reset role;
+grant select on messaging_paid_conversation to authenticated;
+select is((select result->>'status' from messaging_paid_conversation),'created','completion fixture retains one real booked conversation');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+with conversation as (
+  select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20) value
+  from messaging_paid_conversation
+)
+select is(jsonb_build_array(value#>'{booking,lifecycleStatus}',value#>'{bookingHistory,0,lifecycleStatus}'),
+  '[null,null]'::jsonb,'customer messaging current and historical booking lifecycle is explicit null') from conversation;
+with inbox as (
+  select value from jsonb_array_elements(public.list_messaging_conversations(null,null,20,null)->'items') value
+  where value->>'conversationId'=(select result->>'conversationId' from messaging_paid_conversation)
+)
+select is(jsonb_agg(jsonb_build_array(value#>'{booking,lifecycleStatus}',value#>'{bookingHistory,0,lifecycleStatus}')),
+  '[[null,null]]'::jsonb,'one matching customer inbox row carries explicit null lifecycle in both booking positions') from inbox;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+with conversation as (
+  select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20) value
+  from messaging_paid_conversation
+)
+select is(value#>'{booking,lifecycleStatus}','null'::jsonb,'owner reads the same explicit null messaging lifecycle') from conversation;
+select ok((select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20)::text
+  !~ 'Private address|"(exactAddress|ownerPhone|customerPhone|verificationFiles|audit)"' from messaging_paid_conversation),
+  'explicit null messaging projection contains no private booking fields');
+reset role;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+select ok((select value->'booking' ? 'lifecycleStatus' and value#>'{bookingHistory,0}' ? 'lifecycleStatus'
+  from (select public.get_messaging_conversation((result->>'conversationId')::uuid,null,20) value from messaging_paid_conversation) conversation),
+  'unconfirmed messaging explicitly includes both null lifecycle fields');
+reset role;
+
 select pg_temp.actor('10000000-0000-4000-8000-000000001002');
 set local role authenticated;
 select throws_ok($$select public.get_booking_lifecycle('RC-REQ-0000000000001001','customer')$$,'RC409',null,'unconfirmed source cannot fabricate confirmed lifecycle');

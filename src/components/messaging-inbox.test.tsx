@@ -21,6 +21,7 @@ const item: MessagingInboxItem = {
     bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
     requestStatus: "accepted",
     paymentStatus: "paid-confirmed",
+    lifecycleStatus: "confirmed",
     responseDeadline: "2099-08-21T12:00:00Z",
     firstStartsAt: null,
     lastEndsAt: null,

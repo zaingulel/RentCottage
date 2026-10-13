@@ -9,6 +9,7 @@ const booking = {
   bookingRequestReference: "RC-REQ-0123456789ABCDEF",
   requestStatus: "accepted",
   paymentStatus: "paid-confirmed",
+  lifecycleStatus: "confirmed",
   responseDeadline: "2099-08-21T18:00:00.000Z",
   firstStartsAt: "2099-08-21T17:00:00.000Z",
   lastEndsAt: "2099-08-21T21:00:00.000Z",
@@ -118,6 +119,112 @@ describe("Supabase messaging reader", () => {
       target_limit: 10,
       target_public_slug: "cottage-0123456789abcdef0123456789abcdef",
     });
+  });
+
+  it("validates lifecycle statuses in current and historical messaging bookings", async () => {
+    const bookings = [
+      ...[
+        "confirmed",
+        "completed",
+        "no_show",
+        "cancelled",
+        "incident_pending",
+      ].map((lifecycleStatus) => ({ ...booking, lifecycleStatus })),
+      {
+        ...booking,
+        lifecycleStatus: null,
+        paymentStatus: null,
+        contactAllowed: false,
+        firstStartsAt: null,
+        lastEndsAt: null,
+        writingClosesAt: null,
+      },
+    ];
+    for (const validBooking of bookings) {
+      const validHeader = {
+        ...header,
+        booking: validBooking,
+        bookingHistory: [validBooking],
+      };
+      const client = { rpc: vi.fn() };
+      const reader = new SupabaseMessagingReader(client as never);
+      client.rpc.mockResolvedValue({
+        data: { ...validHeader, messages: [], nextMessageCursor: null },
+        error: null,
+      });
+      await expect(
+        reader.getConversation({ conversationId, limit: 20 }),
+      ).resolves.toMatchObject({
+        booking: validBooking,
+        bookingHistory: [validBooking],
+      });
+      client.rpc.mockResolvedValue({
+        data: {
+          items: [
+            { ...validHeader, activityAt: header.createdAt, preview: null },
+          ],
+          nextCursor: null,
+        },
+        error: null,
+      });
+      await expect(
+        reader.listConversations({ limit: 20 }),
+      ).resolves.toMatchObject({
+        items: [{ booking: validBooking, bookingHistory: [validBooking] }],
+      });
+    }
+  });
+
+  it("rejects corrupt lifecycle statuses in messaging reads", async () => {
+    const missingLifecycle = { ...booking } as Partial<typeof booking>;
+    delete missingLifecycle.lifecycleStatus;
+    const invalidBookings = [
+      missingLifecycle,
+      ...[undefined, "unknown", "<script>alert(1)</script>", {}, 7].map(
+        (lifecycleStatus) => ({ ...booking, lifecycleStatus }),
+      ),
+      { ...booking, lifecycleStatus: null },
+      { ...booking, contactAllowed: false },
+      ...["firstStartsAt", "lastEndsAt", "writingClosesAt"].map((field) => ({
+        ...booking,
+        paymentStatus: "capture-processing",
+        [field]: null,
+      })),
+    ];
+    for (const invalidBooking of invalidBookings) {
+      for (const position of ["current", "historical"]) {
+        const invalidHeader = {
+          ...header,
+          booking: position === "current" ? invalidBooking : booking,
+          bookingHistory: [
+            position === "historical" ? invalidBooking : booking,
+          ],
+        };
+        const client = { rpc: vi.fn() };
+        const reader = new SupabaseMessagingReader(client as never);
+        client.rpc.mockResolvedValue({
+          data: { ...invalidHeader, messages: [], nextMessageCursor: null },
+          error: null,
+        });
+        await expect(
+          reader.getConversation({ conversationId, limit: 20 }),
+        ).rejects.toThrow(
+          "Database returned an invalid messaging conversation",
+        );
+        client.rpc.mockResolvedValue({
+          data: {
+            items: [
+              { ...invalidHeader, activityAt: header.createdAt, preview: null },
+            ],
+            nextCursor: null,
+          },
+          error: null,
+        });
+        await expect(reader.listConversations({ limit: 20 })).rejects.toThrow(
+          "Database returned an invalid messaging inbox",
+        );
+      }
+    }
   });
 
   it("fails closed on inconsistent paid booking facts", async () => {
