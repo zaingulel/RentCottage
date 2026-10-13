@@ -52,16 +52,9 @@ const { captureCleanup, browserBookingFixtureIdentity, bookingFixtureSource } =
     }): string;
   };
 
-test("the actual Worker settles overlapping capture despite expiry failure and repeated scheduling preserves one paid booking", async ({
-  baseURL,
-}, testInfo) => {
-  const harness = createLocalSupabaseConcurrencyHarness();
-  harness.guardDisposableLocalDatabase();
-  const identity = browserBookingFixtureIdentity(
-    "capture",
-    testInfo.project.name,
-  );
-  const id = identity.request;
+function pendingCaptureSeed(
+  identity: ReturnType<typeof browserBookingFixtureIdentity>,
+): string {
   const source = bookingFixtureSource(
     readFileSync(
       "supabase/tests/database/booking_request_confirmation.test.sql",
@@ -72,7 +65,7 @@ test("the actual Worker settles overlapping capture despite expiry failure and r
       end: "-- END CAPTURE RECOVERY SOURCE",
     },
   );
-  const pending = bookingFixtureSource(source, {
+  return bookingFixtureSource(source, {
     end: "insert into public.booking_request_capture_work",
     required: [
       "00000000100",
@@ -88,6 +81,19 @@ test("the actual Worker settles overlapping capture despite expiry failure and r
     .replaceAll("confirmation-auth-", `confirmation-auth-${identity.stem}-`)
     .replaceAll("CONFIRMATION-HOLD-1", `CAPTURE-HOLD-${identity.stem}`)
     .replaceAll("Confirmation Cottage", `capture ${identity.stem} Cottage`);
+}
+
+test("the actual Worker settles overlapping capture despite expiry failure and repeated scheduling preserves one paid booking", async ({
+  baseURL,
+}, testInfo) => {
+  const harness = createLocalSupabaseConcurrencyHarness();
+  harness.guardDisposableLocalDatabase();
+  const identity = browserBookingFixtureIdentity(
+    "capture",
+    testInfo.project.name,
+  );
+  const id = identity.request;
+  const pending = pendingCaptureSeed(identity);
   const expiryDefinition = harness.runSql(
     paymentEvidenceSql +
       "select pg_get_functiondef('public.claim_due_booking_request_releases(integer)'::regprocedure);",
@@ -198,32 +204,7 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
     testInfo.project.name,
   );
   const id = identity.request;
-  const source = bookingFixtureSource(
-    readFileSync(
-      "supabase/tests/database/booking_request_confirmation.test.sql",
-      "utf8",
-    ),
-    {
-      start: "-- BEGIN CAPTURE RECOVERY SOURCE",
-      end: "-- END CAPTURE RECOVERY SOURCE",
-    },
-  );
-  const pending = bookingFixtureSource(source, {
-    end: "insert into public.booking_request_capture_work",
-    required: [
-      "00000000100",
-      "964750000100",
-      "RC-REQ-0000000000001001",
-      "confirmation-auth-",
-      "CONFIRMATION-HOLD-1",
-      "Confirmation Cottage",
-    ],
-  })
-    .replaceAll("00000000100", `00000000${identity.stem}`)
-    .replaceAll("964750000100", `964750000${identity.stem}`)
-    .replaceAll("confirmation-auth-", `confirmation-auth-${identity.stem}-`)
-    .replaceAll("CONFIRMATION-HOLD-1", `CAPTURE-HOLD-${identity.stem}`)
-    .replaceAll("Confirmation Cottage", `capture ${identity.stem} Cottage`);
+  const pending = pendingCaptureSeed(identity);
   const observe = () =>
     JSON.parse(
       harness.runSql(

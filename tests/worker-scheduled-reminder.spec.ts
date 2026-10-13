@@ -42,6 +42,24 @@ const {
 
 test.describe.configure({ mode: "serial" });
 
+function reminderSeed(
+  identity: ReturnType<typeof browserBookingFixtureIdentity>,
+): string {
+  const source = readFileSync(
+    "supabase/tests/database/booking_confirmation_access.test.sql",
+    "utf8",
+  );
+  return confirmedBookingAccessFixtureSource(source)
+    .replaceAll("00000000350", `00000000${identity.stem}`)
+    .replaceAll("964750000350", `964750000${identity.stem}`)
+    .replaceAll("CONFIRMED-BOOKING-35", `CONFIRMED-BOOKING-${identity.stem}`)
+    .replaceAll(
+      "booking-request-capture:35",
+      `booking-request-capture:${identity.stem}`,
+    )
+    .replaceAll("repeat('e', 64)", `'${identity.captureFingerprint}'`);
+}
+
 test("scheduled worker delivers both due preparation reminders once", async ({
   baseURL,
 }, testInfo) => {
@@ -52,19 +70,7 @@ test("scheduled worker delivers both due preparation reminders once", async ({
     testInfo.project.name,
   );
   const { request } = identity;
-  const source = readFileSync(
-    "supabase/tests/database/booking_confirmation_access.test.sql",
-    "utf8",
-  );
-  const seed = confirmedBookingAccessFixtureSource(source)
-    .replaceAll("00000000350", `00000000${identity.stem}`)
-    .replaceAll("964750000350", `964750000${identity.stem}`)
-    .replaceAll("CONFIRMED-BOOKING-35", `CONFIRMED-BOOKING-${identity.stem}`)
-    .replaceAll(
-      "booking-request-capture:35",
-      `booking-request-capture:${identity.stem}`,
-    )
-    .replaceAll("repeat('e', 64)", `'${identity.captureFingerprint}'`);
+  const seed = reminderSeed(identity);
   const cleanup = confirmedBookingAccessCleanup({ stem: identity.stem });
   const observe = () =>
     JSON.parse(
@@ -141,19 +147,7 @@ test("scheduled reminders suppress invalid work and recover existing effects", a
   );
   const { request } = identity;
   const { owner, customer } = identity;
-  const source = readFileSync(
-    "supabase/tests/database/booking_confirmation_access.test.sql",
-    "utf8",
-  );
-  const seed = confirmedBookingAccessFixtureSource(source)
-    .replaceAll("00000000350", `00000000${identity.stem}`)
-    .replaceAll("964750000350", `964750000${identity.stem}`)
-    .replaceAll("CONFIRMED-BOOKING-35", `CONFIRMED-BOOKING-${identity.stem}`)
-    .replaceAll(
-      "booking-request-capture:35",
-      `booking-request-capture:${identity.stem}`,
-    )
-    .replaceAll("repeat('e', 64)", `'${identity.captureFingerprint}'`);
+  const seed = reminderSeed(identity);
   const cleanup = confirmedBookingAccessCleanup({
     stem: identity.stem,
     lifecycle: true,

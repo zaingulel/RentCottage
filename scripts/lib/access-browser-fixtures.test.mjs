@@ -1000,6 +1000,10 @@ test("browser booking fixtures own disjoint graphs and cleanup", () => {
         /confirmedBookingAccessFixtureSource\(\s*source\s*\)/g,
       ),
     ].length,
+    1,
+  );
+  assert.equal(
+    [...reminderConsumer.matchAll(/reminderSeed\(identity\)/g)].length,
     2,
   );
   for (const corrupt of [
