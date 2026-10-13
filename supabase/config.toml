@@ -310,6 +310,24 @@ max_frequency = "5s"
 9647560000001 = "123456"
 9647560000002 = "123456"
 
+# Independent Booking Request owner and secondary customer journeys.
+9647570000000 = "123456"
+9647570000001 = "123456"
+9647570000002 = "123456"
+9647592700000 = "123456"
+9647592700001 = "123456"
+9647592700002 = "123456"
+
+# Independent access quote customers.
+9647592600000 = "123456"
+9647592600001 = "123456"
+9647592600002 = "123456"
+
+# Dedicated administrator-records review owners.
+9647592500000 = "123456"
+9647592500001 = "123456"
+9647592500002 = "123456"
+
 # Configure logged in session timeouts.
 # [auth.sessions]
 # Force log out after the specified duration.

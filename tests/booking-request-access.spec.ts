@@ -19,12 +19,17 @@ type AccessBrowserFixture = {
   bookingCottageName: string;
   bookingOwnerPhone: string;
   exactAddress: string;
+  customerPhone: string;
+  secondaryCustomerPhone: string;
 };
 
 const { accessBrowserFixture } = createRequire(import.meta.url)(
   "../scripts/lib/access-browser-fixtures.mjs",
 ) as {
-  accessBrowserFixture(project: string): AccessBrowserFixture;
+  accessBrowserFixture(
+    project: string,
+    owner: "booking-request",
+  ): AccessBrowserFixture;
 };
 
 const { createLocalSupabaseConcurrencyHarness } = createRequire(
@@ -34,12 +39,6 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     guardDisposableLocalDatabase(): void;
     runSql(sql: string): string;
   };
-};
-
-const customerPhones: Record<string, string> = {
-  mobile: "+9647520000000",
-  desktop: "+9647520000001",
-  worker: "+9647520000002",
 };
 
 function serviceDay(offset: number) {
@@ -71,11 +70,14 @@ test("a verified Customer double-submit creates one Pending request and one mini
   ) {
     throw new Error("Booking Request journey requires isolated local fixtures");
   }
-  const bookingFixture = accessBrowserFixture(testInfo.project.name);
+  const bookingFixture = accessBrowserFixture(
+    testInfo.project.name,
+    "booking-request",
+  );
   const ownerPhone = bookingFixture.bookingOwnerPhone;
   const cottageName = bookingFixture.bookingCottageName;
   const exactAddress = bookingFixture.exactAddress;
-  const customerPhone = customerPhones[testInfo.project.name];
+  const customerPhone = bookingFixture.customerPhone;
   const offset = { mobile: 4, desktop: 5, worker: 6 }[testInfo.project.name];
   if (!customerPhone || !offset) {
     throw new Error("Booking fixture is unmapped");
@@ -1464,7 +1466,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
         process.env.SUPABASE_PUBLISHABLE_KEY!,
         { auth: { autoRefreshToken: false, persistSession: false } },
       );
-      const otherPhone = "+9647520000000";
+      const otherPhone = bookingFixture.secondaryCustomerPhone;
       const otp = await otherCustomer.auth.signInWithOtp({ phone: otherPhone });
       if (otp.error) throw otp.error;
       const verified = await otherCustomer.auth.verifyOtp({

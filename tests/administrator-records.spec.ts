@@ -532,8 +532,8 @@ async function expectQueuesDenied(page: Page) {
 
 test("marketplace users and AAL1 administrators cannot discover administrator records", async ({
   page,
-}, testInfo) => {
-  const fixture = accessBrowserFixture(testInfo.project.name);
+}) => {
+  const fixture = reviewFixture;
   await page.goto("/en/owner/access");
   await page.getByLabel("Iraqi phone number").fill(fixture.reviewOwnerPhone);
   await page.getByRole("button", { name: "Send verification code" }).click();

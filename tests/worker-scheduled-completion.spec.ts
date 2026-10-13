@@ -18,21 +18,46 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     runSql(sql: string): string;
   };
 };
-const { confirmedBookingCleanup } = createRequire(import.meta.url)(
-  "../scripts/lib/booking-fixture.mjs",
-) as {
+const {
+  confirmedBookingCleanup,
+  browserBookingFixtureIdentity,
+  bookingFixtureSource,
+} = createRequire(import.meta.url)("../scripts/lib/booking-fixture.mjs") as {
+  browserBookingFixtureIdentity(
+    file: string,
+    project: string,
+  ): Record<
+    | "stem"
+    | "owner"
+    | "customer"
+    | "third"
+    | "administrator"
+    | "request"
+    | "reference"
+    | "snapshot"
+    | "commitment"
+    | "claim"
+    | "ownerPhone"
+    | "customerPhone"
+    | "thirdPhone"
+    | "captureFingerprint",
+    string
+  >;
+  bookingFixtureSource(
+    source: string,
+    options: { start?: string; end: string; required?: string[] },
+  ): string;
   confirmedBookingCleanup(options?: {
     stem?: string;
+    administrator?: string;
     completion?: boolean;
     settlement?: boolean;
     terminalRequest?: boolean;
   }): string;
 };
 const harness = createLocalSupabaseConcurrencyHarness();
-const request = "60000000-0000-4000-8000-000000001001",
-  reference = "RC-REQ-0000000000001001";
-const owner = "10000000-0000-4000-8000-000000001001",
-  customer = "10000000-0000-4000-8000-000000001002";
+let identity: ReturnType<typeof browserBookingFixtureIdentity>;
+let request: string, reference: string, owner: string, customer: string;
 const source = readFileSync(
   "supabase/tests/database/booking_completion.test.sql",
   "utf8",
@@ -75,14 +100,43 @@ const browserQuote = {
     },
   ],
 };
-const section = (name: string) => {
-  const start = source.indexOf(`-- BEGIN ${name}`),
-    end = source.indexOf(`-- END ${name}`, start);
-  if (start < 0 || end < 0) throw new Error(`Missing ${name}`);
-  return source.slice(start, end);
-};
-const fixture =
-  `begin; ${section("PAYMENT EVIDENCE FIXTURE")} ${section("COMPLETION FIXTURE")}`
+const fixtureSource =
+  "begin; " +
+  bookingFixtureSource(source, {
+    start: "-- BEGIN PAYMENT EVIDENCE FIXTURE",
+    end: "-- END PAYMENT EVIDENCE FIXTURE",
+  }) +
+  bookingFixtureSource(source, {
+    start: "-- BEGIN COMPLETION FIXTURE",
+    end: "-- END COMPLETION FIXTURE",
+    required: [
+      "00000000100",
+      "964750000100",
+      "CONFIRMATION-HOLD-1",
+      "Confirmation Cottage",
+      "confirmation-auth-",
+      "10000000-0000-4000-8000-000000003801",
+      "cancellation-admin@example.test",
+      "RC-REQ-0000000000001001",
+      "6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d",
+    ],
+  });
+const fixture = () =>
+  fixtureSource
+    .replaceAll("00000000100", `00000000${identity.stem}`)
+    .replaceAll("964750000100", `964750000${identity.stem}`)
+    .replaceAll("confirmation-auth-", `confirmation-auth-${identity.stem}-`)
+    .replaceAll("CONFIRMATION-HOLD-1", `COMPLETION-HOLD-${identity.stem}`)
+    .replaceAll("Confirmation Cottage", `completion ${identity.stem} Cottage`)
+    .replaceAll("10000000-0000-4000-8000-000000003801", identity.administrator)
+    .replaceAll(
+      "cancellation-admin@example.test",
+      `completion-${identity.stem}@example.test`,
+    )
+    .replaceAll(
+      "6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d",
+      identity.captureFingerprint,
+    )
     .replace(
       /insert into auth.users \(id, aud, role, phone, phone_confirmed_at\) values[\s\S]*?;/,
       "",
@@ -96,11 +150,16 @@ const fixture =
       "fixture:=replace(fixture,'2101-01-03',(start_day+2)::text); fixture:=replace(fixture,'2101-01-02'",
     );
 let activeAdministratorId: string | null = null;
-const cleanup = confirmedBookingCleanup({ completion: true });
+
 const clear = () => {
+  const cleanup = confirmedBookingCleanup({
+    stem: identity.stem,
+    administrator: identity.administrator,
+    completion: true,
+  });
   harness.guardDisposableLocalDatabase();
   harness.runSql(
-    `delete from auth.sessions where user_id in ('${owner}','${customer}','10000000-0000-4000-8000-000000001003');delete from auth.identities where user_id in ('${owner}','${customer}','10000000-0000-4000-8000-000000001003');${cleanup}`,
+    `delete from auth.sessions where user_id in ('${owner}','${customer}','${identity.third}');delete from auth.identities where user_id in ('${owner}','${customer}','${identity.third}');${cleanup}`,
   );
 };
 function connection() {
@@ -155,7 +214,7 @@ async function participant(
     },
   });
   const { error } = await client.auth.signInWithPassword({
-    phone: userId === owner ? "+9647500001001" : "+9647500001002",
+    phone: userId === owner ? identity.ownerPhone : identity.customerPhone,
     password,
   });
   if (error) throw error;
@@ -219,14 +278,14 @@ function observe() {
     'outcomes',(select coalesce(jsonb_agg(to_jsonb(o) order by id),'[]') from public.booking_lifecycle_outcomes o where booking_request_id='${request}'),
     'maturity',(select coalesce(jsonb_agg(to_jsonb(m) order by booking_request_id),'[]') from public.booking_completion_maturity m where booking_request_id='${request}'),
     'incidents',(select coalesce(jsonb_agg(to_jsonb(i) order by id),'[]') from public.booking_incidents i where booking_request_id='${request}'),
-    'end',(select upper(range_merge(access_ranges)) from public.cottage_booking_period_commitments where id='50000000-0000-4000-8000-000000001001'),
+    'end',(select upper(range_merge(access_ranges)) from public.cottage_booking_period_commitments where id='${identity.commitment}'),
     'original',jsonb_build_object(
-      'snapshot',(select to_jsonb(s) from public.booking_snapshots s where id='40000000-0000-4000-8000-000000001001'),
+      'snapshot',(select to_jsonb(s) from public.booking_snapshots s where id='${identity.snapshot}'),
       'confirmation',(select to_jsonb(c) from public.booking_confirmations c where booking_request_id='${request}'),
       'receipts',(select jsonb_agg(to_jsonb(r) order by id) from public.booking_receipts r where booking_confirmation_id in (select id from public.booking_confirmations where booking_request_id='${request}')),
-      'commitment',(select to_jsonb(c) from public.cottage_booking_period_commitments c where id='50000000-0000-4000-8000-000000001001'),
-      'operations',(select jsonb_agg(to_jsonb(o) order by id) from public.payment_provider_operations o where claim_id='72000000-0000-4000-8000-000000001001'),
-      'observations',(select jsonb_agg(to_jsonb(o) order by id) from public.payment_provider_observations o where operation_id in (select id from public.payment_provider_operations where claim_id='72000000-0000-4000-8000-000000001001')),
+      'commitment',(select to_jsonb(c) from public.cottage_booking_period_commitments c where id='${identity.commitment}'),
+      'operations',(select jsonb_agg(to_jsonb(o) order by id) from public.payment_provider_operations o where claim_id='${identity.claim}'),
+      'observations',(select jsonb_agg(to_jsonb(o) order by id) from public.payment_provider_observations o where operation_id in (select id from public.payment_provider_operations where claim_id='${identity.claim}')),
       'paymentHistory',(select jsonb_agg(to_jsonb(h) order by id) from public.booking_request_payment_history h where booking_request_id='${request}')));`),
   );
 }
@@ -283,13 +342,18 @@ async function assertLifecycleViews(
 }
 test.describe("scheduled completion and restricted lifecycle journeys", () => {
   test.use({ actionTimeout: 10000 });
-  test.beforeEach(async () => {
+  test.beforeEach(async ({}, testInfo) => {
+    identity = browserBookingFixtureIdentity(
+      "completion",
+      testInfo.project.name,
+    );
+    ({ request, reference, owner, customer } = identity);
     clear();
     const { admin } = connection();
     for (const [id, phone] of [
-      [owner, "+9647500001001"],
-      [customer, "+9647500001002"],
-      ["10000000-0000-4000-8000-000000001003", "+9647500001003"],
+      [owner, identity.ownerPhone],
+      [customer, identity.customerPhone],
+      [identity.third, identity.thirdPhone],
     ]) {
       const result = await admin.auth.admin.createUser({
         id,
@@ -303,7 +367,7 @@ test.describe("scheduled completion and restricted lifecycle journeys", () => {
         });
     }
     harness.runSql(
-      `${fixture} select pg_temp.seed_completion_booking((clock_timestamp() at time zone 'Asia/Baghdad')::date-3); commit;`,
+      `${fixture()} select pg_temp.seed_completion_booking((clock_timestamp() at time zone 'Asia/Baghdad')::date-3); commit;`,
     );
     expect(
       harness.runSql(

@@ -175,3 +175,15 @@ describe("Playwright test time limit", () => {
     expect(local.timeout).toBe(90_000);
   });
 });
+
+it("keeps local tests sequential within files and preserves hosted parallelism and retries", async () => {
+  vi.stubEnv("CI", undefined);
+  const local = await loadConfig();
+  expect(local.fullyParallel).toBe(false);
+  expect(local.retries).toBe(0);
+
+  vi.stubEnv("CI", "true");
+  const hosted = await loadConfig();
+  expect(hosted.fullyParallel).toBe(true);
+  expect(hosted.retries).toBe(2);
+});

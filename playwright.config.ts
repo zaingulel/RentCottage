@@ -37,7 +37,7 @@ export const nextServer = {
 
 export default defineConfig({
   testDir: "./tests",
-  fullyParallel: true,
+  fullyParallel: Boolean(process.env.CI),
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   // Two local checks share one machine, which measured about three times slower than a hosted runner.

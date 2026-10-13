@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import {
   confirmedBookingCleanup,
+  browserBookingFixtureIdentity,
+  bookingFixtureSource,
   refundReset,
 } from "./lib/booking-fixture.mjs";
-// One exact fictional request, shared by its SQL, concurrency and Worker observers.
+// Default fictional request for the SQL and concurrency observers.
 export const request = "60000000-0000-4000-8000-000000001001";
 export const owner = "10000000-0000-4000-8000-000000001001";
 export const customer = "10000000-0000-4000-8000-000000001002";
@@ -21,6 +23,45 @@ export const baselineFixture = source.slice(
 );
 export const cleanup =
   refundReset() + confirmedBookingCleanup({ terminalRequest: true });
+export function browserBookingRequestNotificationFixture(project) {
+  const identity = browserBookingFixtureIdentity(
+    "request-notification",
+    project,
+  );
+  const browserBaseline = bookingFixtureSource(source, {
+    end: "create function pg_temp.notice_call",
+    required: [
+      "00000000100",
+      "964750000100",
+      "RC-REQ-0000000000001001",
+      "confirmation-auth-",
+      "CONFIRMATION-HOLD-1",
+      "Confirmation Cottage",
+    ],
+  })
+    .replaceAll("00000000100", `00000000${identity.stem}`)
+    .replaceAll("964750000100", `964750000${identity.stem}`)
+    .replaceAll("confirmation-auth-", `confirmation-auth-${identity.stem}-`)
+    .replaceAll(
+      "CONFIRMATION-HOLD-1",
+      `REQUEST-NOTIFICATION-HOLD-${identity.stem}`,
+    )
+    .replaceAll(
+      "Confirmation Cottage",
+      `request-notification ${identity.stem} Cottage`,
+    );
+  return {
+    ...identity,
+    baselineFixture: browserBaseline,
+    cleanup:
+      refundReset({ stem: identity.stem }) +
+      confirmedBookingCleanup({
+        stem: identity.stem,
+        administrator: identity.administrator,
+        terminalRequest: true,
+      }),
+  };
+}
 export const parse = (value) =>
   JSON.parse(value.split("\n").filter(Boolean).at(-1));
 export const json = (value) =>

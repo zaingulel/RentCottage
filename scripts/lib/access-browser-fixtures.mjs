@@ -52,12 +52,43 @@ const projectIndex = new Map(
   ACCESS_BROWSER_PROJECTS.map((project, index) => [project, index]),
 );
 
-export function accessBrowserFixture(project) {
+export function accessBrowserFixture(project, owner = "access") {
   const index = projectIndex.get(project);
   if (index === undefined) {
     throw new Error(`Unknown access browser fixture project: ${project}`);
   }
+  if (
+    !["access", "booking-request", "messaging", "scheduled-expiry"].includes(
+      owner,
+    )
+  ) {
+    throw new Error(`Unknown access browser fixture owner: ${owner}`);
+  }
+  if (owner === "scheduled-expiry" && project !== "worker") {
+    throw new Error("Scheduled expiry browser fixtures require worker project");
+  }
   const label = `${project[0].toUpperCase()}${project.slice(1)}`;
+  if (owner !== "access") {
+    return {
+      project,
+      exactAddress: "Synthetic private fixture address",
+      bookingOwnerPhone: {
+        "booking-request": `+964757000000${index}`,
+        messaging: `+964758000000${index}`,
+        "scheduled-expiry": "+9647592800002",
+      }[owner],
+      bookingLegalName: `${owner} ${label} Booking Fixture`,
+      bookingCottageName: `${owner} ${label} Booking Fixture Cottage`,
+      customerPhone: {
+        "booking-request": `+964752000000${index}`,
+        messaging: `+964756000000${index}`,
+        "scheduled-expiry": "+9647592900002",
+      }[owner],
+      ...(owner === "booking-request"
+        ? { secondaryCustomerPhone: `+964759270000${index}` }
+        : {}),
+    };
+  }
   return {
     project,
     exactAddress: "Synthetic private fixture address",
@@ -407,7 +438,7 @@ async function loadBookingFixturePricing({ fixture, ownerClient, profile }) {
       .select("id,full_day_bundle_id")
       .eq("id", profile.current_shift_schedule_id)
       .maybeSingle(),
-    `${fixture.project} access booking fixture is incomplete: missing current Shift Schedule`,
+    `${fixture.bookingCottageName} booking fixture is incomplete: missing current Shift Schedule`,
   );
   const shifts = await ownerClient
     .from("cottage_shifts")
@@ -422,7 +453,7 @@ async function loadBookingFixturePricing({ fixture, ownerClient, profile }) {
   );
   if (!expectedPricing) {
     throw new Error(
-      `${fixture.project} access booking fixture is incomplete: expected two Cottage Shifts and a full-day bundle`,
+      `${fixture.bookingCottageName} booking fixture is incomplete: expected two Cottage Shifts and a full-day bundle`,
     );
   }
   const loadedPricing = requireData(
@@ -431,7 +462,7 @@ async function loadBookingFixturePricing({ fixture, ownerClient, profile }) {
       target_schedule_revision_id: schedule.id,
       target_service_day: null,
     }),
-    `${fixture.project} access booking fixture pricing is unavailable`,
+    `${fixture.bookingCottageName} booking fixture pricing is unavailable`,
   );
   return { expectedPricing, loadedPricing, scheduleId: schedule.id };
 }
@@ -458,7 +489,7 @@ async function ensureBookingFixtureStandardPricing({
       !Array.isArray(loaded.dateOverrides)
     ) {
       throw new Error(
-        `${fixture.project} access booking fixture pricing is incomplete: missing complete override state`,
+        `${fixture.bookingCottageName} booking fixture pricing is incomplete: missing complete override state`,
       );
     }
     return {
@@ -916,7 +947,7 @@ async function createPublishedBookingFixture({
   if (existing.data) {
     if (existing.data.status !== "approved") {
       throw new Error(
-        `${fixture.project} access booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
+        `${fixture.bookingCottageName} booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
       );
     }
     applicationId = existing.data.id;
@@ -953,11 +984,11 @@ async function createPublishedBookingFixture({
       .select("id,current_publication_id,current_shift_schedule_id")
       .eq("application_id", applicationId)
       .maybeSingle(),
-    `${fixture.project} access booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
+    `${fixture.bookingCottageName} booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
   );
   if (!profile.current_publication_id || !profile.current_shift_schedule_id) {
     throw new Error(
-      `${fixture.project} access booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
+      `${fixture.bookingCottageName} booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
     );
   }
   await ensureBookingFixtureStandardPricing({
@@ -969,19 +1000,24 @@ async function createPublishedBookingFixture({
 
 export async function createAccessBrowserFixtures({
   projects,
+  owner = "access",
   privilegedClient,
   publishableKey,
   reviewerClient,
   url,
 }) {
-  for (const project of projects) {
-    const fixture = accessBrowserFixture(project);
-    await createSubmittedReviewFixture({
-      fixture,
-      privilegedClient,
-      publishableKey,
-      url,
-    });
+  const fixtures = projects.map((project) =>
+    accessBrowserFixture(project, owner),
+  );
+  for (const fixture of fixtures) {
+    if (owner === "access") {
+      await createSubmittedReviewFixture({
+        fixture,
+        privilegedClient,
+        publishableKey,
+        url,
+      });
+    }
     await createPublishedBookingFixture({
       fixture,
       privilegedClient,
@@ -1001,71 +1037,77 @@ async function fixtureIdentity(privilegedClient, phone, description) {
 
 export async function validateAccessBrowserFixtures({
   projects,
+  owner = "access",
   privilegedClient,
   publishableKey,
   url,
 }) {
-  for (const project of projects) {
-    const fixture = accessBrowserFixture(project);
-    const reviewIdentity = await fixtureIdentity(
-      privilegedClient,
-      fixture.reviewOwnerPhone,
-      `${project} access review fixture is incomplete`,
-    );
-    const reviewOwnerClient = await signInFixtureOwner({
-      url,
-      publishableKey,
-      identity: reviewIdentity,
-      phone: fixture.reviewOwnerPhone,
-      description: `${project} access review fixture is incomplete`,
-    });
-    const reviewApplication = requireData(
-      await reviewOwnerClient
-        .from("owner_applications")
-        .select("id,status,legal_name")
-        .maybeSingle(),
-      `${project} access review fixture is incomplete: missing submitted Owner Application`,
-    );
-    if (
-      reviewApplication.status !== "submitted" ||
-      reviewApplication.legal_name !== fixture.reviewLegalName
-    ) {
-      throw new Error(
-        `${project} access review fixture is incomplete: expected submitted Owner Application`,
+  const fixtures = projects.map((project) =>
+    accessBrowserFixture(project, owner),
+  );
+  for (const fixture of fixtures) {
+    const { project } = fixture;
+    if (owner === "access") {
+      const reviewIdentity = await fixtureIdentity(
+        privilegedClient,
+        fixture.reviewOwnerPhone,
+        `${project} access review fixture is incomplete`,
       );
-    }
-    const documentResult = await reviewOwnerClient
-      .from("owner_verification_documents")
-      .select("kind,object_path,original_filename")
-      .eq("application_id", reviewApplication.id);
-    if (documentResult.error) throw documentResult.error;
-    const byKind = new Map(
-      documentResult.data.map((document) => [document.kind, document]),
-    );
-    for (const [kind, filename] of documents) {
-      const document = byKind.get(kind);
-      if (!document || document.original_filename !== filename) {
+      const reviewOwnerClient = await signInFixtureOwner({
+        url,
+        publishableKey,
+        identity: reviewIdentity,
+        phone: fixture.reviewOwnerPhone,
+        description: `${project} access review fixture is incomplete`,
+      });
+      const reviewApplication = requireData(
+        await reviewOwnerClient
+          .from("owner_applications")
+          .select("id,status,legal_name")
+          .maybeSingle(),
+        `${project} access review fixture is incomplete: missing submitted Owner Application`,
+      );
+      if (
+        reviewApplication.status !== "submitted" ||
+        reviewApplication.legal_name !== fixture.reviewLegalName
+      ) {
         throw new Error(
-          `${project} access review fixture is incomplete: missing ${filename} record`,
+          `${project} access review fixture is incomplete: expected submitted Owner Application`,
         );
       }
-      const downloaded = await privilegedClient.storage
-        .from("owner-verification")
-        .download(document.object_path);
-      if (downloaded.error || !downloaded.data) {
-        throw new Error(
-          `${project} access review fixture is incomplete: missing ${filename} object`,
-          { cause: downloaded.error },
-        );
-      }
-      if (filename === "licence.pdf") {
-        const prefix = Buffer.from(await downloaded.data.arrayBuffer())
-          .subarray(0, 4)
-          .toString();
-        if (prefix !== "%PDF") {
+      const documentResult = await reviewOwnerClient
+        .from("owner_verification_documents")
+        .select("kind,object_path,original_filename")
+        .eq("application_id", reviewApplication.id);
+      if (documentResult.error) throw documentResult.error;
+      const byKind = new Map(
+        documentResult.data.map((document) => [document.kind, document]),
+      );
+      for (const [kind, filename] of documents) {
+        const document = byKind.get(kind);
+        if (!document || document.original_filename !== filename) {
           throw new Error(
-            `${project} access review fixture is incomplete: licence.pdf is not a PDF`,
+            `${project} access review fixture is incomplete: missing ${filename} record`,
           );
+        }
+        const downloaded = await privilegedClient.storage
+          .from("owner-verification")
+          .download(document.object_path);
+        if (downloaded.error || !downloaded.data) {
+          throw new Error(
+            `${project} access review fixture is incomplete: missing ${filename} object`,
+            { cause: downloaded.error },
+          );
+        }
+        if (filename === "licence.pdf") {
+          const prefix = Buffer.from(await downloaded.data.arrayBuffer())
+            .subarray(0, 4)
+            .toString();
+          if (prefix !== "%PDF") {
+            throw new Error(
+              `${project} access review fixture is incomplete: licence.pdf is not a PDF`,
+            );
+          }
         }
       }
     }
@@ -1073,14 +1115,14 @@ export async function validateAccessBrowserFixtures({
     const bookingIdentity = await fixtureIdentity(
       privilegedClient,
       fixture.bookingOwnerPhone,
-      `${project} access booking fixture is incomplete`,
+      `${fixture.bookingCottageName} booking fixture is incomplete`,
     );
     const bookingOwnerClient = await signInFixtureOwner({
       url,
       publishableKey,
       identity: bookingIdentity,
       phone: fixture.bookingOwnerPhone,
-      description: `${project} access booking fixture is incomplete`,
+      description: `${fixture.bookingCottageName} booking fixture is incomplete`,
     });
     const bookingProfile = requireData(
       await bookingOwnerClient
@@ -1088,14 +1130,14 @@ export async function validateAccessBrowserFixtures({
         .select("id,name,current_publication_id,current_shift_schedule_id")
         .eq("name", fixture.bookingCottageName)
         .maybeSingle(),
-      `${project} access booking fixture is incomplete: missing exact Cottage Profile`,
+      `${fixture.bookingCottageName} booking fixture is incomplete: missing exact Cottage Profile`,
     );
     if (
       !bookingProfile.current_publication_id ||
       !bookingProfile.current_shift_schedule_id
     ) {
       throw new Error(
-        `${project} access booking fixture is incomplete: missing current publication or Shift Schedule`,
+        `${fixture.bookingCottageName} booking fixture is incomplete: missing current publication or Shift Schedule`,
       );
     }
     for (const locale of ["en", "ar", "ckb"]) {
@@ -1113,7 +1155,7 @@ export async function validateAccessBrowserFixtures({
         publication.name !== fixture.bookingCottageName
       ) {
         throw new Error(
-          `${project} access booking fixture is incomplete: missing public ${locale} publication`,
+          `${fixture.bookingCottageName} booking fixture is incomplete: missing public ${locale} publication`,
         );
       }
     }
@@ -1124,7 +1166,7 @@ export async function validateAccessBrowserFixtures({
     });
     if (!hasExactStandardPricing(loadedPricing, expectedPricing)) {
       throw new Error(
-        `${project} access booking fixture is incomplete: expected deterministic standard pricing`,
+        `${fixture.bookingCottageName} booking fixture is incomplete: expected deterministic standard pricing`,
       );
     }
   }

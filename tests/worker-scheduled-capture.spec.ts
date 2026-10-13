@@ -25,33 +25,75 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     ): Promise<void>;
   };
 };
-const { captureCleanup } = createRequire(import.meta.url)(
-  "../scripts/lib/booking-fixture.mjs",
-) as {
-  captureCleanup(options?: {
-    stem?: string;
-    paymentRecovery?: boolean;
-    releaseOperations?: boolean;
-    publishedCottage?: boolean;
-  }): string;
-};
+const { captureCleanup, browserBookingFixtureIdentity, bookingFixtureSource } =
+  createRequire(import.meta.url)("../scripts/lib/booking-fixture.mjs") as {
+    browserBookingFixtureIdentity(
+      file: string,
+      project: string,
+    ): Record<
+      | "stem"
+      | "owner"
+      | "customer"
+      | "request"
+      | "commitment"
+      | "operation"
+      | "paymentLifecycle",
+      string
+    >;
+    bookingFixtureSource(
+      source: string,
+      options: { start?: string; end: string; required?: string[] },
+    ): string;
+    captureCleanup(options?: {
+      stem?: string;
+      paymentRecovery?: boolean;
+      releaseOperations?: boolean;
+      publishedCottage?: boolean;
+    }): string;
+  };
+
+function pendingCaptureSeed(
+  identity: ReturnType<typeof browserBookingFixtureIdentity>,
+): string {
+  const source = bookingFixtureSource(
+    readFileSync(
+      "supabase/tests/database/booking_request_confirmation.test.sql",
+      "utf8",
+    ),
+    {
+      start: "-- BEGIN CAPTURE RECOVERY SOURCE",
+      end: "-- END CAPTURE RECOVERY SOURCE",
+    },
+  );
+  return bookingFixtureSource(source, {
+    end: "insert into public.booking_request_capture_work",
+    required: [
+      "00000000100",
+      "964750000100",
+      "RC-REQ-0000000000001001",
+      "confirmation-auth-",
+      "CONFIRMATION-HOLD-1",
+      "Confirmation Cottage",
+    ],
+  })
+    .replaceAll("00000000100", `00000000${identity.stem}`)
+    .replaceAll("964750000100", `964750000${identity.stem}`)
+    .replaceAll("confirmation-auth-", `confirmation-auth-${identity.stem}-`)
+    .replaceAll("CONFIRMATION-HOLD-1", `CAPTURE-HOLD-${identity.stem}`)
+    .replaceAll("Confirmation Cottage", `capture ${identity.stem} Cottage`);
+}
 
 test("the actual Worker settles overlapping capture despite expiry failure and repeated scheduling preserves one paid booking", async ({
   baseURL,
-}) => {
+}, testInfo) => {
   const harness = createLocalSupabaseConcurrencyHarness();
   harness.guardDisposableLocalDatabase();
-  const id = "60000000-0000-4000-8000-000000001001";
-  const source = readFileSync(
-    "supabase/tests/database/booking_request_confirmation.test.sql",
-    "utf8",
-  )
-    .split("-- BEGIN CAPTURE RECOVERY SOURCE\n")[1]
-    .split("-- END CAPTURE RECOVERY SOURCE")[0];
-  const pending = source.slice(
-    0,
-    source.indexOf("insert into public.booking_request_capture_work"),
+  const identity = browserBookingFixtureIdentity(
+    "capture",
+    testInfo.project.name,
   );
+  const id = identity.request;
+  const pending = pendingCaptureSeed(identity);
   const expiryDefinition = harness.runSql(
     paymentEvidenceSql +
       "select pg_get_functiondef('public.claim_due_booking_request_releases(integer)'::regprocedure);",
@@ -62,11 +104,11 @@ test("the actual Worker settles overlapping capture despite expiry failure and r
         paymentEvidenceSql +
           `select jsonb_build_object(
     'work', (select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id = '${id}'),
-    'execution', (select pg_temp.payment_fixture_operation_json(operation) from public.payment_provider_operations operation where payment_lifecycle_id = '73000000-0000-4000-8000-000000001001' and operation_kind = 'capture'),
+    'execution', (select pg_temp.payment_fixture_operation_json(operation) from public.payment_provider_operations operation where payment_lifecycle_id = '${identity.paymentLifecycle}' and operation_kind = 'capture'),
     'confirmation', (select to_jsonb(confirmation) from public.booking_confirmations confirmation where booking_request_id = '${id}'),
     'receipts', (select jsonb_agg(to_jsonb(receipt) order by receipt.id) from public.booking_receipts receipt join public.booking_confirmations confirmation on confirmation.id = receipt.booking_confirmation_id where confirmation.booking_request_id = '${id}'),
-    'occupancies', (select jsonb_agg(to_jsonb(occupancy) order by shift_id, service_day) from public.cottage_booking_period_occupancies occupancy where booking_period_commitment_id = '50000000-0000-4000-8000-000000001001'),
-    'commitment', (select to_jsonb(commitment) from public.cottage_booking_period_commitments commitment where id = '50000000-0000-4000-8000-000000001001')
+    'occupancies', (select jsonb_agg(to_jsonb(occupancy) order by shift_id, service_day) from public.cottage_booking_period_occupancies occupancy where booking_period_commitment_id = '${identity.commitment}'),
+    'commitment', (select to_jsonb(commitment) from public.cottage_booking_period_commitments commitment where id = '${identity.commitment}')
   );`,
       ),
     );
@@ -79,7 +121,7 @@ test("the actual Worker settles overlapping capture despite expiry failure and r
         `begin; ${pending}
       update public.booking_requests set status = 'pending', settled_at = null where id = '${id}';
       set local role service_role;
-      select public.claim_booking_request_action('10000000-0000-4000-8000-000000001001', '${id}', 'accept'); commit;`,
+      select public.claim_booking_request_action('${identity.owner}', '${id}', 'accept'); commit;`,
     );
     seeded = true;
     const before = observe();
@@ -146,40 +188,36 @@ test("the actual Worker settles overlapping capture despite expiry failure and r
     harness.runSql(paymentEvidenceSql + expiryDefinition);
     if (seeded)
       harness.runSql(
-        paymentEvidenceSql + captureCleanup({ paymentRecovery: true }),
+        paymentEvidenceSql +
+          captureCleanup({ stem: identity.stem, paymentRecovery: true }),
       );
   }
 });
 
 test("the actual Worker recovers a persisted definitive failure into one fixed Payment Required window", async ({
   baseURL,
-}) => {
+}, testInfo) => {
   const harness = createLocalSupabaseConcurrencyHarness();
   harness.guardDisposableLocalDatabase();
-  const id = "60000000-0000-4000-8000-000000001001";
-  const source = readFileSync(
-    "supabase/tests/database/booking_request_confirmation.test.sql",
-    "utf8",
-  )
-    .split("-- BEGIN CAPTURE RECOVERY SOURCE\n")[1]
-    .split("-- END CAPTURE RECOVERY SOURCE")[0];
-  const pending = source.slice(
-    0,
-    source.indexOf("insert into public.booking_request_capture_work"),
+  const identity = browserBookingFixtureIdentity(
+    "capture",
+    testInfo.project.name,
   );
+  const id = identity.request;
+  const pending = pendingCaptureSeed(identity);
   const observe = () =>
     JSON.parse(
       harness.runSql(
         paymentEvidenceSql +
           `select jsonb_build_object(
         'work',(select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id='${id}'),
-        'execution',(select pg_temp.payment_fixture_operation_json(operation) from public.payment_provider_operations operation where operation_kind='capture' and payment_lifecycle_id='73000000-0000-4000-8000-000000001001'),
+        'execution',(select pg_temp.payment_fixture_operation_json(operation) from public.payment_provider_operations operation where operation_kind='capture' and payment_lifecycle_id='${identity.paymentLifecycle}'),
         'recoveryAttempt',(select to_jsonb(attempt) from public.booking_request_payment_recovery_attempts attempt where booking_request_id='${id}'),
         'providerOperations',(select coalesce(jsonb_agg(pg_temp.payment_fixture_operation_json(operation) order by operation.id),'[]') from public.payment_provider_operations operation where recovery_attempt_id in (select id from public.booking_request_payment_recovery_attempts where booking_request_id='${id}')),
         'confirmation',(select to_jsonb(confirmation) from public.booking_confirmations confirmation where booking_request_id='${id}'),
         'paymentRequiredNotifications',(select count(*) from public.booking_request_status_notifications notification where booking_request_id='${id}' and status='payment-required'),
-        'commitment',(select to_jsonb(commitment) from public.cottage_booking_period_commitments commitment where id='50000000-0000-4000-8000-000000001001'),
-        'occupancies',(select jsonb_agg(to_jsonb(occupancy) order by shift_id,service_day) from public.cottage_booking_period_occupancies occupancy where booking_period_commitment_id='50000000-0000-4000-8000-000000001001'),
+        'commitment',(select to_jsonb(commitment) from public.cottage_booking_period_commitments commitment where id='${identity.commitment}'),
+        'occupancies',(select jsonb_agg(to_jsonb(occupancy) order by shift_id,service_day) from public.cottage_booking_period_occupancies occupancy where booking_period_commitment_id='${identity.commitment}'),
         'intentActive',(select intent_dedupe_active from public.booking_request_submission_attempts where booking_request_id='${id}')
       );`,
       ),
@@ -200,7 +238,7 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
         `begin; ${pending}
       update public.booking_requests set status='pending',settled_at=null where id='${id}';
       set local role service_role;
-      select public.claim_booking_request_action('10000000-0000-4000-8000-000000001001','${id}','accept'); commit;`,
+      select public.claim_booking_request_action('${identity.owner}','${id}','accept'); commit;`,
     );
     seeded = true;
     harness.runSql(
@@ -241,8 +279,8 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
       harness
         .runSql(
           paymentEvidenceSql +
-            `select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',false);
-      set role authenticated; select public.claim_customer_booking_request_payment_recovery('${id}','81000000-0000-4000-8000-000000001001','simulated-replacement');`,
+            `select set_config('request.jwt.claim.sub','${identity.customer}',false);
+      set role authenticated; select public.claim_customer_booking_request_payment_recovery('${id}','${identity.operation}','simulated-replacement');`,
         )
         .split("\n")
         .at(-1)!,
@@ -298,7 +336,8 @@ test("the actual Worker recovers a persisted definitive failure into one fixed P
   } finally {
     if (seeded)
       harness.runSql(
-        paymentEvidenceSql + captureCleanup({ paymentRecovery: true }),
+        paymentEvidenceSql +
+          captureCleanup({ stem: identity.stem, paymentRecovery: true }),
       );
   }
 });

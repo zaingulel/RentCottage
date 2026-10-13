@@ -9,14 +9,16 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     runSql(sql: string): string;
   };
 };
-const { request, owner, customer, baselineFixture, cleanup } = createRequire(
+const { browserBookingRequestNotificationFixture } = createRequire(
   import.meta.url,
 )("../scripts/booking-request-notification-fixture.mjs") as {
-  request: string;
-  owner: string;
-  customer: string;
-  baselineFixture: string;
-  cleanup: string;
+  browserBookingRequestNotificationFixture(project: string): {
+    request: string;
+    owner: string;
+    customer: string;
+    baselineFixture: string;
+    cleanup: string;
+  };
 };
 test.describe.configure({ mode: "serial" });
 for (const [action, expected] of [
@@ -26,7 +28,9 @@ for (const [action, expected] of [
 ] as const) {
   test(`scheduled Worker delivers new-request and ${expected} notices once from committed facts`, async ({
     baseURL,
-  }) => {
+  }, testInfo) => {
+    const { request, owner, customer, baselineFixture, cleanup } =
+      browserBookingRequestNotificationFixture(testInfo.project.name);
     const harness = createLocalSupabaseConcurrencyHarness();
     harness.guardDisposableLocalDatabase();
     const observe = () =>
