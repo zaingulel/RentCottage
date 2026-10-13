@@ -284,6 +284,16 @@ describe("stylesheet colour tokens", () => {
     expect([...declared, ...used]).toEqual([]);
   });
 
+  it("keeps the focus bands above their required contrast thresholds", () => {
+    expect(tokenColour("--focus-ring").alpha).toBe(1);
+    expect(contrast("--focus-ring", "--surface-bright")).toBeGreaterThanOrEqual(
+      3,
+    );
+    expect(contrast("--focus-ring", "--focus-outline")).toBeGreaterThanOrEqual(
+      9,
+    );
+  });
+
   it("keeps grey and gold text at 4.5 to 1 on every surface it sits on", () => {
     const surfacesOf = {
       "--muted": [
@@ -428,7 +438,10 @@ describe("stylesheet shape and layer tokens", () => {
 
   it("keeps every box shadow a state ring token", () => {
     expect(
-      offScaleHits(/^box-shadow$/, /^(?:var\(--shadow-[a-z]+\)|none|inherit)$/),
+      offScaleHits(
+        /^box-shadow$/,
+        /^(?:var\(--shadow-[a-z]+\),?|none|inherit)$/,
+      ),
     ).toEqual([]);
   });
 
@@ -463,7 +476,9 @@ describe("stylesheet shape and layer tokens", () => {
     expect(
       rings.filter(
         (token) =>
-          !/^--[\w-]+: (?:inset )?0 0 0 \d+px var\(--[a-z-]+\)$/.test(token),
+          !/^--[\w-]+: (?:inset )?0 0 0 \d+px var\(--[a-z-]+\)(?:, (?:inset )?0 0 0 \d+px var\(--[a-z-]+\))*$/.test(
+            token,
+          ),
       ),
     ).toEqual([]);
   });

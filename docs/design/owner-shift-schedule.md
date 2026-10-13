@@ -73,10 +73,10 @@ Isolate clock, date and price runs with `bdi dir="ltr"`, and original names with
 next-day words remain beside the endpoint. Reuse the established palette, Changa headings and Karla/Almarai body
 fonts through their existing tokens.
 
-The accepted schedule-form focus exception uses `--green` for the existing 2px outline with 2px offset on action
-buttons, form controls and choice-control marks within `.cottage-shift-schedule-form`. The design system owns
-that exception; other shared focus treatment remains unchanged. Enabled controls and error states still require
-actual contrast and keyboard verification. The broader gold-focus repair in #703 is separate.
+Schedule-form controls use the shared cream separator, green ring and cream outer outline in the
+[design system's accessibility conventions](../DESIGN-SYSTEM.md#accessibility-conventions).
+The 2px separator keeps focus distinct on green controls; the outline has a 4px offset.
+Enabled controls and error states require actual contrast and keyboard verification.
 
 ## Migration admission and rollback
 

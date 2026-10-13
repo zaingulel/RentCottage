@@ -63,7 +63,8 @@
   --error: #a33425;
   --error-ring: rgb(163 52 37 / 12%);
   --success-text: #2f734b;
-  --focus-ring: rgb(198 138 69 / 14%);
+  --focus-ring: #22402f;
+  --focus-outline: #fffcf5;
   --action-pressed: rgb(34 64 47 / 10%);
   --status-draft-bg: rgb(255 255 255 / 10%);
   --status-submitted-bg: #f0c383;
@@ -104,7 +105,7 @@
   --radius-card: 0.625rem;
 
   /* State rings */
-  --shadow-focus: 0 0 0 3px var(--focus-ring);
+  --shadow-focus: 0 0 0 2px var(--focus-outline), 0 0 0 4px var(--focus-ring);
   --shadow-invalid: 0 0 0 2px var(--error-ring);
   --shadow-pressed: inset 0 0 0 1px var(--green);
 
@@ -235,30 +236,6 @@ textarea {
   transform: translateY(-1px);
 }
 
-.action:focus-visible,
-.action-link:focus-visible,
-.form-control:focus-visible,
-.choice-control > input:focus-visible,
-.disclosure > summary:focus-visible {
-  outline: 2px solid var(--gold);
-  outline-offset: 2px;
-}
-
-.action-focus-target:focus-visible {
-  outline: 3px solid var(--green);
-  outline-offset: 3px;
-}
-
-.action-focus-target-inset:focus-visible {
-  outline-offset: -3px;
-}
-
-.form-control:focus-visible,
-.disclosure > summary:focus-visible {
-  border-color: var(--gold);
-  box-shadow: var(--shadow-focus);
-}
-
 .action:disabled {
   cursor: not-allowed;
   border-color: currentcolor;
@@ -337,10 +314,6 @@ input[type="file"].form-control::file-selector-button {
 
 .choice-control > input[type="radio"] {
   border-radius: 50%;
-}
-
-.choice-control > input:focus-visible {
-  box-shadow: var(--shadow-focus);
 }
 
 .choice-control > input:checked::before {
@@ -1695,15 +1668,6 @@ html[lang="ckb"] .result-content h2 {
   font-size: var(--font-size-1);
 }
 
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-a:focus-visible {
-  outline: 3px solid var(--gold);
-  outline-offset: 3px;
-}
-
 @media (max-width: 47.5rem) {
   .retreat-hero {
     min-height: 76vh;
@@ -2118,12 +2082,6 @@ a:focus-visible {
   gap: var(--space-2);
   font-size: var(--font-size-1);
   font-weight: 700;
-}
-
-.cottage-shift-schedule-form .action:focus-visible,
-.cottage-shift-schedule-form .form-control:focus-visible,
-.cottage-shift-schedule-form .choice-control > input:focus-visible {
-  outline-color: var(--green);
 }
 
 .cottage-shift-guidance {
@@ -3551,4 +3509,45 @@ section.request-follow-up {
   .messaging-conversation-header dl > div {
     grid-template-columns: 1fr;
   }
+}
+
+/* Keyboard focus follows state rules so invalid and pressed cues compose with both bands. */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible,
+.action-focus-target:focus-visible {
+  outline: 3px solid var(--focus-outline);
+  outline-offset: 4px;
+  box-shadow: var(--shadow-focus);
+}
+
+.action:focus-visible,
+.action-link:focus-visible,
+.form-control:focus-visible,
+.choice-control > input:focus-visible,
+.disclosure > summary:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: 4px;
+  box-shadow: var(--shadow-focus);
+}
+
+.form-control:focus-visible,
+.disclosure > summary:focus-visible {
+  border-color: var(--focus-ring);
+}
+
+.form-control[aria-invalid="true"]:focus-visible {
+  border-color: var(--error);
+}
+
+.action-toggle[aria-pressed="true"]:focus-visible {
+  box-shadow: var(--shadow-focus), var(--shadow-pressed);
+}
+
+.action-focus-target-inset:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+  box-shadow: none;
 }
