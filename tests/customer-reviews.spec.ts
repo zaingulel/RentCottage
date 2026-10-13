@@ -1132,6 +1132,116 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
     );
   }
   await visitorContext.close();
+
+  try {
+    const messagingRows = (requestId: string, conversationId: string) =>
+      primary.harness.runSql(`select jsonb_build_object(
+        'conversations',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]'::jsonb)
+          from public.messaging_conversations rows where rows.id='${conversationId}'),
+        'messages',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]'::jsonb)
+          from public.messaging_messages rows where rows.conversation_id='${conversationId}'),
+        'sendAttempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]'::jsonb)
+          from public.messaging_send_attempts rows where rows.conversation_id='${conversationId}'),
+        'requestLinks',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.booking_request_id),'[]'::jsonb)
+          from public.messaging_conversation_booking_requests rows where rows.conversation_id='${conversationId}'),
+        'associations',(select coalesce(jsonb_agg(jsonb_build_object(
+          'id',rows.id,'booking_request_id',rows.booking_request_id,'conversation_id',rows.conversation_id
+        ) order by rows.id),'[]'::jsonb)
+          from public.booking_request_submission_attempts rows where rows.booking_request_id='${requestId}'),
+        'translations',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]'::jsonb)
+          from public.messaging_translations rows join public.messaging_messages messages on messages.id=rows.message_id
+          where messages.conversation_id='${conversationId}'),
+        'reports',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]'::jsonb)
+          from public.messaging_translation_reports rows join public.messaging_translations translations on translations.id=rows.translation_id
+          join public.messaging_messages messages on messages.id=translations.message_id
+          where messages.conversation_id='${conversationId}')
+      );`);
+    const conversations: string[] = [];
+    const snapshots: string[] = [];
+    for (const [index, fixture] of [primary, ratingOnly].entries()) {
+      const opened = JSON.parse(
+        fixture.harness.runSql(`begin; set local role service_role;
+          select public.open_messaging_conversation_for_booking(
+            '${fixture.identities.customer}','${fixture.ids.bookingReference}','${randomUUID()}'
+          ); commit;`),
+      );
+      expect(opened.status).toBe("created");
+      expect(opened.conversationId).toMatch(/^[0-9a-f-]{36}$/);
+      const admitted = JSON.parse(
+        fixture.harness.runSql(`begin; set local role service_role;
+          select public.admit_messaging_message(
+            '${fixture.identities.customer}','${opened.conversationId}','${randomUUID()}',
+            'en','Fictional cleanup observer message ${pair[index]}'
+          ); commit;`),
+      );
+      expect(admitted.status).toBe("sent");
+      expect(admitted.messageId).toMatch(/^[0-9a-f-]{36}$/);
+      const snapshot = messagingRows(
+        fixture.ids.requestId,
+        opened.conversationId,
+      );
+      const rows = JSON.parse(snapshot);
+      for (const key of [
+        "conversations",
+        "messages",
+        "sendAttempts",
+        "requestLinks",
+        "associations",
+      ])
+        expect(rows[key]).toHaveLength(1);
+      expect(rows.conversations[0]).toMatchObject({
+        id: opened.conversationId,
+        customer_user_id: fixture.identities.customer,
+        owner_user_id: primary.identities.owner,
+        profile_id: primary.ids.profileId,
+      });
+      expect(rows.messages[0]).toMatchObject({
+        id: admitted.messageId,
+        conversation_id: opened.conversationId,
+        send_attempt_id: rows.sendAttempts[0].id,
+        original_body: `Fictional cleanup observer message ${pair[index]}`,
+      });
+      const attemptId = `70000000-0000-4000-8000-00000000${pair[index]}01`;
+      expect(rows.requestLinks[0]).toMatchObject({
+        conversation_id: opened.conversationId,
+        booking_request_id: fixture.ids.requestId,
+        submission_attempt_id: attemptId,
+      });
+      expect(rows.associations).toEqual([
+        {
+          id: attemptId,
+          booking_request_id: fixture.ids.requestId,
+          conversation_id: opened.conversationId,
+        },
+      ]);
+      conversations.push(opened.conversationId);
+      snapshots.push(snapshot);
+    }
+    expect(primary.ids.requestId).not.toBe(ratingOnly.ids.requestId);
+    expect(conversations[0]).not.toBe(conversations[1]);
+    primary.harness.runSql(
+      reviewFixtureCleanup(pair[1], ratingOnly.identities),
+    );
+    expect(
+      JSON.parse(messagingRows(ratingOnly.ids.requestId, conversations[1])),
+    ).toEqual({
+      conversations: [],
+      messages: [],
+      sendAttempts: [],
+      requestLinks: [],
+      associations: [],
+      translations: [],
+      reports: [],
+    });
+    expect(messagingRows(primary.ids.requestId, conversations[0])).toBe(
+      snapshots[0],
+    );
+  } finally {
+    primary.harness.runSql(
+      reviewFixtureCleanup(pair[1], ratingOnly.identities) +
+        reviewFixtureCleanup(pair[0], primary.identities),
+    );
+  }
 });
 
 test("Cottage Owner replies once, visitors read the reply, and an administrator hides it", async ({
