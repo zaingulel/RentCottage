@@ -12,7 +12,7 @@ import { formatIqd, formatIraqDateTime } from "@/i18n/format";
 import { directionFor, type Locale } from "@/i18n/routing";
 
 import { BookingRequestForm } from "./booking-request-form";
-import { ActionLink } from "./interaction-controls";
+import { ActionFocusTarget, ActionLink } from "./interaction-controls";
 
 export function BookingQuoteView({
   locale,
@@ -52,11 +52,17 @@ export function BookingQuoteView({
             {copy.back}
           </ActionLink>
         </header>
-        <p role="alert">
+        <p
+          id="booking-quote-unavailable"
+          role="alert"
+          tabIndex={-1}
+          className="action-focus-target"
+        >
           {result.status === "selection-unavailable"
             ? copy.selectionUnavailable
             : copy.unavailable}
         </p>
+        <ActionFocusTarget targetId="booking-quote-unavailable" navigation />
       </main>
     );
   }
@@ -71,7 +77,14 @@ export function BookingQuoteView({
         <ActionLink kind="text" href={cottageHref}>
           {copy.back}
         </ActionLink>
-        <h1 className="page-title">{copy.title}</h1>
+        <h1
+          id="booking-quote-title"
+          tabIndex={-1}
+          className="page-title action-focus-target"
+        >
+          {copy.title}
+        </h1>
+        <ActionFocusTarget targetId="booking-quote-title" navigation />
         <p>
           {copy.quoteFor} {quote.cottageName}
         </p>

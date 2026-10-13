@@ -1,10 +1,12 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { hideReview, hideReply } = vi.hoisted(() => ({
@@ -56,6 +58,74 @@ const replyHidden = {
 
 describe("CustomerReviewModeration", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("retains owned focus on the moderation heading when the Unhidden result removes its card", async () => {
+    const user = userEvent.setup();
+    let finish!: (value: typeof replyHidden) => void;
+    hideReview.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const filters = { ...noFilters, state: "unhidden" };
+    const { rerender } = render(
+      <CustomerReviewModeration
+        locale="en"
+        filters={filters}
+        result={{
+          status: "success",
+          items: [review],
+          nextCursor: null,
+          total: 1,
+          stateCounts: { unhidden: 1, hidden: 0 },
+        }}
+      />,
+    );
+    const heading = screen.getByRole("heading", {
+      name: "Customer review moderation",
+      level: 1,
+    });
+    await user.type(
+      screen.getByLabelText("Reason for hiding"),
+      "Contains a prohibited contact detail",
+    );
+    const button = screen.getByRole("button", { name: "Hide review" });
+    button.focus();
+    await user.keyboard("{Enter}");
+    expect(button).toBeDisabled();
+    await act(async () =>
+      finish({
+        ...replyHidden,
+        reason: "Contains a prohibited contact detail",
+      }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "The review was hidden.",
+    );
+    expect(heading).toHaveFocus();
+    rerender(
+      <CustomerReviewModeration
+        locale="en"
+        filters={filters}
+        result={{
+          status: "success",
+          items: [],
+          nextCursor: null,
+          total: 0,
+          stateCounts: { unhidden: 0, hidden: 1 },
+        }}
+      />,
+    );
+    expect(screen.queryByRole("article")).toBeNull();
+    expect(screen.getByText("No reviews match these filters.")).toBeVisible();
+    expect(
+      screen.getByRole("heading", {
+        name: "Customer review moderation",
+        level: 1,
+      }),
+    ).toBe(heading);
+    expect(heading).toHaveFocus();
+  });
 
   it.each(["en", "ar", "ckb"] as const)(
     "carries the exact %s moderation queue into access recovery",

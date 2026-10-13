@@ -1,6 +1,9 @@
 import { requireRequestAccount } from "@/access/request-account-context";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
-import { ActionLink } from "@/components/interaction-controls";
+import {
+  ActionFocusTarget,
+  ActionLink,
+} from "@/components/interaction-controls";
 import { accessMessages } from "@/i18n/access-messages";
 import { messages } from "@/i18n/messages";
 import Link from "next/link";
@@ -66,6 +69,10 @@ export default async function BookingHistoryPage({
     workspace === "owner"
       ? accessMessages[locale].ownerBookings
       : accessMessages[locale].myBookings;
+  const titleId =
+    workspace === "owner"
+      ? "owner-bookings-heading"
+      : "customer-bookings-heading";
   let items;
   try {
     items = await loadBookingHistory(
@@ -100,7 +107,14 @@ export default async function BookingHistoryPage({
       <section className="booking-history">
         <header>
           <Link href={`/${locale}`}>{copy[locale].home}</Link>
-          <h1 className="page-title">{title}</h1>
+          <h1
+            id={titleId}
+            tabIndex={-1}
+            className="page-title action-focus-target"
+          >
+            {title}
+          </h1>
+          <ActionFocusTarget targetId={titleId} navigation />
         </header>
         <p>{accessMessages[locale].bookingHistoryIntro}</p>
         {ownerTotals ? (

@@ -18,6 +18,7 @@ import type { MessagingConversation as Conversation } from "@/messaging/supabase
 import {
   ActionButton,
   ActionFeedback,
+  ActionFocusTarget,
   ActionLink,
   FormControl,
 } from "./interaction-controls";
@@ -149,7 +150,14 @@ export function MessagingConversation({
           {copy.inbox}
         </Link>
         <p>{copy.conversation}</p>
-        <h1>{conversation.cottage.name}</h1>
+        <h1
+          id="messaging-conversation-title"
+          tabIndex={-1}
+          className="action-focus-target"
+        >
+          {conversation.cottage.name}
+        </h1>
+        <ActionFocusTarget targetId="messaging-conversation-title" navigation />
         {conversation.booking ? (
           <dl>
             <div>
@@ -251,6 +259,7 @@ export function MessagingConversation({
           const original = showOriginal[message.messageId] || !translation;
           const canTranslate =
             !translation && canMutate && message.originalLanguage !== locale;
+          const toggleId = `message-translation-toggle-${message.messageId}`;
           return (
             <li
               key={message.messageId}
@@ -288,44 +297,44 @@ export function MessagingConversation({
                 </time>
                 {translation || canTranslate ? (
                   <div className="messaging-message-actions">
-                    {translation ? (
-                      <>
-                        <ActionButton
-                          kind="secondary"
-                          size="compact"
-                          type="button"
-                          onClick={() =>
-                            setShowOriginal((current) => ({
+                    <ActionButton
+                      id={toggleId}
+                      kind="secondary"
+                      size="compact"
+                      type="button"
+                      pending={!translation && pending}
+                      onClick={() =>
+                        translation
+                          ? setShowOriginal((current) => ({
                               ...current,
                               [message.messageId]: !original,
                             }))
-                          }
-                        >
-                          {original ? copy.viewTranslation : copy.viewOriginal}
-                        </ActionButton>
-                        {canMutate && !reported[translation.translationId] ? (
-                          <ActionButton
-                            kind="secondary"
-                            size="compact"
-                            type="button"
-                            pending={pending}
-                            onClick={() => report(translation)}
-                          >
-                            {copy.reportTranslation}
-                          </ActionButton>
-                        ) : null}
-                      </>
-                    ) : (
+                          : translate(message.messageId)
+                      }
+                    >
+                      {translation
+                        ? original
+                          ? copy.viewTranslation
+                          : copy.viewOriginal
+                        : copy.automaticTranslation}
+                    </ActionButton>
+                    {translation &&
+                    canMutate &&
+                    !reported[translation.translationId] ? (
                       <ActionButton
                         kind="secondary"
                         size="compact"
                         type="button"
                         pending={pending}
-                        onClick={() => translate(message.messageId)}
+                        focusSuccessorId={toggleId}
+                        onClick={() => report(translation)}
                       >
-                        {copy.automaticTranslation}
+                        {copy.reportTranslation}
                       </ActionButton>
-                    )}
+                    ) : null}
+                    {!pending ? (
+                      <ActionFocusTarget targetId={toggleId} />
+                    ) : null}
                   </div>
                 ) : null}
                 {reported[translation?.translationId ?? ""] ? (
@@ -367,7 +376,12 @@ export function MessagingConversation({
       </nav>
       {canMutate ? (
         readOnly ? (
-          <ActionFeedback kind="error">{copy.readOnly}</ActionFeedback>
+          <ActionFeedback
+            kind="error"
+            focusTargetId={!pending ? "message-send-read-only" : undefined}
+          >
+            {copy.readOnly}
+          </ActionFeedback>
         ) : (
           <form
             onSubmit={(event) => {
@@ -411,6 +425,7 @@ export function MessagingConversation({
               width="full"
               type="submit"
               pending={pending}
+              focusSuccessorId="message-send-read-only"
             >
               {pending ? copy.sending : copy.send}
             </ActionButton>

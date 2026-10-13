@@ -10,6 +10,7 @@ import {
   bookingRequestUiPolicy,
 } from "@/booking-request/booking-request-policy";
 import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime";
+import { ActionFocusTarget } from "@/components/interaction-controls";
 import { BookingQuoteView } from "@/components/booking-quote";
 import { InvalidCottageSearch } from "@/components/invalid-cottage-search";
 import {
@@ -40,7 +41,17 @@ export default async function RequestPage({
           role="alert"
           aria-labelledby="booking-request-future-title"
         >
-          <h1 id="booking-request-future-title">{copy.futureTitle}</h1>
+          <h1
+            id="booking-request-future-title"
+            tabIndex={-1}
+            className="action-focus-target"
+          >
+            {copy.futureTitle}
+          </h1>
+          <ActionFocusTarget
+            targetId="booking-request-future-title"
+            navigation
+          />
           <p>{copy.futureBody}</p>
         </section>
       </main>

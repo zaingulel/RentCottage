@@ -154,7 +154,7 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
   }
   await page.goto("/api/health");
   await page.setContent(
-    '<meta name="viewport" content="width=device-width, initial-scale=1"><main id="fixture-root"></main>',
+    '<meta name="viewport" content="width=device-width, initial-scale=1"><div id="fixture-root"></div>',
   );
   await page.addStyleTag({ content: await readApplicationStylesheet() });
   await page.addScriptTag({ path: bundlePath });
@@ -436,4 +436,222 @@ test("the choose-file button and the search form's Booking Period toggles are at
       message: "shortest Booking Period toggle after dates are chosen",
     })
     .toBeGreaterThanOrEqual(44);
+});
+
+test("busy action focus preserves native blocking and explicit successors", async ({
+  page,
+}, testInfo) => {
+  const bundlePath = testInfo.outputPath("busy-action-controls.js");
+  await build({
+    entryPoints: ["tests/fixtures/interaction-controls.browser.tsx"],
+    outfile: bundlePath,
+    bundle: true,
+    format: "iife",
+    platform: "browser",
+    target: "es2022",
+    jsx: "automatic",
+    define: { "process.env.NODE_ENV": '\"production\"', "process.env": "{}" },
+  });
+  await page.goto("/api/health");
+  await page.setContent(
+    '<meta name="viewport" content="width=device-width, initial-scale=1"><div id="fixture-root"></div>',
+  );
+  await page.addStyleTag({ content: await readApplicationStylesheet() });
+  await page.addScriptTag({ path: bundlePath });
+  const fixture = page.getByRole("region", { name: "Busy action fixture" });
+  const source = fixture.getByRole("button", { name: "Save fixture" });
+  const result = fixture.getByRole("heading", { name: /^Result/ });
+  const destination = fixture.getByRole("heading", { name: "Destination" });
+  const elsewhere = fixture.getByRole("textbox", { name: "Busy elsewhere" });
+  for (const direction of ["ltr", "rtl"] as const) {
+    await page.evaluate((dir) => {
+      document.documentElement.dir = dir;
+    }, direction);
+    await expect(destination).not.toBeFocused();
+    for (const scenario of [
+      "retained",
+      "replacement",
+      "disabled",
+      "immediate",
+      "fieldset",
+      "direct-disabled",
+      "main",
+      "navigation",
+      "ordinary",
+      "abort",
+    ] as const) {
+      await page
+        .getByRole("textbox", { name: "Reference", exact: true })
+        .focus();
+      await page.evaluate(
+        (next) => Reflect.get(window, "configureBusyAction")(next),
+        scenario,
+      );
+      await expect(fixture).toHaveAttribute("data-scenario", scenario);
+      await expect(fixture).toHaveAttribute("data-stage", "source");
+      if (scenario === "retained") {
+        const required = fixture.getByRole("textbox", {
+          name: "Required fixture value",
+        });
+        await required.fill("");
+        await source.focus();
+        await page.keyboard.press("Enter");
+        await expect(fixture.getByRole("status")).toHaveText("Actions: 0");
+        await expect(source).toBeEnabled();
+        await expect(required).toBeFocused();
+        await required.fill("Valid");
+      }
+      const transientToggle =
+        scenario === "fieldset" || scenario === "direct-disabled";
+      const originalResult = transientToggle
+        ? await result.elementHandle()
+        : null;
+      const originalSource = await source.elementHandle();
+      const originalMain = await page.locator("#busy-landmark").elementHandle();
+      await source.focus();
+      await page.keyboard.press(transientToggle ? "Space" : "Enter");
+      if (scenario === "immediate" || scenario === "abort")
+        await expect(source).toHaveCount(0);
+      else {
+        await expect(source).toBeDisabled();
+        if (!transientToggle)
+          await expect(source).toHaveAttribute("aria-busy", "true");
+        else {
+          await expect(source).not.toHaveAttribute("aria-busy");
+          await expect(result).toBeVisible();
+          await expect(result).not.toBeFocused();
+          expect(
+            await originalResult!.evaluate((element) => element.isConnected),
+          ).toBe(true);
+        }
+      }
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Space");
+      await expect(fixture.getByRole("status")).toHaveText("Actions: 1");
+      if (scenario === "ordinary")
+        await page.evaluate(() =>
+          Reflect.get(window, "requestBusyNavigation")("unrelated-source"),
+        );
+      await page.evaluate(() => Reflect.get(window, "releaseBusyAction")());
+      await expect(fixture).toHaveAttribute("data-stage", "result");
+      if (scenario === "retained" || transientToggle) {
+        await expect(source).toBeEnabled();
+        await expect(source).toBeFocused();
+        if (transientToggle)
+          expect(
+            await originalResult!.evaluate((element) => element.isConnected),
+          ).toBe(true);
+        expect(
+          await originalSource!.evaluate(
+            (element) => element === document.activeElement,
+          ),
+        ).toBe(true);
+      } else if (scenario === "main") {
+        await expect(page.locator("#busy-landmark")).toBeFocused();
+        expect(
+          await originalMain!.evaluate(
+            (element) => element === document.activeElement,
+          ),
+        ).toBe(true);
+        await page.evaluate(() => Reflect.get(window, "replaceBusyContent")());
+        await expect(result).toHaveText("Result 1");
+        expect(
+          await originalMain!.evaluate(
+            (element) => element === document.activeElement,
+          ),
+        ).toBe(true);
+        await elsewhere.focus();
+        await page.evaluate(() => Reflect.get(window, "replaceBusyContent")());
+        await expect(result).toHaveText("Result 2");
+        await expect(elsewhere).toBeFocused();
+      } else if (scenario === "navigation")
+        await expect(destination).toBeFocused();
+      else {
+        await expect(result).toBeFocused();
+        await expect(destination).not.toBeFocused();
+      }
+      if (
+        ["replacement", "disabled", "immediate", "main", "abort"].includes(
+          scenario,
+        )
+      ) {
+        const target =
+          scenario === "main" ? page.locator("#busy-landmark") : result;
+        if (scenario === "main") await target.focus();
+        expect(
+          await computed(target, [
+            "outline-width",
+            "outline-offset",
+            "outline-style",
+          ]),
+        ).toEqual(["3px", "3px", "solid"]);
+        const colors = await target.evaluate((element) => ({
+          outline: getComputedStyle(element).outlineColor,
+          background: getComputedStyle(document.documentElement)
+            .backgroundColor,
+        }));
+        const luminance = (color: string) => {
+          const channels = color
+            .match(/\d+/g)!
+            .map(Number)
+            .slice(0, 3)
+            .map((value) => {
+              const c = value / 255;
+              return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+            });
+          return (
+            channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+          );
+        };
+        const fg = luminance(colors.outline),
+          bg = luminance(colors.background);
+        expect(
+          (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05),
+        ).toBeGreaterThanOrEqual(3);
+        if (scenario === "replacement") {
+          await elsewhere.click();
+          await result.click();
+          await expect(result).toBeFocused();
+          await expect(result).toHaveCSS("outline-style", "none");
+        }
+      }
+      await originalResult?.dispose();
+      await originalSource?.dispose();
+      await originalMain?.dispose();
+    }
+    for (const cancellation of [
+      "focus",
+      "Tab",
+      "pointer",
+      "popstate",
+      "blur",
+      "pagehide",
+    ] as const) {
+      await page
+        .getByRole("textbox", { name: "Reference", exact: true })
+        .focus();
+      await page.evaluate(() =>
+        Reflect.get(window, "configureBusyAction")("navigation"),
+      );
+      await expect(fixture).toHaveAttribute("data-stage", "source");
+      await source.focus();
+      await page.keyboard.press("Enter");
+      await expect(source).toBeDisabled();
+      if (cancellation === "focus") await elsewhere.focus();
+      else if (cancellation === "Tab") await page.keyboard.press("Tab");
+      else if (cancellation === "pointer")
+        await fixture.getByRole("status").click();
+      else
+        await page.evaluate(
+          (name) => window.dispatchEvent(new Event(name)),
+          cancellation,
+        );
+      await page.evaluate(() => Reflect.get(window, "removeBusyElsewhere")());
+      await expect(elsewhere).toHaveCount(0);
+      await page.evaluate(() => Reflect.get(window, "releaseBusyAction")());
+      await expect(fixture).toHaveAttribute("data-stage", "result");
+      await expect(destination).not.toBeFocused();
+      await expect(result).not.toBeFocused();
+    }
+  }
 });

@@ -7,7 +7,9 @@ const {
   createAccess,
   redirect,
   revalidatePath,
+  resolveRequestAccount,
 } = vi.hoisted(() => ({
+  resolveRequestAccount: vi.fn(),
   recordAudit: vi.fn(),
   redirect: vi.fn(),
   revalidatePath: vi.fn(),
@@ -15,6 +17,8 @@ const {
   clearSession: vi.fn(),
   createAccess: vi.fn(),
 }));
+
+vi.mock("./request-account-context", () => ({ resolveRequestAccount }));
 
 vi.mock("next/cache", () => ({ revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect }));
@@ -30,6 +34,7 @@ vi.mock("./supabase-account-access", () => ({
 }));
 
 import {
+  completePhoneAccess,
   enrollOwner,
   signOutAccount,
   requestPhoneAccess,
@@ -289,6 +294,115 @@ describe("account action HTTP boundary", () => {
       }),
     ).resolves.toEqual({ status: "unavailable" });
     expect(signOut).toHaveBeenCalledOnce();
+  });
+});
+
+describe("phone completion continuation", () => {
+  const returnTo =
+    "/en/request/cottage-00000000000040008000000000000029?from=2099-08-21&to=2099-08-21&guests=4&selection=2099-08-21%3Ashift%3A2";
+  const canonicalReturn =
+    "/en/access?returnTo=%2Fen%2Frequest%2Fcottage-00000000000040008000000000000029%3Ffrom%3D2099-08-21%26to%3D2099-08-21%26guests%3D4%26selection%3D2099-08-21%253Ashift%253A2";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolveRequestAccount.mockReset();
+  });
+
+  it("finishes inline completion without a redirect while preserving canonical standalone returns", async () => {
+    resolveRequestAccount.mockResolvedValue({
+      status: "authenticated",
+      context: { userId: "customer-user", role: "customer" },
+    });
+    await expect(completePhoneAccess("en", returnTo, true)).resolves.toEqual({
+      status: "completed",
+    });
+    expect(resolveRequestAccount).toHaveBeenCalledOnce();
+    expect(revalidatePath).toHaveBeenCalledExactlyOnceWith("/", "layout");
+    expect(redirect).not.toHaveBeenCalled();
+
+    for (const inlineCompletion of [undefined, false]) {
+      for (const destination of [returnTo, "https://example.com/private"]) {
+        vi.clearAllMocks();
+        if (inlineCompletion === undefined)
+          await completePhoneAccess("en", destination);
+        else await completePhoneAccess("en", destination, inlineCompletion);
+        expect(resolveRequestAccount).toHaveBeenCalledOnce();
+        expect(revalidatePath).toHaveBeenCalledExactlyOnceWith("/", "layout");
+        expect(redirect).toHaveBeenCalledExactlyOnceWith(
+          destination === returnTo
+            ? canonicalReturn
+            : "/en/access?returnTo=%2Fen%2Fbookings",
+        );
+      }
+    }
+  });
+
+  it("rejects malformed inline completion inputs before account lookup", async () => {
+    for (const selector of [null, 0, 1, "true", {}, []]) {
+      await expect(
+        completePhoneAccess("en", returnTo, selector),
+      ).resolves.toEqual({
+        status: "unavailable",
+      });
+    }
+    for (const destination of [
+      undefined,
+      null,
+      1,
+      "https://example.com/private",
+      "/ar/bookings",
+      "/en/request/cottage-test?from=invalid",
+    ]) {
+      await expect(
+        completePhoneAccess("en", destination, true),
+      ).resolves.toEqual({
+        status: "unavailable",
+      });
+    }
+    for (const locale of [undefined, 1, "invalid"]) {
+      await expect(
+        completePhoneAccess(locale, returnTo, true),
+      ).resolves.toEqual({
+        status: "unavailable",
+      });
+    }
+    expect(resolveRequestAccount).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("keeps inline and standalone completion behind the existing account boundary", async () => {
+    for (const inlineCompletion of [false, true]) {
+      for (const account of [
+        { status: "signed_out" },
+        { status: "unavailable" },
+        { status: "authenticated", context: undefined },
+        {
+          status: "authenticated",
+          context: { userId: "admin-user", role: "platform_administrator" },
+        },
+      ]) {
+        vi.clearAllMocks();
+        resolveRequestAccount.mockResolvedValue(account);
+        await expect(
+          completePhoneAccess("en", returnTo, inlineCompletion),
+        ).resolves.toEqual({
+          status: "unavailable",
+        });
+        expect(resolveRequestAccount).toHaveBeenCalledOnce();
+        expect(revalidatePath).not.toHaveBeenCalled();
+        expect(redirect).not.toHaveBeenCalled();
+      }
+      vi.clearAllMocks();
+      const failure = new Error("account lookup unavailable");
+      resolveRequestAccount.mockRejectedValue(failure);
+      await expect(
+        completePhoneAccess("en", returnTo, inlineCompletion),
+      ).rejects.toBe(failure);
+      expect(resolveRequestAccount).toHaveBeenCalledOnce();
+      expect(revalidatePath).not.toHaveBeenCalled();
+      expect(redirect).not.toHaveBeenCalled();
+    }
   });
 });
 

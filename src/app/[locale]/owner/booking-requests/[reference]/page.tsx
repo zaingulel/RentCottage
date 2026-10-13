@@ -1,3 +1,4 @@
+import { ActionFocusTarget } from "@/components/interaction-controls";
 import { RequestNotificationDetails } from "@/components/request-notification-details";
 import { BookingFinancialDetails } from "@/components/booking-financial-details";
 import { requireRequestAccount } from "@/access/request-account-context";
@@ -33,6 +34,7 @@ export default async function OwnerConfirmedBookingPage({
         locale={locale}
         status="unavailable"
         returnTo={returnTo}
+        focusTargetId="owner-booking-request-detail"
       />
     );
   const messaging = (
@@ -45,13 +47,29 @@ export default async function OwnerConfirmedBookingPage({
         locale={locale}
         status="denied"
         returnTo={returnTo}
+        focusTargetId="owner-booking-request-detail"
       />
     );
   if (details.outcome === "unavailable")
     return (
-      <main className="results-page">
+      <main
+        id="owner-booking-request-detail"
+        tabIndex={-1}
+        className="results-page action-focus-target"
+      >
+        <ActionFocusTarget targetId="owner-booking-request-detail" />
         <section role="alert">
-          <h1>{unavailableCopy[locale]}</h1>
+          <h1
+            id="owner-booking-request-unavailable-title"
+            tabIndex={-1}
+            className="action-focus-target"
+          >
+            {unavailableCopy[locale]}
+          </h1>
+          <ActionFocusTarget
+            targetId="owner-booking-request-unavailable-title"
+            navigation
+          />
           <Link href={`/${locale}/owner/cottages`}>
             {cottageProfileMessages[locale].overviewTitle}
           </Link>
@@ -67,7 +85,12 @@ export default async function OwnerConfirmedBookingPage({
   );
   if (details.outcome === "cancelled")
     return (
-      <main className="results-page">
+      <main
+        id="owner-booking-request-detail"
+        tabIndex={-1}
+        className="results-page action-focus-target"
+      >
+        <ActionFocusTarget targetId="owner-booking-request-detail" />
         <BookingFinancialDetails locale={locale} view={details.financial} />
         {messaging}
         {notices}
@@ -75,7 +98,12 @@ export default async function OwnerConfirmedBookingPage({
     );
   if (details.outcome === "confirmed")
     return (
-      <main className="results-page page page-record">
+      <main
+        id="owner-booking-request-detail"
+        tabIndex={-1}
+        className="results-page page page-record action-focus-target"
+      >
+        <ActionFocusTarget targetId="owner-booking-request-detail" />
         <ConfirmedBookingDetails
           locale={locale}
           {...details.confirmed}
@@ -94,10 +122,17 @@ export default async function OwnerConfirmedBookingPage({
       </main>
     );
   return (
-    <main className="results-page">
+    <main
+      id="owner-booking-request-detail"
+      tabIndex={-1}
+      className="results-page action-focus-target"
+    >
+      <ActionFocusTarget targetId="owner-booking-request-detail" />
+      <ActionFocusTarget targetId="owner-booking-request-detail" navigation />
       <OwnerBookingRequestNotifications
         locale={locale}
         notifications={[details.request]}
+        focusSuccessorId="owner-booking-request-detail"
       />
       {messaging}
       {notices}

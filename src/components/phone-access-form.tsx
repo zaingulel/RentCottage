@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
+import { unstable_rethrow } from "next/navigation";
 
 import {
   completePhoneAccess,
@@ -13,7 +14,9 @@ import type { Locale } from "@/i18n/routing";
 import {
   ActionButton,
   ActionFeedback,
+  ActionFocusTarget,
   FormControl,
+  prepareActionFocusNavigation,
 } from "./interaction-controls";
 import { useExclusiveAction } from "./use-exclusive-action";
 
@@ -21,12 +24,17 @@ export function PhoneAccessForm({
   locale,
   returnTo,
   onVerified,
+  verifiedFocusTargetId,
 }: {
   locale: Locale;
   returnTo?: string;
   onVerified?: () => void;
+  verifiedFocusTargetId?: string;
 }) {
   const copy = accessMessages[locale];
+  const verifyButtonId = useId();
+  const codeInputId = useId();
+  const verifiedFeedbackId = useId();
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [stage, setStage] = useState<"phone" | "code" | "verified">("phone");
@@ -57,9 +65,16 @@ export function PhoneAccessForm({
   async function verifyCode() {
     setMessage("");
     let result;
+    let abortNavigation: (() => void) | undefined;
     try {
-      result = await run(() => verifyPhoneAccess({ phone, code }));
-    } catch {
+      result = await run(() => {
+        if (returnTo && !verifiedFocusTargetId)
+          abortNavigation = prepareActionFocusNavigation(verifyButtonId);
+        return verifyPhoneAccess({ phone, code });
+      });
+    } catch (error) {
+      unstable_rethrow(error);
+      abortNavigation?.();
       setMessage(copy.unavailable);
       return;
     }
@@ -67,20 +82,29 @@ export function PhoneAccessForm({
     if (result.status === "authenticated") {
       setStage("verified");
       setMessage(copy.verified);
-      if (returnTo) {
-        try {
-          const destination = await completePhoneAccess(locale, returnTo);
-          if (destination?.status === "unavailable") {
+      try {
+        if (returnTo) {
+          try {
+            const destination = verifiedFocusTargetId
+              ? await completePhoneAccess(locale, returnTo, true)
+              : await completePhoneAccess(locale, returnTo);
+            if (destination?.status === "unavailable") {
+              setStage("code");
+              setMessage(copy.unavailable);
+              abortNavigation?.();
+            }
+          } catch (error) {
+            unstable_rethrow(error);
             setStage("code");
             setMessage(copy.unavailable);
+            abortNavigation?.();
           }
-        } catch {
-          setStage("code");
-          setMessage(copy.unavailable);
         }
+      } finally {
+        onVerified?.();
       }
-      onVerified?.();
     } else {
+      abortNavigation?.();
       setMessage(
         result.status === "role_conflict"
           ? copy.denied
@@ -122,6 +146,7 @@ export function PhoneAccessForm({
             type="button"
             pending={pending}
             onClick={sendCode}
+            focusSuccessorId={codeInputId}
           >
             {copy.sendCode}
           </ActionButton>
@@ -134,6 +159,7 @@ export function PhoneAccessForm({
             <FormControl
               kind="input"
               dir="ltr"
+              id={codeInputId}
               inputMode="numeric"
               maxLength={6}
               autoComplete="one-time-code"
@@ -147,6 +173,11 @@ export function PhoneAccessForm({
             type="button"
             pending={pending}
             onClick={verifyCode}
+            id={verifyButtonId}
+            focusSuccessorId={
+              verifiedFocusTargetId ??
+              (returnTo ? codeInputId : verifiedFeedbackId)
+            }
           >
             {copy.verify}
           </ActionButton>
@@ -174,8 +205,21 @@ export function PhoneAccessForm({
           </ActionButton>
         </>
       )}
+      {stage === "code" && !pending && (
+        <ActionFocusTarget targetId={codeInputId} />
+      )}
       {message && (
-        <ActionFeedback kind={stage === "verified" ? "success" : "error"}>
+        <ActionFeedback
+          kind={stage === "verified" ? "success" : "error"}
+          focusTargetId={
+            stage === "verified" &&
+            !pending &&
+            !returnTo &&
+            !verifiedFocusTargetId
+              ? verifiedFeedbackId
+              : undefined
+          }
+        >
           {message}
         </ActionFeedback>
       )}

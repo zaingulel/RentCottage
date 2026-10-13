@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useId, useTransition } from "react";
 
 import {
   hasCompleteCottageBookingSelection,
@@ -16,6 +16,7 @@ import type { Locale } from "@/i18n/routing";
 import {
   ActionButton,
   ActionFeedback,
+  ActionFocusTarget,
   ActionLink,
 } from "./interaction-controls";
 
@@ -91,6 +92,7 @@ export function CottageBookingPeriodPicker({
   inventory: PublicCottageInventoryUnit[];
 }) {
   const router = useRouter();
+  const headingId = useId();
   const [pending, startTransition] = useTransition();
   const messages = copy[locale];
   const complete = hasCompleteCottageBookingSelection(query);
@@ -143,7 +145,10 @@ export function CottageBookingPeriodPicker({
 
   return (
     <>
-      <h2>{messages.title}</h2>
+      <h2 id={headingId} tabIndex={-1} className="action-focus-target">
+        {messages.title}
+      </h2>
+      {!pending && <ActionFocusTarget targetId={headingId} />}
       <p>{messages.prices}</p>
       {!available && (
         <ActionFeedback kind="error">{messages.changed}</ActionFeedback>
@@ -167,6 +172,7 @@ export function CottageBookingPeriodPicker({
                 size="regular"
                 type="button"
                 disabled={pending}
+                focusSuccessorId={headingId}
                 onClick={() =>
                   replaceSelection(
                     query.selections.filter(
@@ -194,6 +200,7 @@ export function CottageBookingPeriodPicker({
                       type="button"
                       pressed={selected}
                       disabled={pending || (!unit.available && !selected)}
+                      focusSuccessorId={headingId}
                       onClick={() => toggle(unit)}
                     >
                       {unit.kind === "full-day" ? messages.fullDay : unit.name}

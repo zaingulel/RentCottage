@@ -8,6 +8,7 @@ import { formatFilsAsIqd, formatIraqDateTime } from "@/i18n/format";
 import { bookingPayoutMessages } from "@/i18n/administrator-payment-history-messages";
 import { bookingManagementMessages } from "@/i18n/booking-management-messages";
 import type { Locale } from "@/i18n/routing";
+import { ActionFocusTarget } from "./interaction-controls";
 import { BookingLifecycleDetails } from "./booking-lifecycle-details";
 import { BookingManagementControl } from "./booking-management-controls";
 import { NotificationRetryControl } from "./notification-retry-control";
@@ -23,6 +24,8 @@ export function BookingFinancialDetails({
 }) {
   const p = bookingPayoutMessages[locale];
   const c = bookingManagementMessages[locale];
+  const financialFocusTargetId = `booking-financial-${view.bookingRequestReference}`;
+  const payoutFocusTargetId = `booking-payout-${view.bookingRequestReference}`;
   const ownerEarnings =
     view.actorRole === "cottage_owner"
       ? ownerBookingEarnings(view.ownerEarnings ?? { status: "unavailable" })
@@ -85,7 +88,15 @@ export function BookingFinancialDetails({
       />
       {view.cancellation ? (
         <header>
-          <h1>{c.cancelled}</h1>
+          <h1
+            id={financialFocusTargetId}
+            tabIndex={-1}
+            className="action-focus-target"
+          >
+            {c.cancelled}
+          </h1>
+          <ActionFocusTarget targetId={financialFocusTargetId} />
+          <ActionFocusTarget targetId={financialFocusTargetId} navigation />
           <p>
             {view.cottageName} · <strong>{view.bookingReference}</strong>
           </p>
@@ -99,7 +110,13 @@ export function BookingFinancialDetails({
           ) : null}
         </header>
       ) : (
-        <h2 className="section-title">{c.title}</h2>
+        <h2
+          id={financialFocusTargetId}
+          tabIndex={-1}
+          className="section-title action-focus-target"
+        >
+          {c.title}
+        </h2>
       )}
       {view.cancellation || view.actorRole === "platform_administrator" ? (
         <>
@@ -206,7 +223,18 @@ export function BookingFinancialDetails({
               <li key={notice.eventId}>
                 <div className={styles.notice}>
                   <span>{noticeNames[notice.kind]}</span>
-                  <span>{noticeStates[notice.state]}</span>
+                  <span
+                    id={`financial-notice-${notice.eventId}`}
+                    tabIndex={-1}
+                    className="action-focus-target"
+                  >
+                    {noticeStates[notice.state]}
+                    {!notice.retryAllowed ? (
+                      <ActionFocusTarget
+                        targetId={`financial-notice-${notice.eventId}`}
+                      />
+                    ) : null}
+                  </span>
                 </div>
                 <p>
                   {c.noticeRecipient}:{" "}
@@ -231,6 +259,7 @@ export function BookingFinancialDetails({
                     reference={view.bookingRequestReference}
                     receiptId={notice.receiptId}
                     eventId={notice.eventId}
+                    focusSuccessorId={`financial-notice-${notice.eventId}`}
                     label={c.retry}
                     failed={c.retryFailed}
                     queued={c.retryQueued}
@@ -249,6 +278,7 @@ export function BookingFinancialDetails({
           locale={locale}
           reference={view.bookingRequestReference}
           actorRole={view.actorRole}
+          focusSuccessorId={financialFocusTargetId}
           action="cancel"
           commandId={cancelCommandId}
         />
@@ -259,13 +289,23 @@ export function BookingFinancialDetails({
           locale={locale}
           reference={view.bookingRequestReference}
           actorRole={view.actorRole}
+          focusSuccessorId={financialFocusTargetId}
           action="refund"
           commandId={refundCommandId}
         />
       ) : null}
       {view.actorRole === "platform_administrator" && view.payout ? (
         <section aria-label={p.title}>
-          <h2>{p.title}</h2>
+          <h2
+            id={payoutFocusTargetId}
+            tabIndex={-1}
+            className="action-focus-target"
+          >
+            {p.title}
+          </h2>
+          {view.payout.settlement?.state === "succeeded" ? (
+            <ActionFocusTarget targetId={payoutFocusTargetId} />
+          ) : null}
           {view.payout.settlement ? (
             <div>
               <p>{p[view.payout.settlement.state]}</p>
@@ -314,6 +354,7 @@ export function BookingFinancialDetails({
               locale={locale}
               reference={view.bookingRequestReference}
               actorRole="platform_administrator"
+              focusSuccessorId={payoutFocusTargetId}
               action="settle"
               commandId={crypto.randomUUID()}
             />
@@ -327,6 +368,7 @@ export function BookingFinancialDetails({
                 locale={locale}
                 reference={view.bookingRequestReference}
                 actorRole="platform_administrator"
+                focusSuccessorId={payoutFocusTargetId}
                 action="release_hold"
                 subjectId={id}
                 commandId={crypto.randomUUID()}
@@ -337,6 +379,7 @@ export function BookingFinancialDetails({
               locale={locale}
               reference={view.bookingRequestReference}
               actorRole="platform_administrator"
+              focusSuccessorId={payoutFocusTargetId}
               action="place_hold"
               commandId={crypto.randomUUID()}
             />
@@ -349,6 +392,7 @@ export function BookingFinancialDetails({
                   locale={locale}
                   reference={view.bookingRequestReference}
                   actorRole="platform_administrator"
+                  focusSuccessorId={payoutFocusTargetId}
                   action="resolve_dispute"
                   subjectId={dispute.id}
                   commandId={crypto.randomUUID()}
@@ -361,6 +405,7 @@ export function BookingFinancialDetails({
               locale={locale}
               reference={view.bookingRequestReference}
               actorRole="platform_administrator"
+              focusSuccessorId={payoutFocusTargetId}
               action="open_dispute"
               commandId={crypto.randomUUID()}
             />

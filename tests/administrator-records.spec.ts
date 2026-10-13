@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as OTPAuth from "otpauth";
+import { administratorRecordsMessages } from "../src/i18n/administrator-records-messages";
 import { SupabaseOwnerApplicationRepository } from "../src/owner-application/supabase-owner-application";
 
 const { createLocalSupabaseConcurrencyHarness } = createRequire(
@@ -268,6 +269,16 @@ test("an administrator discovers accounts and approval records with authoritativ
       locale === "en" ? "ltr" : "rtl",
     );
     await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    const recordSearchControl = page.getByRole("button", {
+      name: administratorRecordsMessages[locale].search,
+      exact: true,
+    });
+    await recordSearchControl.focus();
+    await expect(recordSearchControl).toBeFocused();
+    const recordSearchSource = await recordSearchControl.elementHandle();
+    if (!recordSearchSource) throw new Error("Focus source is missing");
+    await recordSearchControl.press("Enter");
+    await expect(recordSearchControl).toBeEnabled();
     const applicationButton = page.getByRole("button", {
       name: new RegExp(`^${applicationLabel}:`),
     });
@@ -282,6 +293,13 @@ test("an administrator discovers accounts and approval records with authoritativ
     expect(
       westernDigits((await approvalButton.textContent()) ?? "").trim(),
     ).toBe(`${approvalLabel}: ${approvals}`);
+    await expect(recordSearchControl).toBeFocused();
+    expect(
+      await recordSearchSource.evaluate(
+        (source) => document.activeElement === source,
+      ),
+    ).toBe(true);
+    await recordSearchSource.dispose();
     await page
       .getByRole("button", { name: new RegExp(`^${approvalLabel}`) })
       .click();
@@ -398,6 +416,9 @@ test("an administrator discovers accounts and approval records with authoritativ
   await page.keyboard.press("Enter");
   const link = documentRow.getByRole("link", { name: "Open secure document" });
   await expect(link).toBeVisible();
+  await expect(
+    documentRow.getByRole("button", { name: "Create secure link" }),
+  ).toBeFocused();
   const href = await link.getAttribute("href");
   if (!href)
     throw new Error("Secure document link missing after explicit action");

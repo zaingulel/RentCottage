@@ -7,7 +7,10 @@ import { messagingMessages } from "@/i18n/messaging-messages";
 import type { Locale } from "@/i18n/routing";
 import { openBookingMessagingConversation } from "@/messaging/actions";
 
-import { ActionButton } from "./interaction-controls";
+import {
+  ActionButton,
+  prepareActionFocusNavigation,
+} from "./interaction-controls";
 
 export function MessagingBookingLink({
   locale,
@@ -25,6 +28,7 @@ export function MessagingBookingLink({
     <section className="request-follow-up" aria-label={copy.inbox}>
       <h2 className="section-title">{copy.inbox}</h2>
       <ActionButton
+        id="messaging-open-conversation"
         kind="secondary"
         size="regular"
         width="content"
@@ -36,9 +40,10 @@ export function MessagingBookingLink({
               bookingRequestReference: reference,
               commandId,
             });
-            if (result.status === "created")
+            if (result.status === "created") {
+              prepareActionFocusNavigation("messaging-open-conversation");
               router.push(`/${locale}/messages/${result.conversationId}`);
-            else setFailed(true);
+            } else setFailed(true);
           })
         }
       >

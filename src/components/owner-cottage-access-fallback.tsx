@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ActionFocusTarget } from "./interaction-controls";
 
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
@@ -20,7 +21,14 @@ export function OwnerCottageAccessFallback({
         className="access-required-card"
         role={isUnavailable ? "alert" : undefined}
       >
-        <h1>{title}</h1>
+        <h1
+          id="owner-cottage-access-title"
+          tabIndex={-1}
+          className="action-focus-target"
+        >
+          {title}
+        </h1>
+        <ActionFocusTarget targetId="owner-cottage-access-title" navigation />
         <p>
           {isUnavailable
             ? copy.unavailable

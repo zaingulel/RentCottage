@@ -238,8 +238,22 @@ export async function enrollOwner(value: unknown) {
   };
 }
 
-export async function completePhoneAccess(locale: unknown, returnTo: unknown) {
-  if (typeof locale !== "string" || !isLocale(locale))
+export async function completePhoneAccess(
+  locale: unknown,
+  returnTo: unknown,
+  inlineCompletion: unknown = false,
+) {
+  if (
+    typeof locale !== "string" ||
+    !isLocale(locale) ||
+    typeof inlineCompletion !== "boolean"
+  )
+    return { status: "unavailable" as const };
+  if (
+    inlineCompletion &&
+    (typeof returnTo !== "string" ||
+      returnTo !== safeReturnDestination(locale, returnTo))
+  )
     return { status: "unavailable" as const };
   const { resolveRequestAccount } = await import("./request-account-context");
   const account = await resolveRequestAccount();
@@ -250,6 +264,7 @@ export async function completePhoneAccess(locale: unknown, returnTo: unknown) {
   )
     return { status: "unavailable" as const };
   revalidatePath("/", "layout");
+  if (inlineCompletion) return { status: "completed" as const };
   redirect(accountAccessHref(locale, returnTo));
 }
 

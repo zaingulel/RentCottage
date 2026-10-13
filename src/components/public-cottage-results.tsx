@@ -9,7 +9,11 @@ import type { CottageDiscoveryResult } from "@/cottage-discovery/supabase-cottag
 import { formatIqd, formatServiceDay } from "@/i18n/format";
 import { publicCottageAmenityName } from "@/i18n/public-cottage-amenities";
 import type { Locale } from "@/i18n/routing";
-import { ActionFeedback, ActionLink } from "./interaction-controls";
+import {
+  ActionFeedback,
+  ActionFocusTarget,
+  ActionLink,
+} from "./interaction-controls";
 
 const copy = {
   ar: {
@@ -144,7 +148,14 @@ export function PublicCottageResults({
         <ActionLink kind="text" href={`/${locale}`}>
           {messages.back}
         </ActionLink>
-        <h1 className="page-title">{messages.title}</h1>
+        <h1
+          id="public-cottage-results-title"
+          tabIndex={-1}
+          className="page-title action-focus-target"
+        >
+          {messages.title}
+        </h1>
+        <ActionFocusTarget targetId="public-cottage-results-title" navigation />
       </header>
       <section
         className="search-summary"

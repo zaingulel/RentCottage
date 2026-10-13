@@ -263,7 +263,7 @@ Anything else is a token.
   one paragraph that carries the reader's `lang` and the `dir` from `directionFor(locale)` while it shows the
   translation and the original's own `lang` and direction while it shows the original. One compact secondary
   `ActionButton` switches between the two and keeps its place, so focus stays on it, and once Translate or Report
-  settles focus returns to it when the pending or removed button dropped it; a second reports the translation on
+  settles owned focus returns to it when the pending or removed button dropped it; a second reports the translation on
   screen and `ActionFeedback` answers it. When no translation can be produced the original stays and
   `ActionFeedback` says so. [customer-review-translation.tsx](../src/components/customer-review-translation.tsx) is
   the pattern; the conversation in `messaging-conversation.tsx` keeps its own rules until it is moved onto it.
@@ -330,6 +330,31 @@ its own; the block it sits in sets the space around it.
   `.choice-control` mark and the `.disclosure` summary, and `3px` with a `3px` offset on any other focused button,
   input, select, textarea or link.
 - Within .cottage-shift-schedule-form, action buttons, form controls and choice-control marks use --green for the existing 2px focus outline with 2px offset; other shared focus treatment remains unchanged.
+- A busy action keeps native `disabled` blocking against duplicate activation. Only a focused initiating control
+  owns focus through that action: after settlement, focus returns to the same enabled control, or to its explicitly
+  named successor when the control is removed or remains disabled. A control made busy by another action does not
+  claim focus. Callers name successors by ID; a missing target never falls back to the page body or an arbitrary
+  control.
+- A connected source that is transiently disabled keeps its focus intent; keep its target heading connected
+  during pending and render the matching local `ActionFocusTarget` only when the caller's existing pending state
+  or result says the action has settled, authorizing the named successor if the source remains disabled.
+- For a feedback successor, `ActionFeedback` accepts optional `focusTargetId?: string`. It applies the ID,
+  `tabIndex={-1}` and `action-focus-target` to its existing paragraph and includes the matching local
+  `ActionFocusTarget`, preserving the status or alert role and content. The prop is the readiness signal
+  described above: supply it only for a ready named successor and omit it while pending or for untargeted feedback.
+- Existing headings, status text and landmarks explicitly named as busy-action successors use `tabIndex={-1}`
+  and `action-focus-target`. When focus is visible after keyboard interaction, including a programmatic
+  keyboard handoff, `.action-focus-target:focus-visible` has a `3px` outline in `var(--green)` with a `3px`
+  offset. Fresh ordinary pointer focus on these targets does not draw an outline. These non-control targets
+  keep their existing semantics, copy and layout and stay outside the sequential Tab order. The gold rule above
+  continues to govern its listed controls, with the schedule exception
+  unchanged. Verify each new target's visible focus and outline contrast against its actual adjacent surface in
+  the running view. Viewport-width non-control targets add `action-focus-target-inset`, which keeps the
+  green `3px` outline and uses `outline-offset: -3px` so visible focus stays inside the viewport.
+- Moving focus elsewhere, Tab intent, an outside pointer action, browser history navigation, window blur or
+  pagehide permanently cancels owned focus, even if the element the person moved to later disappears. An action
+  that navigates must explicitly opt into a handoff to a named destination target after its commit; ordinary
+  navigation and initial page loads do not move focus through this pattern.
 - The `prefers-reduced-motion: reduce` rule turns off transitions and smooth scrolling.
 - `.action`, `.action-link`, `.action-regular`, `.form-control`, `.choice-control` and the `.disclosure` summary
   are at least `2.75rem` tall; of the shared controls only `.action-compact` (`2.25rem`) and the inline

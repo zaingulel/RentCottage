@@ -6,6 +6,7 @@ import type { BookingParticipantRole } from "@/booking-request/booking-financial
 import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
 import { formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
+import { ActionFocusTarget } from "./interaction-controls";
 import { BookingManagementControl } from "./booking-management-controls";
 import styles from "./booking-financial-details.module.css";
 export function BookingLifecycleDetails({
@@ -24,10 +25,20 @@ export function BookingLifecycleDetails({
   eligibility: BookingCompletionEligibility;
 }) {
   const c = bookingLifecycleMessages[locale];
+  const focusTargetId = `booking-lifecycle-${reference}`;
   return (
     <section aria-label={c.title}>
       <header>
-        <h2 className="section-title">{c.title}</h2>
+        <h2
+          id={focusTargetId}
+          tabIndex={-1}
+          className="section-title action-focus-target"
+        >
+          {c.title}
+        </h2>
+        {lifecycle.status !== "confirmed" ? (
+          <ActionFocusTarget targetId={focusTargetId} />
+        ) : null}
         <p>
           <strong>{c[lifecycle.status]}</strong>
         </p>
@@ -104,6 +115,7 @@ export function BookingLifecycleDetails({
               locale={locale}
               reference={reference}
               actorRole={actorRole}
+              focusSuccessorId={focusTargetId}
               action="no_show"
               commandId={crypto.randomUUID()}
             />
@@ -116,6 +128,7 @@ export function BookingLifecycleDetails({
           locale={locale}
           reference={reference}
           actorRole={actorRole}
+          focusSuccessorId={focusTargetId}
           action="incident"
           commandId={crypto.randomUUID()}
         />

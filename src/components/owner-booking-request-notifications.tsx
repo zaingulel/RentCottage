@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { ActionFocusTarget } from "./interaction-controls";
 import { useBookingRequestRefresh } from "@/booking-request/use-booking-request-refresh";
 import { BookingRequestStatusContent } from "./booking-request-status-content";
 import {
@@ -29,10 +30,12 @@ export function OwnerBookingRequestCard({
   locale,
   notification,
   refresh,
+  focusSuccessorId,
 }: {
   locale: Locale;
   notification: OwnerBookingRequestNotificationDisplay;
   refresh?: () => void;
+  focusSuccessorId?: string;
 }) {
   const copy = ownerBookingRequestMessages[locale];
   const [status, setStatus] = useState<BookingRequestDisplayStatus>(
@@ -48,6 +51,9 @@ export function OwnerBookingRequestCard({
       aria-label={notification.bookingRequestReference}
       className="owner-booking-request-card"
     >
+      {status !== "pending" && focusSuccessorId ? (
+        <ActionFocusTarget targetId={focusSuccessorId} />
+      ) : null}
       <header
         className={
           isPaymentDisplayStatus(status) ||
@@ -162,6 +168,7 @@ export function OwnerBookingRequestCard({
         <BookingRequestDecisionControls
           locale={locale}
           bookingRequestId={notification.id}
+          focusSuccessorId={focusSuccessorId}
           onStatusChange={(next) => {
             setStatus(next);
             if (next !== "pending" && next !== "processing") refresh?.();
@@ -182,9 +189,11 @@ export function OwnerBookingRequestCard({
 export function OwnerBookingRequestNotifications({
   locale,
   notifications,
+  focusSuccessorId = "owner-booking-requests-heading",
 }: {
   locale: Locale;
   notifications: OwnerBookingRequestNotificationDisplay[] | undefined;
+  focusSuccessorId?: string;
 }) {
   const copy = ownerBookingRequestMessages[locale];
   const refresh = useBookingRequestRefresh(
@@ -211,7 +220,11 @@ export function OwnerBookingRequestNotifications({
       aria-labelledby="owner-booking-requests-heading"
     >
       <div>
-        <h2 id="owner-booking-requests-heading">
+        <h2
+          id="owner-booking-requests-heading"
+          tabIndex={-1}
+          className="action-focus-target"
+        >
           {containsPaymentDisplayState ? copy.paymentTitle : copy.title}
         </h2>
         <p>{containsPaymentDisplayState ? copy.paymentIntro : copy.intro}</p>
@@ -224,6 +237,7 @@ export function OwnerBookingRequestNotifications({
             notification={notification}
             key={`${notification.bookingRequestReference}:${notification.status}`}
             refresh={refresh}
+            focusSuccessorId={focusSuccessorId}
           />
         ))}
       </div>

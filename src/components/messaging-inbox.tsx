@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ActionFocusTarget } from "./interaction-controls";
 import { bookingRequestDisplayStatusMessages } from "@/i18n/booking-request-status-messages";
 
 import { formatIraqDateTime } from "@/i18n/format";
@@ -12,6 +13,7 @@ export function MessagingInbox({
   nextCursor,
   publicSlug,
   contextQuery,
+  navigationFocus = true,
 }: {
   readonly locale: Locale;
   readonly items: readonly MessagingInboxItem[];
@@ -21,11 +23,21 @@ export function MessagingInbox({
   } | null;
   readonly publicSlug?: string;
   readonly contextQuery?: string;
+  readonly navigationFocus?: boolean;
 }) {
   const copy = messagingMessages[locale];
   return (
     <section className="messaging-shell" dir={directionFor(locale)}>
-      <h1 className="page-title">{copy.inbox}</h1>
+      <h1
+        id="messaging-inbox-title"
+        tabIndex={-1}
+        className="page-title action-focus-target"
+      >
+        {copy.inbox}
+      </h1>
+      {navigationFocus && (
+        <ActionFocusTarget targetId="messaging-inbox-title" navigation />
+      )}
       {items.length === 0 ? (
         <p>{copy.empty}</p>
       ) : (

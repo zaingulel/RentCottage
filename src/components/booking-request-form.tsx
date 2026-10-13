@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 
 import { submitBookingRequest } from "@/booking-request/actions";
 import type { SubmissionResult } from "@/booking-request/booking-request-submission";
@@ -26,6 +26,7 @@ import { messagingMessages } from "@/i18n/messaging-messages";
 import {
   ActionButton,
   ActionFeedback,
+  ActionFocusTarget,
   ActionLink,
   ChoiceControl,
   FormControl,
@@ -60,6 +61,7 @@ export function BookingRequestForm({
   returnTo?: string;
 }) {
   const copy = bookingRequestMessages[locale];
+  const receiptStatusLinkId = useId();
   const quoteNotice = bookingQuoteMessages[locale].notice;
   const firstStartsAt = quote.items[0]?.startsAt ?? "";
   const [verified, setVerified] = useState(customerReady);
@@ -105,10 +107,12 @@ export function BookingRequestForm({
             : copy.existingExplanation}
         </p>
         <Link
+          id={receiptStatusLinkId}
           href={`/${locale}/booking-requests/${result.bookingRequestReference}`}
         >
           {copy.viewStatus}
         </Link>
+        {!pending && <ActionFocusTarget targetId={receiptStatusLinkId} />}
       </section>
     );
   }
@@ -132,6 +136,7 @@ export function BookingRequestForm({
           locale={locale}
           onVerified={() => setVerified(true)}
           returnTo={returnTo}
+          verifiedFocusTargetId="booking-request-content"
         />
       </section>
     );
@@ -308,6 +313,7 @@ export function BookingRequestForm({
             width="full"
             type="submit"
             pending={pending}
+            focusSuccessorId={receiptStatusLinkId}
           >
             {pending ? copy.pendingAction : copy.submit}
           </ActionButton>

@@ -403,26 +403,55 @@ test.describe("retained cancellation and refund controls", () => {
     ) => {
       const form = page.getByRole("form", { name: p[action] });
       await form.getByLabel(p.reason, { exact: true }).fill(reason);
-      await form.getByRole("button", { name: p[action], exact: true }).click();
+      const payoutCommandControl = form.getByRole("button", {
+        name: p[action],
+        exact: true,
+      });
+      await payoutCommandControl.focus();
+      await expect(payoutCommandControl).toBeFocused();
+      await payoutCommandControl.press("Enter");
     };
     await command("place_hold", "PRIVATE payout review");
     await expect(page.getByText(p.held, { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: p.title, exact: true }),
+    ).toBeFocused();
+
     await command("open_dispute", "PRIVATE dispute review");
     await expect(page.getByText(p.open, { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: p.title, exact: true }),
+    ).toBeFocused();
+
     const resolution = page.getByRole("form", { name: p.resolve_dispute });
     await resolution.getByLabel(p.outcome).selectOption("owner_won");
     await resolution
       .getByLabel(p.reason, { exact: true })
       .fill("PRIVATE decision");
-    await resolution
-      .getByRole("button", { name: p.resolve_dispute, exact: true })
-      .click();
+    const payoutResolveControl = resolution.getByRole("button", {
+      name: p.resolve_dispute,
+      exact: true,
+    });
+    await payoutResolveControl.focus();
+    await expect(payoutResolveControl).toBeFocused();
+    await payoutResolveControl.press("Enter");
     await expect(page.getByText(p.resolved, { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: p.title, exact: true }),
+    ).toBeFocused();
+
     await expect(page.getByText(p.held, { exact: true })).toBeVisible();
     await command("settle", "Held settlement check");
     await expect(
       page.getByRole("form", { name: p.settle }).getByRole("alert"),
     ).toContainText(p.blocked);
+    await expect(
+      page.getByRole("form", { name: p.settle }).getByRole("button", {
+        name: p.settle,
+        exact: true,
+      }),
+    ).toBeFocused();
+
     expect(
       harness.runSql(
         `select count(*) from public.payment_provider_operations where operation_kind='settlement'`,
@@ -432,6 +461,10 @@ test.describe("retained cancellation and refund controls", () => {
     await page.goto(`/en/administrator/payments/${reference}`);
     await command("release_hold", "PRIVATE review complete");
     await expect(page.getByText(p.clear, { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: p.title, exact: true }),
+    ).toBeFocused();
+
     await command("settle", "PRIVATE settlement approval");
     await expect(
       page
@@ -442,6 +475,10 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(page.getByTestId("settlement-recovery")).toContainText(
       p.noDebit,
     );
+    await expect(
+      page.getByRole("heading", { name: p.title, exact: true }),
+    ).toBeFocused();
+
     const settlementViewport = page.viewportSize()!;
     const settlementObservations: {
       locale: string;
@@ -650,10 +687,20 @@ test.describe("retained cancellation and refund controls", () => {
     await form.getByRole("checkbox").focus();
     await page.keyboard.press("Space");
     await page.keyboard.press("Tab");
-    await page.keyboard.press("Enter");
+    const cancelCustomerControl = form.getByRole("button", {
+      name: messages.en.cancel,
+      exact: true,
+    });
+    await cancelCustomerControl.focus();
+    await expect(cancelCustomerControl).toBeFocused();
+    await cancelCustomerControl.press("Enter");
     await expect(
       page.getByRole("heading", { name: "Cancelled booking", exact: true }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: messages.en.cancelled, exact: true }),
+    ).toBeFocused();
+
     await expect(
       page.getByRole("heading", { name: "Full refund required", exact: true }),
     ).toBeVisible();
@@ -698,6 +745,14 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByText("Private address", { exact: true }),
     ).toHaveCount(0);
+    const cancelledMain = page.locator("#customer-booking-request-detail");
+    await cancelledMain.focus();
+    await expect(cancelledMain).toBeFocused();
+    await expect(cancelledMain).toHaveCSS("outline-offset", "-3px");
+    await page.screenshot({
+      path: test.info().outputPath("cancelled-full-width-main-focus-en.png"),
+      fullPage: true,
+    });
   });
   test("owner must supply a reason and retains the no-payout cancellation outcome", async ({
     page,
@@ -712,12 +767,20 @@ test.describe("retained cancellation and refund controls", () => {
       .click();
     await expect(form.getByRole("textbox")).toBeFocused();
     await form.getByRole("textbox").fill("PRIVATE owner operational reason");
-    await form
-      .getByRole("button", { name: messages.ar.cancel, exact: true })
-      .click();
+    const cancelOwnerControl = form.getByRole("button", {
+      name: messages.ar.cancel,
+      exact: true,
+    });
+    await cancelOwnerControl.focus();
+    await expect(cancelOwnerControl).toBeFocused();
+    await cancelOwnerControl.press("Enter");
     await expect(
       page.getByRole("heading", { name: messages.ar.cancelled, exact: true }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: messages.ar.cancelled, exact: true }),
+    ).toBeFocused();
+
     await expect(
       page.getByText(messages.ar.noPayout, { exact: true }),
     ).toBeVisible();
@@ -750,7 +813,12 @@ test.describe("retained cancellation and refund controls", () => {
         .inputValue();
       await form.getByLabel(messages.en.priceInput).fill("20000");
       await form.getByLabel(messages.en.feeInput).fill("0.001");
-      await form.getByRole("button", { name: messages.en.approve }).click();
+      const exceptionFirstControl = form.getByRole("button", {
+        name: messages.en.approve,
+      });
+      await exceptionFirstControl.focus();
+      await expect(exceptionFirstControl).toBeFocused();
+      await exceptionFirstControl.press("Enter");
       await expectAmount(
         page.getByRole("list", { name: messages.en.approved }),
         messages.en.total,
@@ -760,6 +828,10 @@ test.describe("retained cancellation and refund controls", () => {
         initialId,
       );
       await expect(form.getByLabel(messages.en.reason)).toHaveValue("");
+      await expect(
+        page.getByRole("heading", { name: messages.en.title, exact: true }),
+      ).toBeFocused();
+
       await participant(ownerContext, owner, baseURL);
       const ownerPage = await ownerContext.newPage();
       await ownerPage.goto(`${baseURL}/en/owner/booking-requests/${reference}`);
@@ -795,10 +867,19 @@ test.describe("retained cancellation and refund controls", () => {
         .getByLabel(messages.en.reason)
         .fill("PRIVATE fee-only compensation");
       await form.getByLabel(messages.en.feeInput).fill("0.002");
-      await form.getByRole("button", { name: messages.en.approve }).click();
+      const exceptionFeeControl = form.getByRole("button", {
+        name: messages.en.approve,
+      });
+      await exceptionFeeControl.focus();
+      await expect(exceptionFeeControl).toBeFocused();
+      await exceptionFeeControl.press("Enter");
       await expect(
         page.getByRole("list", { name: messages.en.approved }).locator("li"),
       ).toHaveCount(2);
+      await expect(
+        page.getByRole("heading", { name: messages.en.title, exact: true }),
+      ).toBeFocused();
+
       expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
       await ownerPage.goto(`${baseURL}/en/owner/booking-requests/${reference}`);
       await expectAmount(
@@ -818,15 +899,26 @@ test.describe("retained cancellation and refund controls", () => {
         .getByLabel(messages.ckb.reason, { exact: true })
         .fill("PRIVATE administrator safety reason");
       await cancel.getByRole("checkbox").check();
-      await cancel
-        .getByRole("button", { name: messages.ckb.cancel, exact: true })
-        .click();
+      const cancelAdministratorControl = cancel.getByRole("button", {
+        name: messages.ckb.cancel,
+        exact: true,
+      });
+      await cancelAdministratorControl.focus();
+      await expect(cancelAdministratorControl).toBeFocused();
+      await cancelAdministratorControl.press("Enter");
       await expect(
         page.getByRole("heading", {
           name: messages.ckb.cancelled,
           exact: true,
         }),
       ).toBeVisible();
+      await expect(
+        page.getByRole("heading", {
+          name: messages.ckb.cancelled,
+          exact: true,
+        }),
+      ).toBeFocused();
+
       await expect(
         page.getByText(messages.ckb.noPayout, { exact: true }),
       ).toBeVisible();

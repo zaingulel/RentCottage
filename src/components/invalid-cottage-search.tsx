@@ -1,5 +1,5 @@
 import type { Locale } from "@/i18n/routing";
-import { ActionLink } from "./interaction-controls";
+import { ActionFocusTarget, ActionLink } from "./interaction-controls";
 
 const copy = {
   ar: {
@@ -27,7 +27,14 @@ export function InvalidCottageSearch({ locale }: { locale: Locale }) {
         <ActionLink kind="text" href={`/${locale}`}>
           {messages.back}
         </ActionLink>
-        <h1 className="page-title">{messages.title}</h1>
+        <h1
+          id="invalid-cottage-search-title"
+          tabIndex={-1}
+          className="page-title action-focus-target"
+        >
+          {messages.title}
+        </h1>
+        <ActionFocusTarget targetId="invalid-cottage-search-title" navigation />
         <p>{messages.detail}</p>
       </header>
     </main>

@@ -6,7 +6,7 @@ import { publicCottageAmenityName } from "@/i18n/public-cottage-amenities";
 import type { Locale } from "@/i18n/routing";
 import { customerReviewMessages } from "@/i18n/customer-review-messages";
 import { CottageBookingPeriodPicker } from "./cottage-booking-period-picker";
-import { ActionLink } from "./interaction-controls";
+import { ActionFocusTarget, ActionLink } from "./interaction-controls";
 
 const copy = {
   ar: {
@@ -64,7 +64,15 @@ export function PublicCottageProfileView({
             {messages.back}
           </ActionLink>
         </header>
-        <p role="alert">{messages.unavailable}</p>
+        <p
+          id="public-cottage-unavailable"
+          role="alert"
+          tabIndex={-1}
+          className="action-focus-target"
+        >
+          {messages.unavailable}
+        </p>
+        <ActionFocusTarget targetId="public-cottage-unavailable" navigation />
       </main>
     );
   const cottage = result.cottage;
@@ -77,7 +85,14 @@ export function PublicCottageProfileView({
         >
           {messages.back}
         </ActionLink>
-        <h1 className="page-title">{cottage.name}</h1>
+        <h1
+          id="public-cottage-profile-title"
+          tabIndex={-1}
+          className="page-title action-focus-target"
+        >
+          {cottage.name}
+        </h1>
+        <ActionFocusTarget targetId="public-cottage-profile-title" navigation />
         <p>
           {messages.location}: {cottage.approximateLocation},{" "}
           {cottage.governorate}

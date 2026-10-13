@@ -79,6 +79,32 @@ describe("Messaging conversation", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps the reading position after a reported translation removes its action", async () => {
+    const user = userEvent.setup();
+    let finish!: (value: { status: "reported"; reportId: string }) => void;
+    report.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    render(<MessagingConversation locale="en" conversation={conversation} />);
+    const button = screen.getByRole("button", {
+      name: "Report poor translation",
+    });
+    button.focus();
+    await user.keyboard("{Enter}");
+    expect(button).toBeDisabled();
+
+    await act(async () =>
+      finish({ status: "reported", reportId: "reported-translation" }),
+    );
+    expect(button).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Translation reported.",
+    );
+    expect(screen.getByRole("button", { name: "View original" })).toHaveFocus();
+  });
+
   it("names the original language of a message instead of its code", () => {
     render(<MessagingConversation locale="en" conversation={conversation} />);
     const sourceLine = within(

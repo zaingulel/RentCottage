@@ -24,6 +24,7 @@ import styles from "./customer-reviews.module.css";
 import {
   ActionButton,
   ActionFeedback,
+  ActionFocusTarget,
   ActionLink,
   FormControl,
 } from "./interaction-controls";
@@ -68,19 +69,24 @@ function HideWithReason({
   const [notice, setNotice] = useState<{
     kind: "error" | "success";
     text: string;
+    focus?: true;
   }>();
   const [pending, startTransition] = useTransition();
   const noticeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (notice?.kind === "error") noticeRef.current?.focus();
+    if (notice?.focus) noticeRef.current?.focus();
   }, [notice]);
 
   function submit(formData: FormData) {
     const value = formData.get("reason");
     const reason = typeof value === "string" ? value.trim() : "";
     if (!reason) {
-      setNotice({ kind: "error", text: copy[keys.reasonRequired] });
+      setNotice({
+        kind: "error",
+        text: copy[keys.reasonRequired],
+        focus: true,
+      });
       return;
     }
     setNotice(undefined);
@@ -149,16 +155,17 @@ function HideWithReason({
             size="regular"
             type="submit"
             pending={pending}
+            focusSuccessorId="administrator-reviews-heading"
           >
             {pending ? copy.hiding : copy[keys.submitLabel]}
           </ActionButton>
         </form>
       )}
+      {!pending ? (
+        <ActionFocusTarget targetId="administrator-reviews-heading" />
+      ) : null}
       {notice ? (
-        <div
-          ref={noticeRef}
-          tabIndex={notice.kind === "error" ? -1 : undefined}
-        >
+        <div ref={noticeRef} tabIndex={notice.focus ? -1 : undefined}>
           <ActionFeedback kind={notice.kind}>{notice.text}</ActionFeedback>
         </div>
       ) : null}
@@ -317,7 +324,18 @@ export function CustomerReviewModeration({
   if (result.status === "invalid")
     return (
       <main className={styles.page}>
-        <h1>{copy.administratorTitle}</h1>
+        <h1
+          id="administrator-reviews-heading"
+          tabIndex={-1}
+          className="action-focus-target"
+        >
+          {copy.administratorTitle}
+        </h1>
+        <ActionFocusTarget
+          targetId="administrator-reviews-heading"
+          navigation
+        />
+        <ActionFocusTarget targetId="administrator-reviews-heading" />
         <ReviewFilterForm locale={locale} filters={filters} />
         <ActionFeedback kind="error">
           {administratorQueuesMessages[locale].invalid}
@@ -327,7 +345,18 @@ export function CustomerReviewModeration({
   if (result.status !== "success")
     return (
       <main className={styles.page}>
-        <h1>{copy.administratorTitle}</h1>
+        <h1
+          id="administrator-reviews-heading"
+          tabIndex={-1}
+          className="action-focus-target"
+        >
+          {copy.administratorTitle}
+        </h1>
+        <ActionFocusTarget
+          targetId="administrator-reviews-heading"
+          navigation
+        />
+        <ActionFocusTarget targetId="administrator-reviews-heading" />
         <p role={result.status === "unavailable" ? "alert" : undefined}>
           {result.status === "access-required"
             ? copy.administratorAccessRequired
@@ -347,7 +376,15 @@ export function CustomerReviewModeration({
     );
   return (
     <main className={styles.page}>
-      <h1>{copy.administratorTitle}</h1>
+      <h1
+        id="administrator-reviews-heading"
+        tabIndex={-1}
+        className="action-focus-target"
+      >
+        {copy.administratorTitle}
+      </h1>
+      <ActionFocusTarget targetId="administrator-reviews-heading" navigation />
+      <ActionFocusTarget targetId="administrator-reviews-heading" />
       <ActionLink
         kind="secondary"
         width="content"

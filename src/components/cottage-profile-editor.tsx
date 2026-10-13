@@ -22,6 +22,7 @@ import {
   cottageProfileStatusLabel,
 } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
+import { ActionFocusTarget } from "./interaction-controls";
 
 import { CottageLocationFields } from "./cottage-location-fields";
 
@@ -167,7 +168,17 @@ export function CottageProfileEditor({
       <div className="application-section-heading">
         <span>01</span>
         <div>
-          <h1>{copy.editorTitle}</h1>
+          <h1
+            id="cottage-profile-editor-title"
+            tabIndex={-1}
+            className="action-focus-target"
+          >
+            {copy.editorTitle}
+          </h1>
+          <ActionFocusTarget
+            targetId="cottage-profile-editor-title"
+            navigation
+          />
           <p>{copy.completion}</p>
         </div>
       </div>

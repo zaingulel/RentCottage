@@ -480,8 +480,19 @@ async function saveOwnerApplicationDraft(
   for (const label of [copy.garden, copy.parking]) {
     await page.getByLabel(label).check();
   }
-  await page.getByRole("button", { name: copy.saveDraft }).click();
+  const draftControl = page.getByRole("button", { name: copy.saveDraft });
+  await draftControl.focus();
+  await expect(draftControl).toBeFocused();
+  const draftSource = await draftControl.elementHandle();
+  if (!draftSource) throw new Error("Focus source is missing");
+  await draftControl.press("Enter");
   await expect(page.getByRole("status")).toContainText(copy.saved);
+  await expect(draftControl).toBeFocused();
+  expect(
+    await draftSource.evaluate((source) => document.activeElement === source),
+  ).toBe(true);
+  await draftSource.dispose();
+
   await page.reload();
 }
 
@@ -738,16 +749,36 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
           ? originalIdentityBytes
           : Buffer.from("%PDF-1.7\nprivate-test-document\n%%EOF"),
     });
-    await card.getByRole("button", { name: "Upload document" }).click();
+    const uploadControl = card.getByRole("button", { name: "Upload document" });
+    await uploadControl.focus();
+    await expect(uploadControl).toBeFocused();
+    const uploadSource = await uploadControl.elementHandle();
+    if (!uploadSource) throw new Error("Focus source is missing");
+    await uploadControl.press("Enter");
     await expect(card.getByRole("status")).toContainText(
       browserFixtures.en.application.uploaded,
     );
+    await expect(
+      card.getByRole("button", { name: "Replace document", exact: true }),
+    ).toBeFocused();
+    expect(
+      await uploadSource.evaluate(
+        (source) => document.activeElement === source,
+      ),
+    ).toBe(true);
+    await uploadSource.dispose();
+
     await expect(
       page.getByRole("article", { name: label }).getByText(filename),
     ).toBeVisible();
   }
 
-  await page.getByRole("button", { name: "Submit application" }).click();
+  const applicationSubmitControl = page.getByRole("button", {
+    name: "Submit application",
+  });
+  await applicationSubmitControl.focus();
+  await expect(applicationSubmitControl).toBeFocused();
+  await applicationSubmitControl.press("Enter");
   await expect(
     page.locator(".owner-review-status").getByText("Submitted for review"),
   ).toBeVisible();
@@ -755,6 +786,13 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
   await expect(
     page.getByRole("button", { name: "Submit application" }),
   ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", {
+      name: "Prepare your Owner Application",
+      exact: true,
+    }),
+  ).toBeFocused();
+
   await expect(page.getByRole("button", { name: /publish/i })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /booking/i })).toHaveCount(0);
 
@@ -892,6 +930,7 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
         name: browserFixtures[locale].review.openDocument,
       });
       await expect(link).toBeVisible();
+      await expect(createLink).toBeFocused();
       const href = await link.getAttribute("href");
       if (!href) throw new Error("Owned secure link has no URL");
       const signedUrl = new URL(href, administratorPage.url());
@@ -1361,12 +1400,21 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await page.getByLabel("Iraqi phone number").fill(phone);
   await page.getByRole("button", { name: "Send verification code" }).click();
   await page.getByLabel("Verification code").fill("123456");
-  await page.getByRole("button", { name: "Verify" }).click();
+  const approvedOwnerVerify = page.getByRole("button", {
+    name: "Verify",
+    exact: true,
+  });
+  await approvedOwnerVerify.focus();
+  await expect(approvedOwnerVerify).toBeFocused();
+  await approvedOwnerVerify.press("Enter");
   await expect(page).toHaveURL(/\/en\/owner\/cottages$/);
 
   await expect(
     page.getByRole("heading", { name: "Your cottages" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Your cottages", exact: true }),
+  ).toBeFocused();
   await expect(page.getByText("Started in Owner Application")).toBeVisible();
   await page
     .getByRole("button", { name: "Create another cottage draft" })
@@ -1420,6 +1468,28 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await page.getByLabel("Guest capacity").fill("10");
   await page.getByLabel("Bedrooms").fill("4");
   await page.getByLabel("Bathrooms").fill("3");
+  await page.context().grantPermissions(["geolocation"]);
+  await page
+    .context()
+    .setGeolocation({ latitude: 36.408333, longitude: 44.385834 });
+  const locationControl = page.getByRole("button", {
+    name: "Use this device\'s location",
+  });
+  await locationControl.focus();
+  await expect(locationControl).toBeFocused();
+  const locationSource = await locationControl.elementHandle();
+  if (!locationSource) throw new Error("Focus source is missing");
+  await locationControl.press("Enter");
+  await expect(page.getByLabel("Latitude")).toHaveValue("36.408333");
+  await expect(page.getByLabel("Longitude")).toHaveValue("44.385834");
+  await expect(locationControl).toBeFocused();
+  expect(
+    await locationSource.evaluate(
+      (source) => document.activeElement === source,
+    ),
+  ).toBe(true);
+  await locationSource.dispose();
+
   await page.getByLabel("Latitude").fill("36.408333");
   await page.getByLabel("Longitude").fill("44.385834");
   await page.getByLabel("I checked this point is the cottage").check();
@@ -1762,10 +1832,23 @@ test("an approved owner continues the first Cottage Profile and submits a privat
 
     await page.keyboard.press("Space");
     await expect(confirmation).toBeChecked();
-    await save.click();
+    const scheduleControl = save;
+    await scheduleControl.focus();
+    await expect(scheduleControl).toBeFocused();
+    const scheduleSource = await scheduleControl.elementHandle();
+    if (!scheduleSource) throw new Error("Focus source is missing");
+    await scheduleControl.press("Enter");
     await expect(
       scheduleForm.getByRole("status").filter({ hasText: copy.saved }),
     ).toBeVisible();
+    await expect(scheduleControl).toBeFocused();
+    expect(
+      await scheduleSource.evaluate(
+        (source) => document.activeElement === source,
+      ),
+    ).toBe(true);
+    await scheduleSource.dispose();
+
     await expect(confirmation).not.toBeChecked();
     await page.reload();
     await expect(morningStart).toHaveValue("09:00");
@@ -1987,13 +2070,22 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await page.goto("/en/administrator/access");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("Local-test-password-2026");
-  await page.getByLabel("Password").press("Enter");
+  const administratorContinueControl = page.getByRole("button", {
+    name: "Continue",
+    exact: true,
+  });
+  await administratorContinueControl.focus();
+  await expect(administratorContinueControl).toBeFocused();
+  await administratorContinueControl.press("Enter");
+  await expect(page.getByLabel("Authenticator app code")).toBeVisible();
+
   const secret = await page.getByTestId("mfa-secret").textContent();
   if (!secret) throw new Error("MFA enrollment returned no secret");
   const failedAttemptedAfter = new Date().toISOString();
   await page.getByLabel("Authenticator app code").fill("12");
   await page.getByLabel("Authenticator app code").press("Enter");
   await expect(page.getByText(/code could not be confirmed/)).toBeVisible();
+
   const failedAudit = await currentAudit(
     actorUserId,
     failedAttemptedAfter,
@@ -2006,9 +2098,21 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     secret: OTPAuth.Secret.fromBase32(secret),
   }).generate();
   await page.getByLabel("Authenticator app code").fill(code);
-  await page.getByLabel("Authenticator app code").press("Enter");
+  const administratorVerifyControl = page.getByRole("button", {
+    name: "Verify",
+    exact: true,
+  });
+  await administratorVerifyControl.focus();
+  await expect(administratorVerifyControl).toBeFocused();
+  await administratorVerifyControl.press("Enter");
 
   await expect(page.getByText(/Administrator access is ready/)).toBeVisible();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Administrator access is ready" }),
+  ).toBeFocused();
+
   const audit = await currentAudit(
     actorUserId,
     attemptedAfter,
@@ -2336,12 +2440,24 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     const createLink = identityDocument.getByRole("button", {
       name: copy.createLink,
     });
-    await tabTo(page, createLink);
-    await page.keyboard.press("Enter");
+    const secureLinkControl = createLink;
+    await secureLinkControl.focus();
+    await expect(secureLinkControl).toBeFocused();
+    const secureLinkSource = await secureLinkControl.elementHandle();
+    if (!secureLinkSource) throw new Error("Focus source is missing");
+    await secureLinkControl.press("Enter");
     const secureLink = identityDocument.getByRole("link", {
       name: copy.openDocument,
     });
     await expect(secureLink).toBeVisible();
+    await expect(secureLinkControl).toBeFocused();
+    expect(
+      await secureLinkSource.evaluate(
+        (source) => document.activeElement === source,
+      ),
+    ).toBe(true);
+    await secureLinkSource.dispose();
+
     const viewport = page.viewportSize();
     if (!viewport) throw new Error("Browser viewport is unavailable");
     expect(
@@ -3498,18 +3614,75 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
   assertIsolatedLocalAccessDatabase();
   const before = await listAllAccessFixtureUsers(auditClient.auth.admin);
   expect(findAccessFixtureUser(before, phone)).toBeUndefined();
-  async function verify(target: Page) {
+  async function verify(target: Page, moveDuringSend = false) {
     await target.getByLabel("Iraqi phone number").fill(phone);
-    await target
-      .getByRole("button", { name: "Send verification code" })
-      .click();
-    await expect(target.getByLabel("Verification code")).toBeVisible();
+    const phoneSendControl = target.getByRole("button", {
+      name: "Send verification code",
+    });
+    await phoneSendControl.focus();
+    await expect(phoneSendControl).toBeFocused();
+    const phoneSendSource = await phoneSendControl.elementHandle();
+    if (!phoneSendSource) throw new Error("Focus source is missing");
+    const sendRoute = target.url();
+    let releaseSendResponse: () => void = () => {};
+    const sendRelease = new Promise<void>((resolve) => {
+      releaseSendResponse = resolve;
+    });
+    let recordSendResponse: () => void = () => {};
+    const sendFetched = new Promise<void>((resolve) => {
+      recordSendResponse = resolve;
+    });
+    if (moveDuringSend) {
+      await target.route(sendRoute, async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        const response = await route.fetch();
+        recordSendResponse();
+        await sendRelease;
+        await route.fulfill({ response });
+      });
+    }
+    try {
+      await phoneSendControl.press("Enter");
+      if (moveDuringSend) {
+        await sendFetched;
+        await expect(phoneSendControl).toBeDisabled();
+        await expect(phoneSendControl).toHaveAttribute("aria-busy", "true");
+        expect(
+          await phoneSendSource.evaluate((source) => source.isConnected),
+        ).toBe(true);
+        const elsewhere = target.getByLabel("Iraqi phone number");
+        await expect(elsewhere).toBeEnabled();
+        await elsewhere.focus();
+        await expect(elsewhere).toBeFocused();
+        releaseSendResponse();
+      }
+      await expect(target.getByLabel("Verification code")).toBeVisible();
+      if (moveDuringSend)
+        await expect(target.getByLabel("Verification code")).not.toBeFocused();
+    } finally {
+      releaseSendResponse();
+      if (moveDuringSend) await target.unroute(sendRoute);
+    }
+    await phoneSendSource.dispose();
+
     await target.getByLabel("Verification code").fill("123456");
-    await target.getByRole("button", { name: "Verify", exact: true }).click();
+    const phoneVerifyControl = target.getByRole("button", {
+      name: "Verify",
+      exact: true,
+    });
+    await phoneVerifyControl.focus();
+    await expect(phoneVerifyControl).toBeFocused();
+    await phoneVerifyControl.press("Enter");
+    await expect(
+      target.getByRole("heading", { name: "My bookings", exact: true }),
+    ).toBeVisible();
+    await expect(
+      target.getByRole("heading", { name: "My bookings", exact: true }),
+    ).toBeFocused();
   }
   await page.goto("/en/bookings");
   await expect(page).toHaveURL(/\/en\/access\?returnTo=%2Fen%2Fbookings/);
-  await verify(page);
+  await verify(page, true);
   await expect(
     page.getByRole("heading", { name: "My bookings", exact: true }),
   ).toBeVisible();
@@ -3544,8 +3717,15 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
     page.getByRole("heading", { name: "Become a Cottage Owner" }),
   ).toBeVisible();
   expect(accountContext().role).toBe("customer");
-  await page.getByRole("button", { name: "Start owner application" }).click();
+  const enrollControl = page.getByRole("button", {
+    name: "Start owner application",
+  });
+  await enrollControl.focus();
+  await expect(enrollControl).toBeFocused();
+  await enrollControl.press("Enter");
   await expect(page).toHaveURL(/\/en\/owner\/application$/);
+  await expect(page.locator("#owner-application-title")).toBeFocused();
+
   expect(accountContext()).toEqual({
     user_id: userId,
     role: "cottage_owner",

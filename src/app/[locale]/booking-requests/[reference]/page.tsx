@@ -1,3 +1,4 @@
+import { ActionFocusTarget } from "@/components/interaction-controls";
 import { RequestNotificationDetails } from "@/components/request-notification-details";
 import { BookingFinancialDetails } from "@/components/booking-financial-details";
 import { requireRequestAccount } from "@/access/request-account-context";
@@ -44,6 +45,7 @@ export default async function CustomerBookingRequestPage({
         locale={locale}
         status="unavailable"
         returnTo={returnTo}
+        focusTargetId="customer-booking-request-detail"
       />
     );
   const messaging = (
@@ -56,13 +58,29 @@ export default async function CustomerBookingRequestPage({
         locale={locale}
         status="denied"
         returnTo={returnTo}
+        focusTargetId="customer-booking-request-detail"
       />
     );
   if (details.outcome === "unavailable")
     return (
-      <main className="results-page">
+      <main
+        id="customer-booking-request-detail"
+        tabIndex={-1}
+        className="results-page action-focus-target"
+      >
+        <ActionFocusTarget targetId="customer-booking-request-detail" />
         <section role="alert">
-          <h1>{unavailableCopy[locale].title}</h1>
+          <h1
+            id="customer-booking-request-unavailable-title"
+            tabIndex={-1}
+            className="action-focus-target"
+          >
+            {unavailableCopy[locale].title}
+          </h1>
+          <ActionFocusTarget
+            targetId="customer-booking-request-unavailable-title"
+            navigation
+          />
           <Link href={`/${locale}`}>{unavailableCopy[locale].home}</Link>
         </section>
       </main>
@@ -76,7 +94,12 @@ export default async function CustomerBookingRequestPage({
   );
   if (details.outcome === "cancelled")
     return (
-      <main className="results-page">
+      <main
+        id="customer-booking-request-detail"
+        tabIndex={-1}
+        className="results-page action-focus-target action-focus-target-inset"
+      >
+        <ActionFocusTarget targetId="customer-booking-request-detail" />
         <BookingFinancialDetails locale={locale} view={details.financial} />
         {messaging}
         {notices}
@@ -84,7 +107,12 @@ export default async function CustomerBookingRequestPage({
     );
   if (details.outcome === "confirmed")
     return (
-      <main className="results-page page page-record">
+      <main
+        id="customer-booking-request-detail"
+        tabIndex={-1}
+        className="results-page page page-record action-focus-target"
+      >
+        <ActionFocusTarget targetId="customer-booking-request-detail" />
         <div className="booking-request-progress-card">
           <BookingRequestProgress
             locale={locale}
@@ -109,8 +137,17 @@ export default async function CustomerBookingRequestPage({
       </main>
     );
   return (
-    <main className="results-page page page-record">
-      <CustomerBookingRequestStatus locale={locale} request={details.request} />
+    <main
+      id="customer-booking-request-detail"
+      tabIndex={-1}
+      className="results-page page page-record action-focus-target"
+    >
+      <ActionFocusTarget targetId="customer-booking-request-detail" />
+      <CustomerBookingRequestStatus
+        locale={locale}
+        request={details.request}
+        focusSuccessorId="customer-booking-request-detail"
+      />
       {messaging}
       {notices}
     </main>

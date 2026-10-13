@@ -6,7 +6,11 @@ import { useState, useTransition } from "react";
 import { messagingMessages } from "@/i18n/messaging-messages";
 import type { Locale } from "@/i18n/routing";
 import { startMessagingConversation } from "@/messaging/actions";
-import { ActionButton, ActionFeedback } from "./interaction-controls";
+import {
+  ActionButton,
+  ActionFeedback,
+  prepareActionFocusNavigation,
+} from "./interaction-controls";
 
 export function MessagingStart({
   locale,
@@ -26,6 +30,7 @@ export function MessagingStart({
     <div>
       <p>{copy.newEnquiryHelp}</p>
       <ActionButton
+        id="messaging-start-conversation"
         kind="primary"
         width="content"
         type="button"
@@ -37,6 +42,7 @@ export function MessagingStart({
               commandId,
             });
             if (result.status === "created") {
+              prepareActionFocusNavigation("messaging-start-conversation");
               router.push(
                 `/${locale}/messages/${result.conversationId}${contextQuery ? `?${contextQuery}` : ""}`,
               );

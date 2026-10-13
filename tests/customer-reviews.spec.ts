@@ -984,6 +984,13 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   await expect(
     page.getByRole("heading", { name: "Customer review moderation" }),
   ).toBeVisible();
+  await page.getByLabel("Status").selectOption("unhidden");
+  await page.getByRole("button", { name: "Apply filters" }).click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === "/en/administrator/reviews" &&
+      url.searchParams.get("state") === "unhidden",
+  );
   const review = await openAdministratorReview(
     page,
     primary.ids.bookingReference,
@@ -1000,14 +1007,14 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   await expect(review.getByRole("alert")).toContainText("Enter a reason");
   const reason = "Contact-safety moderation fixture";
   await review.getByLabel("Reason for hiding").fill(reason);
-  await review.getByRole("button", { name: "Hide review" }).click();
-  await expect(review.getByRole("status")).toContainText(
-    "The review was hidden.",
-  );
-  await expect(review).toContainText(reason);
-  await page.reload();
-  await expect(review.getByText(original)).toBeVisible();
-  await expect(review.getByText(reason)).toBeVisible();
+  const hideReviewControl = review.getByRole("button", { name: "Hide review" });
+  await hideReviewControl.focus();
+  await expect(hideReviewControl).toBeFocused();
+  await hideReviewControl.press("Enter");
+  await expect(review).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Customer review moderation", level: 1 }),
+  ).toBeFocused();
 
   const baghdadDate = (at: number) =>
     new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Baghdad" }).format(at);
@@ -1024,6 +1031,7 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
     page,
     primary.ids.bookingReference,
   );
+  await expect(hiddenReview.getByText(original)).toBeVisible();
   await expect(hiddenReview.getByText(reason)).toBeVisible();
   await expect(page.getByText("Matching reviews")).toBeVisible();
   await captureReviewFilters(page, "en");
@@ -1200,7 +1208,10 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     expect(countReviewRows("customer_review_replies")).toBe("0");
 
     await ownerReview.getByLabel("Public reply").fill(replyBody);
-    await publishReply.click();
+    const replyPublishControl = publishReply;
+    await replyPublishControl.focus();
+    await expect(replyPublishControl).toBeFocused();
+    await replyPublishControl.press("Enter");
     const expectPublishedReply = async () => {
       await expect(
         ownerReview.getByRole("heading", { name: "Your reply" }),
@@ -1212,6 +1223,14 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
       await expect(ownerReview).not.toContainText("Visible to visitors");
     };
     await expectPublishedReply();
+    await expect(
+      ownerReview.getByRole("heading", {
+        name: "Customer review",
+        exact: true,
+        level: 2,
+      }),
+    ).toBeFocused();
+
     await page.reload();
     await expectPublishedReply();
     const ownerClient = await signedInPhoneClient(fixture.phones.owner);
@@ -1304,20 +1323,31 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
         card.getByRole("button", { name, exact: true }).first();
       await expect(card.getByText(arabic.label)).toHaveCount(0);
 
-      await reply
-        .getByRole("button", { name: arabic.translate, exact: true })
-        .click();
+      const replyTranslateArControl = reply.getByRole("button", {
+        name: arabic.translate,
+        exact: true,
+      });
+      await replyTranslateArControl.focus();
+      await expect(replyTranslateArControl).toBeFocused();
+      await replyTranslateArControl.press("Enter");
       await expect(reply.getByText(arabic.label)).toBeVisible();
       await expectText(reply.getByText(arabic.reply), "ar", "rtl");
+      await expect(
+        reply.getByRole("button", { name: arabic.viewOriginal, exact: true }),
+      ).toBeFocused();
 
       // Pressing Translate from the keyboard leaves the focus on the same control.
-      await card
-        .getByRole("button", { name: arabic.translate, exact: true })
-        .focus();
-      await page.keyboard.press("Enter");
+      const reviewTranslateArControl = card.getByRole("button", {
+        name: arabic.translate,
+        exact: true,
+      });
+      await reviewTranslateArControl.focus();
+      await expect(reviewTranslateArControl).toBeFocused();
+      await reviewTranslateArControl.press("Enter");
       await expectText(card.getByText(arabic.review), "ar", "rtl");
       await expect(card.getByText(arabic.label)).toHaveCount(2);
       await expect(reviewButton(arabic.viewOriginal)).toBeFocused();
+
       await page.screenshot({
         path: testInfo.outputPath("public-translated-ar.png"),
         fullPage: true,
@@ -1342,9 +1372,12 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
       await expectText(card.getByText(arabic.review), "ar", "rtl");
 
       // Pressing Report from the keyboard leaves the focus on the block's first control.
-      await reviewButton(arabic.report).focus();
-      await page.keyboard.press("Enter");
+      const reviewReportArControl = reviewButton(arabic.report);
+      await reviewReportArControl.focus();
+      await expect(reviewReportArControl).toBeFocused();
+      await reviewReportArControl.press("Enter");
       await expect(card.getByText(arabic.reported)).toBeVisible();
+
       await expect(reviewButton(arabic.viewOriginal)).toBeFocused();
       await expect(
         card.getByRole("button", { name: arabic.report, exact: true }),
@@ -1447,6 +1480,7 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     );
     const administratorContext = await browser.newContext({ baseURL: origin });
     const administratorPage = await administratorContext.newPage();
+
     await administratorPage.goto("/en/administrator/reviews");
     const secret = await beginAdministratorMfa(
       administratorPage,
@@ -1532,10 +1566,20 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     await administratorReply
       .getByLabel("Reason for hiding the reply")
       .fill(reason);
-    await hideReply.click();
+    const replyHideControl = hideReply;
+    await replyHideControl.focus();
+    await expect(replyHideControl).toBeFocused();
+    await replyHideControl.press("Enter");
     await expect(administratorReply.getByRole("status")).toContainText(
       "The reply was hidden.",
     );
+    await expect(
+      administratorPage.getByRole("heading", {
+        name: "Customer review moderation",
+        level: 1,
+      }),
+    ).toBeFocused();
+
     await expect(administratorReply).toContainText(reason);
     await administratorPage.screenshot({
       path: testInfo.outputPath("administrator-reply-hidden-en.png"),

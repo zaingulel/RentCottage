@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import {
   signInPlatformAdministrator,
@@ -16,8 +16,10 @@ import type { Locale } from "@/i18n/routing";
 import {
   ActionButton,
   ActionFeedback,
+  ActionFocusTarget,
   ActionLink,
   FormControl,
+  prepareActionFocusNavigation,
 } from "./interaction-controls";
 import { useExclusiveAction } from "./use-exclusive-action";
 
@@ -43,6 +45,9 @@ export function AdministratorAccessForm({
 }) {
   const router = useRouter();
   const copy = accessMessages[locale];
+  const verifyButtonId = useId();
+  const authenticatorInputId = useId();
+  const resultFocusId = useId();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -92,6 +97,7 @@ export function AdministratorAccessForm({
       setMessage(copy.administratorReady);
       const destination = safeAdministratorReturnDestination(locale, returnTo);
       if (destination) {
+        prepareActionFocusNavigation(verifyButtonId);
         router.replace(destination);
         router.refresh();
       }
@@ -124,6 +130,7 @@ export function AdministratorAccessForm({
             <span>{copy.email}</span>
             <FormControl
               kind="input"
+              id={resultFocusId}
               type="email"
               autoComplete="username"
               value={email}
@@ -145,6 +152,7 @@ export function AdministratorAccessForm({
             width="full"
             type="submit"
             pending={pending}
+            focusSuccessorId={authenticatorInputId}
           >
             {copy.signIn}
           </ActionButton>
@@ -172,6 +180,7 @@ export function AdministratorAccessForm({
             <span>{copy.mfaCode}</span>
             <FormControl
               kind="input"
+              id={authenticatorInputId}
               inputMode="numeric"
               autoComplete="one-time-code"
               value={code}
@@ -183,13 +192,29 @@ export function AdministratorAccessForm({
             width="full"
             type="submit"
             pending={pending}
+            id={verifyButtonId}
+            focusSuccessorId={resultFocusId}
           >
             {copy.verify}
           </ActionButton>
         </form>
       )}
+      {!pending && !complete && (
+        <ActionFocusTarget
+          targetId={mfa ? authenticatorInputId : resultFocusId}
+        />
+      )}
       {message && (
-        <ActionFeedback kind={complete ? "success" : "error"}>
+        <ActionFeedback
+          kind={complete ? "success" : "error"}
+          focusTargetId={
+            complete &&
+            !pending &&
+            !safeAdministratorReturnDestination(locale, returnTo)
+              ? resultFocusId
+              : undefined
+          }
+        >
           {message}
         </ActionFeedback>
       )}

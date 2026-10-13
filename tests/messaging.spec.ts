@@ -74,13 +74,19 @@ test("booking customer keeps the original while using fictional translations acr
   await expect(
     page.getByText("Use a new enquiry for a different stay."),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Start an independent new enquiry" })
-    .click();
+  const startControl = page.getByRole("button", {
+    name: "Start an independent new enquiry",
+  });
+  await startControl.focus();
+  await expect(startControl).toBeFocused();
+  await startControl.press("Enter");
   await expect(page).toHaveURL(/\/en\/messages\/[0-9a-f-]{36}\?/);
   await expect(
     page.getByRole("heading", { name: fixture.bookingCottageName }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: fixture.bookingCottageName, level: 1 }),
+  ).toBeFocused();
   await expect(
     page.getByText(
       "You can send contact details once this booking has a valid payment.",
@@ -104,7 +110,10 @@ test("booking customer keeps the original while using fictional translations acr
   await page
     .getByLabel("Message", { exact: true })
     .fill("هل يمكننا استخدام الحديقة؟");
-  await page.getByRole("button", { name: "Send message" }).click();
+  const sendEnControl = page.getByRole("button", { name: "Send message" });
+  await sendEnControl.focus();
+  await expect(sendEnControl).toBeFocused();
+  await sendEnControl.press("Enter");
   const message = page
     .getByRole("list", { name: "Messages" })
     .getByRole("listitem")
@@ -113,21 +122,36 @@ test("booking customer keeps the original while using fictional translations acr
   await expect(message.locator("p[dir=rtl]")).toHaveText(
     "هل يمكننا استخدام الحديقة؟",
   );
-  await message.getByRole("button", { name: "Automatic translation" }).click();
+  await expect(sendEnControl).toBeFocused();
+  const translateEnControl = message.getByRole("button", {
+    name: "Automatic translation",
+  });
+  await translateEnControl.focus();
+  await expect(translateEnControl).toBeFocused();
+  await translateEnControl.press("Enter");
   await expect(message).toContainText("Could we use the garden?");
   await expect(message).toContainText(
     "Automatic translation · Fictional local-test translation",
   );
+  await expect(
+    message.getByRole("button", { name: "View original" }),
+  ).toBeFocused();
   await message.getByRole("button", { name: "View original" }).click();
   await expect(message.locator("p[dir=rtl]")).toHaveText(
     "هل يمكننا استخدام الحديقة؟",
   );
-  await message
-    .getByRole("button", { name: "Report poor translation" })
-    .click();
+  const reportEnControl = message.getByRole("button", {
+    name: "Report poor translation",
+  });
+  await reportEnControl.focus();
+  await expect(reportEnControl).toBeFocused();
+  await reportEnControl.press("Enter");
   await expect(message.getByRole("status")).toContainText(
     "Translation reported.",
   );
+  await expect(
+    message.getByRole("button", { name: "View translation" }),
+  ).toBeFocused();
 
   await openHeaderPanel(page, "language");
   await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
@@ -142,6 +166,16 @@ test("booking customer keeps the original while using fictional translations acr
   await expect(arabicMessage.locator("p[dir=rtl]")).toHaveText(
     "هل يمكننا استخدام الحديقة؟",
   );
+  await page.getByLabel("لغة الرسالة").selectOption("ar");
+  await page
+    .getByLabel("الرسالة", { exact: true })
+    .fill("هل يمكننا استخدام الحديقة؟");
+  const sendArControl = page.getByRole("button", { name: "إرسال الرسالة" });
+  await sendArControl.focus();
+  await expect(sendArControl).toBeFocused();
+  await sendArControl.press("Enter");
+  await expect(page.getByLabel("الرسالة", { exact: true })).toHaveValue("");
+  await expect(sendArControl).toBeFocused();
   await openHeaderPanel(page, "language");
   await page.getByRole("banner").getByRole("link", { name: "English" }).focus();
   await page.keyboard.press("Tab");
