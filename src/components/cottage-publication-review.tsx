@@ -222,7 +222,9 @@ export function CottagePublicationReview({
       className="cottage-publication-review"
       aria-labelledby="cottage-publication-review-title"
     >
-      <h2 id="cottage-publication-review-title">{text.title}</h2>
+      <h2 id="cottage-publication-review-title" className="section-title">
+        {text.title}
+      </h2>
       <p className={`cottage-profile-status ${review.state}`}>
         {text[review.state]}
       </p>

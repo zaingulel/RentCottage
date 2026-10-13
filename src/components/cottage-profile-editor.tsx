@@ -170,23 +170,17 @@ export function CottageProfileEditor({
 
   return (
     <section className="cottage-profile-editor">
-      <div className="application-section-heading">
-        <span>01</span>
-        <div>
-          <h1
-            id="cottage-profile-editor-title"
-            tabIndex={-1}
-            className="action-focus-target"
-          >
-            {copy.editorTitle}
-          </h1>
-          <ActionFocusTarget
-            targetId="cottage-profile-editor-title"
-            navigation
-          />
-          <p>{copy.completion}</p>
-        </div>
-      </div>
+      <header className="page-heading">
+        <h1
+          id="cottage-profile-editor-title"
+          tabIndex={-1}
+          className="page-title action-focus-target"
+        >
+          {copy.editorTitle}
+        </h1>
+        <ActionFocusTarget targetId="cottage-profile-editor-title" navigation />
+        <p>{copy.completion}</p>
+      </header>
       <p className={`cottage-profile-status ${profile.status}`}>
         {cottageProfileStatusLabel(locale, profile)}
       </p>
@@ -209,7 +203,7 @@ export function CottageProfileEditor({
           disabled={!editable}
         >
           <h2
-            className="cottage-profile-section-title"
+            className="section-title"
             id="cottage-profile-public-details-heading"
           >
             {copy.publicDetails}
@@ -293,7 +287,7 @@ export function CottageProfileEditor({
           disabled={!editable}
         >
           <h2
-            className="cottage-profile-section-title"
+            className="section-title"
             id="cottage-profile-private-location-heading"
           >
             {copy.privateLocation}
@@ -327,7 +321,7 @@ export function CottageProfileEditor({
           disabled={!editable || !sourceEditable}
         >
           <h2
-            className="cottage-profile-section-title"
+            className="section-title"
             id="cottage-profile-source-content-heading"
           >
             {copy.sourceContent}
@@ -367,7 +361,7 @@ export function CottageProfileEditor({
       </form>
 
       <section className="cottage-profile-photos">
-        <h2>{copy.photos}</h2>
+        <h2 className="section-title">{copy.photos}</h2>
         <p>{copy.photoGuidance}</p>
         <ul>
           {profile.photos.map((photo) => (
@@ -411,7 +405,7 @@ export function CottageProfileEditor({
 
       {profile.submittedSourceRevision ? (
         <section className="cottage-profile-source-revision">
-          <h2>{copy.sourceRevision}</h2>
+          <h2 className="section-title">{copy.sourceRevision}</h2>
           <p>{copy.sourceNotice}</p>
           <dl>
             <div>

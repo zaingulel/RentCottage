@@ -201,13 +201,10 @@ export function CottagePricingAvailabilityEditor({
       dir={direction}
       aria-labelledby="cottage-pricing-availability-title"
     >
-      <div className="application-section-heading">
-        <span>03</span>
-        <div>
-          <h2 id="cottage-pricing-availability-title">{copy.title}</h2>
-          <p>{copy.intro}</p>
-        </div>
-      </div>
+      <h2 id="cottage-pricing-availability-title" className="section-title">
+        {copy.title}
+      </h2>
+      <p>{copy.intro}</p>
       {!editable ? (
         <p className="private-location-warning">{copy.readOnly}</p>
       ) : null}

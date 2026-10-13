@@ -79,6 +79,10 @@ describe("Cottage Profile editor", () => {
       />,
     );
 
+    expect(screen.getByRole("heading", { level: 1 })).toHaveClass("page-title");
+    for (const heading of screen.getAllByRole("heading", { level: 2 }))
+      expect(heading).toHaveClass("section-title");
+    expect(screen.queryByText("01")).toBeNull();
     expect(screen.getByLabelText("Cottage name")).toHaveValue(
       "Continued Application Cottage",
     );
