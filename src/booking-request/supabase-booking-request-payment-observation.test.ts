@@ -22,21 +22,17 @@ const duplicateIds = [
   "A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11",
   "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
 ];
-for (const { label, collection, entry } of [
-  {
-    label: "attempt",
-    collection: "attempts",
-    entry: (id: string) => ({ ...paymentFactsFixture().attempts[0], id }),
-  },
-  {
-    label: "operation",
-    collection: "operations",
-    entry: (id: string) => paymentOperationFixture({ id }),
-  },
-  {
-    label: "expiry operation",
-    collection: "expiryOperations",
-    entry: (id: string): PaymentExpiryOperationFact => {
+it.each([
+  [
+    "attempt",
+    "attempts",
+    (id: string) => ({ ...paymentFactsFixture().attempts[0], id }),
+  ],
+  ["operation", "operations", (id: string) => paymentOperationFixture({ id })],
+  [
+    "expiry operation",
+    "expiryOperations",
+    (id: string): PaymentExpiryOperationFact => {
       const facts = paymentFactsFixture();
       return {
         id,
@@ -69,9 +65,10 @@ for (const { label, collection, entry } of [
         },
       };
     },
-  },
-] as const) {
-  it(`rejects case-only duplicate payment ${label} IDs`, () => {
+  ],
+] as const)(
+  "rejects case-only duplicate payment %s IDs",
+  (_label, collection, entry) => {
     const [lowercase, uppercase, distinct] = duplicateIds.map((id) =>
       entry(id),
     );
@@ -92,8 +89,8 @@ for (const { label, collection, entry } of [
         paymentFactsFixture({ [collection]: [lowercase, uppercase] }),
       ),
     ).toThrow("Payment facts are invalid");
-  });
-}
+  },
+);
 it.each([
   undefined,
   {},
