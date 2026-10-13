@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 // One home for the reset and cleanup SQL of the fixed-identifier booking, customer review and
 // Published Cottage fixtures.
 const id = (prefix, stem, row = "1") =>
@@ -17,6 +19,70 @@ const rows = (stem) => ({
   operation: id("81000000", stem),
 });
 const administrator = "10000000-0000-4000-8000-000000003801";
+
+export function browserBookingFixtureIdentity(file, project) {
+  const stems = new Map([
+    ["cancellation", ["810", "811", "812"]],
+    ["completion", ["820", "821", "822"]],
+    ["refund", ["830", "831", "832"]],
+    ["request-notification", ["840", "841", "842"]],
+    ["expiry", ["850", "851", "852"]],
+    ["reminder", ["860", "861", "862"]],
+    ["capture", ["870", "871", "872"]],
+  ]);
+  const projects = ["mobile", "desktop", "worker"];
+  if (!stems.has(file)) throw new Error("Unknown browser booking fixture file");
+  if (!projects.includes(project))
+    throw new Error("Unknown browser booking fixture project");
+  const stem = stems.get(file)[projects.indexOf(project)];
+  const paymentLifecycle = id("73000000", stem);
+  const captureFingerprint = createHash("sha256")
+    .update(
+      `{"provider":{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"},"kind":"capture","paymentLifecycleId":"${paymentLifecycle}","logicalOperationId":"${paymentLifecycle}:capture","attemptId":"${paymentLifecycle}:capture:attempt-2","amountFils":115000000,"currency":"IQD"}`,
+      "utf8",
+    )
+    .digest("hex");
+  return {
+    stem,
+    ...rows(stem),
+    administrator: id("10000000", stem, "8"),
+    paymentLifecycle,
+    reference: `RC-REQ-000000000000${stem}1`,
+    ownerPhone: `+964750000${stem}1`,
+    customerPhone: `+964750000${stem}2`,
+    thirdPhone: `+964750000${stem}3`,
+    captureFingerprint,
+  };
+}
+
+// Read literal fixture boundaries, never transform SQL or accept an ambiguous source.
+export function bookingFixtureSource(
+  source,
+  { start = "", end, required = [] },
+) {
+  const unique = (marker) => {
+    const at = source.indexOf(marker);
+    if (at < 0 || source.indexOf(marker, at + marker.length) >= 0)
+      throw new Error(`Booking fixture source requires one ${marker}`);
+    return at;
+  };
+  const from = start ? unique(start) + start.length : 0;
+  const to = unique(end);
+  if (!start && end.startsWith("-- END ")) {
+    const opening = end.replace("-- END ", "-- BEGIN ");
+    const at = unique(opening) + opening.length;
+    if (at >= to || !source.slice(at, to).trim())
+      throw new Error("Booking fixture source block is empty or reversed");
+  }
+  const block = source.slice(from, to);
+  if (to <= from || !block.trim())
+    throw new Error("Booking fixture source block is empty or reversed");
+  for (const token of required) {
+    if (!block.includes(token))
+      throw new Error(`Booking fixture source is missing ${token}`);
+  }
+  return block;
+}
 
 const completionDeletes = (
   r,
@@ -60,8 +126,8 @@ set session_replication_role=origin;`;
 export const cancellationReset = ({ completion = false } = {}) =>
   reset(rows("100"), { completion, terminalRequest: false });
 
-export const refundReset = () => {
-  const r = rows("100");
+export const refundReset = ({ stem = "100" } = {}) => {
+  const r = rows(stem);
   return `set session_replication_role=replica;
 delete from public.booking_notification_events where refund_intent_id in (select id from public.booking_refund_intents where booking_request_id='${r.request}');
 delete from public.payment_provider_observations where operation_id in (select id from public.payment_provider_operations where claim_id='${r.claim}' and operation_kind='refund');
@@ -115,6 +181,7 @@ delete from auth.users where id in (${users});
 
 export const confirmedBookingCleanup = ({
   stem = "100",
+  administrator: selectedAdministrator = administrator,
   completion = false,
   settlement = false,
   terminalRequest = false,
@@ -122,7 +189,7 @@ export const confirmedBookingCleanup = ({
   const r = rows(stem);
   // Request events have no receipt; cleanup follows the actual work identity.
   const workIdentity = terminalRequest ? "notification_id" : "receipt_id";
-  const users = `'${r.owner}','${r.customer}','${r.third}','${administrator}'`;
+  const users = `'${r.owner}','${r.customer}','${r.third}','${selectedAdministrator}'`;
   return `${reset(r, { completion, terminalRequest })} set session_replication_role=replica;
 ${settlement ? settlementDeletes(r) : ""}${confirmedBookingDeletes(r, { workIdentity, listedCottage: false, users })}set session_replication_role=origin;`;
 };
@@ -168,11 +235,12 @@ delete from public.booking_lifecycle_outcomes where booking_request_id='${r.requ
 `;
 
 export const confirmedBookingAccessCleanup = ({
-  owner = "10000000-0000-4000-8000-000000003501",
-  customer = "10000000-0000-4000-8000-000000003502",
+  stem = "350",
+  owner = rows(stem).owner,
+  customer = rows(stem).customer,
   lifecycle = false,
 } = {}) => {
-  const r = rows("350");
+  const r = rows(stem);
   return `set session_replication_role=replica;
 delete from public.booking_confirmation_notification_attempts where notification_id in (select notification_id from public.booking_confirmation_notification_work where booking_request_id='${r.request}');
 delete from public.fictional_booking_confirmation_notification_effects where booking_request_id='${r.request}';

@@ -34,11 +34,35 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     runSql(sql: string): string;
   };
 };
-const { confirmedBookingCleanup } = createRequire(import.meta.url)(
-  "../scripts/lib/booking-fixture.mjs",
-) as {
+const {
+  confirmedBookingCleanup,
+  browserBookingFixtureIdentity,
+  bookingFixtureSource,
+} = createRequire(import.meta.url)("../scripts/lib/booking-fixture.mjs") as {
+  browserBookingFixtureIdentity(
+    file: string,
+    project: string,
+  ): Record<
+    | "stem"
+    | "owner"
+    | "customer"
+    | "third"
+    | "administrator"
+    | "request"
+    | "reference"
+    | "ownerPhone"
+    | "customerPhone"
+    | "thirdPhone"
+    | "captureFingerprint",
+    string
+  >;
+  bookingFixtureSource(
+    source: string,
+    options: { start?: string; end: string; required?: string[] },
+  ): string;
   confirmedBookingCleanup(options?: {
     stem?: string;
+    administrator?: string;
     completion?: boolean;
     settlement?: boolean;
     terminalRequest?: boolean;
@@ -52,10 +76,8 @@ async function expectAmount(figures: Locator, label: string, amount: string) {
       .locator("xpath=following-sibling::dd[1]"),
   ).toHaveText(amount);
 }
-const request = "60000000-0000-4000-8000-000000001001",
-  reference = "RC-REQ-0000000000001001";
-const owner = "10000000-0000-4000-8000-000000001001",
-  customer = "10000000-0000-4000-8000-000000001002";
+let identity: ReturnType<typeof browserBookingFixtureIdentity>;
+let request: string, reference: string, owner: string, customer: string;
 const source = readFileSync(
   "supabase/tests/database/booking_cancellation.test.sql",
   "utf8",
@@ -98,25 +120,56 @@ const browserQuote = {
     },
   ],
 };
-const fixture = source
-  .slice(0, source.indexOf("-- END CANCELLATION FIXTURE"))
-  .replace(
-    /insert into auth.users \(id, aud, role, phone, phone_confirmed_at\) values[\s\S]*?;/,
-    "",
-  )
-  .replace(
-    /'\{"cottageName":"Preserved Cottage"[^\n]+?'::jsonb/g,
-    `'${JSON.stringify(browserQuote)}'::jsonb`,
-  );
-let activeAdministratorId: string | null = null;
-const cleanup = confirmedBookingCleanup({
-  completion: true,
-  settlement: true,
+const fixtureSource = bookingFixtureSource(source, {
+  end: "-- END CANCELLATION FIXTURE",
+  required: [
+    "00000000100",
+    "964750000100",
+    "CONFIRMATION-HOLD-1",
+    "Confirmation Cottage",
+    "confirmation-auth-",
+    "10000000-0000-4000-8000-000000003801",
+    "cancellation-admin@example.test",
+    "RC-REQ-0000000000001001",
+    "6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d",
+  ],
 });
+const fixture = () =>
+  fixtureSource
+    .replaceAll("00000000100", `00000000${identity.stem}`)
+    .replaceAll("964750000100", `964750000${identity.stem}`)
+    .replaceAll("confirmation-auth-", `confirmation-auth-${identity.stem}-`)
+    .replaceAll("CONFIRMATION-HOLD-1", `CANCELLATION-HOLD-${identity.stem}`)
+    .replaceAll("Confirmation Cottage", `cancellation ${identity.stem} Cottage`)
+    .replaceAll("10000000-0000-4000-8000-000000003801", identity.administrator)
+    .replaceAll(
+      "cancellation-admin@example.test",
+      `cancellation-${identity.stem}@example.test`,
+    )
+    .replaceAll(
+      "6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d",
+      identity.captureFingerprint,
+    )
+    .replace(
+      /insert into auth.users \(id, aud, role, phone, phone_confirmed_at\) values[\s\S]*?;/,
+      "",
+    )
+    .replace(
+      /'\{"cottageName":"Preserved Cottage"[^\n]+?'::jsonb/g,
+      `'${JSON.stringify(browserQuote)}'::jsonb`,
+    );
+let activeAdministratorId: string | null = null;
+
 const clear = () => {
+  const cleanup = confirmedBookingCleanup({
+    stem: identity.stem,
+    administrator: identity.administrator,
+    completion: true,
+    settlement: true,
+  });
   harness.guardDisposableLocalDatabase();
   harness.runSql(
-    `delete from auth.sessions where user_id in ('${owner}','${customer}','10000000-0000-4000-8000-000000001003');delete from auth.identities where user_id in ('${owner}','${customer}','10000000-0000-4000-8000-000000001003');${cleanup}`,
+    `delete from auth.sessions where user_id in ('${owner}','${customer}','${identity.third}');delete from auth.identities where user_id in ('${owner}','${customer}','${identity.third}');${cleanup}`,
   );
 };
 function connection() {
@@ -171,7 +224,7 @@ async function participant(
     },
   });
   const { error } = await client.auth.signInWithPassword({
-    phone: userId === owner ? "+9647500001001" : "+9647500001002",
+    phone: userId === owner ? identity.ownerPhone : identity.customerPhone,
     password,
   });
   if (error) throw error;
@@ -347,13 +400,18 @@ async function captureQueueFilters(
 }
 test.describe("retained cancellation and refund controls", () => {
   test.use({ actionTimeout: 10000 });
-  test.beforeEach(async () => {
+  test.beforeEach(async ({}, testInfo) => {
+    identity = browserBookingFixtureIdentity(
+      "cancellation",
+      testInfo.project.name,
+    );
+    ({ request, reference, owner, customer } = identity);
     clear();
     const { admin } = connection();
     for (const [id, phone] of [
-      [owner, "+9647500001001"],
-      [customer, "+9647500001002"],
-      ["10000000-0000-4000-8000-000000001003", "+9647500001003"],
+      [owner, identity.ownerPhone],
+      [customer, identity.customerPhone],
+      [identity.third, identity.thirdPhone],
     ]) {
       const result = await admin.auth.admin.createUser({
         id,
@@ -367,7 +425,7 @@ test.describe("retained cancellation and refund controls", () => {
         });
     }
     const payoutJourney = test.info().title.includes("payout holds");
-    const datedFixture = fixture.replace(
+    const datedFixture = fixture().replace(
       "fixture:=replace(fixture,'2101-01-02'",
       "fixture:=replace(fixture,'2101-01-03',(start_day+2)::text); fixture:=replace(fixture,'2101-01-02'",
     );
@@ -712,9 +770,9 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByText("Private address", { exact: true }),
     ).toHaveCount(0);
-    await expect(page.getByText("+9647500001001", { exact: true })).toHaveCount(
-      0,
-    );
+    await expect(
+      page.getByText(identity.ownerPhone, { exact: true }),
+    ).toHaveCount(0);
     await page.getByRole("link", { name: messages.en.history }).click();
     await expect(page).toHaveURL("/en/bookings");
     await expect(

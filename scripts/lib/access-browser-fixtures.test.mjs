@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
 
 import * as fixtures from "./access-browser-fixtures.mjs";
 import { accessJourneyOtpEntries } from "./access-journey-fixtures.mjs";
+import {
+  browserBookingFixtureIdentity,
+  bookingFixtureSource,
+  confirmedBookingCleanup,
+  confirmedBookingAccessCleanup,
+  captureCleanup,
+  refundReset,
+} from "./booking-fixture.mjs";
+import * as notificationFixtures from "../booking-request-notification-fixture.mjs";
 
 const demoEnvironment = {
   APP_ENVIRONMENT: "test",
@@ -673,5 +683,404 @@ test("browser account fixtures are disjoint by file and project", async () => {
       () => fixtures.accessBrowserFixture(project, "scheduled-expiry"),
       /require worker project/,
     );
+  }
+});
+
+test("browser booking fixtures own disjoint graphs and cleanup", () => {
+  // Literal reservations come from the approved ownership table, not the allocator.
+  const ownership = [
+    ["cancellation", "mobile", "810", "8101", "8102", "8103", "8108"],
+    ["cancellation", "desktop", "811", "8111", "8112", "8113", "8118"],
+    ["cancellation", "worker", "812", "8121", "8122", "8123", "8128"],
+    ["completion", "mobile", "820", "8201", "8202", "8203", "8208"],
+    ["completion", "desktop", "821", "8211", "8212", "8213", "8218"],
+    ["completion", "worker", "822", "8221", "8222", "8223", "8228"],
+    ["refund", "mobile", "830", "8301", "8302", "8303", "8308"],
+    ["refund", "desktop", "831", "8311", "8312", "8313", "8318"],
+    ["refund", "worker", "832", "8321", "8322", "8323", "8328"],
+    ["request-notification", "mobile", "840", "8401", "8402", "8403", "8408"],
+    ["request-notification", "desktop", "841", "8411", "8412", "8413", "8418"],
+    ["request-notification", "worker", "842", "8421", "8422", "8423", "8428"],
+    ["expiry", "mobile", "850", "8501", "8502", "8503", "8508"],
+    ["expiry", "desktop", "851", "8511", "8512", "8513", "8518"],
+    ["expiry", "worker", "852", "8521", "8522", "8523", "8528"],
+    ["reminder", "mobile", "860", "8601", "8602", "8603", "8608"],
+    ["reminder", "desktop", "861", "8611", "8612", "8613", "8618"],
+    ["reminder", "worker", "862", "8621", "8622", "8623", "8628"],
+    ["capture", "mobile", "870", "8701", "8702", "8703", "8708"],
+    ["capture", "desktop", "871", "8711", "8712", "8713", "8718"],
+    ["capture", "worker", "872", "8721", "8722", "8723", "8728"],
+  ];
+  const primaryPrefixes = {
+    profile: "20000000",
+    schedule: "30000000",
+    snapshot: "40000000",
+    commitment: "50000000",
+    request: "60000000",
+    attempt: "70000000",
+    claim: "72000000",
+    paymentLifecycle: "73000000",
+    confirmation: "80000000",
+    operation: "81000000",
+  };
+  const ids = [];
+  const phones = [];
+  const allocations = ownership.map(([file, project]) =>
+    browserBookingFixtureIdentity(file, project),
+  );
+  for (const [
+    file,
+    project,
+    stem,
+    owner,
+    customer,
+    third,
+    administrator,
+  ] of ownership) {
+    const actual = browserBookingFixtureIdentity(file, project);
+    assert.equal(actual.stem, stem, `${file}/${project}`);
+    assert.deepEqual(
+      [actual.owner, actual.customer, actual.third, actual.administrator],
+      [owner, customer, third, administrator].map(
+        (row) => `10000000-0000-4000-8000-00000000${row}`,
+      ),
+    );
+    assert.deepEqual(
+      [actual.ownerPhone, actual.customerPhone, actual.thirdPhone],
+      [owner, customer, third].map((row) => `+964750000${row}`),
+    );
+    assert.equal(actual.reference, `RC-REQ-000000000000${owner}`);
+    for (const [key, prefix] of Object.entries(primaryPrefixes)) {
+      assert.equal(actual[key], `${prefix}-0000-4000-8000-00000000${owner}`);
+      ids.push(actual[key]);
+    }
+    ids.push(actual.owner, actual.customer, actual.third, actual.administrator);
+    phones.push(actual.ownerPhone, actual.customerPhone, actual.thirdPhone);
+    const cleanups = [
+      confirmedBookingCleanup({
+        stem,
+        administrator: actual.administrator,
+        completion: true,
+        settlement: true,
+        terminalRequest: true,
+      }),
+      confirmedBookingAccessCleanup({ stem, lifecycle: true }),
+      captureCleanup({ stem, paymentRecovery: true, releaseOperations: true }),
+      refundReset({ stem }),
+    ];
+    for (const sql of cleanups) {
+      assert.ok(sql.includes(actual.request));
+      for (const foreign of allocations.filter(
+        (allocation) => allocation.stem !== stem,
+      )) {
+        for (const key of [
+          "owner",
+          "customer",
+          "third",
+          "administrator",
+          "request",
+          "snapshot",
+          "claim",
+          "commitment",
+          "operation",
+        ]) {
+          assert.ok(
+            !sql.includes(foreign[key]),
+            `${file}/${project} cleanup contains foreign ${key}`,
+          );
+        }
+      }
+      assert.ok(!sql.includes("10000000-0000-4000-8000-000000003801"));
+      assert.ok(!sql.includes("000000001001"));
+      assert.ok(!sql.includes("000000003501"));
+    }
+    const confirmed = cleanups[0];
+    for (const user of [
+      actual.owner,
+      actual.customer,
+      actual.third,
+      actual.administrator,
+    ])
+      assert.ok(confirmed.includes(user));
+    for (const key of [
+      "owner",
+      "customer",
+      "third",
+      "request",
+      "snapshot",
+      "commitment",
+      "operation",
+    ])
+      assert.ok(cleanups[1].includes(actual[key]));
+    if (file === "request-notification") {
+      const fixture =
+        notificationFixtures.browserBookingRequestNotificationFixture(project);
+      assert.equal(fixture.request, actual.request);
+      assert.equal(fixture.owner, actual.owner);
+      assert.equal(fixture.customer, actual.customer);
+      for (const key of [
+        "owner",
+        "customer",
+        "third",
+        "request",
+        "snapshot",
+        "commitment",
+        "claim",
+        "paymentLifecycle",
+      ])
+        assert.ok(fixture.baselineFixture.includes(actual[key]));
+      assert.ok(fixture.baselineFixture.includes(actual.reference));
+      for (const phone of [
+        actual.ownerPhone,
+        actual.customerPhone,
+        actual.thirdPhone,
+      ])
+        assert.ok(fixture.baselineFixture.includes(phone));
+      assert.ok(!fixture.baselineFixture.includes("000000001001"));
+      assert.ok(
+        !fixture.baselineFixture.includes("confirmation-auth-request-1"),
+      );
+      assert.ok(fixture.cleanup.includes(actual.administrator));
+    }
+  }
+  // Retained review, history, payment and records reservations are independent of the new table.
+  for (const namespace of [
+    "61",
+    "62",
+    "63",
+    "64",
+    "65",
+    "66",
+    "67",
+    "68",
+    "69",
+    "70",
+    "71",
+    "72",
+    "73",
+    "74",
+    "75",
+    "76",
+    "77",
+    "78",
+  ]) {
+    for (const prefix of Object.values(primaryPrefixes))
+      ids.push(`${prefix}-0000-4000-8000-00000000${namespace}01`);
+    for (const row of ["01", "02", "03", "81", "82"])
+      ids.push(`10000000-0000-4000-8000-00000000${namespace}${row}`);
+    for (const row of ["01", "02", "03"])
+      phones.push(`+964750000${namespace}${row}`);
+  }
+  for (const stem of ["350", "351", "137", "151"]) {
+    for (const prefix of Object.values(primaryPrefixes))
+      ids.push(`${prefix}-0000-4000-8000-00000000${stem}1`);
+    for (const row of ["1", "2", "3"])
+      ids.push(`10000000-0000-4000-8000-00000000${stem}${row}`);
+  }
+  ids.push("10000000-0000-4000-8000-000000003801");
+  for (const suffix of ["000101", "000201", "000301", "000303"])
+    ids.push(`25000000-0000-4000-8000-000000${suffix}`);
+  phones.push(
+    "+9647500000008",
+    "+9647500000009",
+    "+9647592500000",
+    "+9647592500001",
+    "+9647592500002",
+  );
+  assert.equal(new Set(ids).size, ids.length);
+  assert.equal(new Set(phones).size, phones.length);
+  // SHA-256 of the existing capture recipe with the literal Worker expiry lifecycle 8521.
+  assert.equal(
+    browserBookingFixtureIdentity("expiry", "worker").captureFingerprint,
+    "7e702db46040f3e72d7bada63d856d26057d2caf4036e2f8a692e370f178993e",
+  );
+  const defaultHashes = [
+    [
+      refundReset(),
+      "6014e5e186059fc6eebf3967632a145f85aef2e994c89c10e719c1a56bcc8f95",
+    ],
+    [
+      confirmedBookingCleanup(),
+      "9439cb5c9125e98c249d18e287c1ab0c75bd40df9a8e40e4125e61f4ade3cdaa",
+    ],
+    [
+      confirmedBookingAccessCleanup(),
+      "dc6466b4bdcfbb50137c5a229f621dfe1e0fa2dd364ff9e19fdd487332ad26d9",
+    ],
+    [
+      captureCleanup(),
+      "35a867d45d2121ae02242e3c81032d858d41c9e4a0557b28fdb62bac94232ab4",
+    ],
+  ];
+  for (const [sql, hash] of defaultHashes)
+    assert.equal(createHash("sha256").update(sql).digest("hex"), hash);
+  const notificationSource = readFileSync(
+    "supabase/tests/database/booking_request_notification.test.sql",
+    "utf8",
+  );
+  assert.equal(
+    notificationFixtures.request,
+    "60000000-0000-4000-8000-000000001001",
+  );
+  assert.equal(
+    notificationFixtures.baselineFixture,
+    notificationSource.slice(
+      0,
+      notificationSource.indexOf("create function pg_temp.notice_call"),
+    ),
+  );
+  assert.equal(
+    notificationFixtures.fixture,
+    notificationSource.slice(
+      0,
+      notificationSource.indexOf("select no_plan();"),
+    ),
+  );
+  assert.equal(
+    notificationFixtures.cleanup,
+    refundReset() + confirmedBookingCleanup({ terminalRequest: true }),
+  );
+  for (const [file, path] of [
+    ["cancellation", "tests/booking-cancellation-refund.spec.ts"],
+    ["completion", "tests/worker-scheduled-completion.spec.ts"],
+    ["refund", "tests/worker-scheduled-refund.spec.ts"],
+    ["capture", "tests/worker-scheduled-capture.spec.ts"],
+    ["reminder", "tests/worker-scheduled-reminder.spec.ts"],
+    ["expiry", "tests/fixtures/scheduled-expiry.ts"],
+  ]) {
+    const source = readFileSync(path, "utf8");
+    assert.match(
+      source,
+      new RegExp(`browserBookingFixtureIdentity\\(\\s*"${file}"`),
+    );
+    assert.match(source, /testInfo\.project\.name/);
+    assert.doesNotMatch(
+      source,
+      /[0-9a-f]{8}-0000-4000-8000-00000000(?:100[123]|350[123])/,
+    );
+    assert.match(source, /stem: identity\.stem/);
+  }
+  const requestNotification = readFileSync(
+    "tests/worker-scheduled-request-notification.spec.ts",
+    "utf8",
+  );
+  assert.match(
+    requestNotification,
+    /browserBookingRequestNotificationFixture\(testInfo\.project\.name\)/,
+  );
+  const expiry = readFileSync("tests/worker-scheduled-expiry.spec.ts", "utf8");
+  assert.match(
+    expiry,
+    /SCHEDULED_EXPIRY_PROBE_PROJECT: testInfo\.project\.name/,
+  );
+  assert.match(expiry, /const requestId = identity\.request/);
+  assert.doesNotMatch(expiry, /[0-9a-f]{8}-0000-4000-8000-00000000100[123]/);
+  const restoration = readFileSync(
+    "tests/fixtures/scheduled-expiry.ts",
+    "utf8",
+  );
+  assert.match(restoration, /scheduledExpiry\.seeded,\s*identity/);
+  const child = readFileSync(
+    "tests/fixtures/scheduled-expiry-interruption.ts",
+    "utf8",
+  );
+  assert.match(child, /identity: scheduledExpiry\.identity/);
+  assert.match(child, /browserBookingFixtureIdentity\(\s*"expiry"/);
+  for (const unknown of [
+    "",
+    "other",
+    "../capture",
+    "capture'; select 1;--",
+    "__proto__",
+    null,
+    {},
+  ]) {
+    assert.throws(
+      () => browserBookingFixtureIdentity(unknown, "worker"),
+      /Unknown browser booking fixture file/,
+    );
+    assert.throws(
+      () => browserBookingFixtureIdentity("capture", unknown),
+      /Unknown browser booking fixture project/,
+    );
+    assert.throws(
+      () =>
+        notificationFixtures.browserBookingRequestNotificationFixture(unknown),
+      /Unknown browser booking fixture project/,
+    );
+  }
+  const marker = {
+    start: "-- BEGIN FIXTURE",
+    end: "-- END FIXTURE",
+    required: ["owned-token"],
+  };
+  assert.equal(
+    bookingFixtureSource(
+      "-- BEGIN FIXTURE\nowned-token\n-- END FIXTURE",
+      marker,
+    ).trim(),
+    "owned-token",
+  );
+  for (const corrupt of [
+    "owned-token\n-- END FIXTURE",
+    "-- BEGIN FIXTURE\nowned-token",
+    "-- BEGIN FIXTURE\n-- BEGIN FIXTURE\nowned-token\n-- END FIXTURE",
+    "-- BEGIN FIXTURE\nowned-token\n-- END FIXTURE\n-- END FIXTURE",
+    "-- BEGIN FIXTURE\n  \n-- END FIXTURE",
+    "-- END FIXTURE\nowned-token\n-- BEGIN FIXTURE",
+    "-- BEGIN FIXTURE\nforeign-token\n-- END FIXTURE",
+  ])
+    assert.throws(
+      () => bookingFixtureSource(corrupt, marker),
+      /Booking fixture source/,
+    );
+  for (const corrupt of [
+    "-- END FIXTURE",
+    "-- BEGIN FIXTURE\n-- BEGIN FIXTURE\nowned-token\n-- END FIXTURE",
+    "-- BEGIN FIXTURE\n \n-- END FIXTURE",
+  ])
+    assert.throws(
+      () => bookingFixtureSource(corrupt, { end: marker.end }),
+      /Booking fixture source/,
+    );
+  for (const [path, boundaries] of [
+    [
+      "supabase/tests/database/booking_cancellation.test.sql",
+      { end: "-- END CANCELLATION FIXTURE" },
+    ],
+    [
+      "supabase/tests/database/booking_completion.test.sql",
+      {
+        start: "-- BEGIN COMPLETION FIXTURE",
+        end: "-- END COMPLETION FIXTURE",
+      },
+    ],
+    [
+      "supabase/tests/database/booking_request_confirmation.test.sql",
+      {
+        start: "-- BEGIN CAPTURE RECOVERY SOURCE",
+        end: "-- END CAPTURE RECOVERY SOURCE",
+      },
+    ],
+    [
+      "supabase/tests/database/booking_request_payment_recovery.test.sql",
+      { end: "select plan(" },
+    ],
+    [
+      "supabase/tests/database/booking_request_notification.test.sql",
+      { end: "create function pg_temp.notice_call" },
+    ],
+  ]) {
+    const block = bookingFixtureSource(readFileSync(path, "utf8"), {
+      ...boundaries,
+      required: [
+        "00000000100",
+        "964750000100",
+        "confirmation-auth-",
+        "CONFIRMATION-HOLD-1",
+        "Confirmation Cottage",
+      ],
+    });
+    assert.ok(block.trim());
   }
 });

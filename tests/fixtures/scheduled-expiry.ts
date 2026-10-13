@@ -12,9 +12,23 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     guardDisposableLocalDatabase(): void;
   };
 };
-const { captureCleanup } = createRequire(import.meta.url)(
-  "../../scripts/lib/booking-fixture.mjs",
-) as {
+const { captureCleanup, browserBookingFixtureIdentity } = createRequire(
+  import.meta.url,
+)("../../scripts/lib/booking-fixture.mjs") as {
+  browserBookingFixtureIdentity(
+    file: string,
+    project: string,
+  ): Record<
+    | "stem"
+    | "customer"
+    | "request"
+    | "reference"
+    | "commitment"
+    | "claim"
+    | "operation"
+    | "captureFingerprint",
+    string
+  >;
   captureCleanup(options?: {
     stem?: string;
     paymentRecovery?: boolean;
@@ -161,13 +175,11 @@ export function readScheduledExpiryBaseline(
   };
 }
 
-export const requestId = "60000000-0000-4000-8000-000000001001";
-const cleanup = captureCleanup({ paymentRecovery: true });
-
 export function restoreScheduledExpiryDatabase(
   harness: SqlHarness,
   baseline: ScheduledExpiryBaseline,
   seeded: boolean,
+  identity: ReturnType<typeof browserBookingFixtureIdentity>,
 ): void {
   const errors: unknown[] = [];
   try {
@@ -195,7 +207,10 @@ export function restoreScheduledExpiryDatabase(
   }
   if (seeded) {
     try {
-      harness.runSql(paymentEvidenceSql + cleanup);
+      harness.runSql(
+        paymentEvidenceSql +
+          captureCleanup({ stem: identity.stem, paymentRecovery: true }),
+      );
     } catch (error) {
       errors.push(error);
     }
@@ -210,6 +225,7 @@ export function restoreScheduledExpiryDatabase(
 }
 
 type ScheduledExpiry = ScheduledExpiryBaseline & {
+  identity: ReturnType<typeof browserBookingFixtureIdentity>;
   harness: SqlHarness;
   clocked: string[];
   setPaymentClock(expression: string): void;
@@ -221,7 +237,11 @@ type ScheduledExpiry = ScheduledExpiryBaseline & {
 };
 
 export const test = base.extend<{ scheduledExpiry: ScheduledExpiry }>({
-  scheduledExpiry: async ({}, use) => {
+  scheduledExpiry: async ({}, use, testInfo) => {
+    const identity = browserBookingFixtureIdentity(
+      "expiry",
+      process.env.SCHEDULED_EXPIRY_PROBE_PROJECT ?? testInfo.project.name,
+    );
     const harness = createLocalSupabaseConcurrencyHarness();
     harness.guardDisposableLocalDatabase();
     const baseline = readScheduledExpiryBaseline(harness);
@@ -243,6 +263,7 @@ export const test = base.extend<{ scheduledExpiry: ScheduledExpiry }>({
     };
     const scheduledExpiry: ScheduledExpiry = {
       ...baseline,
+      identity,
       harness: {
         runSql(sql) {
           ensureOpen();
@@ -275,7 +296,12 @@ export const test = base.extend<{ scheduledExpiry: ScheduledExpiry }>({
     } finally {
       closed = true;
       controller.abort();
-      restoreScheduledExpiryDatabase(harness, baseline, scheduledExpiry.seeded);
+      restoreScheduledExpiryDatabase(
+        harness,
+        baseline,
+        scheduledExpiry.seeded,
+        identity,
+      );
     }
   },
 });

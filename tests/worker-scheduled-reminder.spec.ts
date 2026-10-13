@@ -11,10 +11,32 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     runSql(sql: string): string;
   };
 };
-const { confirmedBookingAccessCleanup } = createRequire(import.meta.url)(
-  "../scripts/lib/booking-fixture.mjs",
-) as {
+const {
+  confirmedBookingAccessCleanup,
+  browserBookingFixtureIdentity,
+  bookingFixtureSource,
+} = createRequire(import.meta.url)("../scripts/lib/booking-fixture.mjs") as {
+  browserBookingFixtureIdentity(
+    file: string,
+    project: string,
+  ): Record<
+    | "stem"
+    | "owner"
+    | "customer"
+    | "request"
+    | "snapshot"
+    | "commitment"
+    | "operation"
+    | "confirmation"
+    | "captureFingerprint",
+    string
+  >;
+  bookingFixtureSource(
+    source: string,
+    options: { start?: string; end: string; required?: string[] },
+  ): string;
   confirmedBookingAccessCleanup(options?: {
+    stem?: string;
     owner?: string;
     customer?: string;
     lifecycle?: boolean;
@@ -25,20 +47,42 @@ test.describe.configure({ mode: "serial" });
 
 test("scheduled worker delivers both due preparation reminders once", async ({
   baseURL,
-}) => {
+}, testInfo) => {
   const harness = createLocalSupabaseConcurrencyHarness();
   harness.guardDisposableLocalDatabase();
-  const request = "60000000-0000-4000-8000-000000003501";
+  const identity = browserBookingFixtureIdentity(
+    "reminder",
+    testInfo.project.name,
+  );
+  const { request } = identity;
   const source = readFileSync(
     "supabase/tests/database/booking_confirmation_access.test.sql",
     "utf8",
   );
-  const seedStart = source.indexOf("set session_replication_role = replica;");
-  const seedEnd =
-    source.indexOf("set session_replication_role = origin;", seedStart) +
-    "set session_replication_role = origin;".length;
-  const seed = source.slice(seedStart, seedEnd);
-  const cleanup = confirmedBookingAccessCleanup();
+  const seed =
+    "set session_replication_role = replica;" +
+    bookingFixtureSource(source, {
+      start: "set session_replication_role = replica;",
+      end: "set session_replication_role = origin;",
+      required: [
+        "00000000350",
+        "964750000350",
+        "RC-REQ-0000000000003501",
+        "CONFIRMED-BOOKING-35",
+        "booking-request-capture:35",
+        "repeat('e', 64)",
+      ],
+    })
+      .replaceAll("00000000350", `00000000${identity.stem}`)
+      .replaceAll("964750000350", `964750000${identity.stem}`)
+      .replaceAll("CONFIRMED-BOOKING-35", `CONFIRMED-BOOKING-${identity.stem}`)
+      .replaceAll(
+        "booking-request-capture:35",
+        `booking-request-capture:${identity.stem}`,
+      )
+      .replaceAll("repeat('e', 64)", `'${identity.captureFingerprint}'`) +
+    "set session_replication_role = origin;";
+  const cleanup = confirmedBookingAccessCleanup({ stem: identity.stem });
   const observe = () =>
     JSON.parse(
       harness.runSql(
@@ -64,11 +108,11 @@ test("scheduled worker delivers both due preparation reminders once", async ({
     harness.runSql(seed);
     const anchor = harness.runSql("select clock_timestamp()");
     harness.runSql(`set session_replication_role=replica;
-      update public.booking_snapshots set quote_payload=jsonb_set(quote_payload,'{items,0,startsAt}',to_jsonb('${anchor}'::timestamptz+interval '23 hours')) where id='40000000-0000-4000-8000-000000003501';
-      update public.cottage_booking_period_commitments set access_ranges=tstzmultirange(tstzrange('${anchor}'::timestamptz+interval '23 hours','${anchor}'::timestamptz+interval '27 hours','[)')) where id='50000000-0000-4000-8000-000000003501';
+      update public.booking_snapshots set quote_payload=jsonb_set(quote_payload,'{items,0,startsAt}',to_jsonb('${anchor}'::timestamptz+interval '23 hours')) where id='${identity.snapshot}';
+      update public.cottage_booking_period_commitments set access_ranges=tstzmultirange(tstzrange('${anchor}'::timestamptz+interval '23 hours','${anchor}'::timestamptz+interval '27 hours','[)')) where id='${identity.commitment}';
       insert into public.booking_notification_events(id,booking_request_id,receipt_id,event_kind,recipient_user_id,recipient_role,notice_locale,due_at,first_starts_at,created_at)
       select gen_random_uuid(),'${request}',receipt.id,'preparation_reminder',receipt.recipient_user_id,receipt.recipient_role,'en','${anchor}'::timestamptz-interval '1 hour','${anchor}'::timestamptz+interval '23 hours',clock_timestamp()
-      from public.booking_receipts receipt where receipt.booking_confirmation_id='80000000-0000-4000-8000-000000003501';
+      from public.booking_receipts receipt where receipt.booking_confirmation_id='${identity.confirmation}';
       set session_replication_role=origin;`);
     const before = observe();
     expect(before.events).toHaveLength(2);
@@ -105,22 +149,46 @@ test("scheduled worker delivers both due preparation reminders once", async ({
 
 test("scheduled reminders suppress invalid work and recover existing effects", async ({
   baseURL,
-}) => {
+}, testInfo) => {
   const harness = createLocalSupabaseConcurrencyHarness();
   harness.guardDisposableLocalDatabase();
-  const request = "60000000-0000-4000-8000-000000003501";
-  const owner = "10000000-0000-4000-8000-000000003501";
-  const customer = "10000000-0000-4000-8000-000000003502";
+  const identity = browserBookingFixtureIdentity(
+    "reminder",
+    testInfo.project.name,
+  );
+  const { request } = identity;
+  const { owner, customer } = identity;
   const source = readFileSync(
     "supabase/tests/database/booking_confirmation_access.test.sql",
     "utf8",
   );
-  const seedStart = source.indexOf("set session_replication_role = replica;");
-  const seedEnd =
-    source.indexOf("set session_replication_role = origin;", seedStart) +
-    "set session_replication_role = origin;".length;
-  const seed = source.slice(seedStart, seedEnd);
-  const cleanup = confirmedBookingAccessCleanup({ lifecycle: true });
+  const seed =
+    "set session_replication_role = replica;" +
+    bookingFixtureSource(source, {
+      start: "set session_replication_role = replica;",
+      end: "set session_replication_role = origin;",
+      required: [
+        "00000000350",
+        "964750000350",
+        "RC-REQ-0000000000003501",
+        "CONFIRMED-BOOKING-35",
+        "booking-request-capture:35",
+        "repeat('e', 64)",
+      ],
+    })
+      .replaceAll("00000000350", `00000000${identity.stem}`)
+      .replaceAll("964750000350", `964750000${identity.stem}`)
+      .replaceAll("CONFIRMED-BOOKING-35", `CONFIRMED-BOOKING-${identity.stem}`)
+      .replaceAll(
+        "booking-request-capture:35",
+        `booking-request-capture:${identity.stem}`,
+      )
+      .replaceAll("repeat('e', 64)", `'${identity.captureFingerprint}'`) +
+    "set session_replication_role = origin;";
+  const cleanup = confirmedBookingAccessCleanup({
+    stem: identity.stem,
+    lifecycle: true,
+  });
   const state = () =>
     JSON.parse(
       harness.runSql(
@@ -141,11 +209,11 @@ test("scheduled reminders suppress invalid work and recover existing effects", a
       `select clock_timestamp()+interval '${offset}'`,
     );
     harness.runSql(`set session_replication_role=replica;
-      update public.booking_snapshots set quote_payload=jsonb_set(quote_payload,'{items,0,startsAt}',to_jsonb('${firstStartsAt}'::timestamptz)) where id='40000000-0000-4000-8000-000000003501';
-      update public.cottage_booking_period_commitments set access_ranges=tstzmultirange(tstzrange('${firstStartsAt}'::timestamptz,'${firstStartsAt}'::timestamptz+interval '4 hours','[)')) where id='50000000-0000-4000-8000-000000003501';
+      update public.booking_snapshots set quote_payload=jsonb_set(quote_payload,'{items,0,startsAt}',to_jsonb('${firstStartsAt}'::timestamptz)) where id='${identity.snapshot}';
+      update public.cottage_booking_period_commitments set access_ranges=tstzmultirange(tstzrange('${firstStartsAt}'::timestamptz,'${firstStartsAt}'::timestamptz+interval '4 hours','[)')) where id='${identity.commitment}';
       insert into public.booking_notification_events(id,booking_request_id,receipt_id,event_kind,recipient_user_id,recipient_role,notice_locale,due_at,first_starts_at,created_at)
       select gen_random_uuid(),'${request}',receipt.id,'preparation_reminder',receipt.recipient_user_id,receipt.recipient_role,'en','${firstStartsAt}'::timestamptz-interval '24 hours','${firstStartsAt}',clock_timestamp()
-      from public.booking_receipts receipt where receipt.booking_confirmation_id='80000000-0000-4000-8000-000000003501';
+      from public.booking_receipts receipt where receipt.booking_confirmation_id='${identity.confirmation}';
       set session_replication_role=origin;`);
     return firstStartsAt;
   }
@@ -163,7 +231,7 @@ test("scheduled reminders suppress invalid work and recover existing effects", a
     expect(state().work).toEqual([]);
     harness.runSql(`set session_replication_role=replica;
       insert into public.booking_cancellations(id,booking_request_id,booking_confirmation_id,capture_operation_id,command_id,command_fingerprint,actor_user_id,actor_role,first_starts_at,occurred_at,refund_booking_price_fils,refund_booking_service_fee_fils)
-      values('86000000-0000-4000-8000-000000003501','${request}','80000000-0000-4000-8000-000000003501','81000000-0000-4000-8000-000000003501','87000000-0000-4000-8000-000000003501',repeat('c',64),'${customer}','customer','${cancelledStart}',clock_timestamp(),0,0);
+      values('86000000-0000-4000-8000-00000000${identity.stem}1','${request}','${identity.confirmation}','${identity.operation}','87000000-0000-4000-8000-00000000${identity.stem}1',repeat('c',64),'${customer}','customer','${cancelledStart}',clock_timestamp(),0,0);
       update public.account_contexts set owner_approval_state='suspended' where user_id='${owner}';
       set session_replication_role=origin;`);
     await tick();

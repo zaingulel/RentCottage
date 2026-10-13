@@ -9,9 +9,47 @@ import { triggerScheduled } from "./fixtures/trigger-scheduled";
 import {
   expirySignatures,
   paymentEvidenceSql,
-  requestId,
   test,
 } from "./fixtures/scheduled-expiry";
+
+const { bookingFixtureSource } = createRequire(import.meta.url)(
+  "../scripts/lib/booking-fixture.mjs",
+) as {
+  bookingFixtureSource(
+    source: string,
+    options: { start?: string; end: string; required?: string[] },
+  ): string;
+};
+
+const recoverySource = bookingFixtureSource(
+  readFileSync(
+    "supabase/tests/database/booking_request_payment_recovery.test.sql",
+    "utf8",
+  ),
+  {
+    end: "select plan(",
+    required: [
+      "00000000100",
+      "964750000100",
+      "CONFIRMATION-HOLD-1",
+      "Confirmation Cottage",
+      "confirmation-auth-",
+      "RC-REQ-0000000000001001",
+      "6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d",
+    ],
+  },
+);
+
+const unobservedFixture = bookingFixtureSource(
+  readFileSync(
+    "supabase/tests/database/booking_request_payment_correction.test.sql",
+    "utf8",
+  ),
+  {
+    start: "-- BEGIN UNOBSERVED RECOVERY FIXTURE",
+    end: "-- END UNOBSERVED RECOVERY FIXTURE",
+  },
+);
 
 function scheduledExpiryCheck(step: "--seed" | "--verify"): number | null {
   return spawnSync(
@@ -77,6 +115,7 @@ const outerTest = test.extend<{ childProbe: ChildProbe }>({
           ...process.env,
           SCHEDULED_EXPIRY_PROBE_BASE_URL: baseURL,
           SCHEDULED_EXPIRY_PROBE_OUTPUT_DIR: directory,
+          SCHEDULED_EXPIRY_PROBE_PROJECT: testInfo.project.name,
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
@@ -242,18 +281,25 @@ for (const { outcome, movement } of (
   }) => {
     const {
       harness,
+      identity,
       ordinary,
       captureDefinitions,
       recoveryDefinitions,
       clocked,
       setPaymentClock,
     } = scheduledExpiry;
-    const source = readFileSync(
-      "supabase/tests/database/booking_request_payment_recovery.test.sql",
-      "utf8",
-    )
-      .split("select plan(")[0]
-      .replace(/^begin;/, "");
+    const requestId = identity.request;
+    const source = recoverySource
+      .replace(/^begin;/, "")
+      .replaceAll("00000000100", `00000000${identity.stem}`)
+      .replaceAll("964750000100", `964750000${identity.stem}`)
+      .replaceAll("confirmation-auth-", `confirmation-auth-${identity.stem}-`)
+      .replaceAll("CONFIRMATION-HOLD-1", `EXPIRY-HOLD-${identity.stem}`)
+      .replaceAll("Confirmation Cottage", `expiry ${identity.stem} Cottage`)
+      .replaceAll(
+        "6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d",
+        identity.captureFingerprint,
+      );
     const observe = () =>
       JSON.parse(
         harness.runSql(
@@ -262,11 +308,11 @@ for (const { outcome, movement } of (
       'request',(select to_jsonb(r) from public.booking_requests r where id='${requestId}'),
       'capture',(select to_jsonb(w) from public.booking_request_capture_work w where booking_request_id='${requestId}'),
       'expiry',(select to_jsonb(w) from public.booking_request_payment_required_expiry_work w where booking_request_id='${requestId}'),
-      'ledger',(select jsonb_agg(pg_temp.payment_fixture_operation_json(o) order by id) from public.payment_provider_operations o where claim_id='72000000-0000-4000-8000-000000001001'),
+      'ledger',(select jsonb_agg(pg_temp.payment_fixture_operation_json(o) order by id) from public.payment_provider_operations o where claim_id='${identity.claim}'),
       'notices',(select coalesce(jsonb_agg(to_jsonb(n) order by id),'[]') from public.booking_request_status_notifications n where booking_request_id='${requestId}' and status='expired'),
       'confirmed',(select count(*) from public.booking_confirmations where booking_request_id='${requestId}'),
-      'hold',(select status from public.cottage_booking_period_commitments where id='50000000-0000-4000-8000-000000001001'),
-      'active',(select count(*) from public.cottage_booking_period_occupancies where booking_period_commitment_id='50000000-0000-4000-8000-000000001001' and active));`,
+      'hold',(select status from public.cottage_booking_period_commitments where id='${identity.commitment}'),
+      'active',(select count(*) from public.cottage_booking_period_occupancies where booking_period_commitment_id='${identity.commitment}' and active));`,
         ),
       );
     // Seed a coherent historical capture/window: both PostgreSQL and the real Worker are past D.
@@ -304,7 +350,7 @@ for (const { outcome, movement } of (
         harness
           .runSql(
             paymentEvidenceSql +
-              `select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',false);set role authenticated;select public.claim_customer_booking_request_payment_recovery('${requestId}','81000000-0000-4000-8000-000000001001','simulated-replacement');`,
+              `select set_config('request.jwt.claim.sub','${identity.customer}',false);set role authenticated;select public.claim_customer_booking_request_payment_recovery('${requestId}','${identity.operation}','simulated-replacement');`,
           )
           .split("\n")
           .at(-1)!,
@@ -326,12 +372,6 @@ for (const { outcome, movement } of (
               `set role service_role;select public.lease_booking_request_payment_recovery_step('${admitted.attemptId}','replacement-capture','replacement_authorized');`,
           ),
         ).permit;
-        const unobservedFixture = readFileSync(
-          "supabase/tests/database/booking_request_payment_correction.test.sql",
-          "utf8",
-        )
-          .split("-- BEGIN UNOBSERVED RECOVERY FIXTURE")[1]
-          .split("-- END UNOBSERVED RECOVERY FIXTURE")[0];
         const receipt = JSON.parse(
           harness.runSql(
             paymentEvidenceSql +
