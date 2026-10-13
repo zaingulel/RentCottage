@@ -22,7 +22,12 @@ import {
   cottageProfileStatusLabel,
 } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
-import { ActionFocusTarget } from "./interaction-controls";
+import {
+  ActionFocusTarget,
+  ChoiceControl,
+  FormControl,
+  OptionGroup,
+} from "./interaction-controls";
 
 import { CottageLocationFields } from "./cottage-location-fields";
 
@@ -165,23 +170,17 @@ export function CottageProfileEditor({
 
   return (
     <section className="cottage-profile-editor">
-      <div className="application-section-heading">
-        <span>01</span>
-        <div>
-          <h1
-            id="cottage-profile-editor-title"
-            tabIndex={-1}
-            className="action-focus-target"
-          >
-            {copy.editorTitle}
-          </h1>
-          <ActionFocusTarget
-            targetId="cottage-profile-editor-title"
-            navigation
-          />
-          <p>{copy.completion}</p>
-        </div>
-      </div>
+      <header className="page-heading">
+        <h1
+          id="cottage-profile-editor-title"
+          tabIndex={-1}
+          className="page-title action-focus-target"
+        >
+          {copy.editorTitle}
+        </h1>
+        <ActionFocusTarget targetId="cottage-profile-editor-title" navigation />
+        <p>{copy.completion}</p>
+      </header>
       <p className={`cottage-profile-status ${profile.status}`}>
         {cottageProfileStatusLabel(locale, profile)}
       </p>
@@ -204,22 +203,27 @@ export function CottageProfileEditor({
           disabled={!editable}
         >
           <h2
-            className="cottage-profile-section-title"
+            className="section-title"
             id="cottage-profile-public-details-heading"
           >
             {copy.publicDetails}
           </h2>
           <label>
             {copy.cottageName}
-            <input name="name" defaultValue={profile.name} />
+            <FormControl kind="input" name="name" defaultValue={profile.name} />
           </label>
           <label>
             {copy.governorate}
-            <input name="governorate" defaultValue={profile.governorate} />
+            <FormControl
+              kind="input"
+              name="governorate"
+              defaultValue={profile.governorate}
+            />
           </label>
           <label>
             {copy.approximateLocation}
-            <input
+            <FormControl
+              kind="input"
               name="approximateLocation"
               aria-describedby="cottage-profile-approximate-location-help"
               defaultValue={profile.approximateLocation}
@@ -231,7 +235,8 @@ export function CottageProfileEditor({
           <div className="cottage-profile-number-grid">
             <label>
               {copy.capacity}
-              <input
+              <FormControl
+                kind="input"
                 name="capacity"
                 type="number"
                 min="1"
@@ -241,7 +246,8 @@ export function CottageProfileEditor({
             </label>
             <label>
               {copy.bedrooms}
-              <input
+              <FormControl
+                kind="input"
                 name="bedrooms"
                 type="number"
                 min="1"
@@ -251,7 +257,8 @@ export function CottageProfileEditor({
             </label>
             <label>
               {copy.bathrooms}
-              <input
+              <FormControl
+                kind="input"
                 name="bathrooms"
                 type="number"
                 min="1"
@@ -260,20 +267,19 @@ export function CottageProfileEditor({
               />
             </label>
           </div>
-          <fieldset className="amenity-grid">
-            <legend>{copy.amenities}</legend>
+          <OptionGroup legend={copy.amenities} layout="wrap">
             {cottageProfileAmenities.map((amenity) => (
-              <label key={amenity}>
-                <input
-                  type="checkbox"
-                  name="amenities"
-                  value={amenity}
-                  defaultChecked={profile.amenities.includes(amenity)}
-                />
+              <ChoiceControl
+                key={amenity}
+                kind="checkbox"
+                name="amenities"
+                value={amenity}
+                defaultChecked={profile.amenities.includes(amenity)}
+              >
                 {copy[amenity]}
-              </label>
+              </ChoiceControl>
             ))}
-          </fieldset>
+          </OptionGroup>
         </fieldset>
 
         <fieldset
@@ -281,7 +287,7 @@ export function CottageProfileEditor({
           disabled={!editable}
         >
           <h2
-            className="cottage-profile-section-title"
+            className="section-title"
             id="cottage-profile-private-location-heading"
           >
             {copy.privateLocation}
@@ -289,7 +295,11 @@ export function CottageProfileEditor({
           <p className="private-location-warning">{copy.privateWarning}</p>
           <label>
             {copy.exactAddress}
-            <input name="exactAddress" defaultValue={profile.exactAddress} />
+            <FormControl
+              kind="input"
+              name="exactAddress"
+              defaultValue={profile.exactAddress}
+            />
           </label>
           <CottageLocationFields
             locale={locale}
@@ -298,7 +308,8 @@ export function CottageProfileEditor({
           />
           <label>
             {copy.privateDirections}
-            <textarea
+            <FormControl
+              kind="textarea"
               name="privateDirections"
               defaultValue={profile.privateDirections}
             />
@@ -310,14 +321,15 @@ export function CottageProfileEditor({
           disabled={!editable || !sourceEditable}
         >
           <h2
-            className="cottage-profile-section-title"
+            className="section-title"
             id="cottage-profile-source-content-heading"
           >
             {copy.sourceContent}
           </h2>
           <label>
             {copy.sourceLanguage}
-            <select
+            <FormControl
+              kind="select"
               name="sourceLanguage"
               defaultValue={profile.sourceLanguage ?? ""}
             >
@@ -325,15 +337,23 @@ export function CottageProfileEditor({
               <option value="ar">{copy.arabic}</option>
               <option value="ckb">{copy.sorani}</option>
               <option value="en">{copy.english}</option>
-            </select>
+            </FormControl>
           </label>
           <label>
             {copy.description}
-            <textarea name="description" defaultValue={profile.description} />
+            <FormControl
+              kind="textarea"
+              name="description"
+              defaultValue={profile.description}
+            />
           </label>
           <label>
             {copy.houseRules}
-            <textarea name="houseRules" defaultValue={profile.houseRules} />
+            <FormControl
+              kind="textarea"
+              name="houseRules"
+              defaultValue={profile.houseRules}
+            />
           </label>
         </fieldset>
         {editable ? <button type="submit">{copy.save}</button> : null}
@@ -341,7 +361,7 @@ export function CottageProfileEditor({
       </form>
 
       <section className="cottage-profile-photos">
-        <h2>{copy.photos}</h2>
+        <h2 className="section-title">{copy.photos}</h2>
         <p>{copy.photoGuidance}</p>
         <ul>
           {profile.photos.map((photo) => (
@@ -360,7 +380,8 @@ export function CottageProfileEditor({
             <input type="hidden" name="profileId" value={profile.id} />
             <label>
               {copy.photoFile}
-              <input
+              <FormControl
+                kind="input"
                 type="file"
                 name="photo"
                 accept="image/jpeg,image/png,image/webp"
@@ -384,7 +405,7 @@ export function CottageProfileEditor({
 
       {profile.submittedSourceRevision ? (
         <section className="cottage-profile-source-revision">
-          <h2>{copy.sourceRevision}</h2>
+          <h2 className="section-title">{copy.sourceRevision}</h2>
           <p>{copy.sourceNotice}</p>
           <dl>
             <div>

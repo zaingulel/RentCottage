@@ -431,7 +431,7 @@ describe("stylesheet shape and layer tokens", () => {
     expect(pills.length).toBeGreaterThan(0);
     expect(
       pills.filter((selector) =>
-        /\.action-toggle|\.amenity-options/.test(selector),
+        /\.action-toggle|\.choice-control|\.option-group/.test(selector),
       ),
     ).toEqual([]);
   });
@@ -481,6 +481,23 @@ describe("stylesheet shape and layer tokens", () => {
           ),
       ),
     ).toEqual([]);
+  });
+
+  it("gives the cottage list card explicit rows before subgrid for browsers without it", () => {
+    const globals = stylesheets.find(({ file }) => file === globalsFile);
+    const card = [
+      ...(globals?.source.matchAll(/\.cottage-profile-card\s*\{[^}]*\}/g) ??
+        []),
+    ].find(([block]) => block.includes("subgrid"));
+
+    expect(card).toBeDefined();
+    const [block] = card ?? [""];
+    const explicit = block.indexOf(
+      "grid-template-rows: auto auto 1fr auto auto",
+    );
+
+    expect(explicit).toBeGreaterThan(-1);
+    expect(explicit).toBeLessThan(block.indexOf("grid-template-rows: subgrid"));
   });
 });
 

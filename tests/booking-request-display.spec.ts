@@ -1,4 +1,5 @@
 import { bookingRequestPaymentRecoveryMessages } from "../src/i18n/booking-request-status-messages";
+import { ownerBookingRequestMessages } from "../src/i18n/owner-booking-request-messages";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { build } from "esbuild";
 
@@ -377,6 +378,55 @@ test("Customer Booking Request status sits in the record page column under the h
   }
 });
 
+test("owner Booking Request card details sit beside their labels on desktop and under them on a phone in the page column", async ({
+  page,
+}, testInfo) => {
+  if (testInfo.project.name === "mobile") {
+    await page.setViewportSize({ width: 390, height: 844 });
+  }
+  await mountBookingRequestDisplay(page, testInfo);
+
+  for (const locale of ["en", "ar"] as const) {
+    await page.evaluate((input) => window.renderBookingRequestDisplay(input), {
+      locale,
+      role: "owner" as const,
+      status: "paid-confirmed" as const,
+    });
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
+    // The language attribute changes before the page renders, so the first
+    // label is what shows this language's content is the one being measured.
+    await expect(
+      page
+        .locator("main.page .owner-booking-request-card .fact-list dt")
+        .first(),
+    ).toHaveText(ownerBookingRequestMessages[locale].cottage);
+    await page.evaluate(() => document.fonts.ready);
+    const stacked = testInfo.project.name === "mobile";
+    const valueOffsetFromLabel = expect.poll(() =>
+      page.evaluate((isStacked) => {
+        const fact = document.querySelector(
+          "main.page .owner-booking-request-card .fact-list > div",
+        );
+        const label = fact?.querySelector("dt")?.getBoundingClientRect();
+        const value = fact?.querySelector("dd")?.getBoundingClientRect();
+        if (!label || !value)
+          throw new Error("Owner Booking Request fact list is missing");
+        return value.top - (isStacked ? label.bottom : label.top);
+      }, stacked),
+    );
+    if (stacked) {
+      await valueOffsetFromLabel.toBeGreaterThanOrEqual(0);
+    } else {
+      await valueOffsetFromLabel.toBeCloseTo(0, 0);
+    }
+    const measured = await page.evaluate(() => ({
+      available: document.documentElement.clientWidth,
+      document: document.documentElement.scrollWidth,
+    }));
+    expect(measured.document).toBeLessThanOrEqual(measured.available);
+  }
+});
+
 test("a long page title wraps on evenly spaced lines in every language", async ({
   page,
 }, testInfo) => {
@@ -493,4 +543,56 @@ test("a messaging card keeps its side borders and corners inside the page column
     { borderStart: "1px", borderEnd: "1px", radius: "10px" },
     { borderStart: "0px", borderEnd: "0px", radius: "0px" },
   ]);
+});
+
+test("cottage list cards start their title and open button at the same height whatever their pills", async ({
+  page,
+}, testInfo) => {
+  await mountBookingRequestDisplay(page, testInfo);
+  await page.evaluate(() => {
+    const card = (pills: string[], location: string) =>
+      '<article class="cottage-profile-card">' +
+      `<div>${pills.map((pill) => `<span class="status-badge">${pill}</span>`).join("")}</div>` +
+      "<h2>Cottage</h2>" +
+      `<p>${location}</p>` +
+      "<p>0/12 photos</p>" +
+      '<a class="action-link action-primary action-full" href="/">Open Cottage Profile</a>' +
+      "</article>";
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<main class="results-page page"><section class="cottage-profile-overview"><div class="cottage-profile-card-grid">' +
+        card(
+          [
+            "Published; update awaiting approval",
+            "Started in Owner Application",
+          ],
+          "Erbil",
+        ) +
+        card(
+          ["Draft"],
+          "Erbil · Near Shaqlawa, beside the old road to the mountain village and the spring above the orchard",
+        ) +
+        "</div></section></main>",
+    );
+  });
+
+  const measured = await page.evaluate(() => {
+    const tops = (selector: string) =>
+      [...document.querySelectorAll(selector)].map(
+        (element) => element.getBoundingClientRect().top,
+      );
+    return {
+      titles: tops(".cottage-profile-card h2"),
+      links: tops(".cottage-profile-card a"),
+      document: document.documentElement.scrollWidth,
+      available: document.documentElement.clientWidth,
+    };
+  });
+  if (testInfo.project.name === "desktop") {
+    expect(measured.titles).toHaveLength(2);
+    expect(measured.titles[0]).toBe(measured.titles[1]);
+    expect(measured.links).toHaveLength(2);
+    expect(measured.links[0]).toBe(measured.links[1]);
+  }
+  expect(measured.document).toBeLessThanOrEqual(measured.available);
 });

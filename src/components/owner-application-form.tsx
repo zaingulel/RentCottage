@@ -29,7 +29,9 @@ import {
   ActionButton,
   ActionFeedback,
   ActionFocusTarget,
+  ChoiceControl,
   FormControl,
+  OptionGroup,
 } from "./interaction-controls";
 
 function SubmitButton({
@@ -507,32 +509,27 @@ export function OwnerApplicationForm({
                   />
                 </label>
               </div>
-              <fieldset
-                className="amenities-fieldset"
-                {...invalidAttributes("amenities")}
-              >
-                <legend>{copy.amenities}</legend>
-                <div className="amenity-options">
+              <div>
+                <OptionGroup legend={copy.amenities} layout="wrap">
                   {copy.amenityOptions.map((amenity) => (
-                    <label key={amenity.value}>
-                      <input
-                        type="checkbox"
-                        name="amenities"
-                        value={amenity.value}
-                        defaultChecked={values.amenities.includes(
-                          amenity.value,
-                        )}
-                      />
+                    <ChoiceControl
+                      key={amenity.value}
+                      kind="checkbox"
+                      name="amenities"
+                      value={amenity.value}
+                      defaultChecked={values.amenities.includes(amenity.value)}
+                      {...invalidAttributes("amenities")}
+                    >
                       {amenity.label}
-                    </label>
+                    </ChoiceControl>
                   ))}
-                </div>
+                </OptionGroup>
                 <InvalidFieldMessage
                   field="amenities"
                   invalid={invalidFields.has("amenities")}
                   message={copy.invalidField}
                 />
-              </fieldset>
+              </div>
               <div className="application-fields">
                 <label>
                   {copy.description}

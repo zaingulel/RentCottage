@@ -643,11 +643,6 @@ input[type="file"].form-control::file-selector-button {
   font-weight: 700;
 }
 
-.amenities-fieldset[aria-invalid="true"] .amenity-options label {
-  border-color: var(--error);
-  box-shadow: var(--shadow-invalid);
-}
-
 .application-fields small,
 .document-upload-form span {
   color: var(--muted);
@@ -655,34 +650,8 @@ input[type="file"].form-control::file-selector-button {
   font-weight: 400;
 }
 
-.amenities-fieldset {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.amenities-fieldset legend {
-  margin-block-end: var(--space-2);
+.owner-application-form .option-group > legend {
   color: var(--green);
-  font-size: var(--font-size-1);
-  font-weight: 700;
-}
-
-.amenity-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.amenity-options label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--surface-field);
-  padding: var(--space-2) var(--space-3);
   font-size: var(--font-size-1);
 }
 
@@ -1816,9 +1785,39 @@ html[lang="ckb"] .result-content h2 {
   gap: var(--space-5);
 }
 
+.page > .cottage-profile-overview,
+.page > .cottage-profile-editor,
+.page > .cottage-publication-review,
+.page > .cottage-shift-schedule-editor,
+.page > .cottage-pricing-availability-editor,
+.page > .owner-booking-requests {
+  inline-size: auto;
+  margin-block: 0 var(--space-6);
+}
+
+.page > .cottage-profile-overview,
+.page > .cottage-profile-editor,
+.page > .cottage-publication-review {
+  padding-block: 0;
+}
+
+.cottage-profile-overview > .page-heading,
+.cottage-profile-editor > .page-heading {
+  margin-block-end: 0;
+}
+
+.cottage-profile-form > fieldset > .section-title,
+.cottage-profile-photos > .section-title,
+.cottage-profile-source-revision > .section-title,
+.cottage-shift-schedule-editor > .section-title,
+.cottage-pricing-availability-editor > .section-title,
+.cottage-publication-review > .section-title {
+  margin-block-end: 0;
+}
+
 .cottage-profile-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
   gap: var(--space-4);
 }
 
@@ -1838,11 +1837,6 @@ html[lang="ckb"] .result-content h2 {
   display: grid;
   gap: var(--space-4);
   padding-block-start: 0;
-}
-
-.cottage-publication-review > h2 {
-  font-family: var(--display);
-  font-size: clamp(var(--font-size-4), 3vw, var(--font-size-5));
 }
 
 .cottage-localization-grid {
@@ -1917,26 +1911,31 @@ html[lang="ckb"] .result-content h2 {
 
 .cottage-profile-card {
   display: grid;
-  align-content: start;
+  grid-row: span 5;
+  grid-template-rows: auto auto 1fr auto auto;
+  grid-template-rows: subgrid;
   gap: var(--space-3);
 }
 
-.cottage-profile-card > div,
+.cottage-profile-card > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: start;
+  align-items: start;
+  gap: var(--space-2);
+}
+
 .cottage-profile-status {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  color: var(--muted);
-  font-size: var(--font-size-1);
-  font-weight: 700;
-}
-
-.cottage-profile-card > div span,
-.cottage-profile-status {
   width: fit-content;
   border-radius: 999px;
   background: var(--status-neutral-bg);
   padding: var(--space-1) var(--space-3);
+  color: var(--muted);
+  font-size: var(--font-size-1);
+  font-weight: 700;
 }
 
 .cottage-profile-status.submitted_for_content_approval {
@@ -1945,8 +1944,7 @@ html[lang="ckb"] .result-content h2 {
 }
 
 .cottage-profile-overview button,
-.cottage-profile-editor button,
-.cottage-profile-card a {
+.cottage-profile-editor button {
   min-block-size: 2.75rem;
   border: 1px solid var(--green);
   border-radius: var(--radius-control);
@@ -1966,6 +1964,7 @@ html[lang="ckb"] .result-content h2 {
 }
 
 .cottage-profile-form > button,
+.cottage-profile-form > fieldset > button,
 .cottage-photo-upload-form button,
 .cottage-profile-submit-form button {
   inline-size: auto;
@@ -1973,6 +1972,7 @@ html[lang="ckb"] .result-content h2 {
 }
 
 .cottage-profile-form > button,
+.cottage-profile-form > fieldset > button,
 .cottage-photo-upload-form button {
   background: transparent;
   color: var(--green);
@@ -1999,41 +1999,15 @@ html[lang="ckb"] .result-content h2 {
   min-inline-size: 0;
 }
 
-.cottage-profile-section-title,
-.cottage-profile-photos h2,
-.cottage-profile-source-revision h2 {
-  font-family: var(--display);
-  font-size: clamp(var(--font-size-3), 3vw, var(--font-size-5));
-  font-weight: 700;
-}
-
-.cottage-profile-section-title {
-  margin: 0;
-}
-
-.cottage-profile-form label,
+.cottage-profile-form label:where(:not(.choice-control)),
 .cottage-photo-upload-form label {
   display: grid;
   gap: var(--space-2);
   font-weight: 700;
 }
 
-.cottage-profile-form input,
-.cottage-profile-form textarea,
-.cottage-profile-form select,
-.cottage-photo-upload-form input {
-  inline-size: 100%;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--surface-bright);
-  color: var(--ink);
-  padding: var(--space-3);
-  font: inherit;
-}
-
 .cottage-profile-form textarea {
   min-block-size: 7rem;
-  resize: vertical;
 }
 
 .cottage-profile-form fieldset:disabled {
@@ -2272,15 +2246,6 @@ html[lang="ckb"] .result-content h2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.amenity-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-  gap: var(--space-3);
-  border: 0;
-  padding: 0;
-}
-
-.amenity-grid label,
 .cottage-profile-form .exact-point-confirmation {
   display: flex;
   align-items: center;
@@ -2288,11 +2253,6 @@ html[lang="ckb"] .result-content h2 {
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
   padding: var(--space-3);
-}
-
-.amenity-grid input,
-.exact-point-confirmation input {
-  inline-size: auto;
 }
 
 .exact-point-check p {
@@ -2347,6 +2307,7 @@ html[lang="ckb"] .result-content h2 {
   }
 
   .cottage-profile-form > button,
+  .cottage-profile-form > fieldset > button,
   .cottage-photo-upload-form button,
   .cottage-profile-submit-form button {
     inline-size: 100%;
@@ -2585,7 +2546,7 @@ html[lang="ckb"] .result-content h2 {
 
 .owner-booking-request-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 23rem), 1fr));
   gap: var(--space-4);
   margin-block-start: var(--space-4);
 }
@@ -2618,29 +2579,12 @@ html[lang="ckb"] .result-content h2 {
   font-weight: 700;
 }
 
-.owner-booking-request-card dl,
-.owner-booking-request-card dl > div {
-  display: grid;
-  gap: var(--space-1);
+.owner-booking-request-card > .fact-list {
+  margin-block: var(--space-4);
 }
 
-.owner-booking-request-card dl {
-  gap: var(--space-3);
-}
-
-.owner-booking-request-card dt {
-  color: var(--muted);
-  font-size: var(--font-size-1);
-}
-
-.owner-booking-request-card dd {
-  margin: 0;
-  overflow-wrap: anywhere;
+.owner-booking-request-card .fact-list dd {
   white-space: pre-wrap;
-}
-
-.owner-booking-request-card dd > span {
-  display: block;
 }
 
 .confirmed-booking-details,

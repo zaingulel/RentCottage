@@ -90,6 +90,7 @@ describe("owner Cottage Profiles page", () => {
       }),
     );
 
+    expect(screen.getByRole("main")).toHaveClass("results-page", "page");
     const navigation = within(
       screen.getByRole("navigation", { name: "Owner Backoffice" }),
     );

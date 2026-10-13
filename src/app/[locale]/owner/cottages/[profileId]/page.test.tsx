@@ -187,6 +187,14 @@ describe("Cottage Profile owner detail page", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByLabelText("Cottage name")).toBeEnabled();
     expect(screen.getByRole("button", { name: "Save schedule" })).toBeEnabled();
+    expect(screen.getByRole("main")).toHaveClass("results-page", "page");
+    expect(
+      screen
+        .getByRole("button", { name: "Save schedule" })
+        .compareDocumentPosition(
+          screen.getByRole("button", { name: "Abandon draft" }),
+        ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("keeps price setup editable during review while publication opening stays blocked", async () => {

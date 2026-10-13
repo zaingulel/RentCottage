@@ -79,8 +79,16 @@ describe("Cottage Profile editor", () => {
       />,
     );
 
+    expect(screen.getByRole("heading", { level: 1 })).toHaveClass("page-title");
+    for (const heading of screen.getAllByRole("heading", { level: 2 }))
+      expect(heading).toHaveClass("section-title");
+    expect(screen.queryByText("01")).toBeNull();
     expect(screen.getByLabelText("Cottage name")).toHaveValue(
       "Continued Application Cottage",
+    );
+    expect(screen.getByLabelText("Cottage name")).toHaveClass("form-control");
+    expect(screen.getByLabelText("Choose cottage photo")).toHaveClass(
+      "form-control",
     );
     expect(screen.getByLabelText("Approximate public location")).toHaveValue(
       "Near Shaqlawa",
@@ -95,6 +103,12 @@ describe("Cottage Profile editor", () => {
         "Exact address, coordinates and directions stay private and are never shown in the public listing.",
       ),
     ).toBeVisible();
+    expect(screen.getByRole("group", { name: "Known amenities" })).toHaveClass(
+      "option-group",
+    );
+    expect(screen.getByLabelText("Wi-Fi").closest("label")).toHaveClass(
+      "choice-control",
+    );
     expect(
       screen.getByRole("button", { name: "Save private draft" }),
     ).toBeEnabled();

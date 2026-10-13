@@ -1,9 +1,11 @@
-import { ActionFocusTarget } from "@/components/interaction-controls";
+import {
+  ActionFocusTarget,
+  ActionLink,
+} from "@/components/interaction-controls";
 import { RequestNotificationDetails } from "@/components/request-notification-details";
 import { BookingFinancialDetails } from "@/components/booking-financial-details";
 import { requireRequestAccount } from "@/access/request-account-context";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { loadBookingRequestDetails } from "@/booking-request/request-booking-request-details";
@@ -66,22 +68,26 @@ export default async function CustomerBookingRequestPage({
       <main
         id="customer-booking-request-detail"
         tabIndex={-1}
-        className="results-page action-focus-target"
+        className="results-page page page-record action-focus-target"
       >
         <ActionFocusTarget targetId="customer-booking-request-detail" />
         <section role="alert">
-          <h1
-            id="customer-booking-request-unavailable-title"
-            tabIndex={-1}
-            className="action-focus-target"
-          >
-            {unavailableCopy[locale].title}
-          </h1>
-          <ActionFocusTarget
-            targetId="customer-booking-request-unavailable-title"
-            navigation
-          />
-          <Link href={`/${locale}`}>{unavailableCopy[locale].home}</Link>
+          <header className="page-heading">
+            <ActionLink kind="text" href={`/${locale}`}>
+              {unavailableCopy[locale].home}
+            </ActionLink>
+            <h1
+              id="customer-booking-request-unavailable-title"
+              tabIndex={-1}
+              className="page-title action-focus-target"
+            >
+              {unavailableCopy[locale].title}
+            </h1>
+            <ActionFocusTarget
+              targetId="customer-booking-request-unavailable-title"
+              navigation
+            />
+          </header>
         </section>
       </main>
     );

@@ -5,7 +5,9 @@ import { useActionState } from "react";
 import {
   ActionButton,
   ActionFeedback,
+  ChoiceControl,
   FormControl,
+  OptionGroup,
 } from "@/components/interaction-controls";
 import { ownerApplicationMessages } from "@/i18n/owner-application-messages";
 import { ownerApplicationStatusMessages } from "@/i18n/owner-application-status-messages";
@@ -67,22 +69,19 @@ function RequestedField({
     return (
       <>
         <input type="hidden" name="requestedField" value={field} />
-        <fieldset>
-          <legend>{label}</legend>
-          <span className="amenity-options">
-            {copy.amenityOptions.map((amenity) => (
-              <label key={amenity.value}>
-                <input
-                  type="checkbox"
-                  name={field}
-                  value={amenity.value}
-                  defaultChecked={(value as string[]).includes(amenity.value)}
-                />
-                {amenity.label}
-              </label>
-            ))}
-          </span>
-        </fieldset>
+        <OptionGroup legend={label} layout="wrap">
+          {copy.amenityOptions.map((amenity) => (
+            <ChoiceControl
+              key={amenity.value}
+              kind="checkbox"
+              name={field}
+              value={amenity.value}
+              defaultChecked={(value as string[]).includes(amenity.value)}
+            >
+              {amenity.label}
+            </ChoiceControl>
+          ))}
+        </OptionGroup>
       </>
     );
   }

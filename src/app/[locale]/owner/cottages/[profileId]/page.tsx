@@ -73,7 +73,7 @@ export default async function OwnerCottageProfilePage({
   }
   if (!page.value.profile) notFound();
   return (
-    <main className="owner-application-page cottage-profile-page">
+    <main className="results-page page">
       <BackofficeNavigation
         locale={locale}
         area="owner"
@@ -85,12 +85,6 @@ export default async function OwnerCottageProfilePage({
         profile={page.value.profile}
         actor="owner"
         editable={page.value.editable && page.value.profile.status === "draft"}
-      />
-      <CottageProfileLifecycleControls
-        locale={locale}
-        actor="owner"
-        profile={page.value.profile}
-        eligible={page.value.editable}
       />
       <CottageShiftScheduleEditor
         locale={locale}
@@ -118,6 +112,12 @@ export default async function OwnerCottageProfilePage({
           actor="owner"
         />
       ) : null}
+      <CottageProfileLifecycleControls
+        locale={locale}
+        actor="owner"
+        profile={page.value.profile}
+        eligible={page.value.editable}
+      />
     </main>
   );
 }

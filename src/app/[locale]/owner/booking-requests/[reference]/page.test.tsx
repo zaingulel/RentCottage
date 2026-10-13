@@ -65,6 +65,10 @@ it.each([
       "href",
       `/${locale}/owner/cottages`,
     );
+    expect(screen.getByRole("main")).toHaveClass("page", "page-record");
+    expect(
+      within(screen.getByRole("alert")).getByRole("heading", { name: message }),
+    ).toHaveClass("page-title");
     expect(
       screen.queryByRole("heading", { name: "Confirmed booking" }),
     ).not.toBeInTheDocument();

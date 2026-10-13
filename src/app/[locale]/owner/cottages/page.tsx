@@ -85,7 +85,7 @@ export default async function OwnerCottagesPage({
     );
   }
   return (
-    <main className="owner-application-page cottage-profile-page">
+    <main className="results-page page">
       <BackofficeNavigation locale={locale} area="owner" current="cottages" />
       <CottageProfileOverview
         locale={locale}
