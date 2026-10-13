@@ -958,6 +958,18 @@ try {
     await runSql(`drop table public.test_booking_request_cutoff_stale_work;`);
   }
 
+  const retirementConversationCleanup = `
+  delete from public.cottage_inventory_availability availability
+  using public.test_booking_request_concurrency_fixture base,
+    public.test_booking_request_retirement_fixture race
+  where availability.schedule_revision_id = base.schedule_id
+    and availability.unit_kind = 'shift' and availability.unit_id = base.shift_id
+    and availability.service_day between race.service_day and race.replacement_day;
+  alter table public.messaging_conversations disable trigger messaging_conversations_immutable;
+  delete from public.messaging_conversations where customer_user_id = '${customerId}';
+  alter table public.messaging_conversations enable trigger messaging_conversations_immutable;
+`;
+
   const cleanup = `begin;
   create table if not exists public.test_booking_request_retirement_fixture (
     label text primary key, conversation_id uuid, service_day date, replacement_day date,
@@ -1098,15 +1110,7 @@ try {
     select id from public.cottage_booking_period_commitments where customer_user_id = '${customerId}'
   );
   delete from public.cottage_booking_period_commitments where customer_user_id = '${customerId}';
-  delete from public.cottage_inventory_availability availability
-  using public.test_booking_request_concurrency_fixture base,
-    public.test_booking_request_retirement_fixture race
-  where availability.schedule_revision_id = base.schedule_id
-    and availability.unit_kind = 'shift' and availability.unit_id = base.shift_id
-    and availability.service_day between race.service_day and race.replacement_day;
-  alter table public.messaging_conversations disable trigger messaging_conversations_immutable;
-  delete from public.messaging_conversations where customer_user_id = '${customerId}';
-  alter table public.messaging_conversations enable trigger messaging_conversations_immutable;
+  ${retirementConversationCleanup}
   drop table public.test_booking_request_retirement_fixture;
   delete from public.account_contexts where user_id = '${customerId}';
   delete from auth.users where id = '${customerId}';
@@ -1817,15 +1821,7 @@ commit;`;
       await removeBoundaryAttempt(label);
     }
     await runSql(`begin;
-    delete from public.cottage_inventory_availability availability
-    using public.test_booking_request_concurrency_fixture base,
-      public.test_booking_request_retirement_fixture race
-    where availability.schedule_revision_id = base.schedule_id
-      and availability.unit_kind = 'shift' and availability.unit_id = base.shift_id
-      and availability.service_day between race.service_day and race.replacement_day;
-    alter table public.messaging_conversations disable trigger messaging_conversations_immutable;
-  delete from public.messaging_conversations where customer_user_id = '${customerId}';
-  alter table public.messaging_conversations enable trigger messaging_conversations_immutable;
+    ${retirementConversationCleanup}
     delete from public.test_booking_request_retirement_fixture;
     commit;
   `);

@@ -526,7 +526,6 @@ begin
   where listings.public_slug = target_slug
   for update of profiles;
   if current_profile_id is null then
-    perform public.retire_unusable_prepared_booking_request_submission(key_attempt.id);
     perform public.retire_unusable_prepared_booking_request_submission(existing_attempt.id);
     return jsonb_build_object('status', 'quote-stale');
   end if;
@@ -595,7 +594,6 @@ begin
       <> (target_submission ->> 'customerTotalIqd')::bigint
     or current_quote -> 'items' -> 0 ->> 'startsAt'
       <> target_submission ->> 'firstStartsAt' then
-    perform public.retire_unusable_prepared_booking_request_submission(key_attempt.id);
     perform public.retire_unusable_prepared_booking_request_submission(existing_attempt.id);
     return jsonb_build_object('status', 'quote-stale');
   end if;
@@ -653,24 +651,7 @@ begin
     );
   end if;
 
-  select * into existing_attempt
-  from public.booking_request_submission_attempts attempts
-  where attempts.id = any(locked_attempt_ids)
-    and attempts.customer_user_id = target_customer_user_id
-    and (
-      attempts.intent_fingerprint = target_intent_fingerprint
-        and attempts.intent_dedupe_active
-      or attempts.idempotency_key = target_idempotency_key
-    );
-  if not found then
-    return jsonb_build_object('status', 'invalid');
-  end if;
-  if existing_attempt.quote_payload <> current_quote - 'status' then
-    return jsonb_build_object('status', 'invalid');
-  end if;
-  return public.project_existing_booking_request_submission_attempt(
-    existing_attempt, target_intent_fingerprint, intent, true
-  );
+  return jsonb_build_object('status', 'invalid');
 end;
 $function$;
 
@@ -691,32 +672,7 @@ begin
   for update;
   if not found
     or attempt.state <> 'authorizing'
-    or attempt.payment_snapshot is not null
-    or attempt.booking_request_id is not null
-    or num_nulls(
-      attempt.authorization_provider, attempt.authorization_environment,
-      attempt.authorization_merchant_id, attempt.authorization_terminal_id,
-      attempt.authorization_provider_request_id, attempt.authorization_provider_reference,
-      attempt.authorization_movement_reference, attempt.release_provider_request_id,
-      attempt.release_provider_reference, attempt.release_movement_reference
-    ) <> 10
-    or exists (
-      select 1 from public.booking_request_authorization_claims claims
-      where claims.attempt_id = attempt.id
-        or claims.payment_lifecycle_id = attempt.payment_lifecycle_id
-    )
-    or exists (
-      select 1 from public.booking_requests requests
-      where requests.payment_lifecycle_id = attempt.payment_lifecycle_id
-    )
-    or exists (
-      select 1 from public.payment_provider_operations operations
-      where operations.payment_lifecycle_id = attempt.payment_lifecycle_id
-    )
-    or exists (
-      select 1 from public.booking_request_provider_operation_identities identities
-      where identities.attempt_id = attempt.id
-    ) then
+    or attempt.payment_snapshot is not null then
     return false;
   end if;
 
