@@ -18,12 +18,6 @@ type NativeButtonProps = Omit<
   ref?: Ref<HTMLButtonElement>;
 };
 
-function withoutKind<Props extends { kind: string }>(props: Props) {
-  const nativeProps = { ...props };
-  Reflect.deleteProperty(nativeProps, "kind");
-  return nativeProps as Omit<Props, "kind">;
-}
-
 type ActionButtonProps =
   | (NativeButtonProps & {
       kind: "primary";
@@ -187,42 +181,43 @@ export function ActionButton(props: ActionButtonProps) {
       restoreActionFocus(focusIntent);
   });
   if (actionProps.kind === "toggle") {
-    const { pressed, size, ...buttonProps } = withoutKind(actionProps);
+    const { kind, pressed, size, ...buttonProps } = actionProps;
     return (
       <button
         {...buttonProps}
         {...focusProps}
         aria-pressed={pressed}
-        className={`action action-toggle action-${size}`}
+        className={`action action-${kind} action-${size}`}
       />
     );
   }
 
   if (actionProps.kind === "secondary") {
     const {
+      kind,
       pending = false,
       width = "content",
       size,
       ...buttonProps
-    } = withoutKind(actionProps);
+    } = actionProps;
     return (
       <button
         {...buttonProps}
         {...focusProps}
         aria-busy={pending || undefined}
-        className={`action action-secondary action-${size} action-${width}`}
+        className={`action action-${kind} action-${size} action-${width}`}
         disabled={buttonProps.disabled || pending}
       />
     );
   }
 
-  const { pending = false, width, ...buttonProps } = withoutKind(actionProps);
+  const { kind, pending = false, width, ...buttonProps } = actionProps;
   return (
     <button
       {...buttonProps}
       {...focusProps}
       aria-busy={pending || undefined}
-      className={`action action-primary action-regular action-${width}`}
+      className={`action action-${kind} action-regular action-${width}`}
       disabled={buttonProps.disabled || pending}
     />
   );

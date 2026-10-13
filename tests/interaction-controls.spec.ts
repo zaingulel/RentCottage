@@ -608,6 +608,12 @@ test("busy action focus preserves native blocking and explicit successors", asyn
         expect(
           (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05),
         ).toBeGreaterThanOrEqual(3);
+        if (scenario === "replacement") {
+          await elsewhere.click();
+          await result.click();
+          await expect(result).toBeFocused();
+          await expect(result).toHaveCSS("outline-style", "none");
+        }
       }
       await originalResult?.dispose();
       await originalSource?.dispose();

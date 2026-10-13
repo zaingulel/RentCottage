@@ -69,19 +69,24 @@ function HideWithReason({
   const [notice, setNotice] = useState<{
     kind: "error" | "success";
     text: string;
+    focus?: true;
   }>();
   const [pending, startTransition] = useTransition();
   const noticeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (notice?.text === copy[keys.reasonRequired]) noticeRef.current?.focus();
-  }, [notice, copy, keys.reasonRequired]);
+    if (notice?.focus) noticeRef.current?.focus();
+  }, [notice]);
 
   function submit(formData: FormData) {
     const value = formData.get("reason");
     const reason = typeof value === "string" ? value.trim() : "";
     if (!reason) {
-      setNotice({ kind: "error", text: copy[keys.reasonRequired] });
+      setNotice({
+        kind: "error",
+        text: copy[keys.reasonRequired],
+        focus: true,
+      });
       return;
     }
     setNotice(undefined);
@@ -160,10 +165,7 @@ function HideWithReason({
         <ActionFocusTarget targetId="administrator-reviews-heading" />
       ) : null}
       {notice ? (
-        <div
-          ref={noticeRef}
-          tabIndex={notice.kind === "error" ? -1 : undefined}
-        >
+        <div ref={noticeRef} tabIndex={notice.focus ? -1 : undefined}>
           <ActionFeedback kind={notice.kind}>{notice.text}</ActionFeedback>
         </div>
       ) : null}

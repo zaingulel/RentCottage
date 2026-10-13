@@ -1490,6 +1490,8 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   ).toBe(true);
   await locationSource.dispose();
 
+  await page.getByLabel("Latitude").fill("36.408333");
+  await page.getByLabel("Longitude").fill("44.385834");
   await page.getByLabel("I checked this point is the cottage").check();
   await page
     .getByLabel("Private directions")
@@ -2081,13 +2083,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   if (!secret) throw new Error("MFA enrollment returned no secret");
   const failedAttemptedAfter = new Date().toISOString();
   await page.getByLabel("Authenticator app code").fill("12");
-  const administratorRejectedControl = page.getByRole("button", {
-    name: "Verify",
-    exact: true,
-  });
-  await administratorRejectedControl.focus();
-  await expect(administratorRejectedControl).toBeFocused();
-  await administratorRejectedControl.press("Enter");
+  await page.getByLabel("Authenticator app code").press("Enter");
   await expect(page.getByText(/code could not be confirmed/)).toBeVisible();
 
   const failedAudit = await currentAudit(

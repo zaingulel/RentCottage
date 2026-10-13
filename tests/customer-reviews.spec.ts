@@ -1031,6 +1031,7 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
     page,
     primary.ids.bookingReference,
   );
+  await expect(hiddenReview.getByText(original)).toBeVisible();
   await expect(hiddenReview.getByText(reason)).toBeVisible();
   await expect(page.getByText("Matching reviews")).toBeVisible();
   await captureReviewFilters(page, "en");

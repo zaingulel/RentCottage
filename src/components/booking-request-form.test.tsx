@@ -406,9 +406,15 @@ describe("Booking Request form", () => {
       screen.getByLabelText(/accept the marketplace booking terms/i),
     );
     await user.click(screen.getByLabelText(/inside-48-hours no-refund rule/i));
-    await user.click(
-      screen.getByRole("button", { name: "Send Booking Request" }),
-    );
+    const form = screen
+      .getByRole("button", { name: "Send Booking Request" })
+      .closest("form")!;
+    act(() => {
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+    });
+    expect(submitBookingRequest).toHaveBeenCalledTimes(1);
+    await screen.findByRole("heading", { name: "Booking Request pending" });
 
     expect(submitBookingRequest).toHaveBeenCalledWith(
       expect.objectContaining({

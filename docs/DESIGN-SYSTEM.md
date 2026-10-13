@@ -343,9 +343,11 @@ its own; the block it sits in sets the space around it.
   `ActionFocusTarget`, preserving the status or alert role and content. The prop is the readiness signal
   described above: supply it only for a ready named successor and omit it while pending or for untargeted feedback.
 - Existing headings, status text and landmarks explicitly named as busy-action successors use `tabIndex={-1}`
-  and `action-focus-target`. When focused, `.action-focus-target` has a `3px` outline in `var(--green)` with a
-  `3px` offset. These non-control targets keep their existing semantics, copy and layout and stay outside the
-  sequential Tab order. The gold rule above continues to govern its listed controls, with the schedule exception
+  and `action-focus-target`. When focus is visible after keyboard interaction, including a programmatic
+  keyboard handoff, `.action-focus-target:focus-visible` has a `3px` outline in `var(--green)` with a `3px`
+  offset. Fresh ordinary pointer focus on these targets does not draw an outline. These non-control targets
+  keep their existing semantics, copy and layout and stay outside the sequential Tab order. The gold rule above
+  continues to govern its listed controls, with the schedule exception
   unchanged. Verify each new target's visible focus and outline contrast against its actual adjacent surface in
   the running view. Viewport-width non-control targets add `action-focus-target-inset`, which keeps the
   green `3px` outline and uses `outline-offset: -3px` so visible focus stays inside the viewport.
