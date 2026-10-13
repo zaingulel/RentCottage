@@ -113,6 +113,7 @@ Historical two- or three-shift schedules remain readable, and existing Booking R
 | Rule | Agreed behaviour |
 |---|---|
 | Booking method | Request to book, not instant booking |
+| Unusable preparation | When detected, a prepared Booking Request with a stale quote or a historical search over the 31-Service-Day limit expires so the customer can submit a replacement from the same conversation. Its history is retained, no money moves, and repeated requests cannot revive it. Preparation with an Authorization Claim, provider call or Pending Hold is never retired by this rule; the existing payment lifecycle continues. |
 | Owner response | Four hours; unanswered requests expire |
 | Last request time | Six hours before the first selected shift |
 | Payment before request | Authorise and reserve the full Customer Total |
