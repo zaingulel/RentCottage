@@ -13,7 +13,7 @@ import {
   cottageProfileStatusLabel,
 } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
-import { ActionFocusTarget } from "./interaction-controls";
+import { ActionFocusTarget, ActionLink } from "./interaction-controls";
 
 const idle: CottageProfileActionState = { status: "idle" };
 
@@ -41,31 +41,30 @@ export function CottageProfileOverview({
 
   return (
     <section className="cottage-profile-overview">
-      <div className="application-section-heading">
-        <span>01</span>
-        <div>
-          <h1
-            id="cottage-profile-overview-title"
-            tabIndex={-1}
-            className="action-focus-target"
-          >
-            {title}
-          </h1>
-          <ActionFocusTarget
-            targetId="cottage-profile-overview-title"
-            navigation
-          />
-          <p>{intro}</p>
-        </div>
-      </div>
+      <header className="page-heading">
+        <h1
+          id="cottage-profile-overview-title"
+          tabIndex={-1}
+          className="page-title action-focus-target"
+        >
+          {title}
+        </h1>
+        <ActionFocusTarget
+          targetId="cottage-profile-overview-title"
+          navigation
+        />
+        <p>{intro}</p>
+      </header>
       {profiles.length === 0 ? <p>{copy.empty}</p> : null}
       <div className="cottage-profile-card-grid">
         {profiles.map((profile) => (
           <article className="cottage-profile-card" key={profile.id}>
             <div>
-              <span>{cottageProfileStatusLabel(locale, profile)}</span>
+              <span className="status-badge">
+                {cottageProfileStatusLabel(locale, profile)}
+              </span>
               {profile.applicationId ? (
-                <span>{copy.applicationProfile}</span>
+                <span className="status-badge">{copy.applicationProfile}</span>
               ) : null}
             </div>
             <h2>{profile.name || copy.editorTitle}</h2>
@@ -78,9 +77,13 @@ export function CottageProfileOverview({
               {profile.photos.filter((photo) => photo.state === "ready").length}
               /12 {copy.photos}
             </p>
-            <Link href={`/${locale}/${route}/cottages/${profile.id}`}>
+            <ActionLink
+              kind="primary"
+              width="full"
+              href={`/${locale}/${route}/cottages/${profile.id}`}
+            >
               {copy.open}
-            </Link>
+            </ActionLink>
           </article>
         ))}
       </div>

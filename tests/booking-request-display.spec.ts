@@ -494,3 +494,55 @@ test("a messaging card keeps its side borders and corners inside the page column
     { borderStart: "0px", borderEnd: "0px", radius: "0px" },
   ]);
 });
+
+test("cottage list cards start their title and open button at the same height whatever their pills", async ({
+  page,
+}, testInfo) => {
+  await mountBookingRequestDisplay(page, testInfo);
+  await page.evaluate(() => {
+    const card = (pills: string[], location: string) =>
+      '<article class="cottage-profile-card">' +
+      `<div>${pills.map((pill) => `<span class="status-badge">${pill}</span>`).join("")}</div>` +
+      "<h2>Cottage</h2>" +
+      `<p>${location}</p>` +
+      "<p>0/12 photos</p>" +
+      '<a class="action-link action-primary action-full" href="/">Open Cottage Profile</a>' +
+      "</article>";
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<main class="results-page page"><section class="cottage-profile-overview"><div class="cottage-profile-card-grid">' +
+        card(
+          [
+            "Published; update awaiting approval",
+            "Started in Owner Application",
+          ],
+          "Erbil",
+        ) +
+        card(
+          ["Draft"],
+          "Erbil · Near Shaqlawa, beside the old road to the mountain village and the spring above the orchard",
+        ) +
+        "</div></section></main>",
+    );
+  });
+
+  const measured = await page.evaluate(() => {
+    const tops = (selector: string) =>
+      [...document.querySelectorAll(selector)].map(
+        (element) => element.getBoundingClientRect().top,
+      );
+    return {
+      titles: tops(".cottage-profile-card h2"),
+      links: tops(".cottage-profile-card a"),
+      document: document.documentElement.scrollWidth,
+      available: document.documentElement.clientWidth,
+    };
+  });
+  if (testInfo.project.name === "desktop") {
+    expect(measured.titles).toHaveLength(2);
+    expect(measured.titles[0]).toBe(measured.titles[1]);
+    expect(measured.links).toHaveLength(2);
+    expect(measured.links[0]).toBe(measured.links[1]);
+  }
+  expect(measured.document).toBeLessThanOrEqual(measured.available);
+});
