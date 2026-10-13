@@ -10,6 +10,7 @@ import { accessJourneyOtpEntries } from "./access-journey-fixtures.mjs";
 import {
   browserBookingFixtureIdentity,
   bookingFixtureSource,
+  confirmedBookingAccessFixtureSource,
   confirmedBookingCleanup,
   confirmedBookingAccessCleanup,
   captureCleanup,
@@ -960,6 +961,61 @@ test("browser booking fixtures own disjoint graphs and cleanup", () => {
     );
     assert.match(source, /stem: identity\.stem/);
   }
+  const reminderSource = readFileSync(
+    "supabase/tests/database/booking_confirmation_access.test.sql",
+    "utf8",
+  );
+  const reminderSeed = confirmedBookingAccessFixtureSource(reminderSource);
+  assert.ok(reminderSeed.startsWith("set session_replication_role = replica;"));
+  assert.ok(reminderSeed.endsWith("set session_replication_role = origin;"));
+  for (const token of [
+    "10000000-0000-4000-8000-000000003501",
+    "10000000-0000-4000-8000-000000003502",
+    "10000000-0000-4000-8000-000000003503",
+    "20000000-0000-4000-8000-000000003501",
+    "40000000-0000-4000-8000-000000003501",
+    "50000000-0000-4000-8000-000000003501",
+    "60000000-0000-4000-8000-000000003501",
+    "73000000-0000-4000-8000-000000003501",
+    "80000000-0000-4000-8000-000000003501",
+    "82000000-0000-4000-8000-000000003502",
+    "RC-REQ-0000000000003501",
+    "CONFIRMED-BOOKING-35",
+  ])
+    assert.ok(
+      reminderSeed.includes(token),
+      `confirmed reminder graph must contain ${token}`,
+    );
+  assert.doesNotMatch(
+    reminderSeed,
+    /select\s+(?:plan|has_function|ok|is|throws_ok)\s*\(/i,
+  );
+  const reminderConsumer = readFileSync(
+    "tests/worker-scheduled-reminder.spec.ts",
+    "utf8",
+  );
+  assert.equal(
+    [
+      ...reminderConsumer.matchAll(
+        /confirmedBookingAccessFixtureSource\(\s*source\s*\)/g,
+      ),
+    ].length,
+    2,
+  );
+  for (const corrupt of [
+    "",
+    reminderSource.replaceAll("set session_replication_role = replica;", ""),
+    reminderSource.replaceAll("set session_replication_role = origin;", ""),
+    "set session_replication_role = replica;\n \nset session_replication_role = origin;",
+    reminderSource.replaceAll(
+      "RC-REQ-0000000000003501",
+      "missing-request-reference",
+    ),
+  ])
+    assert.throws(
+      () => confirmedBookingAccessFixtureSource(corrupt),
+      /fixture source/,
+    );
   const requestNotification = readFileSync(
     "tests/worker-scheduled-request-notification.spec.ts",
     "utf8",

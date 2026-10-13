@@ -84,6 +84,32 @@ export function bookingFixtureSource(
   return block;
 }
 
+// Later session markers belong to projection assertions, not the initial confirmed graph.
+export function confirmedBookingAccessFixtureSource(source) {
+  const start = "set session_replication_role = replica;";
+  const end = "set session_replication_role = origin;";
+  const from = source.indexOf(start);
+  const to = source.indexOf(end, from + start.length);
+  if (from < 0 || to < 0)
+    throw new Error(
+      "Confirmed booking access fixture source markers are missing",
+    );
+  const window = source.slice(from, to + end.length);
+  const block = bookingFixtureSource(window, {
+    start,
+    end,
+    required: [
+      "00000000350",
+      "964750000350",
+      "RC-REQ-0000000000003501",
+      "CONFIRMED-BOOKING-35",
+      "booking-request-capture:35",
+      "repeat('e', 64)",
+    ],
+  });
+  return start + block + end;
+}
+
 const completionDeletes = (
   r,
 ) => `delete from public.booking_completion_maturity where booking_request_id='${r.request}';

@@ -14,7 +14,7 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
 const {
   confirmedBookingAccessCleanup,
   browserBookingFixtureIdentity,
-  bookingFixtureSource,
+  confirmedBookingAccessFixtureSource,
 } = createRequire(import.meta.url)("../scripts/lib/booking-fixture.mjs") as {
   browserBookingFixtureIdentity(
     file: string,
@@ -31,10 +31,7 @@ const {
     | "captureFingerprint",
     string
   >;
-  bookingFixtureSource(
-    source: string,
-    options: { start?: string; end: string; required?: string[] },
-  ): string;
+  confirmedBookingAccessFixtureSource(source: string): string;
   confirmedBookingAccessCleanup(options?: {
     stem?: string;
     owner?: string;
@@ -59,29 +56,15 @@ test("scheduled worker delivers both due preparation reminders once", async ({
     "supabase/tests/database/booking_confirmation_access.test.sql",
     "utf8",
   );
-  const seed =
-    "set session_replication_role = replica;" +
-    bookingFixtureSource(source, {
-      start: "set session_replication_role = replica;",
-      end: "set session_replication_role = origin;",
-      required: [
-        "00000000350",
-        "964750000350",
-        "RC-REQ-0000000000003501",
-        "CONFIRMED-BOOKING-35",
-        "booking-request-capture:35",
-        "repeat('e', 64)",
-      ],
-    })
-      .replaceAll("00000000350", `00000000${identity.stem}`)
-      .replaceAll("964750000350", `964750000${identity.stem}`)
-      .replaceAll("CONFIRMED-BOOKING-35", `CONFIRMED-BOOKING-${identity.stem}`)
-      .replaceAll(
-        "booking-request-capture:35",
-        `booking-request-capture:${identity.stem}`,
-      )
-      .replaceAll("repeat('e', 64)", `'${identity.captureFingerprint}'`) +
-    "set session_replication_role = origin;";
+  const seed = confirmedBookingAccessFixtureSource(source)
+    .replaceAll("00000000350", `00000000${identity.stem}`)
+    .replaceAll("964750000350", `964750000${identity.stem}`)
+    .replaceAll("CONFIRMED-BOOKING-35", `CONFIRMED-BOOKING-${identity.stem}`)
+    .replaceAll(
+      "booking-request-capture:35",
+      `booking-request-capture:${identity.stem}`,
+    )
+    .replaceAll("repeat('e', 64)", `'${identity.captureFingerprint}'`);
   const cleanup = confirmedBookingAccessCleanup({ stem: identity.stem });
   const observe = () =>
     JSON.parse(
@@ -162,29 +145,15 @@ test("scheduled reminders suppress invalid work and recover existing effects", a
     "supabase/tests/database/booking_confirmation_access.test.sql",
     "utf8",
   );
-  const seed =
-    "set session_replication_role = replica;" +
-    bookingFixtureSource(source, {
-      start: "set session_replication_role = replica;",
-      end: "set session_replication_role = origin;",
-      required: [
-        "00000000350",
-        "964750000350",
-        "RC-REQ-0000000000003501",
-        "CONFIRMED-BOOKING-35",
-        "booking-request-capture:35",
-        "repeat('e', 64)",
-      ],
-    })
-      .replaceAll("00000000350", `00000000${identity.stem}`)
-      .replaceAll("964750000350", `964750000${identity.stem}`)
-      .replaceAll("CONFIRMED-BOOKING-35", `CONFIRMED-BOOKING-${identity.stem}`)
-      .replaceAll(
-        "booking-request-capture:35",
-        `booking-request-capture:${identity.stem}`,
-      )
-      .replaceAll("repeat('e', 64)", `'${identity.captureFingerprint}'`) +
-    "set session_replication_role = origin;";
+  const seed = confirmedBookingAccessFixtureSource(source)
+    .replaceAll("00000000350", `00000000${identity.stem}`)
+    .replaceAll("964750000350", `964750000${identity.stem}`)
+    .replaceAll("CONFIRMED-BOOKING-35", `CONFIRMED-BOOKING-${identity.stem}`)
+    .replaceAll(
+      "booking-request-capture:35",
+      `booking-request-capture:${identity.stem}`,
+    )
+    .replaceAll("repeat('e', 64)", `'${identity.captureFingerprint}'`);
   const cleanup = confirmedBookingAccessCleanup({
     stem: identity.stem,
     lifecycle: true,
