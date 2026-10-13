@@ -308,8 +308,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
     await periodToggleControl.focus();
     await expect(periodToggleControl).toBeFocused();
     const periodToggleSource = await periodToggleControl.elementHandle();
-    if (!periodToggleSource)
-      throw new Error("Focus source is missing");
+    if (!periodToggleSource) throw new Error("Focus source is missing");
     await periodToggleControl.press("Enter");
     await expect(
       page.getByRole("link", { name: copy.quote, exact: true }),

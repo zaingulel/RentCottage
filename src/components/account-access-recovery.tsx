@@ -1,4 +1,8 @@
-import { ActionButton, ActionFocusTarget, ActionLink } from "./interaction-controls";
+import {
+  ActionButton,
+  ActionFocusTarget,
+  ActionLink,
+} from "./interaction-controls";
 import { signOutAccount } from "@/access/actions";
 import { accessMessages } from "@/i18n/access-messages";
 import type { Locale } from "@/i18n/routing";

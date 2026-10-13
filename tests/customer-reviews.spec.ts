@@ -506,7 +506,6 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
   page,
   browser,
 }, testInfo) => {
-
   // Hosted CI peaked at 23.9s; 60s leaves 36.1s of headroom.
   test.setTimeout(60_000);
   requireLocalDatabase();
@@ -1138,7 +1137,6 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
   page,
   browser,
 }, testInfo) => {
-
   requireLocalDatabase();
   const namespace =
     replyNamespaces[testInfo.project.name as keyof typeof replyNamespaces];

@@ -248,7 +248,9 @@ it("restores a disconnected source to a persistent successor without a target re
     rerender(view(true, false));
   });
   expect(source.isConnected).toBe(false);
-  expect(screen.getByRole("region", { name: "Request content" })).toBe(successor);
+  expect(screen.getByRole("region", { name: "Request content" })).toBe(
+    successor,
+  );
   expect(successor.isConnected).toBe(true);
   expect(successor).toHaveFocus();
 
@@ -257,13 +259,17 @@ it("restores a disconnected source to a persistent successor without a target re
   nextSource.focus();
   fireEvent.click(nextSource);
   rerender(view(true));
-  const elsewhere = screen.getByRole("textbox", { name: "Persistent elsewhere" });
+  const elsewhere = screen.getByRole("textbox", {
+    name: "Persistent elsewhere",
+  });
   await act(async () => {
     rerender(view(true, false));
     elsewhere.focus();
   });
   expect(nextSource.isConnected).toBe(false);
-  expect(screen.getByRole("region", { name: "Request content" })).toBe(successor);
+  expect(screen.getByRole("region", { name: "Request content" })).toBe(
+    successor,
+  );
   expect(elsewhere).toHaveFocus();
   expect(successor).not.toHaveFocus();
 });

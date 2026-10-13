@@ -411,19 +411,13 @@ test.describe("retained cancellation and refund controls", () => {
       await expect(payoutCommandControl).toBeFocused();
       await payoutCommandControl.press("Enter");
     };
-    await command(
-      "place_hold",
-      "PRIVATE payout review",
-    );
+    await command("place_hold", "PRIVATE payout review");
     await expect(page.getByText(p.held, { exact: true })).toBeVisible();
     await expect(
       page.getByRole("heading", { name: p.title, exact: true }),
     ).toBeFocused();
 
-    await command(
-      "open_dispute",
-      "PRIVATE dispute review",
-    );
+    await command("open_dispute", "PRIVATE dispute review");
     await expect(page.getByText(p.open, { exact: true })).toBeVisible();
     await expect(
       page.getByRole("heading", { name: p.title, exact: true }),
@@ -447,10 +441,7 @@ test.describe("retained cancellation and refund controls", () => {
     ).toBeFocused();
 
     await expect(page.getByText(p.held, { exact: true })).toBeVisible();
-    await command(
-      "settle",
-      "Held settlement check",
-    );
+    await command("settle", "Held settlement check");
     await expect(
       page.getByRole("form", { name: p.settle }).getByRole("alert"),
     ).toContainText(p.blocked);
@@ -468,19 +459,13 @@ test.describe("retained cancellation and refund controls", () => {
     ).toBe("0");
     await assertResponsiveDetails(page, "platform_administrator");
     await page.goto(`/en/administrator/payments/${reference}`);
-    await command(
-      "release_hold",
-      "PRIVATE review complete",
-    );
+    await command("release_hold", "PRIVATE review complete");
     await expect(page.getByText(p.clear, { exact: true })).toBeVisible();
     await expect(
       page.getByRole("heading", { name: p.title, exact: true }),
     ).toBeFocused();
 
-    await command(
-      "settle",
-      "PRIVATE settlement approval",
-    );
+    await command("settle", "PRIVATE settlement approval");
     await expect(
       page
         .getByTestId("settlement-recovery")
@@ -928,7 +913,10 @@ test.describe("retained cancellation and refund controls", () => {
         }),
       ).toBeVisible();
       await expect(
-        page.getByRole("heading", { name: messages.ckb.cancelled, exact: true }),
+        page.getByRole("heading", {
+          name: messages.ckb.cancelled,
+          exact: true,
+        }),
       ).toBeFocused();
 
       await expect(

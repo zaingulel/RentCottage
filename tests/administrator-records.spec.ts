@@ -276,8 +276,7 @@ test("an administrator discovers accounts and approval records with authoritativ
     await recordSearchControl.focus();
     await expect(recordSearchControl).toBeFocused();
     const recordSearchSource = await recordSearchControl.elementHandle();
-    if (!recordSearchSource)
-      throw new Error("Focus source is missing");
+    if (!recordSearchSource) throw new Error("Focus source is missing");
     await recordSearchControl.press("Enter");
     await expect(recordSearchControl).toBeEnabled();
     const applicationButton = page.getByRole("button", {
@@ -296,7 +295,9 @@ test("an administrator discovers accounts and approval records with authoritativ
     ).toBe(`${approvalLabel}: ${approvals}`);
     await expect(recordSearchControl).toBeFocused();
     expect(
-      await recordSearchSource.evaluate((source) => document.activeElement === source),
+      await recordSearchSource.evaluate(
+        (source) => document.activeElement === source,
+      ),
     ).toBe(true);
     await recordSearchSource.dispose();
     await page

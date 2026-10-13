@@ -762,7 +762,9 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
       card.getByRole("button", { name: "Replace document", exact: true }),
     ).toBeFocused();
     expect(
-      await uploadSource.evaluate((source) => document.activeElement === source),
+      await uploadSource.evaluate(
+        (source) => document.activeElement === source,
+      ),
     ).toBe(true);
     await uploadSource.dispose();
 
@@ -1482,7 +1484,9 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await expect(page.getByLabel("Longitude")).toHaveValue("44.385834");
   await expect(locationControl).toBeFocused();
   expect(
-    await locationSource.evaluate((source) => document.activeElement === source),
+    await locationSource.evaluate(
+      (source) => document.activeElement === source,
+    ),
   ).toBe(true);
   await locationSource.dispose();
 
@@ -1837,7 +1841,9 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     ).toBeVisible();
     await expect(scheduleControl).toBeFocused();
     expect(
-      await scheduleSource.evaluate((source) => document.activeElement === source),
+      await scheduleSource.evaluate(
+        (source) => document.activeElement === source,
+      ),
     ).toBe(true);
     await scheduleSource.dispose();
 
@@ -2442,8 +2448,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     await secureLinkControl.focus();
     await expect(secureLinkControl).toBeFocused();
     const secureLinkSource = await secureLinkControl.elementHandle();
-    if (!secureLinkSource)
-      throw new Error("Focus source is missing");
+    if (!secureLinkSource) throw new Error("Focus source is missing");
     await secureLinkControl.press("Enter");
     const secureLink = identityDocument.getByRole("link", {
       name: copy.openDocument,
@@ -2451,7 +2456,9 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     await expect(secureLink).toBeVisible();
     await expect(secureLinkControl).toBeFocused();
     expect(
-      await secureLinkSource.evaluate((source) => document.activeElement === source),
+      await secureLinkSource.evaluate(
+        (source) => document.activeElement === source,
+      ),
     ).toBe(true);
     await secureLinkSource.dispose();
 
@@ -3619,8 +3626,7 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
     await phoneSendControl.focus();
     await expect(phoneSendControl).toBeFocused();
     const phoneSendSource = await phoneSendControl.elementHandle();
-    if (!phoneSendSource)
-      throw new Error("Focus source is missing");
+    if (!phoneSendSource) throw new Error("Focus source is missing");
     const sendRoute = target.url();
     let releaseSendResponse: () => void = () => {};
     const sendRelease = new Promise<void>((resolve) => {
