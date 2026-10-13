@@ -373,7 +373,10 @@ export function parseAdministratorPaymentHistory(
   )
     throw new Error("Administrator payment history data is invalid");
   const events = result.events.map(parseEvent);
-  if (new Set(events.map((event) => event.id)).size !== events.length)
+  if (
+    new Set(events.map((event) => event.id.toLowerCase())).size !==
+    events.length
+  )
     throw new Error("Administrator payment history data is invalid");
   return {
     bookingRequestReference,

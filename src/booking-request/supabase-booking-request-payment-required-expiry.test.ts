@@ -16,6 +16,42 @@ it("rejects duplicate due Booking Requests", async () => {
     } as never).due(20, facts.providerIdentity),
   ).rejects.toThrow("batch is invalid");
 });
+it("rejects case-only duplicate due Booking Request IDs", async () => {
+  const lowercaseId = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+  const uppercaseId = "A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11";
+  const distinctId = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+  const rpc = vi.fn();
+  const repository = new SupabaseBookingRequestPaymentRequiredExpiryRepository({
+    rpc,
+  } as never);
+  for (const id of [lowercaseId, uppercaseId]) {
+    rpc.mockResolvedValue({
+      data: [{ bookingRequestId: id }],
+      error: null,
+    });
+    await expect(repository.due(20, facts.providerIdentity)).resolves.toEqual([
+      id,
+    ]);
+  }
+  rpc.mockResolvedValue({
+    data: [{ bookingRequestId: uppercaseId }, { bookingRequestId: distinctId }],
+    error: null,
+  });
+  await expect(repository.due(20, facts.providerIdentity)).resolves.toEqual([
+    uppercaseId,
+    distinctId,
+  ]);
+  rpc.mockResolvedValue({
+    data: [
+      { bookingRequestId: lowercaseId },
+      { bookingRequestId: uppercaseId },
+    ],
+    error: null,
+  });
+  await expect(repository.due(20, facts.providerIdentity)).rejects.toThrow(
+    "Payment Required expiry batch is invalid",
+  );
+});
 it("transports the exact application-selected release and stale expectation", async () => {
   const rpc = vi
     .fn()

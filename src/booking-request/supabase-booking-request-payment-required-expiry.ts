@@ -25,7 +25,7 @@ export class SupabaseBookingRequestPaymentRequiredExpiryRepository implements Bo
     const ids = data.map((item) => rowObject(item)?.bookingRequestId);
     if (
       !ids.every((id) => typeof id === "string" && uuid.test(id)) ||
-      new Set(ids).size !== ids.length
+      new Set(ids.map((id) => (id as string).toLowerCase())).size !== ids.length
     )
       throw new Error("Payment Required expiry batch is invalid");
     return ids as string[];

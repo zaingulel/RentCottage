@@ -209,7 +209,8 @@ export function bookingRequestPaymentFactsFrom(
   });
   for (const rows of [attempts, operations, expiryOperations])
     requireValid(
-      new Set(rows.map((entry) => object(entry).id)).size === rows.length,
+      new Set(rows.map((entry) => (object(entry).id as string).toLowerCase()))
+        .size === rows.length,
     );
   return {
     ...facts,

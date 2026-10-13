@@ -33,6 +33,38 @@ it("accepts the closed support-safe wire shape with microsecond timestamps", () 
   expect(parseAdministratorPaymentHistory(history)).toEqual(history);
 });
 
+it("rejects case-only duplicate payment history event IDs", () => {
+  const lowercaseEvent = {
+    ...event,
+    id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+  };
+  const uppercaseEvent = {
+    ...event,
+    id: "A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11",
+  };
+  const distinctEvent = {
+    ...event,
+    id: "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+  };
+  for (const value of [lowercaseEvent, uppercaseEvent]) {
+    expect(
+      parseAdministratorPaymentHistory({ ...history, events: [value] }).events,
+    ).toEqual([value]);
+  }
+  expect(
+    parseAdministratorPaymentHistory({
+      ...history,
+      events: [uppercaseEvent, distinctEvent],
+    }).events,
+  ).toEqual([uppercaseEvent, distinctEvent]);
+  expect(() =>
+    parseAdministratorPaymentHistory({
+      ...history,
+      events: [lowercaseEvent, uppercaseEvent],
+    }),
+  ).toThrow("Administrator payment history data is invalid");
+});
+
 const operationId = "20000000-0000-4000-8000-000000000137";
 it.each([
   ["providerRequestId", "request"],
