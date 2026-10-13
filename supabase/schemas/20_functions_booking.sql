@@ -179,6 +179,7 @@ begin
   if current_quote ->> 'status' <> 'quoted'
     or current_quote ->> 'quoteFingerprint' <> attempt.quote_fingerprint
     or current_quote - 'status' <> attempt.quote_payload then
+    perform public.retire_unusable_prepared_booking_request_submission(attempt.id);
     return jsonb_build_object('status', 'quote-stale');
   end if;
   first_starts_at := (current_quote -> 'items' -> 0 ->> 'startsAt')::timestamptz;
@@ -5066,6 +5067,8 @@ declare key_attempt public.booking_request_submission_attempts;
 declare inserted_attempt public.booking_request_submission_attempts;
 declare existing_projection jsonb;
 declare target_conversation public.messaging_conversations;
+declare locked_attempt_ids uuid[] := '{}'::uuid[];
+declare locked_attempt_id uuid;
 begin
   if target_customer_user_id is null
     or target_idempotency_key is null
@@ -5156,11 +5159,27 @@ begin
     )
   );
 
+  for locked_attempt_id in
+    select attempts.id
+    from public.booking_request_submission_attempts attempts
+    where attempts.customer_user_id = target_customer_user_id
+      and (
+        attempts.idempotency_key = target_idempotency_key
+        or (attempts.intent_fingerprint = target_intent_fingerprint
+          and attempts.intent_dedupe_active)
+        or (attempts.conversation_id = target_conversation_id
+          and attempts.state = 'authorizing' and attempts.payment_snapshot is null)
+      )
+    order by attempts.id
+    for update
+  loop
+    locked_attempt_ids := array_append(locked_attempt_ids, locked_attempt_id);
+  end loop;
+
   select * into key_attempt
   from public.booking_request_submission_attempts attempts
   where attempts.customer_user_id = target_customer_user_id
-    and attempts.idempotency_key = target_idempotency_key
-  for update;
+    and attempts.idempotency_key = target_idempotency_key;
   if found and (
     key_attempt.intent_fingerprint <> target_intent_fingerprint
     or key_attempt.intent_payload <> intent
@@ -5180,8 +5199,7 @@ begin
   from public.booking_request_submission_attempts attempts
   where attempts.customer_user_id = target_customer_user_id
     and attempts.intent_fingerprint = target_intent_fingerprint
-    and attempts.intent_dedupe_active
-  for update;
+    and attempts.intent_dedupe_active;
   if found then
     existing_projection := public.project_existing_booking_request_submission_attempt(
       existing_attempt, target_intent_fingerprint, intent, false
@@ -5191,6 +5209,11 @@ begin
     end if;
   end if;
 
+  perform contexts.user_id
+  from public.account_contexts contexts
+  where contexts.user_id = target_customer_user_id
+  for no key update;
+
   select profiles.id into current_profile_id
   from public.cottage_marketplace_listings listings
   join public.owner_application_cottage_profiles profiles
@@ -5198,6 +5221,7 @@ begin
   where listings.public_slug = target_slug
   for update of profiles;
   if current_profile_id is null then
+    perform public.retire_unusable_prepared_booking_request_submission(existing_attempt.id);
     return jsonb_build_object('status', 'quote-stale');
   end if;
   if target_conversation_id is not null then
@@ -5224,6 +5248,18 @@ begin
     ) then
       return jsonb_build_object('status', 'invalid');
     end if;
+    for locked_attempt_id in
+      select attempts.id
+      from public.booking_request_submission_attempts attempts
+      where attempts.id = any(locked_attempt_ids)
+        and attempts.conversation_id = target_conversation_id
+        and attempts.id is distinct from key_attempt.id
+        and attempts.id is distinct from existing_attempt.id
+        and attempts.state = 'authorizing' and attempts.payment_snapshot is null
+      order by attempts.id
+    loop
+      perform public.retire_unusable_prepared_booking_request_submission(locked_attempt_id);
+    end loop;
     if exists (
       select 1
       from public.booking_request_submission_attempts attempts
@@ -5253,6 +5289,7 @@ begin
       <> (target_submission ->> 'customerTotalIqd')::bigint
     or current_quote -> 'items' -> 0 ->> 'startsAt'
       <> target_submission ->> 'firstStartsAt' then
+    perform public.retire_unusable_prepared_booking_request_submission(existing_attempt.id);
     return jsonb_build_object('status', 'quote-stale');
   end if;
   first_starts_at := (current_quote -> 'items' -> 0 ->> 'startsAt')::timestamptz;
@@ -5277,6 +5314,7 @@ begin
   if existing_attempt.id is not null then
     if existing_attempt.profile_id <> current_profile_id
       or existing_attempt.quote_payload <> current_quote - 'status' then
+      perform public.retire_unusable_prepared_booking_request_submission(existing_attempt.id);
       return jsonb_build_object('status', 'quote-stale');
     end if;
     return public.project_existing_booking_request_submission_attempt(
@@ -5308,21 +5346,7 @@ begin
     );
   end if;
 
-  select * into existing_attempt
-  from public.booking_request_submission_attempts attempts
-  where attempts.customer_user_id = target_customer_user_id
-    and (
-      attempts.intent_fingerprint = target_intent_fingerprint
-        and attempts.intent_dedupe_active
-      or attempts.idempotency_key = target_idempotency_key
-    )
-  for update;
-  if existing_attempt.quote_payload <> current_quote - 'status' then
-    return jsonb_build_object('status', 'invalid');
-  end if;
-  return public.project_existing_booking_request_submission_attempt(
-    existing_attempt, target_intent_fingerprint, intent, true
-  );
+  return jsonb_build_object('status', 'invalid');
 end;
 $_$;
 
@@ -5938,6 +5962,50 @@ end;
 $$;
 
 ALTER FUNCTION "public"."resolve_booking_quote_with_fingerprint"("target_locale" "public"."cottage_profile_source_language", "target_slug" "text", "requested_search" "jsonb", "requires_admission_limit" boolean) OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."retire_unusable_prepared_booking_request_submission"("target_attempt_id" "uuid") RETURNS boolean
+    LANGUAGE "plpgsql" SECURITY INVOKER
+    SET "search_path" TO ''
+    AS $$
+declare attempt public.booking_request_submission_attempts;
+declare current_quote jsonb;
+declare unusable boolean := false;
+begin
+  select * into attempt
+  from public.booking_request_submission_attempts attempts
+  where attempts.id = target_attempt_id
+  for update;
+  if not found
+    or attempt.state <> 'authorizing'
+    or attempt.payment_snapshot is not null then
+    return false;
+  end if;
+
+  perform public.validate_public_cottage_search(attempt.requested_search);
+  begin
+    perform public.validate_public_cottage_discovery_admission(attempt.requested_search);
+  exception when sqlstate '22023' then
+    unusable := true;
+  end;
+  if not unusable then
+    current_quote := public.resolve_booking_quote_with_fingerprint(
+      attempt.locale, attempt.public_slug, attempt.requested_search, false
+    );
+    unusable := current_quote ->> 'status' is distinct from 'quoted'
+      or current_quote ->> 'quoteFingerprint' is distinct from attempt.quote_fingerprint
+      or current_quote - 'status' is distinct from attempt.quote_payload;
+  end if;
+  if not unusable then
+    return false;
+  end if;
+  update public.booking_request_submission_attempts attempts
+  set state = 'expired', intent_dedupe_active = false, updated_at = clock_timestamp()
+  where attempts.id = attempt.id;
+  return true;
+end;
+$$;
+
+ALTER FUNCTION "public"."retire_unusable_prepared_booking_request_submission"("target_attempt_id" "uuid") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."save_booking_request_payment_snapshot"("target_attempt_id" "uuid", "target_payment_snapshot" "jsonb", "target_provider_identity" "jsonb") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER

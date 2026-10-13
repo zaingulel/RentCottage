@@ -58,7 +58,29 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(308);
+select plan(352);
+
+set local role anon;
+select throws_ok(
+  $$select public.retire_unusable_prepared_booking_request_submission('11111111-1111-4111-8111-111111113709'::uuid)$$,
+  '42501', 'permission denied for function retire_unusable_prepared_booking_request_submission',
+  'anon cannot invoke internal prepared-attempt retirement'
+);
+reset role;
+set local role authenticated;
+select throws_ok(
+  $$select public.retire_unusable_prepared_booking_request_submission('11111111-1111-4111-8111-111111113709'::uuid)$$,
+  '42501', 'permission denied for function retire_unusable_prepared_booking_request_submission',
+  'authenticated cannot invoke internal prepared-attempt retirement'
+);
+reset role;
+set local role service_role;
+select throws_ok(
+  $$select public.retire_unusable_prepared_booking_request_submission('11111111-1111-4111-8111-111111113709'::uuid)$$,
+  '42501', 'permission denied for function retire_unusable_prepared_booking_request_submission',
+  'service_role cannot invoke internal prepared-attempt retirement'
+);
+reset role;
 
 select has_function(
   'public', 'prepare_booking_request_submission', array['uuid', 'uuid', 'jsonb'],
@@ -886,6 +908,88 @@ select is(
 );
 reset role;
 
+create temporary table usable_replacement_quote as
+select public.get_public_booking_quote_with_fingerprint(
+  'en', 'cottage-30000000000040008000000000003201',
+  '{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":2}]}'::jsonb
+) as quote;
+select is((select quote->>'status' from usable_replacement_quote), 'quoted',
+  'a different-day replacement has a real current quote while preparation remains usable');
+create temporary table usable_replacement_submission as
+select submission || jsonb_build_object(
+  'discoveryQuery', '{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":2}]}'::jsonb,
+  'quoteFingerprint', quote->>'quoteFingerprint',
+  'contentVersion', quote->'contentVersion', 'termsVersion', quote->'termsVersion',
+  'bookingPriceIqd', quote->'bookingPriceIqd', 'serviceFeeIqd', quote->'serviceFeeIqd',
+  'customerTotalIqd', quote->'customerTotalIqd', 'firstStartsAt', quote#>>'{items,0,startsAt}'
+) as submission
+from journey_submission cross join usable_replacement_quote;
+grant select on usable_replacement_submission to service_role;
+
+savepoint stale_price_preparation;
+create temporary table stale_preparation_before as
+select to_jsonb(attempts) as record
+from public.booking_request_submission_attempts attempts
+where attempts.id = (select (result->>'attemptId')::uuid from prepared_submission);
+set local role service_role;
+select is(public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113708',
+  (select submission from usable_replacement_submission)
+)->>'status', 'invalid', 'a usable preparation refuses a fresh different-intent replacement in its conversation');
+reset role;
+select results_eq(
+  $$select to_jsonb(attempts) = baseline.record,
+      not public.messaging_submission_attempt_is_resolved(attempts.id)
+    from public.booking_request_submission_attempts attempts cross join stale_preparation_before baseline
+    where attempts.id = (select (result->>'attemptId')::uuid from prepared_submission)$$,
+  $$values (true,true)$$,
+  'a refused replacement retains the usable preparation exactly unchanged and unresolved'
+);
+select results_eq(
+  $$select
+      (select count(*)::integer from public.booking_request_submission_attempts
+        where customer_user_id = '00000000-0000-0000-0000-000000003202'),
+      (select count(*)::integer from public.booking_request_authorization_claims
+        where customer_user_id = '00000000-0000-0000-0000-000000003202'),
+      (select count(*)::integer from public.payment_provider_operations operations
+        where operations.payment_lifecycle_id in (
+          select attempts.payment_lifecycle_id from public.booking_request_submission_attempts attempts
+          where attempts.customer_user_id = '00000000-0000-0000-0000-000000003202'
+        )),
+      (select count(*)::integer from public.booking_requests
+        where customer_user_id = '00000000-0000-0000-0000-000000003202'),
+      (select count(*)::integer from public.cottage_booking_period_commitments
+        where customer_user_id = '00000000-0000-0000-0000-000000003202')$$,
+  $$values (1,0,0,0,0)$$,
+  'usable preparation refusal retains one attempt and creates no claim, provider call, request or hold'
+);
+set local role service_role;
+select is(public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003202',
+  '11111111-1111-4111-8111-111111113201',
+  jsonb_set((select submission from journey_submission), '{bookingPriceIqd}', '120000'::jsonb)
+)->>'status', 'invalid', 'forged submitted quote fields cannot retire a valid preparation');
+reset role;
+select results_eq(
+  $$select to_jsonb(attempts) = baseline.record
+    from public.booking_request_submission_attempts attempts cross join stale_preparation_before baseline
+    where attempts.id = (select (result->>'attemptId')::uuid from prepared_submission)$$,
+  $$values (true)$$,
+  'a forged quote leaves the valid prepared attempt unchanged'
+);
+set local role service_role;
+select is(public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113709',
+  jsonb_set((select submission from journey_submission), '{conversationId}', '"not-a-uuid"'::jsonb)
+)->>'status', 'invalid', 'malformed conversation binding cannot retire another prepared attempt');
+reset role;
+select results_eq(
+  $$select to_jsonb(attempts) = baseline.record
+    from public.booking_request_submission_attempts attempts cross join stale_preparation_before baseline
+    where attempts.id = (select (result->>'attemptId')::uuid from prepared_submission)$$,
+  $$values (true)$$,
+  'malformed conversation binding retains the prepared attempt unchanged'
+);
 update public.cottage_inventory_standard_prices
 set price_iqd = 120000
 where schedule_revision_id = '60000000-0000-4000-8000-000000003201'
@@ -901,17 +1005,93 @@ select is(
   'a pre-provider crash cannot resume against a stale price quote'
 );
 reset role;
-update public.cottage_inventory_standard_prices
-set price_iqd = 110000
-where schedule_revision_id = '60000000-0000-4000-8000-000000003201'
-  and unit_id = '62000000-0000-4000-8000-000000003202';
+create temporary table stale_price_replacement as
+select submission || jsonb_build_object(
+  'discoveryQuery', submission->'discoveryQuery',
+  'quoteFingerprint', quote->>'quoteFingerprint',
+  'contentVersion', quote->'contentVersion', 'termsVersion', quote->'termsVersion',
+  'bookingPriceIqd', quote->'bookingPriceIqd', 'serviceFeeIqd', quote->'serviceFeeIqd',
+  'customerTotalIqd', quote->'customerTotalIqd', 'firstStartsAt', quote#>>'{items,0,startsAt}'
+) as submission
+from journey_submission
+cross join lateral (select public.get_public_booking_quote_with_fingerprint(
+  'en', 'cottage-30000000000040008000000000003201', submission->'discoveryQuery'
+) as quote) current_quote;
+grant select on stale_price_replacement to service_role;
+set local role service_role;
+create temporary table stale_price_replacement_result as
+select public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113709', (select submission from stale_price_replacement)
+) result;
+select is(
+  (select result->>'status' from stale_price_replacement_result), 'ready',
+  'an unusable prepared attempt permits a replacement in the same conversation without payment'
+);
+select is(public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113201', (select submission from journey_submission)
+)->>'status', 'unavailable', 'retired same-key preparation replays its terminal unavailable result');
+select ok(
+  (select result->>'attemptId' from stale_price_replacement_result) is not null
+  and public.prepare_booking_request_submission(
+    '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113709', (select submission from stale_price_replacement)
+  )->>'attemptId' = (select result->>'attemptId' from stale_price_replacement_result),
+  'replacement replay retains its own new attempt identity'
+);
+reset role;
+select results_eq(
+  $$select attempts.state::text, attempts.intent_dedupe_active,
+      public.messaging_submission_attempt_is_resolved(attempts.id)
+    from public.booking_request_submission_attempts attempts where attempts.id = (select (result->>'attemptId')::uuid from prepared_submission)$$,
+  $$values ('expired'::text, false, true)$$,
+  'unusable preparation is expired, deduplication inactive and the conversation attempt resolved'
+);
+select results_eq(
+  $$select to_jsonb(attempts) - array['state','intent_dedupe_active','updated_at']
+      = baseline.record - array['state','intent_dedupe_active','updated_at']
+    from public.booking_request_submission_attempts attempts
+    cross join stale_preparation_before baseline
+    where attempts.id = (select (result->>'attemptId')::uuid from prepared_submission)$$,
+  $$values (true)$$,
+  'retirement preserves the original preparation identity, search, quote, intent and creation time'
+);
+select results_eq(
+  $$select count(*)::integer,
+      count(*) filter (where conversation_id = (select (result->>'conversationId')::uuid from submission_conversation))::integer
+    from public.booking_request_submission_attempts$$,
+  $$values (2,2)$$,
+  'the conversation retains the retired preparation and exactly one fresh replacement'
+);
+select results_eq(
+  $$select
+      (select count(*)::integer from public.booking_request_authorization_claims),
+      (select count(*)::integer from public.payment_provider_operations),
+      (select count(*)::integer from public.booking_requests),
+      (select count(*)::integer from public.cottage_booking_period_commitments),
+      (select count(*)::integer from public.booking_request_payment_history history
+        where history.payment_lifecycle_id in (
+          select attempts.payment_lifecycle_id
+          from public.booking_request_submission_attempts attempts
+          where attempts.customer_user_id = '00000000-0000-0000-0000-000000003202'
+        )),
+      (select count(*)::integer from public.booking_request_submission_attempts
+        where payment_snapshot is not null
+          or num_nulls(authorization_provider,authorization_environment,authorization_merchant_id,
+            authorization_terminal_id,authorization_provider_request_id,authorization_provider_reference,
+            authorization_movement_reference,release_provider_request_id,release_provider_reference,
+            release_movement_reference) <> 10)$$,
+  $$values (0,0,0,0,0,0)$$,
+  'stale preparation retirement and replacement create no payment, request, hold or financial history'
+);
+rollback to savepoint stale_price_preparation;
 
+savepoint stale_availability_preparation;
 update public.cottage_inventory_availability
 set state = 'closed'
 where schedule_revision_id = '60000000-0000-4000-8000-000000003201'
   and unit_kind = 'shift'
   and unit_id = '62000000-0000-4000-8000-000000003202'
   and service_day = '2099-08-21';
+savepoint stale_availability_retry;
 set local role service_role;
 select is(
   public.prepare_booking_request_submission(
@@ -923,12 +1103,41 @@ select is(
   'a pre-provider crash cannot resume after availability closes'
 );
 reset role;
-update public.cottage_inventory_availability
-set state = 'open'
-where schedule_revision_id = '60000000-0000-4000-8000-000000003201'
-  and unit_kind = 'shift'
-  and unit_id = '62000000-0000-4000-8000-000000003202'
-  and service_day = '2099-08-21';
+rollback to savepoint stale_availability_retry;
+set local role service_role;
+select is(public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113709', (select submission from usable_replacement_submission)
+)->>'status', 'ready', 'a direct replacement retires unavailable preparation without requiring a stale retry');
+reset role;
+select results_eq(
+  $$select attempts.state::text, attempts.intent_dedupe_active,
+      public.messaging_submission_attempt_is_resolved(attempts.id)
+    from public.booking_request_submission_attempts attempts where attempts.id = (select (result->>'attemptId')::uuid from prepared_submission)$$,
+  $$values ('expired'::text, false, true)$$,
+  'direct replacement resolves only the unusable old preparation'
+);
+select results_eq(
+  $$select
+      (select count(*)::integer from public.booking_request_authorization_claims),
+      (select count(*)::integer from public.payment_provider_operations),
+      (select count(*)::integer from public.booking_requests),
+      (select count(*)::integer from public.cottage_booking_period_commitments),
+      (select count(*)::integer from public.booking_request_payment_history history
+        where history.payment_lifecycle_id in (
+          select attempts.payment_lifecycle_id
+          from public.booking_request_submission_attempts attempts
+          where attempts.customer_user_id = '00000000-0000-0000-0000-000000003202'
+        )),
+      (select count(*)::integer from public.booking_request_submission_attempts
+        where payment_snapshot is not null
+          or num_nulls(authorization_provider,authorization_environment,authorization_merchant_id,
+            authorization_terminal_id,authorization_provider_request_id,authorization_provider_reference,
+            authorization_movement_reference,release_provider_request_id,release_provider_reference,
+            release_movement_reference) <> 10)$$,
+  $$values (0,0,0,0,0,0)$$,
+  'direct replacement creates no claim, provider call, Pending Hold or financial history'
+);
+rollback to savepoint stale_availability_preparation;
 select is(
   (select count(*) from public.booking_request_submission_attempts),
   1::bigint,
@@ -949,6 +1158,55 @@ select is(
   'an idempotency key cannot be rebound to a different immutable intent'
 );
 reset role;
+
+savepoint corrupt_preparation_search;
+update public.booking_request_submission_attempts
+set requested_search = '[]'::jsonb
+where id = (select (result->>'attemptId')::uuid from prepared_submission);
+create temporary table corrupt_preparation_before as
+select to_jsonb(attempts) record from public.booking_request_submission_attempts attempts
+where attempts.id = (select (result->>'attemptId')::uuid from prepared_submission);
+set local role service_role;
+select throws_ok(
+  $$select public.prepare_booking_request_submission(
+    '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113709',
+    jsonb_set((select submission from journey_submission), '{intent,bookingNote}', '"A replacement request."'::jsonb)
+  )$$,
+  '22023', 'Public Cottage search input is invalid',
+  'corrupt stored search fails explicitly instead of silently retiring preparation'
+);
+reset role;
+select results_eq(
+  $$select to_jsonb(attempts) = baseline.record,
+      not public.messaging_submission_attempt_is_resolved(attempts.id),
+      (select count(*)::integer from public.booking_request_submission_attempts)
+    from public.booking_request_submission_attempts attempts cross join corrupt_preparation_before baseline
+    where attempts.id = (select (result->>'attemptId')::uuid from prepared_submission)$$,
+  $$values (true,true,1)$$,
+  'corrupt preparation remains unchanged and unresolved with no replacement'
+);
+select results_eq(
+  $$select
+      (select count(*)::integer from public.booking_request_authorization_claims),
+      (select count(*)::integer from public.payment_provider_operations),
+      (select count(*)::integer from public.booking_requests),
+      (select count(*)::integer from public.cottage_booking_period_commitments),
+      (select count(*)::integer from public.booking_request_payment_history history
+        where history.payment_lifecycle_id in (
+          select attempts.payment_lifecycle_id
+          from public.booking_request_submission_attempts attempts
+          where attempts.customer_user_id = '00000000-0000-0000-0000-000000003202'
+        )),
+      (select count(*)::integer from public.booking_request_submission_attempts
+        where payment_snapshot is not null
+          or num_nulls(authorization_provider,authorization_environment,authorization_merchant_id,
+            authorization_terminal_id,authorization_provider_request_id,authorization_provider_reference,
+            authorization_movement_reference,release_provider_request_id,release_provider_reference,
+            release_movement_reference) <> 10)$$,
+  $$values (0,0,0,0,0,0)$$,
+  'corrupt persisted input creates no payment, request or hold'
+);
+rollback to savepoint corrupt_preparation_search;
 
 create temporary table authorized_payment as
 select jsonb_build_object(
@@ -1017,6 +1275,386 @@ select snapshot
   ) as snapshot
 from authorized_payment;
 grant select on pending_authorization_payment to service_role;
+
+savepoint stale_claim_preparation;
+update public.cottage_inventory_standard_prices set price_iqd = 120000
+where schedule_revision_id = '60000000-0000-4000-8000-000000003201'
+  and unit_id = '62000000-0000-4000-8000-000000003202';
+set local role service_role;
+select is(public.begin_booking_request_authorization_claim(
+  (select (result->>'attemptId')::uuid from prepared_submission), (select snapshot from pending_authorization_payment), '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+)->>'status', 'quote-stale', 'claim start retains its explicit stale-quote refusal');
+reset role;
+select results_eq(
+  $$select attempts.state::text, attempts.intent_dedupe_active,
+      public.messaging_submission_attempt_is_resolved(attempts.id)
+    from public.booking_request_submission_attempts attempts where attempts.id = (select (result->>'attemptId')::uuid from prepared_submission)$$,
+  $$values ('expired'::text, false, true)$$,
+  'stale claim start retires preparation before any payment claim is created'
+);
+select results_eq(
+  $$select
+      (select count(*)::integer from public.booking_request_authorization_claims),
+      (select count(*)::integer from public.payment_provider_operations),
+      (select count(*)::integer from public.booking_requests),
+      (select count(*)::integer from public.cottage_booking_period_commitments),
+      (select count(*)::integer from public.booking_request_payment_history history
+        where history.payment_lifecycle_id in (
+          select attempts.payment_lifecycle_id
+          from public.booking_request_submission_attempts attempts
+          where attempts.customer_user_id = '00000000-0000-0000-0000-000000003202'
+        )),
+      (select count(*)::integer from public.booking_request_submission_attempts
+        where payment_snapshot is not null
+          or num_nulls(authorization_provider,authorization_environment,authorization_merchant_id,
+            authorization_terminal_id,authorization_provider_request_id,authorization_provider_reference,
+            authorization_movement_reference,release_provider_request_id,release_provider_reference,
+            release_movement_reference) <> 10)$$,
+  $$values (0,0,0,0,0,0)$$,
+  'stale claim-start retirement creates no payment or product hold'
+);
+rollback to savepoint stale_claim_preparation;
+
+savepoint historical_overlimit_preparation;
+create temporary table current_quote_definitions as
+select pg_get_functiondef('public.get_public_booking_quote(public.cottage_profile_source_language,text,jsonb)'::regprocedure) as quote,
+  pg_get_functiondef('public.get_public_booking_quote_with_fingerprint(public.cottage_profile_source_language,text,jsonb)'::regprocedure) as fingerprint;
+-- Exact production declarations at fcd5c07ad5aaad740b483966ab7e11afdd751fd3,
+-- supabase/schemas/20_functions_booking.sql:4058-4196, solely for historical preparation.
+CREATE OR REPLACE FUNCTION "public"."get_public_booking_quote"("target_locale" "public"."cottage_profile_source_language", "target_slug" "text", "requested_search" "jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $_$
+declare target record;
+declare booking_price numeric;
+declare quoted_items jsonb;
+begin
+  if target_locale is null then
+    raise exception 'Booking Quote locale is required' using errcode = '22023';
+  end if;
+  if target_slug is null
+    or octet_length(target_slug) <> 40
+    or target_slug !~ '^cottage-[0-9a-f]{32}$' then
+    raise exception 'Invalid public Cottage slug' using errcode = '22023';
+  end if;
+  if requested_search is null then
+    raise exception 'Booking Quote search is required' using errcode = '22023';
+  end if;
+  perform public.validate_public_cottage_search(requested_search);
+
+  select listings.public_slug, profiles.current_shift_schedule_id as schedule_id,
+    publications.name, publications.publication_number,
+    localizations.house_rules,
+    publications.capacity >= (requested_search ->> 'guests')::integer
+      and (not requested_search ? 'governorate'
+        or lower(publications.governorate) = lower(btrim(requested_search ->> 'governorate')))
+      and (not requested_search ? 'area'
+        or lower(publications.approximate_location) = lower(btrim(requested_search ->> 'area')))
+      and array(
+        select value
+        from jsonb_array_elements_text(
+          coalesce(requested_search -> 'amenities', '[]'::jsonb)
+        ) values(value)
+      ) <@ publications.amenities as matches_search,
+    public.resolve_public_cottage_selection(
+      profiles.current_shift_schedule_id, requested_search
+    ) as inventory
+  into target
+  from public.cottage_marketplace_listings listings
+  join public.owner_application_cottage_profiles profiles
+    on profiles.id = listings.profile_id
+  join public.cottage_publication_snapshots publications
+    on publications.id = profiles.current_publication_id
+    and publications.profile_id = profiles.id
+  join public.cottage_publication_localizations localizations
+    on localizations.publication_id = publications.id
+    and localizations.locale = target_locale
+  where listings.public_slug = target_slug
+    and public.is_cottage_publicly_discoverable(profiles.id);
+
+  if not found then
+    return jsonb_build_object('status', 'not-found');
+  end if;
+  if not target.matches_search
+    or (target.inventory ->> 'allAvailable')::boolean is not true
+    or target.inventory ->> 'totalPriceIqd' is null then
+    return jsonb_build_object('status', 'selection-unavailable');
+  end if;
+
+  booking_price := (target.inventory ->> 'totalPriceIqd')::numeric;
+  if booking_price <= 0
+    or booking_price + 5000 > 9007199254740991 then
+    raise exception 'Booking Quote money exceeds the safe range'
+      using errcode = '22003';
+  end if;
+
+  select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+    'serviceDay', item.value ->> 'serviceDay',
+    'kind', item.value ->> 'kind',
+    'position', (item.value ->> 'position')::smallint,
+    'displayName', item.value ->> 'name',
+    'startsAt', (item.value ->> 'serviceDay') || 'T'
+      || (item.value ->> 'startTime') || ':00+03:00',
+    'endsAt', to_char(
+      (item.value ->> 'serviceDay')::date
+        + case
+            when (item.value ->> 'endTime')::time
+              < (item.value ->> 'startTime')::time then 1
+            else 0
+          end,
+      'YYYY-MM-DD'
+    ) || 'T' || (item.value ->> 'endTime') || ':00+03:00',
+    'crossesMidnight', (item.value ->> 'endTime')::time
+      < (item.value ->> 'startTime')::time,
+    'priceIqd', (item.value ->> 'priceIqd')::bigint
+  )) order by item.ordinality)
+  into quoted_items
+  from jsonb_array_elements(target.inventory -> 'selectedInventory')
+    with ordinality as item(value, ordinality);
+
+  return jsonb_build_object(
+    'status', 'quoted',
+    'slug', target.public_slug,
+    'cottageName', target.name,
+    'contentVersion', target.publication_number,
+    'houseRules', target.house_rules,
+    'termsVersion', 'rentcottage-mvp-2026-08-04',
+    'items', quoted_items,
+    'bookingPriceIqd', booking_price::bigint,
+    'serviceFeeIqd', 5000,
+    'customerTotalIqd', (booking_price + 5000)::bigint
+  );
+end;
+$_$;
+
+ALTER FUNCTION "public"."get_public_booking_quote"("target_locale" "public"."cottage_profile_source_language", "target_slug" "text", "requested_search" "jsonb") OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."get_public_booking_quote_with_fingerprint"("target_locale" "public"."cottage_profile_source_language", "target_slug" "text", "requested_search" "jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare quote jsonb;
+declare fingerprint text;
+declare marketplace_terms jsonb;
+begin
+  quote := public.get_public_booking_quote(
+    target_locale, target_slug, requested_search
+  );
+  if quote ->> 'status' <> 'quoted' then
+    return quote;
+  end if;
+  marketplace_terms := public.booking_request_marketplace_terms(target_locale);
+  quote := quote || jsonb_build_object(
+    'termsVersion', marketplace_terms ->> 'version',
+    'marketplaceTerms', marketplace_terms
+  );
+  fingerprint := encode(
+    extensions.digest(
+      convert_to((quote - 'status')::text, 'UTF8'),
+      'sha256'
+    ),
+    'hex'
+  );
+  return quote || jsonb_build_object('quoteFingerprint', fingerprint);
+end;
+$$;
+
+ALTER FUNCTION "public"."get_public_booking_quote_with_fingerprint"("target_locale" "public"."cottage_profile_source_language", "target_slug" "text", "requested_search" "jsonb") OWNER TO "postgres";
+insert into public.cottage_inventory_availability (
+  schedule_revision_id, unit_kind, unit_id, service_day, state
+)
+select schedule_revision_id, unit_kind, unit_id, service_day::date, 'open'
+from public.cottage_inventory_standard_prices
+cross join generate_series('2099-08-23'::date, '2099-09-21'::date, interval '1 day') days(service_day)
+where schedule_revision_id = '60000000-0000-4000-8000-000000003201';
+create temporary table historical_search as
+select jsonb_build_object('from','2099-08-21','to','2099-09-21','guests',4,'selections', (
+  select jsonb_agg(jsonb_build_object(
+    'serviceDay',to_char(service_day,'YYYY-MM-DD'),'kind','shift','position',2
+  ) order by service_day)
+  from generate_series('2099-08-21'::date,'2099-09-21'::date,interval '1 day') service_day
+)) search;
+grant select on historical_search to service_role;
+set local role service_role;
+create temporary table historical_conversation as
+select public.create_messaging_conversation(
+  '00000000-0000-0000-0000-000000003202',
+  '30000000-0000-4000-8000-000000003201',
+  '36000000-0000-4000-8000-000000003709'
+) result;
+reset role;
+create temporary table historical_conversation_submission as
+select jsonb_set(submission || jsonb_build_object(
+  'conversationId',(select result->>'conversationId' from historical_conversation)
+),'{intent,conversationId}',to_jsonb((select result->>'conversationId' from historical_conversation))) submission
+from valid_submission;
+create temporary table historical_submission as
+select submission || jsonb_build_object(
+  'discoveryQuery', (select search from historical_search),
+  'quoteFingerprint', quote->>'quoteFingerprint',
+  'contentVersion', quote->'contentVersion', 'termsVersion', quote->'termsVersion',
+  'bookingPriceIqd', quote->'bookingPriceIqd', 'serviceFeeIqd', quote->'serviceFeeIqd',
+  'customerTotalIqd', quote->'customerTotalIqd', 'firstStartsAt', quote#>>'{items,0,startsAt}'
+) as submission
+from historical_conversation_submission
+cross join lateral (select public.get_public_booking_quote_with_fingerprint(
+  'en', 'cottage-30000000000040008000000000003201', (select search from historical_search)
+) as quote) current_quote;
+grant select on historical_submission to service_role;
+set local role service_role;
+create temporary table historical_preparation as
+select public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113732', (select submission from historical_submission)
+) result;
+reset role;
+do $$
+begin
+  execute (select quote from current_quote_definitions);
+  execute (select fingerprint from current_quote_definitions);
+  if (select result->>'status' from historical_preparation) is distinct from 'ready' then
+    raise exception 'Historical production preparation fixture was not admitted';
+  end if;
+  if public.resolve_booking_quote_with_fingerprint(
+    'en','cottage-30000000000040008000000000003201',(select search from historical_search),false
+  ) - 'status' is distinct from (
+    select attempts.quote_payload from public.booking_request_submission_attempts attempts
+    where attempts.id = (select (result->>'attemptId')::uuid from historical_preparation)
+  ) then
+    raise exception 'Historical quote fixture does not match current unlimited resolution';
+  end if;
+end;
+$$;
+select results_eq(
+  $$select result->>'status',
+      (select count(*)::integer from public.booking_request_submission_attempts attempts
+        where attempts.id = (result->>'attemptId')::uuid
+          and attempts.conversation_id = (select (result->>'conversationId')::uuid from historical_conversation))
+    from historical_preparation$$,
+  $$values ('ready'::text,1)$$,
+  'historical production preparation creates one real conversation-bound attempt'
+);
+select results_eq(
+  $$select (quote_payload->>'bookingPriceIqd')::bigint,
+      (quote_payload->>'serviceFeeIqd')::bigint,
+      (quote_payload->>'customerTotalIqd')::bigint,
+      jsonb_array_length(quote_payload->'items')
+    from public.booking_request_submission_attempts attempts
+    where attempts.id = (select (result->>'attemptId')::uuid from historical_preparation)$$,
+  $$values (3520000::bigint,5000::bigint,3525000::bigint,32)$$,
+  'historical 32-day preparation preserves every selected shift and the full hand-calculated IQD total'
+);
+select ok(
+  (select pg_get_functiondef('public.get_public_booking_quote(public.cottage_profile_source_language,text,jsonb)'::regprocedure) = quote
+    and pg_get_functiondef('public.get_public_booking_quote_with_fingerprint(public.cottage_profile_source_language,text,jsonb)'::regprocedure) = fingerprint
+    from current_quote_definitions),
+  'both current production quote definitions are restored before historical observations'
+);
+create temporary table historical_preparation_before as
+select to_jsonb(attempts) record from public.booking_request_submission_attempts attempts
+where attempts.id = (select (result->>'attemptId')::uuid from historical_preparation);
+-- Claim-start compatibility is observed separately from replacement retirement.
+savepoint historical_claim_compatibility;
+create temporary table historical_pending_payment as
+select snapshot || jsonb_build_object(
+  'paymentLifecycleId',result->>'paymentLifecycleId',
+  'bookingPriceFils',3520000000::bigint,'customerTotalFils',3525000000::bigint,
+  'authorization',(snapshot->'authorization') || jsonb_build_object(
+    'paymentLifecycleId',result->>'paymentLifecycleId',
+    'logicalOperationId',(result->>'paymentLifecycleId')||':authorization',
+    'attemptId',(result->>'paymentLifecycleId')||':authorization:attempt-1',
+    'amountFils',3525000000::bigint
+  ),
+  'financials',(snapshot->'financials') || jsonb_build_object(
+    'remainingBookingPriceFils',3520000000::bigint,'marketplaceCommissionFils',352000000::bigint,
+    'ownerEntitlementFils',3168000000::bigint
+  ),
+  'payout',(snapshot->'payout') || jsonb_build_object('eligibleFils',3168000000::bigint)
+) snapshot from pending_authorization_payment cross join historical_preparation;
+grant select on historical_pending_payment to service_role;
+set local role service_role;
+select is(public.begin_booking_request_authorization_claim(
+  (select (result->>'attemptId')::uuid from historical_preparation),
+  (select snapshot from historical_pending_payment), '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+)->'executionPermit'->>'purpose', 'booking-request-authorization',
+  'a valid historical 32-day preparation can still begin its Authorization Claim');
+reset role;
+rollback to savepoint historical_claim_compatibility;
+set local role service_role;
+select throws_ok(
+  $$select public.prepare_booking_request_submission(
+    '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113732', (select submission from historical_submission)
+  )$$,
+  '22023','Public Cottage search input is invalid',
+  'historical 32-day preparation retry retains the current admission refusal'
+);
+reset role;
+create temporary table historical_replacement as
+select submission || jsonb_build_object(
+  'discoveryQuery', submission->'discoveryQuery',
+  'quoteFingerprint', quote->>'quoteFingerprint',
+  'contentVersion', quote->'contentVersion', 'termsVersion', quote->'termsVersion',
+  'bookingPriceIqd', quote->'bookingPriceIqd', 'serviceFeeIqd', quote->'serviceFeeIqd',
+  'customerTotalIqd', quote->'customerTotalIqd', 'firstStartsAt', quote#>>'{items,0,startsAt}'
+) as submission
+from historical_conversation_submission
+cross join lateral (select public.get_public_booking_quote_with_fingerprint(
+  'en', 'cottage-30000000000040008000000000003201', submission->'discoveryQuery'
+) as quote) current_quote;
+grant select on historical_replacement to service_role;
+set local role service_role;
+select is(public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113709', (select submission from historical_replacement)
+)->>'status', 'ready', 'a shorter replacement succeeds in the historical over-limit preparation conversation');
+create temporary table historical_terminal_replay (result jsonb);
+select lives_ok(
+  $$insert into historical_terminal_replay
+    select public.prepare_booking_request_submission(
+      '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113732',
+      (select submission from historical_submission)
+    )$$,
+  'retired historical key replays without raising the current admission refusal'
+);
+select is((select result->>'status' from historical_terminal_replay), 'unavailable',
+  'retired historical key replays terminal unavailable without re-admitting 32 days');
+reset role;
+select results_eq(
+  $$select attempts.state::text, attempts.intent_dedupe_active,
+      public.messaging_submission_attempt_is_resolved(attempts.id)
+    from public.booking_request_submission_attempts attempts where attempts.id = (select (result->>'attemptId')::uuid from historical_preparation)$$,
+  $$values ('expired'::text, false, true)$$,
+  'replacement resolves historical over-limit preparation without payment'
+);
+select results_eq(
+  $$select to_jsonb(attempts) - array['state','intent_dedupe_active','updated_at']
+      = baseline.record - array['state','intent_dedupe_active','updated_at']
+    from public.booking_request_submission_attempts attempts
+    cross join historical_preparation_before baseline
+    where attempts.id = (select (result->>'attemptId')::uuid from historical_preparation)$$,
+  $$values (true)$$,
+  'historical retirement preserves all original identifiers, selections, quote and immutable intent'
+);
+select results_eq(
+  $$select
+      (select count(*)::integer from public.booking_request_authorization_claims),
+      (select count(*)::integer from public.payment_provider_operations),
+      (select count(*)::integer from public.booking_requests),
+      (select count(*)::integer from public.cottage_booking_period_commitments),
+      (select count(*)::integer from public.booking_request_payment_history history
+        where history.payment_lifecycle_id in (
+          select attempts.payment_lifecycle_id
+          from public.booking_request_submission_attempts attempts
+          where attempts.customer_user_id = '00000000-0000-0000-0000-000000003202'
+        )),
+      (select count(*)::integer from public.booking_request_submission_attempts
+        where payment_snapshot is not null
+          or num_nulls(authorization_provider,authorization_environment,authorization_merchant_id,
+            authorization_terminal_id,authorization_provider_request_id,authorization_provider_reference,
+            authorization_movement_reference,release_provider_request_id,release_provider_reference,
+            release_movement_reference) <> 10)$$,
+  $$values (0,0,0,0,0,0)$$,
+  'historical replacement retirement creates no money movement, provider call, request or hold'
+);
+rollback to savepoint historical_overlimit_preparation;
 
 savepoint authorization_null_input_audit;
 create temporary table authorization_null_baseline as
@@ -1298,6 +1936,46 @@ select is(
   interval '5 minutes',
   'unfinished pre-finalization work has an exact five-minute recovery window'
 );
+savepoint claim_started_replacement_guard;
+create temporary table claim_started_history_before as select jsonb_build_object(
+  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
+  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
+  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
+  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
+  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
+  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
+  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
+) record;
+create temporary table claim_started_replacement as
+select submission || jsonb_build_object(
+  'discoveryQuery', '{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":2}]}'::jsonb,
+  'quoteFingerprint', quote->>'quoteFingerprint',
+  'contentVersion', quote->'contentVersion', 'termsVersion', quote->'termsVersion',
+  'bookingPriceIqd', quote->'bookingPriceIqd', 'serviceFeeIqd', quote->'serviceFeeIqd',
+  'customerTotalIqd', quote->'customerTotalIqd', 'firstStartsAt', quote#>>'{items,0,startsAt}'
+) as submission
+from journey_submission
+cross join lateral (select public.get_public_booking_quote_with_fingerprint(
+  'en', 'cottage-30000000000040008000000000003201', '{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":2}]}'::jsonb
+) as quote) current_quote;
+grant select on claim_started_replacement to service_role;
+set local role service_role;
+select is(public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113709', (select submission from claim_started_replacement)
+)->>'status', 'invalid', 'claim started preparation cannot be replaced with a valid disjoint-day quote');
+reset role;
+select is(jsonb_build_object(
+  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
+  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
+  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
+  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
+  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
+  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
+  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
+), (select record from claim_started_history_before),
+  'claim started replacement refusal preserves the exact attempt, claim, provider, request, hold, link and payment history');
+rollback to savepoint claim_started_replacement_guard;
+
 create temporary table simulated_authorization_operation as
 select jsonb_build_object(
   'providerIdentity', jsonb_build_object(
@@ -1647,6 +2325,46 @@ select is(
   'pending',
   'independent reconciliation remains queued until conversion or definitive absence'
 );
+
+savepoint provider_started_replacement_guard;
+create temporary table provider_started_history_before as select jsonb_build_object(
+  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
+  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
+  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
+  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
+  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
+  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
+  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
+) record;
+create temporary table provider_started_replacement as
+select submission || jsonb_build_object(
+  'discoveryQuery', '{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":2}]}'::jsonb,
+  'quoteFingerprint', quote->>'quoteFingerprint',
+  'contentVersion', quote->'contentVersion', 'termsVersion', quote->'termsVersion',
+  'bookingPriceIqd', quote->'bookingPriceIqd', 'serviceFeeIqd', quote->'serviceFeeIqd',
+  'customerTotalIqd', quote->'customerTotalIqd', 'firstStartsAt', quote#>>'{items,0,startsAt}'
+) as submission
+from journey_submission
+cross join lateral (select public.get_public_booking_quote_with_fingerprint(
+  'en', 'cottage-30000000000040008000000000003201', '{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":2}]}'::jsonb
+) as quote) current_quote;
+grant select on provider_started_replacement to service_role;
+set local role service_role;
+select is(public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113709', (select submission from provider_started_replacement)
+)->>'status', 'invalid', 'provider started preparation cannot be replaced with a valid disjoint-day quote');
+reset role;
+select is(jsonb_build_object(
+  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
+  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
+  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
+  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
+  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
+  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
+  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
+), (select record from provider_started_history_before),
+  'provider started replacement refusal preserves the exact attempt, claim, provider, request, hold, link and payment history');
+rollback to savepoint provider_started_replacement_guard;
 
 savepoint authorized_after_cutoff_releases;
 update public.booking_request_submission_attempts
@@ -2861,6 +3579,46 @@ select is(
   'a conversation already bound to a Booking Request cannot be rebound'
 );
 reset role;
+savepoint pending_hold_replacement_guard;
+create temporary table pending_hold_history_before as select jsonb_build_object(
+  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
+  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
+  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
+  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
+  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
+  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
+  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
+) record;
+create temporary table pending_hold_replacement as
+select submission || jsonb_build_object(
+  'discoveryQuery', '{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":2}]}'::jsonb,
+  'quoteFingerprint', quote->>'quoteFingerprint',
+  'contentVersion', quote->'contentVersion', 'termsVersion', quote->'termsVersion',
+  'bookingPriceIqd', quote->'bookingPriceIqd', 'serviceFeeIqd', quote->'serviceFeeIqd',
+  'customerTotalIqd', quote->'customerTotalIqd', 'firstStartsAt', quote#>>'{items,0,startsAt}'
+) as submission
+from journey_submission
+cross join lateral (select public.get_public_booking_quote_with_fingerprint(
+  'en', 'cottage-30000000000040008000000000003201', '{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":2}]}'::jsonb
+) as quote) current_quote;
+grant select on pending_hold_replacement to service_role;
+set local role service_role;
+select is(public.prepare_booking_request_submission(
+  '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113709', (select submission from pending_hold_replacement)
+)->>'status', 'invalid', 'pending hold preparation cannot be replaced with a valid disjoint-day quote');
+reset role;
+select is(jsonb_build_object(
+  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
+  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
+  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
+  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
+  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
+  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
+  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
+), (select record from pending_hold_history_before),
+  'pending hold replacement refusal preserves the exact attempt, claim, provider, request, hold, link and payment history');
+rollback to savepoint pending_hold_replacement_guard;
+
 select ok((select attempts.conversation_id=links.conversation_id
     and attempts.id=links.submission_attempt_id
     and attempts.booking_request_id=links.booking_request_id

@@ -138,6 +138,162 @@ try {
   )`;
   }
 
+  async function prepareRetirementRace(
+    label,
+    dayOffset,
+    withOtherAttempt,
+    deferPreparation = false,
+  ) {
+    markTimingPhase("setup");
+    try {
+      await runSql(`
+    insert into public.cottage_inventory_availability (
+      schedule_revision_id, unit_kind, unit_id, service_day, state
+    ) select schedule_id, 'shift', shift_id, base_service_day + ${dayOffset} + day_offset, 'open'
+      from public.test_booking_request_concurrency_fixture
+      cross join generate_series(0, 2) days(day_offset)
+    on conflict (schedule_revision_id, unit_kind, unit_id, service_day)
+      do update set state = 'open';
+    set role service_role;
+    create temporary table retirement_conversations as
+    select '${label}' || suffix as label,
+        (public.create_messaging_conversation(
+          '${customerId}', profile_id, gen_random_uuid()
+        ) ->> 'conversationId')::uuid as conversation_id,
+        base_service_day + ${dayOffset} + day_offset as service_day,
+        base_service_day + ${dayOffset} + 2 as replacement_day,
+        gen_random_uuid() as replacement_key
+      from public.test_booking_request_concurrency_fixture
+      cross join (values ('-old', 0)${withOtherAttempt ? ", ('-other', 1)" : ""}) cases(suffix, day_offset);
+    reset role;
+    insert into public.test_booking_request_retirement_fixture (
+      label, conversation_id, service_day, replacement_day, replacement_key
+    ) select label, conversation_id, service_day, replacement_day, replacement_key
+      from retirement_conversations;
+    update public.test_booking_request_retirement_fixture race
+    set submission = resolved.submission,
+      replacement_submission = resolved.replacement_submission
+    from (
+      with searches as (
+        select race.label, race.conversation_id, choice.replacement,
+          base.submission,
+          jsonb_build_object(
+            'from', choice.service_day, 'to', choice.service_day, 'guests', 2,
+            'amenities', jsonb_build_array(),
+            'selections', jsonb_build_array(jsonb_build_object(
+              'serviceDay', choice.service_day, 'kind', 'shift', 'position', base.position
+            ))
+          ) as search
+        from public.test_booking_request_retirement_fixture race
+        cross join public.test_booking_request_concurrency_fixture base
+        cross join lateral (values (false, race.service_day), (true, race.replacement_day))
+          choice(replacement, service_day)
+        where race.label like '${label}-%'
+      ), quoted as (
+        select searches.*, public.get_public_booking_quote_with_fingerprint(
+          'en', submission ->> 'publicSlug', search
+        ) as quote from searches
+      ), submissions as (
+        select label, replacement,
+          jsonb_set(submission || jsonb_build_object(
+            'conversationId', conversation_id,
+            'discoveryQuery', search,
+            'quoteFingerprint', quote ->> 'quoteFingerprint',
+            'contentVersion', quote -> 'contentVersion', 'termsVersion', quote -> 'termsVersion',
+            'bookingPriceIqd', quote -> 'bookingPriceIqd', 'serviceFeeIqd', quote -> 'serviceFeeIqd',
+            'customerTotalIqd', quote -> 'customerTotalIqd',
+            'firstStartsAt', quote #>> '{items,0,startsAt}'
+          ), '{intent,conversationId}', to_jsonb(conversation_id::text)) as submission
+        from quoted where quote ->> 'status' = 'quoted'
+      ) select original.label, original.submission,
+          replacement.submission as replacement_submission
+        from submissions original join submissions replacement using (label)
+        where not original.replacement and replacement.replacement
+    ) resolved
+    where race.label = resolved.label;
+    ${deferPreparation ? "" : retirementPreparedSql(label)}
+  `);
+      const count = await runSql(`
+    select count(*) from public.test_booking_request_retirement_fixture
+    where label like '${label}-%'
+      ${deferPreparation ? "" : "and prepare_result ->> 'status' = 'ready'"}
+      and conversation_id is not null
+      and ${deferPreparation ? "submission is not null" : "original_attempt is not null"}
+      and replacement_submission is not null;
+  `);
+      if (count !== (withOtherAttempt ? "2" : "1")) {
+        throw new Error(
+          `The ${label} retirement fixtures were incomplete: ${count}`,
+        );
+      }
+    } finally {
+      markTimingPhase("execution");
+    }
+  }
+
+  function retirementPreparedSql(label, idempotencyKey = "gen_random_uuid()") {
+    return `    update public.test_booking_request_retirement_fixture race
+    set prepare_result = public.prepare_booking_request_submission(
+      '${customerId}', ${idempotencyKey}, submission
+    ) where label like '${label}-%';
+    update public.test_booking_request_retirement_fixture race
+    set attempt_id = (prepare_result ->> 'attemptId')::uuid,
+      pending_snapshot = jsonb_build_object(
+        'paymentLifecycleId', prepare_result ->> 'paymentLifecycleId', 'currency', 'IQD',
+        'bookingPriceFils', (submission ->> 'bookingPriceIqd')::bigint * 1000,
+        'bookingServiceFeeFils', (submission ->> 'serviceFeeIqd')::bigint * 1000,
+        'customerTotalFils', (submission ->> 'customerTotalIqd')::bigint * 1000,
+        'authorization', jsonb_build_object(
+          'paymentLifecycleId', prepare_result ->> 'paymentLifecycleId', 'kind', 'authorization',
+          'logicalOperationId', (prepare_result ->> 'paymentLifecycleId') || ':authorization',
+          'attemptId', (prepare_result ->> 'paymentLifecycleId') || ':authorization:attempt-1',
+          'status', 'pending', 'amountFils', (submission ->> 'customerTotalIqd')::bigint * 1000,
+          'providerRequestId', null, 'providerReference', null, 'movementReference', null,
+          'reconciliationRequired', false, 'retrySafe', false
+        ),
+        'capture', null, 'release', null, 'refunds', jsonb_build_array(),
+        'financials', jsonb_build_object(
+          'refundedBookingPriceFils', 0, 'refundedBookingServiceFeeFils', 0,
+          'remainingBookingPriceFils', (submission ->> 'bookingPriceIqd')::bigint * 1000,
+          'remainingBookingServiceFeeFils', (submission ->> 'serviceFeeIqd')::bigint * 1000,
+          'marketplaceCommissionFils', (submission ->> 'bookingPriceIqd')::bigint * 100,
+          'ownerEntitlementFils', (submission ->> 'bookingPriceIqd')::bigint * 900
+        ),
+        'payout', jsonb_build_object(
+          'status', 'not_eligible', 'eligibleFils', (submission ->> 'bookingPriceIqd')::bigint * 900,
+          'paidFils', 0, 'providerFeeFils', 0, 'providerReserveFils', 0,
+          'recoveryExposureFils', 0, 'recoveryBalanceFils', 0,
+          'automaticOwnerDebitFils', 0, 'paidWhileBlocked', false, 'settlement', null
+        ),
+        'holds', jsonb_build_object('administrator', false, 'dispute', false),
+        'dispute', null, 'audits', jsonb_build_array(), 'movements', jsonb_build_array()
+      ) where label like '${label}-%';
+    update public.test_booking_request_retirement_fixture race
+    set original_attempt = to_jsonb(attempts)
+    from public.booking_request_submission_attempts attempts
+    where race.label like '${label}-%' and attempts.id = race.attempt_id;
+`;
+  }
+
+  function retirementClaimSql(label) {
+    return `create temporary table retirement_claim_result as
+    select public.begin_booking_request_authorization_claim(
+      attempt_id, pending_snapshot,
+      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+    ) as result from public.test_booking_request_retirement_fixture where label = '${label}';
+    update public.test_booking_request_retirement_fixture
+    set claim_result = (select result from retirement_claim_result) where label = '${label}';`;
+  }
+
+  function retirementReplacementSql(label) {
+    return `create temporary table retirement_replacement_result as
+    select public.prepare_booking_request_submission(
+      '${customerId}', replacement_key, replacement_submission
+    ) as result from public.test_booking_request_retirement_fixture where label = '${label}-old';
+    update public.test_booking_request_retirement_fixture
+    set replacement_result = (select result from retirement_replacement_result) where label = '${label}-old';`;
+  }
+
   async function restoreBaseBookingWindow() {
     markTimingPhase("setup");
     try {
@@ -802,7 +958,25 @@ try {
     await runSql(`drop table public.test_booking_request_cutoff_stale_work;`);
   }
 
+  const retirementConversationCleanup = `
+  delete from public.cottage_inventory_availability availability
+  using public.test_booking_request_concurrency_fixture base,
+    public.test_booking_request_retirement_fixture race
+  where availability.schedule_revision_id = base.schedule_id
+    and availability.unit_kind = 'shift' and availability.unit_id = base.shift_id
+    and availability.service_day between race.service_day and race.replacement_day;
+  alter table public.messaging_conversations disable trigger messaging_conversations_immutable;
+  delete from public.messaging_conversations where customer_user_id = '${customerId}';
+  alter table public.messaging_conversations enable trigger messaging_conversations_immutable;
+`;
+
   const cleanup = `begin;
+  create table if not exists public.test_booking_request_retirement_fixture (
+    label text primary key, conversation_id uuid, service_day date, replacement_day date,
+    replacement_key uuid, submission jsonb, replacement_submission jsonb,
+    prepare_result jsonb, attempt_id uuid, pending_snapshot jsonb,
+    original_attempt jsonb, claim_result jsonb, replacement_result jsonb
+  );
   create table if not exists public.test_booking_request_concurrency_fixture (
     profile_id uuid, schedule_id uuid, shift_id uuid, slug text,
     position smallint, service_day date, submission jsonb,
@@ -936,6 +1110,8 @@ try {
     select id from public.cottage_booking_period_commitments where customer_user_id = '${customerId}'
   );
   delete from public.cottage_booking_period_commitments where customer_user_id = '${customerId}';
+  ${retirementConversationCleanup}
+  drop table public.test_booking_request_retirement_fixture;
   delete from public.account_contexts where user_id = '${customerId}';
   delete from auth.users where id = '${customerId}';
   drop table if exists public.test_booking_request_concurrency_fixture;
@@ -1065,6 +1241,13 @@ commit;`;
     where fixture.profile_id = resolved.profile_id;
     update public.test_booking_request_concurrency_fixture
     set base_submission = submission;
+    create table public.test_booking_request_retirement_fixture (
+      label text primary key, conversation_id uuid, service_day date, replacement_day date,
+      replacement_key uuid, submission jsonb, replacement_submission jsonb,
+      prepare_result jsonb, attempt_id uuid, pending_snapshot jsonb,
+      original_attempt jsonb, claim_result jsonb, replacement_result jsonb
+    );
+    grant select, update on public.test_booking_request_retirement_fixture to service_role;
     create table public.test_booking_request_time_boundary_fixture (
       label text primary key,
       crosses_at timestamptz not null,
@@ -1246,6 +1429,403 @@ commit;`;
     markTimingPhase("setup");
     await restoreRaceClock();
     markTimingPhase("execution");
+
+    // The claimant first owns only the attempt, before taking customer/profile locks.
+    await prepareRetirementRace("retirement-claim-first", 60, false);
+    const firstClaim = await startSession(`
+    begin;
+    select attempts.id from public.booking_request_submission_attempts attempts
+    join public.test_booking_request_retirement_fixture race on race.attempt_id = attempts.id
+    where race.label = 'retirement-claim-first-old' for update of attempts;
+    select 'RC_RETIREMENT_CLAIM_LOCKED';
+  `);
+    await waitForMarker(firstClaim, "RC_RETIREMENT_CLAIM_LOCKED");
+    const blockedReplacement = await startSession(
+      `
+    set application_name = 'rc-retirement-claim-first-replacement';
+    begin;
+    set local role service_role;
+    ${retirementReplacementSql("retirement-claim-first")}
+    commit;
+  `,
+      true,
+    );
+    await waitForLock(
+      "rc-retirement-claim-first-replacement",
+      blockedReplacement,
+    );
+    firstClaim.child.stdin.write(
+      `${retirementClaimSql("retirement-claim-first-old")}\n`,
+    );
+    await finishSession(firstClaim, { action: "commit" });
+    await finishSession(blockedReplacement);
+    const claimFirst = await runSql(`
+    select count(*) from public.test_booking_request_retirement_fixture race
+    join public.booking_request_submission_attempts attempts on attempts.id = race.attempt_id
+    join public.booking_request_authorization_claims claims on claims.attempt_id = attempts.id
+    where race.label = 'retirement-claim-first-old'
+      and race.claim_result ->> 'status' = 'ready'
+      and race.replacement_result ->> 'status' = 'invalid'
+      and attempts.state = 'reconciliation_required' and claims.state = 'starting'
+      and attempts.intent_dedupe_active and attempts.payment_snapshot is not null;
+  `);
+    if (claimFirst !== "1") {
+      throw new Error(
+        `Claim-first retirement race changed or lost its claim: ${claimFirst}`,
+      );
+    }
+
+    await prepareRetirementRace("retirement-retire-first", 63, false);
+    await runSql(`
+    update public.cottage_inventory_availability availability set state = 'closed'
+    from public.test_booking_request_concurrency_fixture base,
+      public.test_booking_request_retirement_fixture race
+    where race.label = 'retirement-retire-first-old'
+      and availability.schedule_revision_id = base.schedule_id
+      and availability.unit_id = base.shift_id and availability.unit_kind = 'shift'
+      and availability.service_day = race.service_day;
+  `);
+    const firstRetirement = await startSession(`
+    begin;
+    set local role service_role;
+    ${retirementReplacementSql("retirement-retire-first")}
+    select 'RC_RETIREMENT_REPLACED';
+  `);
+    await waitForMarker(firstRetirement, "RC_RETIREMENT_REPLACED");
+    const lateClaim = await startSession(
+      `
+    set application_name = 'rc-retirement-late-claim';
+    begin;
+    set local role service_role;
+    ${retirementClaimSql("retirement-retire-first-old")}
+    commit;
+  `,
+      true,
+    );
+    await waitForLock("rc-retirement-late-claim", lateClaim);
+    await finishSession(firstRetirement, { action: "commit" });
+    await finishSession(lateClaim);
+
+    await prepareRetirementRace("retirement-cross-attempt", 66, true);
+    await runSql(`
+    update public.cottage_inventory_availability availability set state = 'closed'
+    from public.test_booking_request_concurrency_fixture base,
+      public.test_booking_request_retirement_fixture race
+    where race.label = 'retirement-cross-attempt-old'
+      and availability.schedule_revision_id = base.schedule_id
+      and availability.unit_id = base.shift_id and availability.unit_kind = 'shift'
+      and availability.service_day = race.service_day;
+  `);
+    const otherClaim = await startSession(`
+    begin;
+    select attempts.id from public.booking_request_submission_attempts attempts
+    join public.test_booking_request_retirement_fixture race on race.attempt_id = attempts.id
+    where race.label = 'retirement-cross-attempt-other' for update of attempts;
+    select user_id from public.account_contexts where user_id = '${customerId}' for update;
+    select 'RC_RETIREMENT_OTHER_CUSTOMER_LOCKED';
+  `);
+    await waitForMarker(otherClaim, "RC_RETIREMENT_OTHER_CUSTOMER_LOCKED");
+    const crossAttemptReplacement = await startSession(
+      `
+    set application_name = 'rc-retirement-cross-attempt-replacement';
+    begin;
+    set local role service_role;
+    ${retirementReplacementSql("retirement-cross-attempt")}
+    commit;
+  `,
+      true,
+    );
+    await waitForLock(
+      "rc-retirement-cross-attempt-replacement",
+      crossAttemptReplacement,
+    );
+    otherClaim.child.stdin.write(
+      `${retirementClaimSql("retirement-cross-attempt-other")}\n`,
+    );
+    await finishSession(otherClaim, { action: "commit" });
+    await finishSession(crossAttemptReplacement);
+    const retainedOtherClaim = await runSql(`
+    select count(*) from public.test_booking_request_retirement_fixture race
+    join public.booking_request_submission_attempts attempts on attempts.id = race.attempt_id
+    join public.booking_request_authorization_claims claims on claims.attempt_id = attempts.id
+    where race.label = 'retirement-cross-attempt-other'
+      and race.claim_result ->> 'status' = 'ready'
+      and attempts.state = 'reconciliation_required' and claims.state = 'starting'
+      and attempts.intent_dedupe_active and attempts.payment_snapshot is not null;
+  `);
+    if (retainedOtherClaim !== "1") {
+      throw new Error(
+        `Cross-attempt retirement lost the independent claim: ${retainedOtherClaim}`,
+      );
+    }
+    const retired = await runSql(`
+    select count(*) from public.test_booking_request_retirement_fixture race
+    join public.booking_request_submission_attempts attempts on attempts.id = race.attempt_id
+    join public.booking_request_submission_attempts replacement
+      on replacement.id = (race.replacement_result ->> 'attemptId')::uuid
+    where race.label in ('retirement-retire-first-old', 'retirement-cross-attempt-old')
+      and race.replacement_result ->> 'status' = 'ready'
+      and (race.label <> 'retirement-retire-first-old' or race.claim_result ->> 'status' = 'invalid')
+      and attempts.state = 'expired' and not attempts.intent_dedupe_active
+      and public.messaging_submission_attempt_is_resolved(attempts.id)
+      and to_jsonb(attempts) - array['state','intent_dedupe_active','updated_at']
+        = race.original_attempt - array['state','intent_dedupe_active','updated_at']
+      and replacement.conversation_id = race.conversation_id
+      and replacement.state = 'authorizing' and replacement.payment_snapshot is null
+      and not exists (
+        select 1 from public.booking_request_authorization_claims claims
+        where claims.attempt_id in (attempts.id, replacement.id)
+      )
+      and not exists (
+        select 1 from public.payment_provider_operations operations
+        where operations.payment_lifecycle_id in (attempts.payment_lifecycle_id, replacement.payment_lifecycle_id)
+      )
+      and not exists (
+        select 1 from public.booking_requests requests
+        where requests.payment_lifecycle_id in (attempts.payment_lifecycle_id, replacement.payment_lifecycle_id)
+      );
+  `);
+    if (retired !== "2") {
+      throw new Error(
+        `Retirement races did not retain two payment-free resolved attempts: ${retired}`,
+      );
+    }
+    await prepareRetirementRace("key-collision", 69, false, true);
+    const collisionPreparation = await startSession(`
+    begin;
+    ${retirementPreparedSql("key-collision", "replacement_key")}
+    select 'RC_KEY_COLLISION_PREPARED';
+  `);
+    await waitForMarker(collisionPreparation, "RC_KEY_COLLISION_PREPARED");
+    const collisionReady = await runSql(`
+    select count(*) from public.test_booking_request_retirement_fixture
+    where label = 'key-collision-old' and prepare_result is null;
+  `);
+    if (collisionReady !== "1") {
+      throw new Error(
+        `The key-collision preparation was not uncommitted: ${collisionReady}`,
+      );
+    }
+    const profileControl = await startSession(`
+    set application_name = 'rc-key-collision-profile-control';
+    begin;
+    lock table public.owner_application_cottage_profiles in exclusive mode;
+    select 'RC_KEY_COLLISION_PROFILE_LOCKED';
+  `);
+    await waitForLock("rc-key-collision-profile-control", profileControl);
+    const collisionContender = await startSession(
+      `
+    set application_name = 'rc-key-collision-preparation';
+    begin;
+    set local role service_role;
+    select public.prepare_booking_request_submission(
+      '${customerId}', replacement_key,
+      (replacement_submission - 'conversationId') || jsonb_build_object(
+        'intent', (replacement_submission -> 'intent') - 'conversationId'
+      )
+    ) ->> 'status' from public.test_booking_request_retirement_fixture
+    where label = 'key-collision-old';
+    commit;
+  `,
+      true,
+    );
+    await waitForLock("rc-key-collision-preparation", collisionContender);
+    await finishSession(collisionPreparation, { action: "commit" });
+    await waitForMarker(profileControl, "RC_KEY_COLLISION_PROFILE_LOCKED");
+    await waitForLock("rc-key-collision-preparation", collisionContender);
+    const profileWait = await runSql(`
+    select count(*) from pg_stat_activity activity
+    join pg_locks locks on locks.pid = activity.pid
+    where activity.application_name = 'rc-key-collision-preparation'
+      and locks.relation = 'public.owner_application_cottage_profiles'::regclass
+      and locks.mode = 'RowShareLock' and not locks.granted;
+  `);
+    if (profileWait !== "1") {
+      throw new Error(
+        `Key-collision preparation did not wait at its profile lock: ${profileWait}`,
+      );
+    }
+    const collisionClaim = await startSession(
+      `
+    set application_name = 'rc-key-collision-claim';
+    begin;
+    set local role service_role;
+    ${retirementClaimSql("key-collision-old")}
+    commit;
+  `,
+      true,
+    );
+    await waitForLock("rc-key-collision-claim", collisionClaim);
+    await finishSession(profileControl, { action: "commit" });
+    await finishSession(collisionContender);
+    await finishSession(collisionClaim);
+    if (!collisionContender.stdout.split(/\s+/).includes("invalid")) {
+      throw new Error(
+        `The key-collision contender did not refuse: ${collisionContender.stdout}`,
+      );
+    }
+    const collisionRetained = await runSql(`
+    select count(*) from public.test_booking_request_retirement_fixture race
+    join public.booking_request_submission_attempts attempts on attempts.id = race.attempt_id
+    join public.booking_request_authorization_claims claims on claims.attempt_id = attempts.id
+    where race.label = 'key-collision-old' and race.prepare_result ->> 'status' = 'ready'
+      and race.claim_result ->> 'status' = 'ready'
+      and attempts.state = 'reconciliation_required' and claims.state = 'starting'
+      and to_jsonb(attempts) - array['state','payment_snapshot','updated_at',
+        'authorization_provider','authorization_environment',
+        'authorization_merchant_id','authorization_terminal_id']
+        = race.original_attempt - array['state','payment_snapshot','updated_at',
+          'authorization_provider','authorization_environment',
+          'authorization_merchant_id','authorization_terminal_id']
+      and attempts.authorization_provider = 'fictional-payments'
+      and attempts.authorization_environment = 'local-test'
+      and attempts.authorization_merchant_id = 'fictional-merchant'
+      and attempts.authorization_terminal_id = 'fictional-terminal'
+      and attempts.payment_snapshot = jsonb_set(
+        race.pending_snapshot, '{authorization,reconciliationRequired}', 'true'::jsonb
+      )
+      and (select count(*) from public.booking_request_submission_attempts keyed
+        where keyed.customer_user_id = '${customerId}'
+          and keyed.idempotency_key = race.replacement_key) = 1
+      and not exists (
+        select 1 from public.booking_request_submission_attempts replacement
+        where replacement.customer_user_id = '${customerId}'
+          and replacement.requested_search = race.replacement_submission -> 'discoveryQuery'
+      )
+      and not exists (
+        select 1 from public.payment_provider_operations operations
+        where operations.payment_lifecycle_id = attempts.payment_lifecycle_id
+      );
+  `);
+    if (collisionRetained !== "1") {
+      throw new Error(
+        `The key-collision race changed its attempt or payment effects: ${collisionRetained}`,
+      );
+    }
+    await prepareRetirementRace("retirement-message", 72, false);
+    await runSql(`
+    update public.cottage_inventory_availability availability set state = 'closed'
+    from public.test_booking_request_concurrency_fixture base,
+      public.test_booking_request_retirement_fixture race
+    where race.label = 'retirement-message-old'
+      and availability.schedule_revision_id = base.schedule_id
+      and availability.unit_id = base.shift_id and availability.unit_kind = 'shift'
+      and availability.service_day = race.service_day;
+  `);
+    const messageAdmission = await startSession(`
+    begin;
+    select conversations.id from public.messaging_conversations conversations
+    join public.test_booking_request_retirement_fixture race
+      on race.conversation_id = conversations.id
+    where race.label = 'retirement-message-old' for update of conversations;
+    select 'RC_RETIREMENT_MESSAGE_CONVERSATION_LOCKED';
+  `);
+    await waitForMarker(
+      messageAdmission,
+      "RC_RETIREMENT_MESSAGE_CONVERSATION_LOCKED",
+    );
+    const messageReplacement = await startSession(
+      `
+    set application_name = 'rc-retirement-message-replacement';
+    begin;
+    set local role service_role;
+    ${retirementReplacementSql("retirement-message")}
+    commit;
+  `,
+      true,
+    );
+    await waitForLock("rc-retirement-message-replacement", messageReplacement);
+    messageAdmission.child.stdin.write(`
+    set local role service_role;
+    create temporary table retirement_message_result as
+    select public.admit_messaging_message(
+      '${customerId}', conversation_id, gen_random_uuid(), 'en', 'Is the cottage available?'
+    ) as result from public.test_booking_request_retirement_fixture
+    where label = 'retirement-message-old';
+    reset role;
+    do $message_observer$
+    begin
+      if (select count(*) from retirement_message_result admitted
+        join public.messaging_messages messages on messages.id = (admitted.result ->> 'messageId')::uuid
+        join public.test_booking_request_retirement_fixture race on race.conversation_id = messages.conversation_id
+        where admitted.result ->> 'status' = 'sent' and race.label = 'retirement-message-old'
+          and messages.sender_user_id = '${customerId}'
+          and messages.original_body = 'Is the cottage available?') <> 1 then
+        raise exception 'Message admission did not retain one real sent message';
+      end if;
+    end;
+    $message_observer$;
+    select 'RC_RETIREMENT_MESSAGE_ADMITTED';
+  `);
+    await waitForMarker(messageAdmission, "RC_RETIREMENT_MESSAGE_ADMITTED");
+    await finishSession(messageAdmission, { action: "rollback" });
+    await finishSession(messageReplacement);
+    const messageRetired = await runSql(`
+    select count(*) from public.test_booking_request_retirement_fixture race
+    join public.booking_request_submission_attempts attempts on attempts.id = race.attempt_id
+    join public.booking_request_submission_attempts replacement
+      on replacement.id = (race.replacement_result ->> 'attemptId')::uuid
+    where race.label = 'retirement-message-old'
+      and race.replacement_result ->> 'status' = 'ready'
+      and attempts.state = 'expired' and not attempts.intent_dedupe_active
+      and public.messaging_submission_attempt_is_resolved(attempts.id)
+      and to_jsonb(attempts) - array['state','intent_dedupe_active','updated_at']
+        = race.original_attempt - array['state','intent_dedupe_active','updated_at']
+      and replacement.conversation_id = race.conversation_id
+      and replacement.state = 'authorizing' and replacement.payment_snapshot is null
+      and (select count(*) from public.booking_request_submission_attempts bound
+        where bound.conversation_id = race.conversation_id) = 2
+      and not exists (
+        select 1 from public.booking_request_authorization_claims claims
+        where claims.attempt_id in (attempts.id, replacement.id)
+      )
+      and not exists (
+        select 1 from public.payment_provider_operations operations
+        where operations.payment_lifecycle_id in (attempts.payment_lifecycle_id, replacement.payment_lifecycle_id)
+      )
+      and not exists (
+        select 1 from public.booking_requests requests
+        where requests.payment_lifecycle_id in (attempts.payment_lifecycle_id, replacement.payment_lifecycle_id)
+      )
+      and not exists (
+        select 1 from public.cottage_booking_period_commitments commitments
+        where commitments.customer_user_id = '${customerId}'
+      );
+  `);
+    if (messageRetired !== "1") {
+      throw new Error(
+        `Message/prepare race changed retirement or payment effects: ${messageRetired}`,
+      );
+    }
+    await runSql(`
+    insert into public.test_booking_request_time_boundary_fixture (label, crosses_at, prepare_result, attempt_id)
+    select label, clock_timestamp(), prepare_result, attempt_id
+    from public.test_booking_request_retirement_fixture
+    union all
+    select label || '-replacement', clock_timestamp(), replacement_result,
+      (replacement_result ->> 'attemptId')::uuid
+    from public.test_booking_request_retirement_fixture
+    where replacement_result ->> 'status' = 'ready';
+  `);
+    for (const label of [
+      "retirement-claim-first-old",
+      "retirement-retire-first-old",
+      "retirement-retire-first-old-replacement",
+      "retirement-cross-attempt-old",
+      "retirement-cross-attempt-other",
+      "retirement-cross-attempt-old-replacement",
+      "key-collision-old",
+      "retirement-message-old",
+      "retirement-message-old-replacement",
+    ]) {
+      await removeBoundaryAttempt(label);
+    }
+    await runSql(`begin;
+    ${retirementConversationCleanup}
+    delete from public.test_booking_request_retirement_fixture;
+    commit;
+  `);
+    await restoreBaseBookingWindow();
 
     const authorization = await startSession(`
     set application_name = 'rc-booking-request-first';
@@ -2119,7 +2699,7 @@ commit;`;
       );
     }
     console.log(
-      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=ledger-finalized-stale-lease-conflict; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending.",
+      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=ledger-finalized-stale-lease-conflict; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending; retirement-claim-first=attempt-lock-wait-then-claim-retained; retirement-first=late-claim-blocked-then-invalid-without-payment; retirement-cross-attempt=customer-lock-wait-then-independent-claim-and-replacement-ready; key-collision=profile-lock-wait-then-invalid-without-late-attempt-lock-and-claim-ready; retirement-message=conversation-lock-wait-message-admitted-then-rollback-and-payment-free-replacement-ready.",
     );
   }
 
