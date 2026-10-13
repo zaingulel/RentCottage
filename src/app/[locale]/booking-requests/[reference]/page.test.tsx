@@ -131,6 +131,12 @@ describe("authenticated Customer Booking Request page", () => {
       );
 
       expect(screen.getByRole("alert")).toHaveTextContent(unavailable);
+      expect(screen.getByRole("main")).toHaveClass("page", "page-record");
+      expect(
+        within(screen.getByRole("alert")).getByRole("heading", {
+          name: unavailable,
+        }),
+      ).toHaveClass("page-title");
       expect(screen.queryByText("Confirmed booking")).not.toBeInTheDocument();
     },
   );
