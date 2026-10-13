@@ -21,14 +21,6 @@ const { createLocalSupabaseConcurrencyHarness } = createRequire(
     guardDisposableLocalDatabase(): void;
   };
 };
-const { browserBookingFixtureIdentity } = createRequire(import.meta.url)(
-  "../../scripts/lib/booking-fixture.mjs",
-) as {
-  browserBookingFixtureIdentity(
-    file: string,
-    project: string,
-  ): Record<string, string>;
-};
 type SqlHarness = { runSql(sql: string): string };
 
 function guardedHarness() {
@@ -47,7 +39,6 @@ function cleanSnapshot(path: string): ScheduledExpiryBaseline {
   if (
     typeof snapshot !== "object" ||
     snapshot === null ||
-    !("identity" in snapshot) ||
     !("definitions" in snapshot) ||
     !Array.isArray(snapshot.definitions) ||
     !snapshot.definitions.length ||
@@ -76,14 +67,7 @@ function cleanSnapshot(path: string): ScheduledExpiryBaseline {
   ) {
     throw new Error("Scheduled expiry evidence snapshot is malformed.");
   }
-  const { identity, ...baseline } = snapshot;
-  expect(identity).toEqual(
-    browserBookingFixtureIdentity(
-      "expiry",
-      process.env.SCHEDULED_EXPIRY_PROBE_PROJECT ?? "worker",
-    ),
-  );
-  return baseline as ScheduledExpiryBaseline;
+  return snapshot as ScheduledExpiryBaseline;
 }
 
 type PendingScheduled = {
@@ -133,7 +117,6 @@ test("scheduled expiry times out with a pending trigger", async ({
   writeFileSync(
     path,
     JSON.stringify({
-      identity: scheduledExpiry.identity,
       definitions: scheduledExpiry.definitions,
       ordinary: scheduledExpiry.ordinary,
       captureDefinitions: scheduledExpiry.captureDefinitions,

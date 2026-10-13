@@ -115,7 +115,6 @@ const outerTest = test.extend<{ childProbe: ChildProbe }>({
           ...process.env,
           SCHEDULED_EXPIRY_PROBE_BASE_URL: baseURL,
           SCHEDULED_EXPIRY_PROBE_OUTPUT_DIR: directory,
-          SCHEDULED_EXPIRY_PROBE_PROJECT: testInfo.project.name,
         },
         stdio: ["ignore", "pipe", "pipe"],
       },

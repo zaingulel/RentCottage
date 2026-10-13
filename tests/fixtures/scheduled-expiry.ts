@@ -240,7 +240,7 @@ export const test = base.extend<{ scheduledExpiry: ScheduledExpiry }>({
   scheduledExpiry: async ({}, use, testInfo) => {
     const identity = browserBookingFixtureIdentity(
       "expiry",
-      process.env.SCHEDULED_EXPIRY_PROBE_PROJECT ?? testInfo.project.name,
+      testInfo.project.name,
     );
     const harness = createLocalSupabaseConcurrencyHarness();
     harness.guardDisposableLocalDatabase();

@@ -438,7 +438,7 @@ async function loadBookingFixturePricing({ fixture, ownerClient, profile }) {
       .select("id,full_day_bundle_id")
       .eq("id", profile.current_shift_schedule_id)
       .maybeSingle(),
-    `${fixture.project} access booking fixture is incomplete: missing current Shift Schedule`,
+    `${fixture.bookingCottageName} booking fixture is incomplete: missing current Shift Schedule`,
   );
   const shifts = await ownerClient
     .from("cottage_shifts")
@@ -453,7 +453,7 @@ async function loadBookingFixturePricing({ fixture, ownerClient, profile }) {
   );
   if (!expectedPricing) {
     throw new Error(
-      `${fixture.project} access booking fixture is incomplete: expected two Cottage Shifts and a full-day bundle`,
+      `${fixture.bookingCottageName} booking fixture is incomplete: expected two Cottage Shifts and a full-day bundle`,
     );
   }
   const loadedPricing = requireData(
@@ -462,7 +462,7 @@ async function loadBookingFixturePricing({ fixture, ownerClient, profile }) {
       target_schedule_revision_id: schedule.id,
       target_service_day: null,
     }),
-    `${fixture.project} access booking fixture pricing is unavailable`,
+    `${fixture.bookingCottageName} booking fixture pricing is unavailable`,
   );
   return { expectedPricing, loadedPricing, scheduleId: schedule.id };
 }
@@ -489,7 +489,7 @@ async function ensureBookingFixtureStandardPricing({
       !Array.isArray(loaded.dateOverrides)
     ) {
       throw new Error(
-        `${fixture.project} access booking fixture pricing is incomplete: missing complete override state`,
+        `${fixture.bookingCottageName} booking fixture pricing is incomplete: missing complete override state`,
       );
     }
     return {
@@ -947,7 +947,7 @@ async function createPublishedBookingFixture({
   if (existing.data) {
     if (existing.data.status !== "approved") {
       throw new Error(
-        `${fixture.project} access booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
+        `${fixture.bookingCottageName} booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
       );
     }
     applicationId = existing.data.id;
@@ -984,11 +984,11 @@ async function createPublishedBookingFixture({
       .select("id,current_publication_id,current_shift_schedule_id")
       .eq("application_id", applicationId)
       .maybeSingle(),
-    `${fixture.project} access booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
+    `${fixture.bookingCottageName} booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
   );
   if (!profile.current_publication_id || !profile.current_shift_schedule_id) {
     throw new Error(
-      `${fixture.project} access booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
+      `${fixture.bookingCottageName} booking fixture is incomplete: expected approved published profile with current Shift Schedule`,
     );
   }
   await ensureBookingFixtureStandardPricing({
@@ -1115,14 +1115,14 @@ export async function validateAccessBrowserFixtures({
     const bookingIdentity = await fixtureIdentity(
       privilegedClient,
       fixture.bookingOwnerPhone,
-      `${project} access booking fixture is incomplete`,
+      `${fixture.bookingCottageName} booking fixture is incomplete`,
     );
     const bookingOwnerClient = await signInFixtureOwner({
       url,
       publishableKey,
       identity: bookingIdentity,
       phone: fixture.bookingOwnerPhone,
-      description: `${project} access booking fixture is incomplete`,
+      description: `${fixture.bookingCottageName} booking fixture is incomplete`,
     });
     const bookingProfile = requireData(
       await bookingOwnerClient
@@ -1130,14 +1130,14 @@ export async function validateAccessBrowserFixtures({
         .select("id,name,current_publication_id,current_shift_schedule_id")
         .eq("name", fixture.bookingCottageName)
         .maybeSingle(),
-      `${project} access booking fixture is incomplete: missing exact Cottage Profile`,
+      `${fixture.bookingCottageName} booking fixture is incomplete: missing exact Cottage Profile`,
     );
     if (
       !bookingProfile.current_publication_id ||
       !bookingProfile.current_shift_schedule_id
     ) {
       throw new Error(
-        `${project} access booking fixture is incomplete: missing current publication or Shift Schedule`,
+        `${fixture.bookingCottageName} booking fixture is incomplete: missing current publication or Shift Schedule`,
       );
     }
     for (const locale of ["en", "ar", "ckb"]) {
@@ -1155,7 +1155,7 @@ export async function validateAccessBrowserFixtures({
         publication.name !== fixture.bookingCottageName
       ) {
         throw new Error(
-          `${project} access booking fixture is incomplete: missing public ${locale} publication`,
+          `${fixture.bookingCottageName} booking fixture is incomplete: missing public ${locale} publication`,
         );
       }
     }
@@ -1166,7 +1166,7 @@ export async function validateAccessBrowserFixtures({
     });
     if (!hasExactStandardPricing(loadedPricing, expectedPricing)) {
       throw new Error(
-        `${project} access booking fixture is incomplete: expected deterministic standard pricing`,
+        `${fixture.bookingCottageName} booking fixture is incomplete: expected deterministic standard pricing`,
       );
     }
   }

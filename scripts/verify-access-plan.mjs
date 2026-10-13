@@ -197,6 +197,19 @@ function databaseChecks(mode, partition) {
   return steps;
 }
 
+function localJourneyInvocations(portions, projects, config, reportPrefix) {
+  return portions.map(([files, workers, portion]) => [
+    "playwright",
+    "test",
+    ...files,
+    ...projects.map((project) => `--project=${project}`),
+    `--config=${config}`,
+    `--workers=${workers}`,
+    "--retries=0",
+    `--output=playwright-report/${reportPrefix}-${portion}`,
+  ]);
+}
+
 function browserJourneys({ ownedJourneys, phase, partition, shard }) {
   const steps = [];
   const builtOnce = !partition && !ownedJourneys;
@@ -269,37 +282,32 @@ function browserJourneys({ ownedJourneys, phase, partition, shard }) {
       });
     }
     const nextInvocations = builtOnce
-      ? [
+      ? localJourneyInvocations(
           [
             [
-              "tests/booking-history.spec.ts",
-              "tests/messaging.spec.ts",
-              "tests/customer-reviews.spec.ts",
+              [
+                "tests/booking-history.spec.ts",
+                "tests/messaging.spec.ts",
+                "tests/customer-reviews.spec.ts",
+              ],
+              2,
+              "parallel",
             ],
-            2,
-            "parallel",
-          ],
-          [
             [
-              "tests/access.spec.ts",
-              "tests/booking-request-access.spec.ts",
-              "tests/administrator-payment-history.spec.ts",
-              "tests/administrator-records.spec.ts",
+              [
+                "tests/access.spec.ts",
+                "tests/booking-request-access.spec.ts",
+                "tests/administrator-payment-history.spec.ts",
+                "tests/administrator-records.spec.ts",
+              ],
+              1,
+              "exclusive",
             ],
-            1,
-            "exclusive",
           ],
-        ].map(([files, workers, portion]) => [
-          "playwright",
-          "test",
-          ...files,
-          "--project=mobile",
-          "--project=desktop",
-          "--config=playwright.next-prebuilt.config.ts",
-          `--workers=${workers}`,
-          "--retries=0",
-          `--output=playwright-report/access-next-${portion}`,
-        ])
+          ["mobile", "desktop"],
+          "playwright.next-prebuilt.config.ts",
+          "access-next",
+        )
       : [nextArgs];
     for (const args of nextInvocations) {
       steps.push({
@@ -378,36 +386,32 @@ function browserJourneys({ ownedJourneys, phase, partition, shard }) {
       });
     }
     const workerInvocations = builtOnce
-      ? [
+      ? localJourneyInvocations(
           [
             [
-              "tests/access.spec.ts",
-              "tests/messaging.spec.ts",
-              "tests/customer-reviews.spec.ts",
+              [
+                "tests/access.spec.ts",
+                "tests/messaging.spec.ts",
+                "tests/customer-reviews.spec.ts",
+              ],
+              2,
+              "parallel",
             ],
-            2,
-            "parallel",
-          ],
-          [
             [
-              "tests/booking-request-access.spec.ts",
-              "tests/administrator-payment-history.spec.ts",
-              "tests/administrator-records.spec.ts",
-              "tests/booking-cancellation-refund.spec.ts",
+              [
+                "tests/booking-request-access.spec.ts",
+                "tests/administrator-payment-history.spec.ts",
+                "tests/administrator-records.spec.ts",
+                "tests/booking-cancellation-refund.spec.ts",
+              ],
+              1,
+              "exclusive",
             ],
-            1,
-            "exclusive",
           ],
-        ].map(([files, workers, portion]) => [
-          "playwright",
-          "test",
-          ...files,
-          "--project=worker",
-          "--config=playwright.worker-prebuilt.config.ts",
-          `--workers=${workers}`,
-          "--retries=0",
-          `--output=playwright-report/access-worker-${portion}`,
-        ])
+          ["worker"],
+          "playwright.worker-prebuilt.config.ts",
+          "access-worker",
+        )
       : [workerArgs];
     for (const args of workerInvocations) {
       steps.push({

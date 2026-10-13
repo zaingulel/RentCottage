@@ -85,7 +85,7 @@ if (demoEnvironmentError) {
     { profile: "mobile", phone: "+9647520000000" },
     { profile: "desktop", phone: "+9647520000001" },
     { profile: "worker", phone: "+9647520000002" },
-    ...(!isDemo && requestedProjects.includes("worker")
+    ...(!isDemo
       ? [
           {
             profile: "worker",

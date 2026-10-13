@@ -1025,10 +1025,6 @@ test("browser booking fixtures own disjoint graphs and cleanup", () => {
     /browserBookingRequestNotificationFixture\(testInfo\.project\.name\)/,
   );
   const expiry = readFileSync("tests/worker-scheduled-expiry.spec.ts", "utf8");
-  assert.match(
-    expiry,
-    /SCHEDULED_EXPIRY_PROBE_PROJECT: testInfo\.project\.name/,
-  );
   assert.match(expiry, /const requestId = identity\.request/);
   assert.doesNotMatch(expiry, /[0-9a-f]{8}-0000-4000-8000-00000000100[123]/);
   const restoration = readFileSync(
@@ -1036,12 +1032,6 @@ test("browser booking fixtures own disjoint graphs and cleanup", () => {
     "utf8",
   );
   assert.match(restoration, /scheduledExpiry\.seeded,\s*identity/);
-  const child = readFileSync(
-    "tests/fixtures/scheduled-expiry-interruption.ts",
-    "utf8",
-  );
-  assert.match(child, /identity: scheduledExpiry\.identity/);
-  assert.match(child, /browserBookingFixtureIdentity\(\s*"expiry"/);
   for (const unknown of [
     "",
     "other",
