@@ -97,7 +97,7 @@ export default async function CustomerBookingRequestPage({
       <main
         id="customer-booking-request-detail"
         tabIndex={-1}
-        className="results-page action-focus-target"
+        className="results-page action-focus-target action-focus-target-inset"
       >
         <ActionFocusTarget targetId="customer-booking-request-detail" />
         <BookingFinancialDetails locale={locale} view={details.financial} />

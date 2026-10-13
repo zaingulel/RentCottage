@@ -763,6 +763,7 @@ test.describe("retained cancellation and refund controls", () => {
     const cancelledMain = page.locator("#customer-booking-request-detail");
     await cancelledMain.focus();
     await expect(cancelledMain).toBeFocused();
+    await expect(cancelledMain).toHaveCSS("outline-offset", "-3px");
     await page.screenshot({
       path: test.info().outputPath("cancelled-full-width-main-focus-en.png"),
       fullPage: true,
