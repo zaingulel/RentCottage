@@ -2018,22 +2018,8 @@ html[lang="ckb"] .result-content h2 {
   font-weight: 700;
 }
 
-.cottage-profile-form input,
-.cottage-profile-form textarea,
-.cottage-profile-form select,
-.cottage-photo-upload-form input {
-  inline-size: 100%;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--surface-bright);
-  color: var(--ink);
-  padding: var(--space-3);
-  font: inherit;
-}
-
 .cottage-profile-form textarea {
   min-block-size: 7rem;
-  resize: vertical;
 }
 
 .cottage-profile-form fieldset:disabled {
@@ -2288,11 +2274,6 @@ html[lang="ckb"] .result-content h2 {
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
   padding: var(--space-3);
-}
-
-.amenity-grid input,
-.exact-point-confirmation input {
-  inline-size: auto;
 }
 
 .exact-point-check p {

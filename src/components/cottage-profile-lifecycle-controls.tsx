@@ -12,6 +12,8 @@ import type { CottageProfile } from "@/cottage-profile/cottage-profile";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
 
+import { FormControl } from "./interaction-controls";
+
 const idle: CottageProfileActionState = { status: "idle" };
 
 export function CottageProfileLifecycleControls({
@@ -56,7 +58,12 @@ export function CottageProfileLifecycleControls({
         {actor === "administrator" ? (
           <label>
             {copy.lifecycleReason}
-            <textarea name="reason" required maxLength={1000} />
+            <FormControl
+              kind="textarea"
+              name="reason"
+              required
+              maxLength={1000}
+            />
           </label>
         ) : null}
         <button type="submit">

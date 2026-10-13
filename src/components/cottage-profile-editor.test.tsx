@@ -82,6 +82,10 @@ describe("Cottage Profile editor", () => {
     expect(screen.getByLabelText("Cottage name")).toHaveValue(
       "Continued Application Cottage",
     );
+    expect(screen.getByLabelText("Cottage name")).toHaveClass("form-control");
+    expect(screen.getByLabelText("Choose cottage photo")).toHaveClass(
+      "form-control",
+    );
     expect(screen.getByLabelText("Approximate public location")).toHaveValue(
       "Near Shaqlawa",
     );

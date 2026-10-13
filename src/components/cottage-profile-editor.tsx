@@ -22,7 +22,7 @@ import {
   cottageProfileStatusLabel,
 } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
-import { ActionFocusTarget } from "./interaction-controls";
+import { ActionFocusTarget, FormControl } from "./interaction-controls";
 
 import { CottageLocationFields } from "./cottage-location-fields";
 
@@ -211,15 +211,20 @@ export function CottageProfileEditor({
           </h2>
           <label>
             {copy.cottageName}
-            <input name="name" defaultValue={profile.name} />
+            <FormControl kind="input" name="name" defaultValue={profile.name} />
           </label>
           <label>
             {copy.governorate}
-            <input name="governorate" defaultValue={profile.governorate} />
+            <FormControl
+              kind="input"
+              name="governorate"
+              defaultValue={profile.governorate}
+            />
           </label>
           <label>
             {copy.approximateLocation}
-            <input
+            <FormControl
+              kind="input"
               name="approximateLocation"
               aria-describedby="cottage-profile-approximate-location-help"
               defaultValue={profile.approximateLocation}
@@ -231,7 +236,8 @@ export function CottageProfileEditor({
           <div className="cottage-profile-number-grid">
             <label>
               {copy.capacity}
-              <input
+              <FormControl
+                kind="input"
                 name="capacity"
                 type="number"
                 min="1"
@@ -241,7 +247,8 @@ export function CottageProfileEditor({
             </label>
             <label>
               {copy.bedrooms}
-              <input
+              <FormControl
+                kind="input"
                 name="bedrooms"
                 type="number"
                 min="1"
@@ -251,7 +258,8 @@ export function CottageProfileEditor({
             </label>
             <label>
               {copy.bathrooms}
-              <input
+              <FormControl
+                kind="input"
                 name="bathrooms"
                 type="number"
                 min="1"
@@ -289,7 +297,11 @@ export function CottageProfileEditor({
           <p className="private-location-warning">{copy.privateWarning}</p>
           <label>
             {copy.exactAddress}
-            <input name="exactAddress" defaultValue={profile.exactAddress} />
+            <FormControl
+              kind="input"
+              name="exactAddress"
+              defaultValue={profile.exactAddress}
+            />
           </label>
           <CottageLocationFields
             locale={locale}
@@ -298,7 +310,8 @@ export function CottageProfileEditor({
           />
           <label>
             {copy.privateDirections}
-            <textarea
+            <FormControl
+              kind="textarea"
               name="privateDirections"
               defaultValue={profile.privateDirections}
             />
@@ -317,7 +330,8 @@ export function CottageProfileEditor({
           </h2>
           <label>
             {copy.sourceLanguage}
-            <select
+            <FormControl
+              kind="select"
               name="sourceLanguage"
               defaultValue={profile.sourceLanguage ?? ""}
             >
@@ -325,15 +339,23 @@ export function CottageProfileEditor({
               <option value="ar">{copy.arabic}</option>
               <option value="ckb">{copy.sorani}</option>
               <option value="en">{copy.english}</option>
-            </select>
+            </FormControl>
           </label>
           <label>
             {copy.description}
-            <textarea name="description" defaultValue={profile.description} />
+            <FormControl
+              kind="textarea"
+              name="description"
+              defaultValue={profile.description}
+            />
           </label>
           <label>
             {copy.houseRules}
-            <textarea name="houseRules" defaultValue={profile.houseRules} />
+            <FormControl
+              kind="textarea"
+              name="houseRules"
+              defaultValue={profile.houseRules}
+            />
           </label>
         </fieldset>
         {editable ? <button type="submit">{copy.save}</button> : null}
@@ -360,7 +382,8 @@ export function CottageProfileEditor({
             <input type="hidden" name="profileId" value={profile.id} />
             <label>
               {copy.photoFile}
-              <input
+              <FormControl
+                kind="input"
                 type="file"
                 name="photo"
                 accept="image/jpeg,image/png,image/webp"
