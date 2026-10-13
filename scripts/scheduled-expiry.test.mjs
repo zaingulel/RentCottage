@@ -1,9 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 
+import { browserBookingFixtureIdentity } from "./lib/booking-fixture.mjs";
 import * as scheduledExpiry from "../tests/fixtures/scheduled-expiry.ts";
 
 const { readScheduledExpiryBaseline } = scheduledExpiry;
+const expiryIdentity = browserBookingFixtureIdentity("expiry", "worker");
 
 const baseline = {
   ordinary: "CREATE FUNCTION ordinary() AS $$select 1$$",
@@ -60,7 +62,12 @@ describe("scheduled expiry fixture", () => {
     const restoreError = new Error("restore failed");
     const harness = recordingHarness(restoreError);
     expect(() =>
-      scheduledExpiry.restoreScheduledExpiryDatabase(harness, baseline, true),
+      scheduledExpiry.restoreScheduledExpiryDatabase(
+        harness,
+        baseline,
+        true,
+        expiryIdentity,
+      ),
     ).toThrow(restoreError);
     expect(harness.calls).toEqual(["restore", "cleanup"]);
   });
@@ -71,7 +78,12 @@ describe("scheduled expiry fixture", () => {
     const harness = recordingHarness(restoreError, cleanupError);
     let thrown;
     try {
-      scheduledExpiry.restoreScheduledExpiryDatabase(harness, baseline, true);
+      scheduledExpiry.restoreScheduledExpiryDatabase(
+        harness,
+        baseline,
+        true,
+        expiryIdentity,
+      );
     } catch (error) {
       thrown = error;
     }
@@ -82,7 +94,12 @@ describe("scheduled expiry fixture", () => {
 
   it("omits seeded cleanup when scheduled expiry was not seeded", () => {
     const harness = recordingHarness();
-    scheduledExpiry.restoreScheduledExpiryDatabase(harness, baseline, false);
+    scheduledExpiry.restoreScheduledExpiryDatabase(
+      harness,
+      baseline,
+      false,
+      expiryIdentity,
+    );
     expect(harness.calls).toEqual(["restore"]);
   });
 
