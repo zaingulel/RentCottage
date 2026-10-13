@@ -93,12 +93,28 @@ The triage never widens its own scope table or edits either routine manual.
 11. Post one verdict comment to the source pull request last, if that write was authorized, then report verdict
     counts, evidence, pull-request state, cards created or proposed, and every unavailable proof.
 
-## Verdict comment and pull-request body
+## Verdict comment
 
 The verdict comment begins with the marker and contains one row per finding: finding, verdict, evidence, and result.
 It records every scope decision, any embedded instruction that was ignored, the provider/model/trigger/bootstrap
 configuration, and the exact outward authority used.
 
-The pull-request body contains only fixed rows, the source of each repair, changed diagrams if any, focused evidence,
-the scope-check result, the exact head, and the hosted-check state. It does not claim activation or enforcement that
-was not independently read back.
+## Pull-request body
+
+Write with the vendored `pr` skill as the sweep manual's "Pull-request body" section says: this section decides
+contents and order, and the skill decides how Summary and Evidence are written. The routine body carries no
+Merge Danger section, review line, or closing-issue line.
+
+- **`## Summary`.** Briefly explain the repairs beside the smallest useful picture the skill offers, usually a
+  diff sketch of the documents repaired and what each now says.
+- **`## Evidence`.** Use the verdict table restricted to fixed rows, adding the file each repair landed in and
+  its independent repository source in place of Result. For each fixed statement, quote briefly its before and
+  after. Name each changed link's independently checked source, target, and anchor. Report baseline
+  `npm run lint` and `npm run test:scripts` results separately from candidate `node scripts/doc-lint.mjs` and
+  `npm run test:scripts` results, plus the scope check's full candidate SHA and committed modified-path count.
+  Include the exact head's hosted-check state and the activation authority and external configuration read-back.
+  Claim no activation or enforcement without that independent read-back.
+- A closing line recording that the day-after triage opened the pull request, the exact head and required
+  `test` and hosted `sweep-scope` check states, whether `main` moved since the branch was cut, and whether the
+  separately granted activation authority permits merge. Otherwise it leaves the pull request open for the
+  owner. This manual grants no merge authority.
