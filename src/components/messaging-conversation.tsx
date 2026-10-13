@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 
+import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
 import { formatIraqDateTime } from "@/i18n/format";
 import { messages } from "@/i18n/messages";
 import { messagingMessages } from "@/i18n/messaging-messages";
@@ -164,12 +165,14 @@ export function MessagingConversation({
               <dt>{copy.booking}</dt>
               <dd>
                 {conversation.booking.bookingRequestReference} ·{" "}
-                {
-                  bookingRequestDisplayStatusMessages[locale][
-                    conversation.booking.paymentStatus ??
-                      conversation.booking.requestStatus
-                  ]
-                }
+                {conversation.booking.lifecycleStatus !== null
+                  ? bookingLifecycleMessages[locale][
+                      conversation.booking.lifecycleStatus
+                    ]
+                  : bookingRequestDisplayStatusMessages[locale][
+                      conversation.booking.paymentStatus ??
+                        conversation.booking.requestStatus
+                    ]}
               </dd>
             </div>
             <div>
@@ -215,11 +218,11 @@ export function MessagingConversation({
               {conversation.bookingHistory.slice(0, -1).map((booking) => (
                 <li key={booking.bookingRequestReference}>
                   {booking.bookingRequestReference} ·{" "}
-                  {
-                    bookingRequestDisplayStatusMessages[locale][
-                      booking.paymentStatus ?? booking.requestStatus
-                    ]
-                  }
+                  {booking.lifecycleStatus !== null
+                    ? bookingLifecycleMessages[locale][booking.lifecycleStatus]
+                    : bookingRequestDisplayStatusMessages[locale][
+                        booking.paymentStatus ?? booking.requestStatus
+                      ]}
                 </li>
               ))}
             </ul>

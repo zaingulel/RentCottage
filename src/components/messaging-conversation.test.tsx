@@ -59,6 +59,90 @@ const conversation: Conversation = {
 describe("Messaging conversation", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("renders authoritative current and prior booking lifecycle", () => {
+    const { rerender } = render(
+      <MessagingConversation locale="en" conversation={conversation} />,
+    );
+    const states = [
+      [
+        "confirmed",
+        "paid-confirmed",
+        "Confirmed booking",
+        "حجز مؤكد",
+        "حجزی پشتڕاستکراو",
+      ],
+      [
+        "completed",
+        "paid-confirmed",
+        "Completed booking",
+        "حجز مكتمل",
+        "حجزی تەواوکراو",
+      ],
+      ["no_show", "paid-confirmed", "No-show", "عدم الحضور", "ئامادەنەبوون"],
+      [
+        "cancelled",
+        "capture-processing",
+        "Cancelled booking",
+        "حجز ملغى",
+        "حجزی هەڵوەشاوە",
+      ],
+      [
+        "incident_pending",
+        "paid-confirmed",
+        "Incident pending",
+        "واقعة قيد المتابعة",
+        "ڕووداو چاوەڕێی بەدواداچوونە",
+      ],
+      [
+        null,
+        "payment-required",
+        "Payment Required",
+        "الدفع مطلوب",
+        "پارەدان پێویستە",
+      ],
+      [null, null, "Pending", "قيد الانتظار", "چاوەڕێ"],
+    ] as const;
+    for (const [lifecycleStatus, paymentStatus, ...labels] of states) {
+      const booking = {
+        bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
+        requestStatus:
+          lifecycleStatus || paymentStatus ? "accepted" : "pending",
+        paymentStatus,
+        lifecycleStatus,
+        responseDeadline: "2099-08-20T12:00:00.000Z",
+        firstStartsAt: lifecycleStatus ? "2099-08-21T12:00:00.000Z" : null,
+        lastEndsAt: lifecycleStatus ? "2099-08-21T15:00:00.000Z" : null,
+        writingClosesAt: lifecycleStatus ? "2099-09-20T15:00:00.000Z" : null,
+        writingClosed: false,
+        contactAllowed: lifecycleStatus !== null,
+      } as const;
+      for (const [index, locale] of (["en", "ar", "ckb"] as const).entries()) {
+        rerender(
+          <MessagingConversation
+            locale={locale}
+            conversation={{
+              ...conversation,
+              booking,
+              bookingHistory: [
+                {
+                  ...booking,
+                  bookingRequestReference: "RC-REQ-BBBBBBBBBBBBBBBB",
+                },
+                booking,
+              ],
+            }}
+          />,
+        );
+        expect(screen.getByText(/^RC-REQ-AAAAAAAAAAAAAAAA/)).toHaveTextContent(
+          `RC-REQ-AAAAAAAAAAAAAAAA · ${labels[index]}`,
+        );
+        expect(screen.getByText(/^RC-REQ-BBBBBBBBBBBBBBBB/)).toHaveTextContent(
+          `RC-REQ-BBBBBBBBBBBBBBBB · ${labels[index]}`,
+        );
+      }
+    }
+  });
+
   it("labels saved fictional translation and exposes the original", async () => {
     const user = userEvent.setup();
     render(<MessagingConversation locale="en" conversation={conversation} />);
@@ -286,6 +370,7 @@ describe("Messaging conversation", () => {
             bookingRequestReference: "RC-REQ-0123456789ABCDEF",
             requestStatus: "accepted",
             paymentStatus: "paid-confirmed",
+            lifecycleStatus: "confirmed",
             responseDeadline: "2099-08-20T12:00:00.000Z",
             firstStartsAt: "2099-08-21T12:00:00.000Z",
             lastEndsAt: "2099-08-21T15:00:00.000Z",

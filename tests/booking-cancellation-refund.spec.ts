@@ -724,6 +724,11 @@ test.describe("retained cancellation and refund controls", () => {
       const copy = messages[locale];
       const lifecycle = bookingLifecycleMessages[locale];
       const messaging = messagingMessages[locale];
+      const statusWords = {
+        en: { confirmed: "Confirmed booking", cancelled: "Cancelled booking" },
+        ar: { confirmed: "حجز مؤكد", cancelled: "حجز ملغى" },
+        ckb: { confirmed: "حجزی پشتڕاستکراو", cancelled: "حجزی هەڵوەشاوە" },
+      }[locale];
       const assertMobile = async () => {
         await expect(page.locator("html")).toHaveAttribute(
           "dir",
@@ -841,6 +846,11 @@ test.describe("retained cancellation and refund controls", () => {
         new RegExp(`/${locale}/messages/[0-9a-f-]{36}`),
       );
       const conversationId = new URL(page.url()).pathname.split("/").at(-1)!;
+      await expect(
+        page.getByText(`${reference} · ${statusWords.confirmed}`, {
+          exact: true,
+        }),
+      ).toBeVisible();
       await expect(
         page.getByRole("heading", {
           name: browserQuote.cottageName,
@@ -1047,6 +1057,11 @@ test.describe("retained cancellation and refund controls", () => {
         .click();
       await expect(page).toHaveURL(`/${locale}/messages/${conversationId}`);
       await expect(
+        page.getByText(`${reference} · ${statusWords.cancelled}`, {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(
         page
           .getByRole("list", { name: messaging.messages, exact: true })
           .getByText(hostileMessage, { exact: true }),
@@ -1065,6 +1080,27 @@ test.describe("retained cancellation and refund controls", () => {
       ).toHaveCount(0);
       await assertMobile();
       await screenshot("connected-retained-messaging-mobile");
+      const inbox = page.getByRole("link", {
+        name: messaging.inbox,
+        exact: true,
+      });
+      await inbox.focus();
+      await expect(inbox).toBeFocused();
+      await inbox.press("Enter");
+      await expect(page).toHaveURL(new RegExp(`/${locale}/messages(?:\\?|$)`));
+      const inboxRow = page.getByRole("listitem").filter({
+        has: page.locator(`a[href="/${locale}/messages/${conversationId}"]`),
+      });
+      await expect(inboxRow).toHaveCount(1);
+      await expect(
+        inboxRow.getByText(statusWords.cancelled, { exact: true }),
+      ).toBeVisible();
+      await expect(
+        inboxRow.getByText(statusWords.cancelled, { exact: true }),
+      ).toHaveClass("status-badge");
+      await assertMobile();
+      await screenshot("connected-cancelled-inbox-mobile");
+
       const retained = observeConnectedStay();
       for (const key of ["attempts", "links", "conversations", "messages"])
         expect(retained[key]).toEqual(linked[key]);

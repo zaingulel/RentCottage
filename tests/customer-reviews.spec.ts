@@ -694,6 +694,11 @@ test("connected completed stay from messaging to review", async ({
       const copy = customerReviewMessages[locale];
       const messaging = messagingMessages[locale];
       const lifecycle = bookingLifecycleMessages[locale];
+      const statusWords = {
+        en: { confirmed: "Confirmed booking", completed: "Completed booking" },
+        ar: { confirmed: "حجز مؤكد", completed: "حجز مكتمل" },
+        ckb: { confirmed: "حجزی پشتڕاستکراو", completed: "حجزی تەواوکراو" },
+      }[locale];
       const direction = locale === "en" ? "ltr" : "rtl";
       const bookingPath = `/${locale}/booking-requests/${fixture.ids.bookingReference}`;
       await signInPhone(page, fixture.phones.customer, bookingPath);
@@ -721,6 +726,12 @@ test("connected completed stay from messaging to review", async ({
         .split("/")
         .at(-1)!;
       expect(conversationId).toMatch(/^[0-9a-f-]{36}$/);
+      await expect(
+        page.getByText(
+          `${fixture.ids.bookingReference} · ${statusWords.confirmed}`,
+          { exact: true },
+        ),
+      ).toBeVisible();
       await expect(
         page.getByRole("heading", {
           name: "Fictional Preserved Cottage",
@@ -961,6 +972,12 @@ test("connected completed stay from messaging to review", async ({
       });
       await page.goto(conversationUrl);
       await expect(
+        page.getByText(
+          `${fixture.ids.bookingReference} · ${statusWords.completed}`,
+          { exact: true },
+        ),
+      ).toBeVisible();
+      await expect(
         page.getByRole("heading", {
           name: "Fictional Preserved Cottage",
           level: 1,
@@ -968,6 +985,53 @@ test("connected completed stay from messaging to review", async ({
       ).toBeVisible();
       await expect(messages.getByRole("listitem")).toHaveCount(1);
       await expect(message.getByText(original, { exact: true })).toBeVisible();
+      await expect(page.locator("html")).toHaveAttribute("dir", direction);
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => document.documentElement.scrollWidth <= window.innerWidth,
+          ),
+        )
+        .toBe(true);
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `connected-retained-messaging-${locale}-${testInfo.project.name}.png`,
+        ),
+        fullPage: true,
+      });
+      const inbox = page.getByRole("link", {
+        name: messaging.inbox,
+        exact: true,
+      });
+      await inbox.focus();
+      await expect(inbox).toBeFocused();
+      await inbox.press("Enter");
+      await expect(page).toHaveURL(new RegExp(`/${locale}/messages(?:\\?|$)`));
+      const inboxRow = page.getByRole("listitem").filter({
+        has: page.locator(`a[href="/${locale}/messages/${conversationId}"]`),
+      });
+      await expect(inboxRow).toHaveCount(1);
+      await expect(
+        inboxRow.getByText(statusWords.completed, { exact: true }),
+      ).toBeVisible();
+      await expect(
+        inboxRow.getByText(statusWords.completed, { exact: true }),
+      ).toHaveClass("status-badge");
+      await expect(page.locator("html")).toHaveAttribute("dir", direction);
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => document.documentElement.scrollWidth <= window.innerWidth,
+          ),
+        )
+        .toBe(true);
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `connected-completed-inbox-${locale}-${testInfo.project.name}.png`,
+        ),
+        fullPage: true,
+      });
+
       expect(readConversation(conversationId)).toEqual(conversationBefore);
       expect(readBooking()).toMatchObject({
         snapshot: before.snapshot,

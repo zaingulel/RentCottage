@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
 import { ActionFocusTarget } from "./interaction-controls";
 import { bookingRequestDisplayStatusMessages } from "@/i18n/booking-request-status-messages";
 
@@ -55,12 +56,14 @@ export function MessagingInbox({
                   <>
                     <bdi>{item.booking.bookingRequestReference}</bdi>
                     <span className="status-badge">
-                      {
-                        bookingRequestDisplayStatusMessages[locale][
-                          item.booking.paymentStatus ??
-                            item.booking.requestStatus
-                        ]
-                      }
+                      {item.booking.lifecycleStatus !== null
+                        ? bookingLifecycleMessages[locale][
+                            item.booking.lifecycleStatus
+                          ]
+                        : bookingRequestDisplayStatusMessages[locale][
+                            item.booking.paymentStatus ??
+                              item.booking.requestStatus
+                          ]}
                     </span>
                   </>
                 ) : null}
