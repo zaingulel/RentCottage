@@ -1048,6 +1048,8 @@ GRANT ALL ON FUNCTION "public"."resolve_cottage_inventory_public_availability"("
 
 REVOKE ALL ON FUNCTION "public"."resolve_cottage_translation_human_review"() FROM PUBLIC;
 
+REVOKE ALL ON FUNCTION "public"."retire_unusable_prepared_booking_request_submission"("target_attempt_id" "uuid") FROM PUBLIC, "anon", "authenticated", "service_role";
+
 REVOKE ALL ON FUNCTION "public"."resolve_booking_quote"("target_locale" "public"."cottage_profile_source_language", "target_slug" "text", "requested_search" "jsonb", "requires_admission_limit" boolean) FROM PUBLIC, "anon", "authenticated", "service_role";
 
 REVOKE ALL ON FUNCTION "public"."resolve_booking_quote_with_fingerprint"("target_locale" "public"."cottage_profile_source_language", "target_slug" "text", "requested_search" "jsonb", "requires_admission_limit" boolean) FROM PUBLIC, "anon", "authenticated", "service_role";
