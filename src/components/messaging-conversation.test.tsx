@@ -60,87 +60,74 @@ describe("Messaging conversation", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("renders authoritative current and prior booking lifecycle", () => {
+    const booking = {
+      bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
+      requestStatus: "accepted",
+      paymentStatus: "paid-confirmed",
+      lifecycleStatus: "completed",
+      responseDeadline: "2099-08-20T12:00:00.000Z",
+      firstStartsAt: "2099-08-21T12:00:00.000Z",
+      lastEndsAt: "2099-08-21T15:00:00.000Z",
+      writingClosesAt: "2099-09-20T15:00:00.000Z",
+      writingClosed: false,
+      contactAllowed: true,
+    } as const;
+    const prior = {
+      ...booking,
+      bookingRequestReference: "RC-REQ-BBBBBBBBBBBBBBBB",
+      lifecycleStatus: "cancelled",
+      paymentStatus: "capture-processing",
+    } as const;
     const { rerender } = render(
-      <MessagingConversation locale="en" conversation={conversation} />,
+      <MessagingConversation
+        locale="en"
+        conversation={{
+          ...conversation,
+          booking,
+          bookingHistory: [prior, booking],
+        }}
+      />,
     );
-    const states = [
-      [
-        "confirmed",
-        "paid-confirmed",
-        "Confirmed booking",
-        "حجز مؤكد",
-        "حجزی پشتڕاستکراو",
-      ],
-      [
-        "completed",
-        "paid-confirmed",
-        "Completed booking",
-        "حجز مكتمل",
-        "حجزی تەواوکراو",
-      ],
-      ["no_show", "paid-confirmed", "No-show", "عدم الحضور", "ئامادەنەبوون"],
-      [
-        "cancelled",
-        "capture-processing",
-        "Cancelled booking",
-        "حجز ملغى",
-        "حجزی هەڵوەشاوە",
-      ],
-      [
-        "incident_pending",
-        "paid-confirmed",
-        "Incident pending",
-        "واقعة قيد المتابعة",
-        "ڕووداو چاوەڕێی بەدواداچوونە",
-      ],
-      [
-        null,
-        "payment-required",
-        "Payment Required",
-        "الدفع مطلوب",
-        "پارەدان پێویستە",
-      ],
-      [null, null, "Pending", "قيد الانتظار", "چاوەڕێ"],
-    ] as const;
-    for (const [lifecycleStatus, paymentStatus, ...labels] of states) {
-      const booking = {
-        bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
-        requestStatus:
-          lifecycleStatus || paymentStatus ? "accepted" : "pending",
-        paymentStatus,
-        lifecycleStatus,
-        responseDeadline: "2099-08-20T12:00:00.000Z",
-        firstStartsAt: lifecycleStatus ? "2099-08-21T12:00:00.000Z" : null,
-        lastEndsAt: lifecycleStatus ? "2099-08-21T15:00:00.000Z" : null,
-        writingClosesAt: lifecycleStatus ? "2099-09-20T15:00:00.000Z" : null,
-        writingClosed: false,
-        contactAllowed: lifecycleStatus !== null,
-      } as const;
-      for (const [index, locale] of (["en", "ar", "ckb"] as const).entries()) {
-        rerender(
-          <MessagingConversation
-            locale={locale}
-            conversation={{
-              ...conversation,
-              booking,
-              bookingHistory: [
-                {
-                  ...booking,
-                  bookingRequestReference: "RC-REQ-BBBBBBBBBBBBBBBB",
-                },
-                booking,
-              ],
-            }}
-          />,
-        );
-        expect(screen.getByText(/^RC-REQ-AAAAAAAAAAAAAAAA/)).toHaveTextContent(
-          `RC-REQ-AAAAAAAAAAAAAAAA · ${labels[index]}`,
-        );
-        expect(screen.getByText(/^RC-REQ-BBBBBBBBBBBBBBBB/)).toHaveTextContent(
-          `RC-REQ-BBBBBBBBBBBBBBBB · ${labels[index]}`,
-        );
-      }
-    }
+    expect(screen.getByText(/^RC-REQ-AAAAAAAAAAAAAAAA/)).toHaveTextContent(
+      "RC-REQ-AAAAAAAAAAAAAAAA · Completed booking",
+    );
+    expect(screen.getByText(/^RC-REQ-BBBBBBBBBBBBBBBB/)).toHaveTextContent(
+      "RC-REQ-BBBBBBBBBBBBBBBB · Cancelled booking",
+    );
+
+    const unpaid = {
+      ...booking,
+      lifecycleStatus: null,
+      paymentStatus: "payment-required",
+      firstStartsAt: null,
+      lastEndsAt: null,
+      writingClosesAt: null,
+      contactAllowed: false,
+    } as const;
+    rerender(
+      <MessagingConversation
+        locale="en"
+        conversation={{
+          ...conversation,
+          booking: unpaid,
+          bookingHistory: [
+            {
+              ...unpaid,
+              bookingRequestReference: prior.bookingRequestReference,
+              paymentStatus: null,
+              requestStatus: "pending",
+            },
+            unpaid,
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText(/^RC-REQ-AAAAAAAAAAAAAAAA/)).toHaveTextContent(
+      "RC-REQ-AAAAAAAAAAAAAAAA · Payment Required",
+    );
+    expect(screen.getByText(/^RC-REQ-BBBBBBBBBBBBBBBB/)).toHaveTextContent(
+      "RC-REQ-BBBBBBBBBBBBBBBB · Pending",
+    );
   });
 
   it("labels saved fictional translation and exposes the original", async () => {

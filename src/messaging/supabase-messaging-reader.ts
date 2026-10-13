@@ -137,10 +137,9 @@ function bookingFrom(value: unknown): MessagingBookingSummary | undefined {
     ) ||
     !(
       row.lifecycleStatus === null ||
-      (typeof row.lifecycleStatus === "string" &&
-        bookingLifecycleStatuses.includes(
-          row.lifecycleStatus as BookingLifecycleStatus,
-        ))
+      bookingLifecycleStatuses.includes(
+        row.lifecycleStatus as BookingLifecycleStatus,
+      )
     ) ||
     (row.lifecycleStatus === null) !== (row.contactAllowed === false) ||
     !isTimestamp(row.responseDeadline) ||

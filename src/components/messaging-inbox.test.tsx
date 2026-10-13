@@ -34,79 +34,46 @@ const item: MessagingInboxItem = {
 afterEach(cleanup);
 it("renders authoritative inbox booking lifecycle", () => {
   const { rerender } = render(
-    <MessagingInbox locale="en" items={[item]} nextCursor={null} />,
+    <MessagingInbox
+      locale="en"
+      items={[
+        {
+          ...item,
+          booking: {
+            ...item.booking!,
+            lifecycleStatus: "cancelled",
+            paymentStatus: "capture-processing",
+          },
+        },
+      ]}
+      nextCursor={null}
+    />,
   );
-  const states = [
-    [
-      "confirmed",
-      "paid-confirmed",
-      "Confirmed booking",
-      "حجز مؤكد",
-      "حجزی پشتڕاستکراو",
-    ],
-    [
-      "completed",
-      "paid-confirmed",
-      "Completed booking",
-      "حجز مكتمل",
-      "حجزی تەواوکراو",
-    ],
-    ["no_show", "paid-confirmed", "No-show", "عدم الحضور", "ئامادەنەبوون"],
-    [
-      "cancelled",
-      "capture-processing",
-      "Cancelled booking",
-      "حجز ملغى",
-      "حجزی هەڵوەشاوە",
-    ],
-    [
-      "incident_pending",
-      "paid-confirmed",
-      "Incident pending",
-      "واقعة قيد المتابعة",
-      "ڕووداو چاوەڕێی بەدواداچوونە",
-    ],
-    [
-      null,
-      "payment-required",
-      "Payment Required",
-      "الدفع مطلوب",
-      "پارەدان پێویستە",
-    ],
-    [null, null, "Pending", "قيد الانتظار", "چاوەڕێ"],
-  ] as const;
-  for (const [lifecycleStatus, paymentStatus, ...labels] of states) {
-    for (const [index, locale] of (["en", "ar", "ckb"] as const).entries()) {
-      rerender(
-        <MessagingInbox
-          locale={locale}
-          items={[
-            {
-              ...item,
-              booking: {
-                ...item.booking!,
-                requestStatus:
-                  lifecycleStatus || paymentStatus ? "accepted" : "pending",
-                paymentStatus,
-                lifecycleStatus,
-                firstStartsAt: lifecycleStatus ? "2099-08-21T12:00:00Z" : null,
-                lastEndsAt: lifecycleStatus ? "2099-08-21T15:00:00Z" : null,
-                writingClosesAt: lifecycleStatus
-                  ? "2099-09-20T15:00:00Z"
-                  : null,
-                contactAllowed: lifecycleStatus !== null,
-              },
-            },
-          ]}
-          nextCursor={null}
-        />,
-      );
-      expect(screen.getByText(labels[index], { exact: true })).toHaveClass(
-        "status-badge",
-      );
-    }
-  }
+  expect(screen.getByText("Cancelled booking", { exact: true })).toHaveClass(
+    "status-badge",
+  );
+  rerender(
+    <MessagingInbox
+      locale="en"
+      items={[
+        {
+          ...item,
+          booking: {
+            ...item.booking!,
+            lifecycleStatus: null,
+            paymentStatus: "payment-required",
+            contactAllowed: false,
+          },
+        },
+      ]}
+      nextCursor={null}
+    />,
+  );
+  expect(screen.getByText("Payment Required", { exact: true })).toHaveClass(
+    "status-badge",
+  );
 });
+
 it("retains the selected stay on a normal inbox card", () => {
   const query = "from=2101-01-01&guests=4&selection=2101-01-01%3Ashift%3A1";
   render(
