@@ -908,11 +908,6 @@ select is(
 );
 reset role;
 
-savepoint stale_price_preparation;
-create temporary table stale_preparation_before as
-select to_jsonb(attempts) as record
-from public.booking_request_submission_attempts attempts
-where attempts.id = (select (result->>'attemptId')::uuid from prepared_submission);
 create temporary table usable_replacement_quote as
 select public.get_public_booking_quote_with_fingerprint(
   'en', 'cottage-30000000000040008000000000003201',
@@ -930,6 +925,12 @@ select submission || jsonb_build_object(
 ) as submission
 from journey_submission cross join usable_replacement_quote;
 grant select on usable_replacement_submission to service_role;
+
+savepoint stale_price_preparation;
+create temporary table stale_preparation_before as
+select to_jsonb(attempts) as record
+from public.booking_request_submission_attempts attempts
+where attempts.id = (select (result->>'attemptId')::uuid from prepared_submission);
 set local role service_role;
 select is(public.prepare_booking_request_submission(
   '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113708',
@@ -1103,22 +1104,9 @@ select is(
 );
 reset role;
 rollback to savepoint stale_availability_retry;
-create temporary table stale_availability_replacement as
-select submission || jsonb_build_object(
-  'discoveryQuery', '{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":2}]}'::jsonb,
-  'quoteFingerprint', quote->>'quoteFingerprint',
-  'contentVersion', quote->'contentVersion', 'termsVersion', quote->'termsVersion',
-  'bookingPriceIqd', quote->'bookingPriceIqd', 'serviceFeeIqd', quote->'serviceFeeIqd',
-  'customerTotalIqd', quote->'customerTotalIqd', 'firstStartsAt', quote#>>'{items,0,startsAt}'
-) as submission
-from journey_submission
-cross join lateral (select public.get_public_booking_quote_with_fingerprint(
-  'en', 'cottage-30000000000040008000000000003201', '{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":2}]}'::jsonb
-) as quote) current_quote;
-grant select on stale_availability_replacement to service_role;
 set local role service_role;
 select is(public.prepare_booking_request_submission(
-  '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113709', (select submission from stale_availability_replacement)
+  '00000000-0000-0000-0000-000000003202', '11111111-1111-4111-8111-111111113709', (select submission from usable_replacement_submission)
 )->>'status', 'ready', 'a direct replacement retires unavailable preparation without requiring a stale retry');
 reset role;
 select results_eq(
