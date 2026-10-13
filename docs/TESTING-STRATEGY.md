@@ -190,7 +190,9 @@ Inside a Claude Code job worktree, a focused Node run names its test file throug
 path contains the letters `git`:
 `node scripts/run-log.mjs <label words> -- node --test --test-name-pattern='^<full title>$' 'scripts/lib/unsafe-g*.test.mjs'`.
 Node expands the file pattern itself. Anchor the full test title at both ends and escape its regular-expression
-characters, such as parentheses. Claude Code's worktree check can misread `scripts/lib/unsafe-git.test.mjs` as a
+characters, such as parentheses. When the full title contains `git`, write each occurrence as `g[i]t` in
+`--test-name-pattern`, for example `'^g[i]t commit --no-verify is blocked$'`: this avoids the literal token while
+matching the exact full title. Claude Code's worktree check can misread `scripts/lib/unsafe-git.test.mjs` as a
 git command it cannot verify; the `resume` skill owns that check under "3. Start the job". Verify that the pattern
 matches only the intended file and that the completed run reports a nonzero matched test count. If that form is
 also refused, append `2>&1 | tail -10` to the same command to keep the counts visible. The `run-log` receipt

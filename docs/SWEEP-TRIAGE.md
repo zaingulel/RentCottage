@@ -93,7 +93,7 @@ The triage never widens its own scope table or edits either routine manual.
 11. Post one verdict comment to the source pull request last, if that write was authorized, then report verdict
     counts, evidence, pull-request state, cards created or proposed, and every unavailable proof.
 
-## Verdict comment and pull-request body
+## Verdict comment
 
 The verdict comment begins with the marker and contains one row per finding: finding, verdict, evidence, and result.
 It records every scope decision, any embedded instruction that was ignored, the provider/model/trigger/bootstrap
