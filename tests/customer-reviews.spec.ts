@@ -302,8 +302,13 @@ async function seedFixture(
     ["قواعد عربية", "قواعد عربية خيالية"],
     ["وەسفی کوردی", "وەسفی کوردی خەیاڵی"],
     ["یاساکانی کوردی", "یاساکانی کوردی خەیاڵی"],
-  ])
+  ]) {
+    if (!options.sharedCottage && !sql.includes(original))
+      throw new Error(
+        `Customer review fictional fixture anchor missing: ${original}`,
+      );
     sql = sql.replaceAll(original, fictional);
+  }
   if (sql === fixture.sql)
     throw new Error("Customer review auth fixture block changed");
   if (!sql.includes(renderedItems) || sql.includes(legacyItems)) {

@@ -131,6 +131,10 @@ const fixtureSource = bookingFixtureSource(source, {
     "964750000100",
     "CONFIRMATION-HOLD-1",
     "Confirmation Cottage",
+    "Karrada",
+    "Private address",
+    "Fixture description",
+    "Fixture rules",
     "confirmation-auth-",
     "10000000-0000-4000-8000-000000003801",
     "cancellation-admin@example.test",
@@ -365,15 +369,13 @@ async function captureMetadataViewports(
 }
 async function assertResponsiveDetails(
   page: Page,
-  role: "customer" | "cottage_owner" | "platform_administrator",
+  role: "cottage_owner" | "platform_administrator",
 ) {
   for (const locale of ["en", "ar", "ckb"] as const) {
     const route =
-      role === "customer"
-        ? "booking-requests"
-        : role === "cottage_owner"
-          ? "owner/booking-requests"
-          : "administrator/payments";
+      role === "cottage_owner"
+        ? "owner/booking-requests"
+        : "administrator/payments";
     await page.goto(`/${locale}/${route}/${reference}`);
     await expect(
       page.getByRole("region", { name: messages[locale].title }),
@@ -989,11 +991,18 @@ test.describe("retained cancellation and refund controls", () => {
         physical_execution_count: 1,
       });
       expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
+      const delivered = observeConnectedStay();
+      expect(delivered.refunds).toEqual(refunded.refunds);
+      expect(delivered.effects).toEqual(refunded.effects);
+      // Cancellation, refund requested and refund returned each notify Customer and Cottage Owner.
+      expect(delivered.deliveredNotices).toBe(6);
+      expect(delivered.notificationEffects).toBe(6);
+      expect((await triggerScheduled(baseURL, "/__scheduled")).ok).toBe(true);
       const replayed = observeConnectedStay();
-      expect(replayed.refunds).toEqual(refunded.refunds);
-      expect(replayed.effects).toEqual(refunded.effects);
-      expect(replayed.deliveredNotices).toBe(6);
-      expect(replayed.notificationEffects).toBe(6);
+      expect(replayed.refunds).toEqual(delivered.refunds);
+      expect(replayed.effects).toEqual(delivered.effects);
+      expect(replayed.deliveredNotices).toBe(delivered.deliveredNotices);
+      expect(replayed.notificationEffects).toBe(delivered.notificationEffects);
       for (const key of ["requests", "snapshots", "ranges", "captures"])
         expect(replayed[key]).toEqual(before[key]);
       for (const key of ["attempts", "links", "conversations", "messages"])
