@@ -104,7 +104,7 @@
 .content button:focus-visible,
 .content input:focus-visible,
 .content select:focus-visible {
-  outline: 3px solid currentColor;
+  outline: 3px solid var(--focus-outline);
   outline-offset: 3px;
 }
 

@@ -35,12 +35,25 @@ test("locale actions expose native semantics and visible interaction states", as
     .getByRole("link", { name: "العربية" });
   await openHeaderPanel(page, "language");
   await expect(arabic).not.toHaveAttribute("aria-current", "page");
+  await page.keyboard.press("Tab");
   await arabic.focus();
   const focused = arabic;
   await expect(focused).toBeFocused();
   expect(
-    await focused.evaluate((element) => getComputedStyle(element).outlineStyle),
-  ).not.toBe("none");
+    await computed(focused, [
+      "outline-width",
+      "outline-offset",
+      "outline-style",
+      "outline-color",
+      "box-shadow",
+    ]),
+  ).toEqual([
+    "3px",
+    "3px",
+    "solid",
+    "rgb(255, 252, 245)",
+    "rgb(34, 64, 47) 0px 0px 0px 3px",
+  ]);
 
   await arabic.click();
   await expect(page).toHaveURL(/\/ar$/);
@@ -171,6 +184,7 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
   const disclosure = page.locator("details.disclosure");
   const summary = disclosure.locator("summary");
   const restingToggle = page.getByRole("button", { name: "Shift 1" });
+  const pressedToggle = page.getByRole("button", { name: "Shift 2" });
   const disabledToggle = page.getByRole("button", { name: "Shift 3" });
   const secondary = page.getByRole("button", { name: "Secondary" });
   const choices = page.locator(".choice-control");
@@ -254,10 +268,33 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
     await reference.focus();
     await expect(reference).toBeFocused();
     const focusedField = await computed(reference, focusRing);
+    expect(focusedField).toEqual([
+      "2px",
+      "2px",
+      "rgb(255, 252, 245)",
+      "rgb(34, 64, 47) 0px 0px 0px 3px",
+    ]);
     const [focusedFieldBorder] = await computed(reference, [
       "border-top-color",
     ]);
+    expect(focusedFieldBorder).toBe("rgb(34, 64, 47)");
+    const invalidFieldResting = await reference.evaluate((element) => {
+      element.setAttribute("aria-invalid", "true");
+      (element as HTMLElement).blur();
+      return getComputedStyle(element).boxShadow;
+    });
+    await reference.focus();
+    await expect(reference).toBeFocused();
+    expect(
+      await computed(reference, [...focusRing, "border-top-color"]),
+    ).toEqual([...focusedField, "rgb(163, 52, 37)"]);
     await garden.focus();
+    expect(await computed(reference, ["box-shadow"])).toEqual([
+      invalidFieldResting,
+    ]);
+    await reference.evaluate((element) =>
+      element.removeAttribute("aria-invalid"),
+    );
     await expect(garden).toBeFocused();
     expect(await computed(garden, focusRing)).toEqual(focusedField);
     await summary.focus();
@@ -265,6 +302,46 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
     expect(await computed(summary, [...focusRing, "border-top-color"])).toEqual(
       [...focusedField, focusedFieldBorder],
     );
+
+    const invalidResting = await computed(invalid, ["box-shadow"]);
+    await invalid.focus();
+    await expect(invalid).toBeFocused();
+    expect(await computed(invalid, [...focusRing, "border-top-color"])).toEqual(
+      [...focusedField, "rgb(163, 52, 37)"],
+    );
+    const pressedResting = await computed(pressedToggle, [
+      "background-color",
+      "box-shadow",
+    ]);
+    await pressedToggle.focus();
+    await expect(pressedToggle).toBeFocused();
+    expect(await computed(invalid, ["box-shadow"])).toEqual(invalidResting);
+    expect(await computed(pressedToggle, focusRing)).toEqual([
+      ...focusedField.slice(0, 3),
+      `${focusedField[3]}, ${pressedResting[1]}`,
+    ]);
+    expect(await computed(pressedToggle, ["background-color"])).toEqual([
+      pressedResting[0],
+    ]);
+    await expect(pressedToggle).toHaveAttribute("aria-pressed", "true");
+    await secondary.focus();
+    await expect(secondary).toBeFocused();
+    expect(await computed(secondary, focusRing)).toEqual(focusedField);
+    await page
+      .locator("#fixture-root")
+      .evaluate((element) =>
+        element.classList.add("cottage-shift-schedule-form"),
+      );
+    for (const control of [reference, garden, secondary]) {
+      await control.focus();
+      await expect(control).toBeFocused();
+      expect(await computed(control, focusRing)).toEqual(focusedField);
+    }
+    await page
+      .locator("#fixture-root")
+      .evaluate((element) =>
+        element.classList.remove("cottage-shift-schedule-form"),
+      );
 
     expect(await computed(pool, ["content"], "::before")).not.toEqual(["none"]);
     expect(await computed(newEnquiry, ["content"], "::before")).not.toEqual([
@@ -583,13 +660,29 @@ test("busy action focus preserves native blocking and explicit successors", asyn
             "outline-width",
             "outline-offset",
             "outline-style",
+            "outline-color",
+            "box-shadow",
           ]),
-        ).toEqual(["3px", "3px", "solid"]);
-        const colors = await target.evaluate((element) => ({
-          outline: getComputedStyle(element).outlineColor,
-          background: getComputedStyle(document.documentElement)
-            .backgroundColor,
-        }));
+        ).toEqual([
+          "3px",
+          "3px",
+          "solid",
+          "rgb(255, 252, 245)",
+          "rgb(34, 64, 47) 0px 0px 0px 3px",
+        ]);
+        const colors = await target.evaluate((element) => {
+          let surface = element.parentElement!;
+          while (
+            getComputedStyle(surface).backgroundColor === "rgba(0, 0, 0, 0)"
+          )
+            surface = surface.parentElement!;
+          return {
+            band: getComputedStyle(element).boxShadow.match(
+              /^rgb\([^)]*\)/,
+            )![0],
+            background: getComputedStyle(surface).backgroundColor,
+          };
+        });
         const luminance = (color: string) => {
           const channels = color
             .match(/\d+/g)!
@@ -603,11 +696,22 @@ test("busy action focus preserves native blocking and explicit successors", asyn
             channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
           );
         };
-        const fg = luminance(colors.outline),
+        const fg = luminance(colors.band),
           bg = luminance(colors.background);
         expect(
           (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05),
         ).toBeGreaterThanOrEqual(3);
+        if (scenario === "main") {
+          await target.evaluate((element) =>
+            element.classList.add("action-focus-target-inset"),
+          );
+          expect(
+            await computed(target, ["outline-offset", "box-shadow"]),
+          ).toEqual(["-3px", "rgb(34, 64, 47) 0px 0px 0px 6px inset"]);
+          await target.evaluate((element) =>
+            element.classList.remove("action-focus-target-inset"),
+          );
+        }
         if (scenario === "replacement") {
           await elsewhere.click();
           await result.click();

@@ -37,7 +37,7 @@ the code keeps them.
     `--accent-policy` and the Customer's message with `--surface-message-owner`, and neither is a status tint.
   - `--muted` is supporting text on a light surface: small print, labels and hints. `--ink-accent` is gold-coloured
     text on a light surface, the gold wash included, and `--ink-on-dark-accent` is the same text on the dark green
-    surface. `--gold` is the brand gold for borders, focus outlines and decoration and is never a text colour.
+    surface. `--gold` is the brand gold for borders and decoration and is never a text colour.
     Normal-size text in these three text tokens reaches 4.5:1 on every surface it sits on, which
     [globals.test.ts](../src/app/globals.test.ts) checks against a list of surfaces, so new work that puts such
     text on another surface adds that surface to the test.
@@ -97,10 +97,11 @@ the code keeps them.
   literals. The radio button mark is a circle.
 - There is no elevation shadow. A surface is set apart by its background and its `1px` `--line` border;
   `text-shadow` and `drop-shadow()` are not used.
-- `box-shadow` draws state rings only, each with no offset and no blur: `--shadow-focus` around a focused form
-  field, checkbox or radio button mark, or disclosure toggle, `--shadow-invalid` around an invalid field, mark or
-  option, and `--shadow-pressed` inside a pressed toggle. A ring adds to the focus outline described under
-  Accessibility conventions and never replaces it.
+- `box-shadow` draws state rings only, each with no offset and no blur: `--shadow-focus` is the opaque green
+  inner band around a keyboard-focused control or handoff target; `--shadow-focus-inset` is its 6px inset form;
+  `--shadow-invalid` surrounds an invalid field, mark or option; and `--shadow-pressed` sits inside a pressed
+  toggle. A ring adds to the focus outline described under Accessibility conventions and never replaces it.
+  A focused pressed toggle composes `var(--shadow-focus), var(--shadow-pressed)` to retain its inset edge.
 - Every `z-index` is one of four layers, lowest first: `--layer-raised` for content above a backdrop in its own
   block, as the hero copy is above its shade; `--layer-overlap` for a block that overlaps the one before it, as
   the search card overlaps the hero; `--layer-header` for the site header; and `--layer-menu` for a menu that
@@ -326,10 +327,17 @@ its own; the block it sits in sets the space around it.
 ## Accessibility conventions
 
 - Hide text visually but keep it for assistive technology with `.visually-hidden`.
-- Focus is a visible gold outline: `2px` with a `2px` offset on `.action`, `.action-link`, `.form-control`, the
-  `.choice-control` mark and the `.disclosure` summary, and `3px` with a `3px` offset on any other focused button,
-  input, select, textarea or link.
-- Within .cottage-shift-schedule-form, action buttons, form controls and choice-control marks use --green for the existing 2px focus outline with 2px offset; other shared focus treatment remains unchanged.
+- Keyboard focus uses two opaque bands: forest-green `--focus-ring` (`#22402f`) inside cream
+  `--focus-outline` (`#fffcf5`). The green shadow fills the outline offset; the cream outline covers its outer
+  edge. Shared `.action`, `.action-link`, `.form-control`, `.choice-control` marks and `.disclosure` summaries
+  have a `2px` cream outline with a `2px` offset, leaving `2px` of green inside. Other buttons, inputs, selects,
+  textareas and links use `3px`/`3px`. The two bands contrast at least 9:1 with each other; the green band reaches
+  at least 3:1 on bright surfaces. Measure the rendered bands against their actual adjacent surfaces, including
+  perimeter pixels over photographs and gradients; the token ratios alone do not prove visibility there.
+- Focused fields and disclosure summaries have a green border. Invalid fields and choice marks retain their red
+  error border and semantics; keyboard focus replaces the translucent invalid halo with the two bands, and blur
+  restores that halo. Focused pressed toggles retain their inset edge, tint and pressed semantics.
+- `.cottage-shift-schedule-form` controls inherit this shared two-band focus treatment.
 - A busy action keeps native `disabled` blocking against duplicate activation. Only a focused initiating control
   owns focus through that action: after settlement, focus returns to the same enabled control, or to its explicitly
   named successor when the control is removed or remains disabled. A control made busy by another action does not
@@ -344,13 +352,13 @@ its own; the block it sits in sets the space around it.
   described above: supply it only for a ready named successor and omit it while pending or for untargeted feedback.
 - Existing headings, status text and landmarks explicitly named as busy-action successors use `tabIndex={-1}`
   and `action-focus-target`. When focus is visible after keyboard interaction, including a programmatic
-  keyboard handoff, `.action-focus-target:focus-visible` has a `3px` outline in `var(--green)` with a `3px`
-  offset. Fresh ordinary pointer focus on these targets does not draw an outline. These non-control targets
-  keep their existing semantics, copy and layout and stay outside the sequential Tab order. The gold rule above
-  continues to govern its listed controls, with the schedule exception
-  unchanged. Verify each new target's visible focus and outline contrast against its actual adjacent surface in
-  the running view. Viewport-width non-control targets add `action-focus-target-inset`, which keeps the
-  green `3px` outline and uses `outline-offset: -3px` so visible focus stays inside the viewport.
+  keyboard handoff, `.action-focus-target:focus-visible` uses the green inner band and cream `3px` outline with a
+  `3px` offset. Fresh ordinary pointer focus on these targets does not draw an outline. These non-control targets
+  keep their existing semantics, copy and layout and stay outside the sequential Tab order. Verify each new
+  target's visible focus and contrast against its actual adjacent surface in the running view. Viewport-width
+  non-control targets add `action-focus-target-inset`: its `outline-offset: -3px` puts cream in the outermost
+  `3px` inside the target and its `6px` green inset shadow leaves the next `3px` inward green. Both bands stay
+  inside the viewport; inset contrast needs rendered verification.
 - Moving focus elsewhere, Tab intent, an outside pointer action, browser history navigation, window blur or
   pagehide permanently cancels owned focus, even if the element the person moved to later disappears. An action
   that navigates must explicitly opt into a handoff to a named destination target after its commit; ordinary

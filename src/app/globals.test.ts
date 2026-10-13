@@ -48,7 +48,7 @@ const listedTokens = new Set(
 const scaledProperty =
   /^(?:(?:margin|padding|inset)(?:-[a-z-]+)?|(?:row-|column-)?gap|top|right|bottom|left|font|font-size|line-height|letter-spacing)$/;
 const scaleToken =
-  /^(?:(?:space|font-size)-\d+|radius-(?:control|card|mark)|shadow-(?:focus|invalid|pressed))$/;
+  /^(?:(?:space|font-size)-\d+|radius-(?:control|card|mark)|shadow-(?:focus(?:-inset)?|invalid|pressed))$/;
 
 function blank(text: string) {
   return text.replace(/[^\n]/g, " ");
@@ -284,6 +284,16 @@ describe("stylesheet colour tokens", () => {
     expect([...declared, ...used]).toEqual([]);
   });
 
+  it("keeps the focus bands above their required contrast thresholds", () => {
+    expect(tokenColour("--focus-ring").alpha).toBe(1);
+    expect(contrast("--focus-ring", "--surface-bright")).toBeGreaterThanOrEqual(
+      3,
+    );
+    expect(contrast("--focus-ring", "--focus-outline")).toBeGreaterThanOrEqual(
+      9,
+    );
+  });
+
   it("keeps grey and gold text at 4.5 to 1 on every surface it sits on", () => {
     const surfacesOf = {
       "--muted": [
@@ -428,7 +438,10 @@ describe("stylesheet shape and layer tokens", () => {
 
   it("keeps every box shadow a state ring token", () => {
     expect(
-      offScaleHits(/^box-shadow$/, /^(?:var\(--shadow-[a-z]+\)|none|inherit)$/),
+      offScaleHits(
+        /^box-shadow$/,
+        /^(?:var\(--shadow-[a-z-]+\),?|none|inherit)$/,
+      ),
     ).toEqual([]);
   });
 
