@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { actOnBookingRequest } from "@/booking-request/lifecycle-actions";
 import type { BookingRequestStatus } from "@/booking-request/booking-request-status";
@@ -15,7 +15,9 @@ import {
 const messages = {
   en: {
     accept: "Accept complete request",
+    acceptShort: "Accept",
     decline: "Decline complete request",
+    declineShort: "Decline",
     reason: "Decline reason",
     choose: "Choose a reason",
     unavailable: "Cottage is unavailable",
@@ -27,7 +29,9 @@ const messages = {
   },
   ar: {
     accept: "قبول الطلب كاملاً",
+    acceptShort: "قبول",
     decline: "رفض الطلب كاملاً",
+    declineShort: "رفض",
     reason: "سبب الرفض",
     choose: "اختر سبباً",
     unavailable: "البيت غير متاح",
@@ -39,7 +43,9 @@ const messages = {
   },
   ckb: {
     accept: "قبوڵکردنی تەواوی داواکاری",
+    acceptShort: "قبوڵکردن",
     decline: "ڕەتکردنەوەی تەواوی داواکاری",
+    declineShort: "ڕەتکردنەوە",
     reason: "هۆکاری ڕەتکردنەوە",
     choose: "هۆکارێک هەڵبژێرە",
     unavailable: "کۆتێج بەردەست نییە",
@@ -51,18 +57,17 @@ const messages = {
   },
 } as const;
 
-export function BookingRequestDecisionControls({
+type DecisionCopy = (typeof messages)[Locale];
+
+function useBookingRequestDecision({
   locale,
   bookingRequestId,
   onStatusChange,
-  focusSuccessorId,
 }: {
   locale: Locale;
   bookingRequestId: string;
-  focusSuccessorId?: string;
   onStatusChange?: (status: BookingRequestStatus) => void;
 }) {
-  const copy = messages[locale];
   const [status, setStatus] = useState<BookingRequestStatus>("pending");
   const [error, setError] = useState(false);
   const [pending, setPending] = useState(false);
@@ -104,6 +109,60 @@ export function BookingRequestDecisionControls({
     }
   }
 
+  return { status, error, pending, act };
+}
+
+function DeclineFields({ copy }: { copy: DecisionCopy }) {
+  return (
+    <>
+      <label>
+        <span>{copy.reason}</span>
+        <FormControl
+          kind="select"
+          name="declineReason"
+          required
+          defaultValue=""
+        >
+          <option value="" disabled>
+            {copy.choose}
+          </option>
+          <option value="cottage_unavailable">{copy.unavailable}</option>
+          <option value="cannot_accommodate_request">{copy.cannot}</option>
+          <option value="other">{copy.other}</option>
+        </FormControl>
+      </label>
+      <label>
+        <span>{copy.note}</span>
+        <FormControl
+          kind="textarea"
+          name="declineNote"
+          maxLength={500}
+          rows={3}
+        />
+        <small>{copy.hint}</small>
+      </label>
+    </>
+  );
+}
+
+export function BookingRequestDecisionControls({
+  locale,
+  bookingRequestId,
+  onStatusChange,
+  focusSuccessorId,
+}: {
+  locale: Locale;
+  bookingRequestId: string;
+  focusSuccessorId?: string;
+  onStatusChange?: (status: BookingRequestStatus) => void;
+}) {
+  const copy = messages[locale];
+  const { status, error, pending, act } = useBookingRequestDecision({
+    locale,
+    bookingRequestId,
+    onStatusChange,
+  });
+
   if (status !== "pending") return null;
   return (
     <div className="booking-request-decision-controls">
@@ -123,32 +182,7 @@ export function BookingRequestDecisionControls({
           void act("decline", event.currentTarget);
         }}
       >
-        <label>
-          <span>{copy.reason}</span>
-          <FormControl
-            kind="select"
-            name="declineReason"
-            required
-            defaultValue=""
-          >
-            <option value="" disabled>
-              {copy.choose}
-            </option>
-            <option value="cottage_unavailable">{copy.unavailable}</option>
-            <option value="cannot_accommodate_request">{copy.cannot}</option>
-            <option value="other">{copy.other}</option>
-          </FormControl>
-        </label>
-        <label>
-          <span>{copy.note}</span>
-          <FormControl
-            kind="textarea"
-            name="declineNote"
-            maxLength={500}
-            rows={3}
-          />
-          <small>{copy.hint}</small>
-        </label>
+        <DeclineFields copy={copy} />
         <ActionButton
           kind="secondary"
           size="regular"
@@ -164,5 +198,81 @@ export function BookingRequestDecisionControls({
         <ActionFeedback kind="error">{copy.failed}</ActionFeedback>
       ) : null}
     </div>
+  );
+}
+
+export function BookingRequestRowDecisionControls({
+  locale,
+  bookingRequestId,
+  focusSuccessorId,
+  onStatusChange,
+}: {
+  locale: Locale;
+  bookingRequestId: string;
+  focusSuccessorId?: string;
+  onStatusChange?: (status: BookingRequestStatus) => void;
+}) {
+  const copy = messages[locale];
+  const { status, error, pending, act } = useBookingRequestDecision({
+    locale,
+    bookingRequestId,
+    onStatusChange,
+  });
+  const [declineOpen, setDeclineOpen] = useState(false);
+  const declineFormId = useId();
+
+  if (status !== "pending") return null;
+  return (
+    <>
+      <div className="request-row-actions">
+        <ActionButton
+          kind="secondary"
+          size="regular"
+          type="button"
+          aria-expanded={declineOpen}
+          aria-controls={declineOpen ? declineFormId : undefined}
+          onClick={() => setDeclineOpen((open) => !open)}
+        >
+          {copy.declineShort}
+        </ActionButton>
+        <ActionButton
+          kind="primary"
+          type="button"
+          aria-label={copy.accept}
+          pending={pending}
+          focusSuccessorId={focusSuccessorId}
+          onClick={() => act("accept")}
+        >
+          {copy.acceptShort}
+        </ActionButton>
+      </div>
+      {declineOpen || error ? (
+        <div className="request-row-below">
+          {declineOpen ? (
+            <form
+              id={declineFormId}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void act("decline", event.currentTarget);
+              }}
+            >
+              <DeclineFields copy={copy} />
+              <ActionButton
+                kind="secondary"
+                size="regular"
+                type="submit"
+                pending={pending}
+                focusSuccessorId={focusSuccessorId}
+              >
+                {copy.decline}
+              </ActionButton>
+            </form>
+          ) : null}
+          {error ? (
+            <ActionFeedback kind="error">{copy.failed}</ActionFeedback>
+          ) : null}
+        </div>
+      ) : null}
+    </>
   );
 }
