@@ -94,17 +94,16 @@ export default async function OwnerCottagesPage({
       />
     );
   }
+  const waitingRequests = page.value.notifications
+    ? waitingBookingRequestCount(page.value.notifications)
+    : undefined;
   return (
     <main className="results-page page">
       <BackofficeNavigation
         locale={locale}
         area="owner"
         current="cottages"
-        waitingBookingRequests={
-          page.value.notifications
-            ? waitingBookingRequestCount(page.value.notifications)
-            : undefined
-        }
+        waitingBookingRequests={waitingRequests}
       />
       <CottageProfileOverview
         locale={locale}
@@ -112,6 +111,7 @@ export default async function OwnerCottagesPage({
         profiles={page.value.profiles}
         fromPrices={page.value.fromPrices}
         canCreate={page.value.canCreate}
+        waitingRequestCount={waitingRequests}
       />
       <OwnerBookingRequestNotifications
         locale={locale}

@@ -1878,6 +1878,47 @@ html[lang="ckb"] .result-content h2 {
   gap: var(--space-4);
 }
 
+.summary-tiles {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.summary-tile {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.summary-tile > strong {
+  color: var(--green);
+  font-family: var(--display);
+  font-size: var(--font-size-5);
+  line-height: 1.25;
+}
+
+.summary-tile > span {
+  color: var(--muted);
+  font-size: var(--font-size-1);
+}
+
+@media (max-width: 40rem) {
+  .summary-tiles {
+    gap: var(--space-2);
+  }
+
+  .summary-tile {
+    padding: var(--space-3);
+  }
+}
+
 .cottage-profile-form > fieldset,
 .cottage-profile-photos,
 .cottage-profile-source-revision,

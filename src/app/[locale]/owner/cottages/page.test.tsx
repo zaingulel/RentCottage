@@ -192,6 +192,56 @@ describe("owner Cottage Profiles page", () => {
     );
   });
 
+  it("passes the number of waiting Booking Requests to the summary and none when alerts are switched off", async () => {
+    const request = ownerDisplayFixtures["capture-processing"];
+    listOwner.mockResolvedValue([]);
+    loadOwnerCottageAccess.mockImplementation(async (load) => ({
+      status: "ready",
+      value: await load({ listOwner }, "approved"),
+    }));
+    loadOwnerBookingRequestNotifications.mockResolvedValue([
+      { ...request, status: "pending" },
+      {
+        ...request,
+        status: "pending",
+        id: "00000000-0000-4000-8000-000000000146",
+        bookingRequestReference: "RC-REQ-BBBBBBBBBBBBBBBB",
+      },
+      {
+        ...request,
+        status: "accepted",
+        id: "00000000-0000-4000-8000-000000000147",
+        bookingRequestReference: "RC-REQ-CCCCCCCCCCCCCCCC",
+      },
+    ]);
+    vi.stubEnv("APP_ENVIRONMENT", "test");
+    vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
+    vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
+
+    render(
+      await OwnerCottagesPage({
+        params: Promise.resolve({ locale: "en" }),
+      }),
+    );
+
+    expect(CottageProfileOverview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ waitingRequestCount: 2 }),
+      undefined,
+    );
+
+    vi.stubEnv("APP_ENVIRONMENT", "development");
+    render(
+      await OwnerCottagesPage({
+        params: Promise.resolve({ locale: "en" }),
+      }),
+    );
+
+    expect(CottageProfileOverview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ waitingRequestCount: undefined }),
+      undefined,
+    );
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();

@@ -41,6 +41,18 @@ export function shouldRefreshBookingRequestStatus(
   );
 }
 
+export function isWaitingBookingRequest(request: {
+  readonly status: BookingRequestDisplayStatus;
+}): boolean {
+  return request.status === "pending";
+}
+
+export function waitingBookingRequestCount(
+  requests: readonly { readonly status: BookingRequestDisplayStatus }[],
+): number {
+  return requests.filter(isWaitingBookingRequest).length;
+}
+
 export function customerBookingRequestDisplay({
   paymentStatus,
   ...request
@@ -52,12 +64,6 @@ export function ownerBookingRequestNotificationDisplay({
   ...notification
 }: OwnerBookingRequestNotification): OwnerBookingRequestNotificationDisplay {
   return { ...notification, status: paymentStatus ?? notification.status };
-}
-
-export function waitingBookingRequestCount(
-  notifications: readonly OwnerBookingRequestNotificationDisplay[],
-): number {
-  return notifications.filter(({ status }) => status === "pending").length;
 }
 
 export function canRecoverBookingRequestPayment(

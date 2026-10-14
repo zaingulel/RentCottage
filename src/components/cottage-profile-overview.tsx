@@ -10,11 +10,13 @@ import {
 } from "@/cottage-profile/actions";
 import type { OwnerCottageFromPricesResult } from "@/cottage-discovery/supabase-cottage-discovery";
 import type { CottageProfile } from "@/cottage-profile/cottage-profile";
-import { formatIqd } from "@/i18n/format";
+import { formatInteger, formatIqd } from "@/i18n/format";
 import {
+  cottageProfileCounts,
   cottageProfileMessages,
   cottageProfileStatusLabel,
   cottageProfileStatusTone,
+  ownerCottagesSummarySentence,
 } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
 import { ActionFocusTarget, ActionLink } from "./interaction-controls";
@@ -33,6 +35,7 @@ export function CottageProfileOverview({
   canCreate = false,
   continuationHref,
   fromPrices,
+  waitingRequestCount,
 }: {
   locale: Locale;
   actor: "owner" | "administrator";
@@ -40,6 +43,7 @@ export function CottageProfileOverview({
   canCreate?: boolean;
   continuationHref?: string;
   fromPrices?: OwnerCottageFromPricesResult;
+  waitingRequestCount?: number;
 }) {
   const copy = cottageProfileMessages[locale];
   const [createState, createAction] = useActionState(
@@ -47,7 +51,14 @@ export function CottageProfileOverview({
     idle,
   );
   const title = actor === "owner" ? copy.overviewTitle : copy.adminTitle;
-  const intro = actor === "owner" ? copy.overviewIntro : copy.adminIntro;
+  const counts = cottageProfileCounts(profiles);
+  const tiles = [
+    { count: counts.published, label: copy.published },
+    { count: counts.drafts, label: copy.draftTile },
+    ...(waitingRequestCount === undefined
+      ? []
+      : [{ count: waitingRequestCount, label: copy.waitingTile }]),
+  ];
   const route = actor === "owner" ? "owner" : "administrator";
 
   return (
@@ -64,9 +75,30 @@ export function CottageProfileOverview({
           targetId="cottage-profile-overview-title"
           navigation
         />
-        <p>{intro}</p>
+        {actor === "administrator" ? <p>{copy.adminIntro}</p> : null}
+        {actor === "owner" && profiles.length > 0 ? (
+          <p>{ownerCottagesSummarySentence(locale, counts)}</p>
+        ) : null}
       </header>
-      {profiles.length === 0 ? <p>{copy.empty}</p> : null}
+      {actor === "owner" && profiles.length > 0 ? (
+        <ul className="summary-tiles">
+          {tiles.map(({ count, label }) => (
+            <li className="summary-tile" key={label}>
+              <strong>{formatInteger(count, locale)}</strong>{" "}
+              <span>{label}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {profiles.length === 0 ? (
+        actor === "owner" ? (
+          <div className="empty-state">
+            <p>{copy.emptyOwner}</p>
+          </div>
+        ) : (
+          <p>{copy.empty}</p>
+        )
+      ) : null}
       <div className="cottage-profile-card-grid">
         {profiles.map((profile) => {
           const name = profile.name || copy.editorTitle;
