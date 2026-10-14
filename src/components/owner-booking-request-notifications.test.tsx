@@ -51,6 +51,8 @@ const pendingNotification = {
   paymentRequiredExpiry: null,
   responseDeadline: "2099-08-21T21:00:00.000Z",
   createdAt: "2099-08-21T17:00:00.000Z",
+  coverMediaUrl: null,
+  responseTimeLeft: { unit: "hours" as const, count: 3 },
 };
 
 describe("Owner Booking Request notifications", () => {
@@ -156,6 +158,8 @@ describe("Owner Booking Request notifications", () => {
             paymentRequiredExpiry: null,
             responseDeadline: "2099-08-21T21:00:00.000Z",
             createdAt: "2099-08-21T17:00:00.000Z",
+            coverMediaUrl: null,
+            responseTimeLeft: { unit: "hours", count: 3 },
           },
         ]}
       />,
@@ -230,6 +234,8 @@ describe("Owner Booking Request notifications", () => {
             paymentRequiredExpiry: null,
             responseDeadline: "2099-08-21T21:00:00.000Z",
             createdAt: "2099-08-21T17:00:00.000Z",
+            coverMediaUrl: null,
+            responseTimeLeft: { unit: "hours", count: 3 },
           },
         ]}
       />,

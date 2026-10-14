@@ -4298,7 +4298,13 @@ CREATE OR REPLACE FUNCTION "public"."list_owner_booking_request_notifications"()
       from public.booking_request_status_notifications receipts where receipts.booking_request_id=requests.id
         and receipts.recipient_user_id=(select auth.uid())),'[]'::jsonb),
     'responseDeadline',to_char(requests.response_deadline at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
-    'createdAt',to_char(notifications.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) order by notifications.created_at desc),'[]'::jsonb)
+    'createdAt',to_char(notifications.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    'coverMediaId',(select media.opaque_id
+      from public.owner_application_cottage_profiles profiles
+      join public.cottage_publication_media media on media.publication_id=profiles.current_publication_id
+      where profiles.id=requests.profile_id and public.is_cottage_publicly_discoverable(profiles.id)
+      order by media.position limit 1),
+    'databaseNow',to_char(date_trunc('milliseconds',clock_timestamp()) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) order by notifications.created_at desc),'[]'::jsonb)
   from public.owner_request_notifications notifications
   join public.booking_requests requests on requests.id=notifications.booking_request_id
   join public.booking_snapshots snapshots on snapshots.id=requests.booking_snapshot_id

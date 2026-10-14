@@ -18,10 +18,12 @@ import {
   isBookingRequestStatus,
   paymentRequiredWindowFrom,
   paymentRequiredExpiryFrom,
+  responseTimeLeft,
   type BookingRequestPaymentRequiredExpiry,
   type BookingRequestNotificationStatus,
   type BookingRequestPaymentRequiredWindow,
   type BookingRequestPaymentStatus,
+  type BookingRequestResponseTimeLeft,
   type BookingRequestStatus,
 } from "./booking-request-status";
 
@@ -50,6 +52,8 @@ export interface OwnerBookingRequestNotification {
   }[];
   responseDeadline: string;
   createdAt: string;
+  readonly coverMediaUrl: string | null;
+  readonly responseTimeLeft: BookingRequestResponseTimeLeft;
 }
 
 const keys = new Set([
@@ -73,6 +77,8 @@ const keys = new Set([
   "statusNotifications",
   "responseDeadline",
   "createdAt",
+  "coverMediaId",
+  "databaseNow",
 ]);
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -161,7 +167,11 @@ function notificationFrom(
       );
     }) ||
     !isTimestamp(notification.responseDeadline) ||
-    !isTimestamp(notification.createdAt)
+    !isTimestamp(notification.createdAt) ||
+    (notification.coverMediaId !== null &&
+      (typeof notification.coverMediaId !== "string" ||
+        !uuid.test(notification.coverMediaId))) ||
+    !isTimestamp(notification.databaseNow)
   ) {
     return undefined;
   }
@@ -196,6 +206,14 @@ function notificationFrom(
     statusNotifications,
     responseDeadline: notification.responseDeadline,
     createdAt: notification.createdAt,
+    coverMediaUrl:
+      notification.coverMediaId === null
+        ? null
+        : `/api/cottage-media/${notification.coverMediaId}`,
+    responseTimeLeft: responseTimeLeft(
+      notification.responseDeadline,
+      notification.databaseNow,
+    ),
   };
 }
 
