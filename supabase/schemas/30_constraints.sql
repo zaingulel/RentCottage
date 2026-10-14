@@ -23,6 +23,15 @@ ALTER TABLE ONLY "public"."owner_application_cottage_profiles"
 ALTER TABLE ONLY "public"."account_contexts"
     ADD CONSTRAINT "account_contexts_pkey" PRIMARY KEY ("user_id");
 
+ALTER TABLE ONLY "public"."account_names"
+    ADD CONSTRAINT "account_names_pkey" PRIMARY KEY ("user_id");
+
+ALTER TABLE ONLY "public"."account_names"
+    ADD CONSTRAINT "account_names_first_name_shape" CHECK (("first_name" = "btrim"("first_name") AND "char_length"("first_name") >= 1 AND "char_length"("first_name") <= 50 AND "first_name" !~ '[[:cntrl:]]'::"text"));
+
+ALTER TABLE ONLY "public"."account_names"
+    ADD CONSTRAINT "account_names_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."account_contexts"("user_id") ON DELETE CASCADE;
+
 ALTER TABLE ONLY "public"."booking_confirmations"
     ADD CONSTRAINT "booking_confirmations_booking_period_commitment_id_key" UNIQUE ("booking_period_commitment_id");
 

@@ -22,6 +22,15 @@ CREATE TABLE IF NOT EXISTS "public"."account_contexts" (
 
 ALTER TABLE "public"."account_contexts" OWNER TO "postgres";
 
+CREATE TABLE IF NOT EXISTS "public"."account_names" (
+    "user_id" "uuid" NOT NULL,
+    "first_name" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE "public"."account_names" OWNER TO "postgres";
+
 CREATE TABLE IF NOT EXISTS "public"."privileged_sign_in_attempts" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "actor_user_id" "uuid",

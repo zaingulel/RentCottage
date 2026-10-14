@@ -1538,3 +1538,9 @@ GRANT EXECUTE ON FUNCTION public.list_owner_cottage_public_inventory(uuid[],date
 REVOKE ALL ON FUNCTION public.reads_as_coordinate_pair(text) FROM PUBLIC,anon,authenticated,service_role;
 
 REVOKE ALL ON FUNCTION public.booking_request_acceptance_evidence(public.cottage_profile_source_language,boolean) FROM PUBLIC,anon,authenticated,service_role;
+
+REVOKE ALL ON TABLE public.account_names FROM anon,authenticated,service_role;
+GRANT SELECT ON TABLE public.account_names TO authenticated;
+
+REVOKE ALL ON FUNCTION public.save_account_name(text) FROM PUBLIC,anon,service_role;
+GRANT EXECUTE ON FUNCTION public.save_account_name(text) TO authenticated;
