@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { SiteHeader } from "@/components/site-header";
+import { navigationAccountFor } from "@/access/navigation-account";
 import { resolveRequestAccount } from "@/access/request-account-context";
+import { resolveRequestAccountName } from "@/access/request-account-name";
 import type { ReactNode } from "react";
 
 import { defaultLocale, directionFor, isLocale, locales } from "@/i18n/routing";
@@ -27,20 +29,11 @@ export default async function LocaleLayout({
   const locale = isLocale(requested) ? requested : defaultLocale;
 
   const account = await resolveRequestAccount();
-  const navigationAccount =
-    account.status === "authenticated"
-      ? {
-          status: account.status,
-          context: account.context
-            ? {
-                role: account.context.role,
-                ...(account.context.role === "cottage_owner"
-                  ? { approvalState: account.context.approvalState }
-                  : {}),
-              }
-            : undefined,
-        }
-      : account;
+  const name =
+    account.status === "authenticated" && account.context
+      ? await resolveRequestAccountName(account.context)
+      : undefined;
+  const navigationAccount = navigationAccountFor(account, name);
   return (
     <html lang={locale} dir={directionFor(locale)}>
       <body>
