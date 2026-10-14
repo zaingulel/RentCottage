@@ -222,28 +222,61 @@ Anything else is a token.
   flight and supplies the `pending` state the buttons show.
 - Site chrome is `site-header.tsx`, `site-footer.tsx` and `marketplace-shell.tsx` in `src/components/`; the
   language selector is `locale-links.tsx`.
-- Site header: `header.site-header` holds the brand link, the language selector and the account navigation
-  (`nav.account-navigation`). Its items are the header's own pattern, pills that do not use `ActionButton`,
-  `ActionLink` or `Disclosure`. Above the `header` breakpoint the language selector and the account links sit in
-  the row, and a signed-in person's own links open from the Account button (`.account-menu-toggle`) as a menu
-  (`.account-menu-panel`) under that button, aligned to its end edge. At the `header` breakpoint the row holds
-  only the brand and two icon buttons (`.site-header-toggle`), each a pill `2.75rem` wide and tall: the globe
-  opens the language selector and the three bars open the account navigation. An open panel
-  (`.site-header-panel`) is a card under the buttons, aligned to the header's end edge, on `--surface-raised` at
-  `--layer-menu` with the card radius, one destination per row, each row at least `2.75rem` tall; it lies over
-  the page and moves nothing. At the `phone` breakpoint the same panel spans the screen directly under the
-  header. Each of these buttons, the Account button included, reports `aria-expanded` and names its panel with
-  `aria-controls`; an icon button is named by `aria-label` and the Account button by its visible text; at the
-  `header` breakpoint the stylesheet shows and hides a panel from its button's `aria-expanded`, so the two cannot
-  disagree, and above it the Account menu carries the `hidden` attribute, set from the same state as its button's
-  `aria-expanded`. One panel is open at a time.
-  It closes when a destination or Sign out is chosen, on Escape, which returns focus to the button that opened
-  it, on a press outside the header and when focus leaves the header. It is a disclosure, not a dialog: focus is
-  not trapped and no `menu` role is used.
+- Site header: `header.site-header` holds the brand link and the controls (`.site-header-controls`): the language
+  button, a rule and the account navigation (`nav.account-navigation`). Its items are the header's own pattern,
+  pills and circles that do not use `ActionButton`, `ActionLink` or `Disclosure`. The brand link
+  (`.site-brand`) is at least `2.75rem` tall at every width.
+  - Language button: `.site-header-language-toggle` is a pill at least `2.75rem` tall, showing the globe icon and
+    the current language's own name. It shows at every width and opens the language selector
+    (`nav.language-links`), a card of one row per language, each at least `2.75rem` tall, with the current
+    language filled. Its name is a visually hidden label followed by the visible language name.
+  - Row per state, above the `header` breakpoint: signed out, the language button, the rule, then Sign in, List a
+    cottage and Support as pills. When the session cannot be read, the sign-in and list links give way to a
+    `role="status"` message and Support stays. Signed in, the language button, the rule and the avatar button, with
+    Support and Sign out inside the avatar menu. At or below the `header` breakpoint a signed-out visitor's account
+    links sit behind one icon button (`.site-header-toggle`) of three bars, a pill `2.75rem` wide and tall; a
+    signed-in person's row is unchanged.
+  - Avatar: the button (`.account-menu-toggle`) is a transparent `2.75rem` square with a circular focus shape,
+    holding a `2.25rem` circle (`.account-avatar`) with a `1.25rem` person icon. On the transparent landing
+    header the circle is `--ink-on-dark` with an `--ink` icon; on the solid header it is `--green` with an
+    `--ink-on-dark` icon. The button is named by a visually hidden "Account" label, never by the icon.
+  - Panels: an open panel is a card on `--surface-raised` at `--layer-menu` with the card radius, at least
+    `14.5rem` wide, opening under its own button and aligned to that button's end edge, lying over the page and
+    moving nothing. At the `phone` breakpoint every panel instead spans the screen directly under the header, with
+    no side border or radius.
+  - Breakpoint changes: at the `header` breakpoint the row stops wrapping, the rule is hidden and a signed-out
+    visitor's account links move into the three-bars panel; at the `phone` breakpoint the panels span the screen, the
+    brand's tagline is hidden and its name is smaller; at the `compact` breakpoint the language button drops its
+    globe.
+  - Disclosures: the language button and the three-bars button are disclosures. Each reports `aria-expanded` and
+    names its panel with `aria-controls`, and no `menu` role is used for either; an icon button is named by
+    `aria-label`. At the `header` breakpoint the stylesheet shows and hides the three-bars panel from its
+    button's `aria-expanded`, so the two cannot disagree; the language selector is hidden the same way at every
+    width.
+  - Avatar menu: the avatar button is a menu button. It carries `aria-haspopup="menu"`, `aria-expanded` and
+    `aria-controls`, and opens `.account-menu-panel`, a `role="menu"` named by the button through
+    `aria-labelledby`; the panel carries the `hidden` attribute, set from the same state as the button's
+    `aria-expanded`. Every destination is a `role="menuitem"` with `tabindex="-1"`, each row at least `2.75rem`
+    tall: the person's own destinations in a `role="group"` named "Account", a rule, Support, then Sign out as a
+    button inside a `role="none"` form. Focus moves to the first item when the menu opens, or to the last when it
+    opens by ArrowUp.
+
+    | Key | In the menu button | In the open menu |
+    |---|---|---|
+    | Enter, Space, click | Opens the menu or closes it | Activates the item |
+    | ArrowDown | Opens the menu on its first item | Next item, from the last to the first |
+    | ArrowUp | Opens the menu on its last item | Previous item, from the first to the last |
+    | Home, End | None | First item, last item |
+    | Tab | Moves on | Closes the menu and moves on |
+    | Escape | Closes the menu | Closes the menu and returns focus to the button |
+
+  - Closing: one panel is open at a time. A panel closes when a destination or Sign out is chosen, on Escape, which
+    returns focus to the visible button that is expanded, on a press outside the header and when focus leaves the
+    header. Focus is not trapped and no panel is a dialog.
 - Icons: an icon is an inline `svg` in the component that uses it, with `aria-hidden="true"`, a 24-unit
   `viewBox`, no fill and a 2-unit `currentColor` stroke with round ends, so it takes its control's text colour.
   The control's rule sets its size and the control's `aria-label` names the control; an icon never carries the
-  name. The site header's globe and three bars are the only two. There is no icon library and no icon font.
+  name. The site header's globe, three bars and person are the only three. There is no icon library and no icon font.
 - Backoffice navigation: `BackofficeNavigation` in
   [backoffice-navigation.tsx](../src/components/backoffice-navigation.tsx) is the one navigation of the Owner
   Backoffice and the Platform Administrator pages, and owns each area's list of destinations. It is a server
@@ -466,11 +499,11 @@ its own; the block it sits in sets the space around it.
 
 | Name | `max-width` | Pixels | At or below it |
 |---|---|---|---|
-| compact | `24rem` | 384 | a two-up grid of short values becomes one column |
-| phone | `40rem` | 640 | the phone layout: fields, rows and headers stack, and a form may set its buttons to fill the width; the site header's open panel spans the screen |
+| compact | `24rem` | 384 | a two-up grid of short values becomes one column; the site header's language button drops its globe |
+| phone | `40rem` | 640 | the phone layout: fields, rows and headers stack, and a form may set its buttons to fill the width; the site header's open panels span the screen and its brand drops the tagline |
 | tablet | `47.5rem` | 760 | a main column and its side column stack |
 | wide | `53rem` | 848 | a form and its fixed side panel stack |
-| header | `64rem` | 1024 | the site header shows only the brand and its two icon buttons and opens its links as panels |
+| header | `64rem` | 1024 | the site header stops wrapping its row, hides the rule and moves a signed-out visitor's links into a panel opened from one icon button |
 
 - New work reaches for `phone` first and adds no value. [globals.test.ts](../src/app/globals.test.ts) reads the
   `rem` values in this section, so a breakpoint is added or removed here in the same change as its media query.
