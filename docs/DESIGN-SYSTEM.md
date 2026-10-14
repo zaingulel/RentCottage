@@ -30,11 +30,12 @@ the code keeps them.
     missing items, and the text of an error message. `--error-ring` is its translucent ring.
   - A status label takes a background and text pair chosen together. `--status-approved-bg` and
     `--status-approved-text` are the pair for a good outcome: an approved application and paid or eligible
-    earnings. `--status-neutral-bg` is the background of a label that is neither good nor bad, and of the status
-    badge and the status banner, which state a status in words. `--status-published-dot`, `--status-draft-dot` and
-    `--status-review-dot` are the dot colours of the status badge's three tones; each reaches 3:1 on
-    `--status-neutral-bg`, which globals.test.ts checks, and `--status-draft-dot` is a darker gold than `--gold`
-    for that reason.
+    earnings. `--status-attention-bg` and `--status-attention-text` are the pair for a label that asks for the
+    reader's action; the time-left badge under Status badge takes it. `--status-neutral-bg` is the background of a
+    label that is neither good nor bad, and of the status badge and the status banner, which state a status in
+    words. `--status-published-dot`, `--status-draft-dot` and `--status-review-dot` are the dot colours of the
+    status badge's three tones; each reaches 3:1 on `--status-neutral-bg`, which globals.test.ts checks, and
+    `--status-draft-dot` is a darker gold than `--gold` for that reason.
   - `--status-rejected-text` stays separate from `--error`, and `--success-text` from `--status-approved-text`: a
     label's text is chosen with its tint, and a message's text sits on whatever surface its form is on.
   - `--surface-policy` and `--surface-message-customer` stay separate: the policy box is chosen with
@@ -302,6 +303,10 @@ Anything else is a token.
   screen and `ActionFeedback` answers it. When no translation can be produced the original stays and
   `ActionFeedback` says so. [customer-review-translation.tsx](../src/components/customer-review-translation.tsx) is
   the pattern; the conversation in `messaging-conversation.tsx` keeps its own rules until it is moved onto it.
+- An `ActionButton` may open a block that belongs to it by carrying `aria-expanded`, and `aria-controls` while the
+  block is open, as the request row's Decline does. Focus stays on the button, pressing it again closes the block,
+  and the block is not a dialog. `Disclosure` remains the pattern where the summary and its content share one
+  column.
 - A new button, link-styled action, form field, checkbox, radio button, option group, disclosure or submit
   feedback reuses these. A pattern they lack is added there, not built inside a feature component.
 
@@ -344,15 +349,34 @@ its own; the block it sits in sets the space around it.
   shows the From Price in `--muted` at `--font-size-2`, formatted like every other amount, at the inline end of the
   actions row, or on its own line below the open action where the row is too narrow; it shows nothing where there
   is no price.
+- Request row: `article.card.request-row` shows one waiting Booking Request, in a single-column `div.request-rows`
+  with `--space-3` between rows. It uses the card pattern and is a three-column grid with `--space-4` padding and
+  gaps: a `5rem` square image frame with `--radius-card` corners on `--surface-placeholder`, left empty when the
+  cottage has no public photo; the facts, which are a `card-title` heading with the customer and party size, a
+  `card-detail` line with the cottage, Booking Period and price, the time-left status badge and a `View request`
+  text link to the full Booking Request page, which does not prefetch; and the two actions, each as wide as its
+  label. The photo's `alt` is empty because the facts beside it name the cottage. A block an action opens, as
+  Decline opens its reason, spans the row beneath all three. At the `phone` breakpoint the actions move beneath the
+  photo and facts and stay side by side.
+- Summary tile: `ul.summary-tiles` under a page heading holds one `li.summary-tile` per count, in equal columns
+  with `--space-4` between them, `--space-2` at the `phone` breakpoint. A tile is a `--card` block with a `1px`
+  `--line` border, `--radius-card` corners and `--space-4` padding, `--space-3` at the `phone` breakpoint, holding
+  the number in a `strong`, in `--display` in `--green` at `--font-size-5`, above its label in a `span`, in
+  `--muted` at `--font-size-1`. It is not a card and takes no shadow. A count that cannot be known leaves its tile
+  out and is never shown as zero; a page with nothing to count shows the empty state and no tiles. On the Cottage
+  Owner's cottages page the empty state holds only its sentence: the create form that follows it is the page's next
+  action, and where creation is unavailable no action is invented.
 - Status badge: `span.status-badge` is the compact status of one item in a list row or card. Its text is the
   translated status label, so the status never depends on colour. It is a pill on `--status-neutral-bg` with bold
   `--ink` text at `--font-size-1`. A badge may add one tone class, which draws a `0.5rem` dot before the label,
   `--space-2` from it and on the side the text starts: `status-badge-published` for a record Customers can see,
   `status-badge-draft` for a private record not yet submitted, and `status-badge-review` for a submitted record
   waiting for a decision with nothing published. The dot repeats the label and is never the only sign of the
-  status; a badge with any other status, or one that states a fact that is not a status, has no dot. It is never
-  the page-level status. Over a cottage card's cover it is unchanged and stays opaque, so its contrast never
-  depends on the photo.
+  status; a badge with any other status, or one that states a fact that is not a status, has no dot. A badge that
+  states the time left before a deadline, as a waiting Booking Request's does, adds `status-badge-attention`, which
+  sets the `--status-attention-bg` and `--status-attention-text` pair and draws no dot: its words state the time
+  left, so the colour only repeats them. It is never the page-level status. Over a cottage card's cover it is
+  unchanged and stays opaque, so its contrast never depends on the photo.
 - Rating stars: the `span.stars` beside a published review's rating is decorative and hidden from assistive technology, so the rating text carries the meaning.
 - Status banner: `p.status-banner` is the page-level status of a record page. It sits directly under the page
   title, at most one per page, and keeps `role="status"` and `aria-live="polite"`. It is a block on
