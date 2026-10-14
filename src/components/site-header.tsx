@@ -39,6 +39,7 @@ export type NavigationAccount =
               | "suspended";
           }
         | undefined;
+      name?: { status: "named"; initial: string } | { status: "missing" };
     };
 
 const condenseAfterScroll = 140;
@@ -295,10 +296,14 @@ export function SiteHeader({
                 >
                   <span className="visually-hidden">{copy.account}</span>
                   <span className="account-avatar" aria-hidden="true">
-                    <Icon>
-                      <circle cx="12" cy="8" r="4" />
-                      <path d="M4.5 21c0-4.2 3.4-6.5 7.5-6.5s7.5 2.3 7.5 6.5" />
-                    </Icon>
+                    {account.name?.status === "named" ? (
+                      account.name.initial
+                    ) : (
+                      <Icon>
+                        <circle cx="12" cy="8" r="4" />
+                        <path d="M4.5 21c0-4.2 3.4-6.5 7.5-6.5s7.5 2.3 7.5 6.5" />
+                      </Icon>
+                    )}
                   </span>
                 </button>
                 <div

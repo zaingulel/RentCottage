@@ -305,6 +305,53 @@ describe("shared site header", () => {
       expect(avatar).toHaveAttribute("aria-expanded", "false");
     },
   );
+  it.each([
+    ["en", "Z", "Account"],
+    ["ar", "ز", "الحساب"],
+  ] as const)(
+    "shows the first letter on the %s avatar",
+    (locale, initial, label) => {
+      location.pathname = `/${locale}`;
+      render(
+        <SiteHeader
+          locale={locale}
+          account={{
+            status: "authenticated",
+            context: { role: "customer" },
+            name: { status: "named", initial },
+          }}
+        />,
+      );
+      const avatar = screen.getByRole("button", { name: label });
+      const shape = avatar.querySelector(".account-avatar");
+      expect(shape).toHaveAttribute("aria-hidden", "true");
+      expect(shape?.textContent).toBe(initial);
+      expect(shape?.querySelector("svg")).toBeNull();
+    },
+  );
+  it.each([
+    ["no name", undefined],
+    ["a missing name", { status: "missing" }],
+  ] as const)(
+    "shows the person shape when there is no letter (%s)",
+    (_kind, name) => {
+      render(
+        <SiteHeader
+          locale="en"
+          account={{
+            status: "authenticated",
+            context: { role: "customer" },
+            name,
+          }}
+        />,
+      );
+      const shape = screen
+        .getByRole("button", { name: "Account" })
+        .querySelector(".account-avatar");
+      expect(shape?.querySelector("svg")).not.toBeNull();
+      expect(shape?.textContent).toBe("");
+    },
+  );
   it("shows a signed-out visitor no avatar", () => {
     render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
     expect(screen.queryByRole("button", { name: "Account" })).toBeNull();
