@@ -731,6 +731,26 @@ test.describe("retained cancellation and refund controls", () => {
         ar: { confirmed: "حجز مؤكد", cancelled: "حجز ملغى" },
         ckb: { confirmed: "حجزی پشتڕاستکراو", cancelled: "حجزی هەڵوەشاوە" },
       }[locale];
+      const refundAmounts = {
+        en: {
+          none: "IQD 0",
+          total: "IQD 115,000",
+          price: "IQD 110,000",
+          fee: "IQD 5,000",
+        },
+        ar: {
+          none: "IQD 0",
+          total: "IQD 115,000",
+          price: "IQD 110,000",
+          fee: "IQD 5,000",
+        },
+        ckb: {
+          none: "IQD ٠",
+          total: "IQD ١١٥٬٠٠٠",
+          price: "IQD ١١٠٬٠٠٠",
+          fee: "IQD ٥٬٠٠٠",
+        },
+      }[locale];
       const assertMobile = async () => {
         await expect(page.locator("html")).toHaveAttribute(
           "dir",
@@ -957,7 +977,7 @@ test.describe("retained cancellation and refund controls", () => {
       await expectAmount(
         page.getByTestId("verified-refund"),
         copy.total,
-        "IQD 0",
+        refundAmounts.none,
       );
       await assertMobile();
       await screenshot("connected-refund-pending-mobile");
@@ -966,17 +986,17 @@ test.describe("retained cancellation and refund controls", () => {
       await expectAmount(
         page.getByTestId("verified-refund"),
         copy.total,
-        "IQD 115,000",
+        refundAmounts.total,
       );
       await expectAmount(
         page.getByTestId("verified-refund"),
         copy.price,
-        "IQD 110,000",
+        refundAmounts.price,
       );
       await expectAmount(
         page.getByTestId("verified-refund"),
         copy.fee,
-        "IQD 5,000",
+        refundAmounts.fee,
       );
       const refunded = observeConnectedStay();
       expect(refunded.refunds).toHaveLength(1);
