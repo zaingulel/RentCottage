@@ -190,7 +190,6 @@ export function CustomerReviewOwnerReply({
           </FormControl>
           <ActionButton
             kind="primary"
-            width="content"
             type="submit"
             pending={pending}
             focusSuccessorId="customer-review-owner-heading"

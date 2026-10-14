@@ -244,7 +244,6 @@ export function BookingManagementControl({
       <ActionButton
         type="submit"
         kind="primary"
-        width="content"
         pending={pending}
         focusSuccessorId={focusSuccessorId}
       >

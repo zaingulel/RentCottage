@@ -98,6 +98,9 @@ describe("Cottage Profile overview", () => {
     expect(card.lastElementChild).toBe(
       screen.getByRole("link", { name: "Open Cottage Profile" }),
     );
+    expect(
+      screen.getByRole("link", { name: "Open Cottage Profile" }),
+    ).toHaveClass("action-content");
     expect(screen.getByRole("heading", { level: 1 })).toHaveClass("page-title");
     expect(screen.queryByText("01")).toBeNull();
     expect(

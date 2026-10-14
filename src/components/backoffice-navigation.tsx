@@ -92,7 +92,6 @@ export function BackofficeNavigation({
           <ActionLink
             key={destination.key}
             kind="secondary"
-            width="content"
             href={destination.href}
             aria-current={
               destination.key === current

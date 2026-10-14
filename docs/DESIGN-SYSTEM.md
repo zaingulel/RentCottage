@@ -181,10 +181,14 @@ Anything else is a token.
 
 - [interaction-controls.tsx](../src/components/interaction-controls.tsx) holds the shared controls:
   - `ActionButton`: a primary, secondary or toggle button (`.action`, `.action-primary`, `.action-secondary`,
-    `.action-toggle`, sized by `.action-compact` or `.action-regular` and `.action-content` or `.action-full`). A pending button sets
+    `.action-toggle`, sized by `.action-compact` or `.action-regular`). A pending button sets
     `aria-busy` and is disabled. A toggle at rest looks like a secondary button, a pressed one carries the
     `--shadow-pressed` ring, and a disabled one has a dashed border.
   - `ActionLink`: a link styled as a primary, secondary or text action (`.action-link`, `.action-text`).
+  - A primary or secondary `ActionButton` or `ActionLink` is as wide as its label (`.action-content`).
+    `width="full"` (`.action-full`) is the one exception, the form-column action: a button that submits a form or
+    closes a panel fills the column or grid track its fields or facts sit in. An action inside a card in a list or
+    grid is never full width.
   - `FormControl`: an input, select or textarea with `.form-control`, which shows `aria-invalid` as an error
     border.
   - `FormControl` with `type="date"` is the date field. It keeps the platform's date picker; the date text and the

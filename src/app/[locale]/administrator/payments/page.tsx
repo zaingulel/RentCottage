@@ -31,7 +31,7 @@ export default async function AdministratorPaymentLookupPage({
           autoComplete="off"
           dir="ltr"
         />
-        <ActionButton kind="primary" width="content" type="submit">
+        <ActionButton kind="primary" type="submit">
           {copy.lookupAction}
         </ActionButton>
       </form>

@@ -79,7 +79,6 @@ export function CottageProfileOverview({
             </p>
             <ActionLink
               kind="primary"
-              width="full"
               href={`/${locale}/${route}/cottages/${profile.id}`}
             >
               {copy.open}

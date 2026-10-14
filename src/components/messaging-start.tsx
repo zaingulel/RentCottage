@@ -32,7 +32,6 @@ export function MessagingStart({
       <ActionButton
         id="messaging-start-conversation"
         kind="primary"
-        width="content"
         type="button"
         pending={pending}
         onClick={() =>

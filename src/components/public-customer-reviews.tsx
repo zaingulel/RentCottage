@@ -82,7 +82,6 @@ export function PublicCustomerReviews({
         {showSignIn ? (
           <ActionLink
             kind="secondary"
-            width="content"
             href={accountAccessHref(
               locale,
               `/${locale}/cottages/${publicSlug}`,

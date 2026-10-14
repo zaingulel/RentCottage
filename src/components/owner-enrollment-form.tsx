@@ -54,7 +54,6 @@ export function OwnerEnrollmentForm({
       <p>{copy.enrollIntro}</p>
       <ActionButton
         kind="primary"
-        width="content"
         type="button"
         pending={pending}
         onClick={enroll}

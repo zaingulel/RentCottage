@@ -31,7 +31,6 @@ export function MessagingBookingLink({
         id="messaging-open-conversation"
         kind="secondary"
         size="regular"
-        width="content"
         type="button"
         pending={pending}
         onClick={() =>

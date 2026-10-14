@@ -234,7 +234,7 @@ export function PublicCottageResults({
       ) : result.cottages.length === 0 ? (
         <div className="empty-state">
           <p>{continued ? messages.pastEnd : messages.empty}</p>
-          <ActionLink kind="secondary" width="content" href={`/${locale}`}>
+          <ActionLink kind="secondary" href={`/${locale}`}>
             {messages.changeSearch}
           </ActionLink>
         </div>
@@ -355,7 +355,6 @@ export function PublicCottageResults({
                   ))}
                   <ActionLink
                     kind="primary"
-                    width="content"
                     href={`/${locale}/cottages/${cottage.slug}?${serializeCottageResultsQuery(query, after)}`}
                   >
                     {messages.view}
@@ -371,7 +370,6 @@ export function PublicCottageResults({
           {continued ? (
             <ActionLink
               kind="secondary"
-              width="content"
               href={`/${locale}/results?${queryString}`}
             >
               {messages.first}
@@ -380,7 +378,6 @@ export function PublicCottageResults({
           {result.nextAfter ? (
             <ActionLink
               kind="secondary"
-              width="content"
               href={`/${locale}/results?${serializeCottageResultsQuery(query, result.nextAfter)}`}
             >
               {messages.next}

@@ -28,7 +28,7 @@ type ActionLinkProps = Omit<
   (
     | {
         kind: "primary" | "secondary";
-        width: "content" | "full";
+        width?: "full";
         href: string;
         children: ReactNode;
       }
@@ -41,7 +41,7 @@ export function ActionLink(props: ActionLinkProps) {
     return <Link {...linkProps} className="action-link action-text" />;
   }
 
-  const { kind, width, ...linkProps } = props;
+  const { kind, width = "content", ...linkProps } = props;
   return (
     <Link
       {...linkProps}

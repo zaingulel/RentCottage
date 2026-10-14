@@ -21,12 +21,12 @@ type NativeButtonProps = Omit<
 type ActionButtonProps =
   | (NativeButtonProps & {
       kind: "primary";
-      width: "content" | "full";
+      width?: "full";
       pending?: boolean;
     })
   | (NativeButtonProps & {
       kind: "secondary";
-      width?: "content" | "full";
+      width?: "full";
       size: "compact" | "regular";
       pending?: boolean;
     })
@@ -211,7 +211,12 @@ export function ActionButton(props: ActionButtonProps) {
     );
   }
 
-  const { kind, pending = false, width, ...buttonProps } = actionProps;
+  const {
+    kind,
+    pending = false,
+    width = "content",
+    ...buttonProps
+  } = actionProps;
   return (
     <button
       {...buttonProps}

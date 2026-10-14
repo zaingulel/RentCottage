@@ -122,7 +122,6 @@ function BusyActionFixture() {
                 <ActionButton
                   id="busy-source"
                   kind="primary"
-                  width="content"
                   pending={pending}
                   disabled={scenario === "disabled" && stage === "result"}
                   focusSuccessorId={
