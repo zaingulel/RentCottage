@@ -483,6 +483,8 @@ input[type="file"].form-control::file-selector-button {
 }
 
 .backoffice-navigation {
+  display: flow-root;
+  min-inline-size: 0;
   width: min(100% - 2rem, 70rem);
   margin-inline: auto;
   border-image: linear-gradient(
