@@ -284,6 +284,10 @@ async function prepareDemoAdministrator(
       code: totp.generate(),
     });
     if (verified.error) throw verified.error;
+    const named = await enrollmentClient.rpc("save_account_name", {
+      account_first_name: "Sara",
+    });
+    if (named.error) throw named.error;
     const signedOut = await enrollmentClient.auth.signOut();
     if (signedOut.error) throw signedOut.error;
     credential = {

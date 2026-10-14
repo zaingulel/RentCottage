@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { accessMessages } from "../src/i18n/access-messages";
 import { cottageShiftScheduleMessages } from "../src/i18n/cottage-shift-schedule-messages";
 import { openHeaderPanel } from "./fixtures/site-header";
 import { createHmac } from "node:crypto";
@@ -473,6 +474,12 @@ async function openOwnerApplication(
   await page.getByRole("button", { name: copy.sendCode }).click();
   await page.getByLabel(copy.code).fill("123456");
   await page.getByRole("button", { name: copy.verify }).click();
+  const step = accessMessages[locale];
+  await expect(
+    page.getByRole("heading", { name: step.accountNameStepTitle }),
+  ).toBeVisible();
+  await page.getByLabel(step.firstName, { exact: true }).fill("Avan");
+  await page.getByRole("button", { name: step.saveAndContinue }).click();
   await expect(page.getByRole("button", { name: copy.enroll })).toBeVisible();
   await page.getByRole("button", { name: copy.enroll }).click();
   await expect(page).toHaveURL(new RegExp(`/${locale}/owner/application$`));
@@ -932,8 +939,33 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
     );
     await administratorPage.getByRole("button", { name: "Verify" }).click();
     await expect(
+      administratorPage.getByRole("heading", { name: "Add your first name" }),
+    ).toBeVisible();
+    await administratorPage
+      .getByLabel("First name", { exact: true })
+      .fill("Sara");
+    await administratorPage
+      .getByRole("button", { name: "Save and continue" })
+      .click();
+    await expect(
       administratorPage.getByText(/Administrator access is ready/),
     ).toBeVisible();
+    const administratorMain = administratorPage.getByRole("main");
+    for (const [name, href] of [
+      [
+        "Review submitted Owner Applications",
+        "/en/administrator/owner-applications",
+      ],
+      ["Manage Cottage Profiles", "/en/administrator/cottages"],
+      ["Records", "/en/administrator/records"],
+    ]) {
+      await expect(
+        administratorMain.getByRole("link", { name }),
+      ).toHaveAttribute("href", href);
+    }
+    await expect(
+      administratorPage.locator("#site-header-account-button .account-avatar"),
+    ).toHaveText("S");
 
     async function openOwnedIdentity(
       locale: BrowserLocale,
@@ -2132,6 +2164,11 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   const email = `platform-administrator-${testInfo.project.name}@rentcottage.test`;
   const actorUserId = await administratorId(email);
   const coverPhotoPath = await bookingFixtureCoverPhotoPath(reviewFixture);
+  const database = createLocalSupabaseConcurrencyHarness();
+  database.guardDisposableLocalDatabase();
+  database.runSql(
+    `insert into public.account_names (user_id, first_name) values ('${actorUserId}', 'Sara') on conflict (user_id) do update set first_name = excluded.first_name;`,
+  );
   const attemptedAfter = new Date().toISOString();
   await page.goto("/en/administrator/access");
   await page.getByLabel("Email").fill(email);
@@ -3417,9 +3454,18 @@ test("anonymous discovery uses live approved inventory and preserves its query",
       url.pathname === `/ckb/request/${requestSlug}` &&
       url.search === englishRequest.search,
   );
+  const soraniStep = accessMessages.ckb;
+  await expect(
+    page.getByRole("heading", { name: soraniStep.accountNameStepTitle }),
+  ).toBeVisible();
+  await page.getByLabel(soraniStep.firstName, { exact: true }).fill("ڕێبین");
+  await page.getByRole("button", { name: soraniStep.saveAndContinue }).click();
   await expect(
     page.getByRole("heading", { name: "داواکاری حجز بنێرە" }),
   ).toBeVisible();
+  await expect(
+    page.locator("#site-header-account-button .account-avatar"),
+  ).toHaveText("ڕ");
   const englishLink = page
     .getByRole("banner")
     .getByRole("link", { name: "English" });
@@ -3702,7 +3748,11 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
   assertIsolatedLocalAccessDatabase();
   const before = await listAllAccessFixtureUsers(auditClient.auth.admin);
   expect(findAccessFixtureUser(before, phone)).toBeUndefined();
-  async function verify(target: Page, moveDuringSend = false) {
+  async function verify(
+    target: Page,
+    moveDuringSend = false,
+    firstName?: string,
+  ) {
     await target.getByLabel("Iraqi phone number").fill(phone);
     const phoneSendControl = target.getByRole("button", {
       name: "Send verification code",
@@ -3761,16 +3811,38 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
     await phoneVerifyControl.focus();
     await expect(phoneVerifyControl).toBeFocused();
     await phoneVerifyControl.press("Enter");
-    await expect(
-      target.getByRole("heading", { name: "My bookings", exact: true }),
-    ).toBeVisible();
-    await expect(
-      target.getByRole("heading", { name: "My bookings", exact: true }),
-    ).toBeFocused();
+    const bookingsHeading = target.getByRole("heading", {
+      name: "My bookings",
+      exact: true,
+    });
+    if (firstName) {
+      const stepTitle = target.getByRole("heading", {
+        name: "Add your first name",
+      });
+      await expect(target).toHaveURL(/\/en\/bookings$/);
+      await expect(stepTitle).toBeVisible();
+      await expect(stepTitle).toBeFocused();
+      await expect(bookingsHeading).toBeHidden();
+      await target.getByLabel("First name", { exact: true }).fill(firstName);
+      const saveControl = target.getByRole("button", {
+        name: "Save and continue",
+      });
+      await saveControl.focus();
+      await expect(saveControl).toBeFocused();
+      await saveControl.press("Enter");
+      await expect(bookingsHeading).toBeVisible();
+      await expect(target.locator("#site-header-account-button")).toBeFocused();
+      await expect(
+        target.locator("#site-header-account-button .account-avatar"),
+      ).toHaveText(firstName[0]);
+      return;
+    }
+    await expect(bookingsHeading).toBeVisible();
+    await expect(bookingsHeading).toBeFocused();
   }
   await page.goto("/en/bookings");
   await expect(page).toHaveURL(/\/en\/access\?returnTo=%2Fen%2Fbookings/);
-  await verify(page, true);
+  await verify(page, true, "Zana");
   await expect(
     page.getByRole("heading", { name: "My bookings", exact: true }),
   ).toBeVisible();
@@ -3799,8 +3871,7 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
   const avatarLetter = page.locator(
     "#site-header-account-button .account-avatar",
   );
-  await expect(avatarLetter).toHaveText("");
-  await expect(avatarLetter.locator("svg")).toHaveCount(1);
+  await expect(avatarLetter).toHaveText("Z");
   await page.evaluate(() => Reflect.set(window, "personalInformation", "kept"));
   await openHeaderPanel(page, "menu");
   await page

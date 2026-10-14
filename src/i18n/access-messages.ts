@@ -56,6 +56,8 @@ export const accessMessages: Record<
     invalidFirstName: string;
     accountNameUnavailable: string;
     home: string;
+    accountNameStepTitle: string;
+    saveAndContinue: string;
   }
 > = {
   ar: {
@@ -118,6 +120,8 @@ export const accessMessages: Record<
       "أدخل اسمًا أول من 1 إلى 50 حرفًا يتضمن حرفًا واحدًا على الأقل، من دون رقم هاتف أو بريد إلكتروني أو رابط.",
     accountNameUnavailable: "تعذّر حفظ اسمك الأول. حاول مرة أخرى.",
     home: "الصفحة الرئيسية لـ RentCottage",
+    accountNameStepTitle: "أضف اسمك الأول",
+    saveAndContinue: "احفظ وتابع",
   },
   ckb: {
     account: "هەژمار",
@@ -184,6 +188,8 @@ export const accessMessages: Record<
     accountNameUnavailable:
       "نەتوانرا ناوی یەکەمت پاشەکەوت بکرێت. دووبارە هەوڵ بدەرەوە.",
     home: "پەڕەی سەرەکیی RentCottage",
+    accountNameStepTitle: "ناوی یەکەمت زیاد بکە",
+    saveAndContinue: "پاشەکەوت بکە و بەردەوام بە",
   },
   en: {
     account: "Account",
@@ -248,5 +254,7 @@ export const accessMessages: Record<
       "Enter a first name of 1 to 50 characters that includes a letter and no phone number, email address or link.",
     accountNameUnavailable: "Your first name could not be saved. Try again.",
     home: "RentCottage home",
+    accountNameStepTitle: "Add your first name",
+    saveAndContinue: "Save and continue",
   },
 };

@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { AccountNameGate } from "@/components/account-name-gate";
+import { ActionFocusTarget } from "@/components/interaction-controls";
 import { SiteHeader } from "@/components/site-header";
 import { navigationAccountFor } from "@/access/navigation-account";
 import { resolveRequestAccount } from "@/access/request-account-context";
@@ -38,7 +40,12 @@ export default async function LocaleLayout({
     <html lang={locale} dir={directionFor(locale)}>
       <body>
         <SiteHeader locale={locale} account={navigationAccount} />
-        {children}
+        {name?.status === "named" && (
+          <ActionFocusTarget targetId="site-header-account-button" />
+        )}
+        <AccountNameGate locale={locale} missing={name?.status === "missing"}>
+          {children}
+        </AccountNameGate>
       </body>
     </html>
   );

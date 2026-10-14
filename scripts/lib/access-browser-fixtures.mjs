@@ -579,6 +579,10 @@ async function ensureOwnerRole(ownerClient) {
       requested_role: "cottage_owner",
     });
     if (error) throw error;
+    const { error: nameError } = await ownerClient.rpc("save_account_name", {
+      account_first_name: "Avan",
+    });
+    if (nameError) throw nameError;
     return;
   }
   if (context.data.role !== "cottage_owner") {

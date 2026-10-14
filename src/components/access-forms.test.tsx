@@ -908,4 +908,91 @@ describe("access forms", () => {
     const form = screen.getByRole("button", { name: "Save" }).closest("form")!;
     expect([...new FormData(form).entries()]).toEqual([]);
   });
+
+  it("moves focus to the step title when focus is outside the header", () => {
+    const { rerender } = render(<button type="button">Continue</button>);
+    const pageControl = screen.getByRole("button", { name: "Continue" });
+    act(() => pageControl.focus());
+
+    rerender(
+      <>
+        <button type="button">Continue</button>
+        <main>
+          <AccountNameForm locale="en" mode="step" />
+        </main>
+      </>,
+    );
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Add your first name" }),
+    ).toHaveFocus();
+  });
+
+  it("leaves focus in the site header", () => {
+    const { rerender } = render(
+      <header className="site-header">
+        <button type="button">Language English</button>
+      </header>,
+    );
+    const language = screen.getByRole("button", { name: "Language English" });
+    act(() => language.focus());
+
+    rerender(
+      <>
+        <header className="site-header">
+          <button type="button">Language English</button>
+        </header>
+        <main>
+          <AccountNameForm locale="en" mode="step" />
+        </main>
+      </>,
+    );
+
+    expect(language).toHaveFocus();
+  });
+
+  it("names the avatar button as the successor after saving", async () => {
+    let resolveSave!: (value: { status: "saved" }) => void;
+    saveName.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    const header = (
+      <header className="site-header">
+        <button type="button" id="site-header-account-button">
+          Account
+        </button>
+      </header>
+    );
+    const { rerender } = render(
+      <>
+        {header}
+        <main>
+          <AccountNameForm locale="en" mode="step" />
+        </main>
+      </>,
+    );
+
+    await user.type(screen.getByLabelText("First name"), "Zana");
+    const save = screen.getByRole("button", { name: "Save and continue" });
+    await user.click(save);
+    expect(save).toBeDisabled();
+    expect(saveName).toHaveBeenCalledExactlyOnceWith({ firstName: "Zana" });
+    await act(async () => resolveSave({ status: "saved" }));
+
+    await act(async () =>
+      rerender(
+        <>
+          {header}
+          <ActionFocusTarget targetId="site-header-account-button" />
+        </>,
+      ),
+    );
+
+    expect(save).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Account" })).toHaveFocus();
+  });
 });

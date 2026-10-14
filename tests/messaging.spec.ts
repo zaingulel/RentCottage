@@ -60,6 +60,11 @@ test("booking customer keeps the original while using fictional translations acr
   await page.getByRole("button", { name: "Send verification code" }).click();
   await page.getByLabel("Verification code").fill("123456");
   await page.getByRole("button", { name: "Verify", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Add your first name" }),
+  ).toBeVisible();
+  await page.getByLabel("First name", { exact: true }).fill("Lana");
+  await page.getByRole("button", { name: "Save and continue" }).click();
 
   await expect(
     page.getByRole("heading", { name: "Message this cottage" }),

@@ -218,6 +218,7 @@ delete from public.booking_snapshots where id='${r.snapshot}';
 ${listedCottage ? listedCottageDeletes(r) : ""}delete from public.cottage_shifts where schedule_revision_id='${r.schedule}';
 delete from public.cottage_shift_schedule_revisions where id='${r.schedule}';
 delete from public.owner_application_cottage_profiles where id='${r.profile}';
+delete from public.account_names where user_id in (${users});
 delete from public.account_contexts where user_id in (${users});
 delete from auth.users where id in (${users});
 `;
@@ -255,7 +256,8 @@ export const customerReviewCleanup = (
   // Reused authentication users keep their auth.users rows, which the caller finds again by phone;
   // only the account contexts the seed inserts afresh are cleared.
   const reusedAccountContextDeletes = reusedAuthUsers.length
-    ? `delete from public.account_contexts where user_id in (${reusedAuthUsers.map((user) => `'${user}'`).join(",")});
+    ? `delete from public.account_names where user_id in (${reusedAuthUsers.map((user) => `'${user}'`).join(",")});
+delete from public.account_contexts where user_id in (${reusedAuthUsers.map((user) => `'${user}'`).join(",")});
 `
     : "";
   return `set session_replication_role=replica;
@@ -295,7 +297,7 @@ delete from public.payment_provider_operations where id='${r.operation}';
 delete from public.booking_receipts where booking_confirmation_id='${r.confirmation}'; delete from public.booking_confirmations where id='${r.confirmation}';
 delete from public.booking_request_capture_work where booking_request_id='${r.request}'; delete from public.booking_requests where id='${r.request}';
 delete from public.cottage_booking_period_commitments where id='${r.commitment}'; delete from public.booking_snapshots where id='${r.snapshot}';
-delete from public.owner_application_cottage_profiles where id='${r.profile}'; delete from public.account_contexts where user_id in ('${owner}','${customer}','${r.third}'); delete from auth.users where id in ('${owner}','${customer}','${r.third}'); set session_replication_role=origin;`;
+delete from public.owner_application_cottage_profiles where id='${r.profile}'; delete from public.account_names where user_id in ('${owner}','${customer}','${r.third}'); delete from public.account_contexts where user_id in ('${owner}','${customer}','${r.third}'); delete from auth.users where id in ('${owner}','${customer}','${r.third}'); set session_replication_role=origin;`;
 };
 
 export const preparationReminderCleanup = (event) => {
@@ -317,6 +319,7 @@ delete from public.booking_requests where id='${r.request}';
 delete from public.cottage_booking_period_commitments where id='${r.commitment}';
 delete from public.booking_snapshots where id='${r.snapshot}';
 delete from public.owner_application_cottage_profiles where id='${r.profile}';
+delete from public.account_names where user_id in ('${r.owner}','${r.customer}','${r.third}');
 delete from public.account_contexts where user_id in ('${r.owner}','${r.customer}','${r.third}');
 delete from auth.users where id in ('${r.owner}','${r.customer}','${r.third}');
 set session_replication_role=origin;`;

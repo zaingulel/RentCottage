@@ -197,6 +197,35 @@ describe("shared site header", () => {
     scrollTo(500);
     expect(header).toHaveClass("site-header-solid");
   });
+  it("uses the solid in-flow header on the landing page while the first-name step shows", () => {
+    const customer = { role: "customer" } as const;
+    const { rerender } = render(
+      <SiteHeader
+        locale="en"
+        account={{
+          status: "authenticated",
+          context: customer,
+          name: { status: "missing" },
+        }}
+      />,
+    );
+    const header = screen.getByRole("banner");
+    expect(header).toHaveClass("site-header-solid");
+    expect(header).not.toHaveClass("site-header-landing");
+
+    rerender(
+      <SiteHeader
+        locale="en"
+        account={{
+          status: "authenticated",
+          context: customer,
+          name: { status: "named", initial: "Z" },
+        }}
+      />,
+    );
+    expect(header).toHaveClass("site-header-landing");
+    expect(header).not.toHaveClass("site-header-solid");
+  });
   it("reports an unavailable session in the account slot", () => {
     render(<SiteHeader locale="en" account={{ status: "unavailable" }} />);
     expect(screen.getByRole("status")).toHaveTextContent(

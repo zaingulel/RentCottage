@@ -357,6 +357,9 @@ describe("access journey fixture admission", () => {
         requested_exact_address: "Synthetic private access journey address",
       }),
     );
+    expect(ownerClient.rpc).toHaveBeenLastCalledWith("save_account_name", {
+      account_first_name: "Avan",
+    });
   });
   it.each(["create", "signin", "claim", "save", "application", "profile"])(
     "rejects failed and malformed %s acknowledgements",

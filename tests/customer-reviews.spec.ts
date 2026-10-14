@@ -365,6 +365,10 @@ async function signInPhone(page: Page, phone: string, returnTo: string) {
   if (signedIn.error || !signedIn.data.session) {
     throw signedIn.error ?? new Error("Customer review session is missing");
   }
+  const named = await client.rpc("save_account_name", {
+    account_first_name: "Lana",
+  });
+  if (named.error) throw named.error;
   const origin =
     process.env.PLAYWRIGHT_SERVER === "worker"
       ? `http://127.0.0.1:${process.env.PLAYWRIGHT_WORKER_PORT ?? "8788"}`
@@ -413,6 +417,9 @@ async function provisionAdministrator(purpose: string) {
       { cause: provisionError },
     );
   }
+  createLocalSupabaseConcurrencyHarness().runSql(
+    `insert into public.account_names (user_id, first_name) values ('${data.user.id}', 'Sara') on conflict (user_id) do update set first_name = excluded.first_name;`,
+  );
   return { email, userId: data.user.id };
 }
 
@@ -2361,6 +2368,8 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     const cleanupProof = fixture.harness.runSql(`select jsonb_build_object(
       'accountContexts',(select count(*) from public.account_contexts contexts
         where contexts.user_id in (${reusedUsers})),
+      'accountNames',(select count(*) from public.account_names names
+        where names.user_id in (${reusedUsers})),
       'authUsers',(select count(*) from auth.users users
         where users.id in (${reusedUsers})),
       'customerReviews',(select count(*) from public.customer_reviews reviews
@@ -2368,6 +2377,7 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     );`);
     expect(JSON.parse(cleanupProof)).toEqual({
       accountContexts: 0,
+      accountNames: 0,
       authUsers: 3,
       customerReviews: 0,
     });

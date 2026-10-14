@@ -176,13 +176,19 @@ test("same-phone reauthentication restores the same real history and owner unpai
       const removed = await admin.auth.admin.deleteUser(user.id);
       if (removed.error) throw removed.error;
     }
-    async function createVerifiedIdentity(phone: string) {
+    async function createVerifiedIdentity(phone: string, firstName: string) {
       const context = await browser.newContext({ baseURL });
       const page = await context.newPage();
       try {
         await page.goto("/en/bookings");
         await expect(page).toHaveURL(/\/en\/access\?returnTo=%2Fen%2Fbookings/);
         await verifyPhone(page, phone);
+        await expect(page).toHaveURL(/\/en\/bookings/);
+        await expect(
+          page.getByRole("heading", { name: "Add your first name" }),
+        ).toBeVisible();
+        await page.getByLabel("First name", { exact: true }).fill(firstName);
+        await page.getByRole("button", { name: "Save and continue" }).click();
         await expect(
           page.getByRole("heading", { name: "My bookings", exact: true }),
         ).toBeVisible();
@@ -205,8 +211,8 @@ test("same-phone reauthentication restores the same real history and owner unpai
           returning id`),
       ).toBe(userId);
     }
-    const customerId = await createVerifiedIdentity(customerPhone);
-    const ownerId = await createVerifiedIdentity(ownerPhone);
+    const customerId = await createVerifiedIdentity(customerPhone, "Lana");
+    const ownerId = await createVerifiedIdentity(ownerPhone, "Avan");
     expect(
       harness.runSql(`update public.account_contexts
         set role='cottage_owner',owner_approval_state='approved'

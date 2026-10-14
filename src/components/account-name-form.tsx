@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 
 import { saveAccountName } from "@/access/actions";
 import { accessMessages } from "@/i18n/access-messages";
@@ -30,6 +30,21 @@ export function AccountNameForm({
     "saved" | "invalid" | "unavailable" | undefined
   >();
   const { pending, run } = useExclusiveAction();
+  const stepTitle = useRef<HTMLHeadingElement>(null);
+
+  useLayoutEffect(() => {
+    const title = stepTitle.current;
+    const active = document.activeElement;
+    if (
+      !title ||
+      active?.closest("header.site-header") ||
+      title.closest("main")?.contains(active)
+    )
+      return;
+    // The press that brought the step may have left focus on a page control
+    // that Activity has just hidden, so focus on the body is not the only case.
+    title.focus();
+  }, []);
 
   async function save() {
     setStatus(undefined);
@@ -37,7 +52,7 @@ export function AccountNameForm({
     if (result) setStatus(result.status);
   }
 
-  return (
+  const panel = (
     <section className="access-panel">
       {/* The input stays unnamed, like the administrator sign-in inputs: a name
           would put the first name in the URL on a native (pre-hydration)
@@ -70,8 +85,11 @@ export function AccountNameForm({
           width="full"
           type="submit"
           pending={pending}
+          focusSuccessorId={
+            mode === "step" ? "site-header-account-button" : undefined
+          }
         >
-          {copy.save}
+          {mode === "step" ? copy.saveAndContinue : copy.save}
         </ActionButton>
       </form>
       {status === "unavailable" && (
@@ -83,5 +101,20 @@ export function AccountNameForm({
         <ActionFeedback kind="success">{copy.accountNameSaved}</ActionFeedback>
       )}
     </section>
+  );
+  if (mode === "details") return panel;
+  return (
+    <>
+      <h1
+        id="account-name-step-title"
+        tabIndex={-1}
+        className="action-focus-target"
+        ref={stepTitle}
+      >
+        {copy.accountNameStepTitle}
+      </h1>
+      <p>{copy.accountNameIntro}</p>
+      {panel}
+    </>
   );
 }

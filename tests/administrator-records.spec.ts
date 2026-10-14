@@ -214,6 +214,9 @@ test.beforeAll(async ({}, testInfo) => {
     throw new Error("Fictional administrator provisioning failed", {
       cause: provision.error,
     });
+  harness.runSql(
+    `insert into public.account_names (user_id, first_name) values ('${administratorId}', 'Sara') on conflict (user_id) do update set first_name = excluded.first_name;`,
+  );
 });
 
 test("an administrator discovers accounts and approval records with authoritative counts and restricted documents in every locale", async ({

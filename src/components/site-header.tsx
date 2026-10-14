@@ -121,7 +121,9 @@ export function SiteHeader({
   const query = searchParams.toString();
   const pathLocale = pathname.split("/")[1];
   const locale = isLocale(pathLocale) ? pathLocale : initialLocale;
-  const landing = pathname === `/${locale}`;
+  const landing =
+    pathname === `/${locale}` &&
+    !(account.status === "authenticated" && account.name?.status === "missing");
   const accessPage = pathname === `/${locale}/access`;
   const administratorAccessPage =
     pathname === `/${locale}/administrator/access`;
