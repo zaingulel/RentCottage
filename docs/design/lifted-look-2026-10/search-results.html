@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock-up: search results</title>
+<style>
+@font-face{font-family:"Changa";font-style:normal;font-weight:500 800;font-display:swap;src:url("../../../public/fonts/changa-arabic.woff2") format("woff2");
+unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1}
+@font-face{font-family:"Changa";font-style:normal;font-weight:500 800;font-display:swap;src:url("../../../public/fonts/changa-latin-ext.woff2") format("woff2");
+unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"Changa";font-style:normal;font-weight:500 800;font-display:swap;src:url("../../../public/fonts/changa-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Karla";font-style:normal;font-weight:400 700;font-display:swap;src:url("../../../public/fonts/karla-latin-ext.woff2") format("woff2");
+unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"Karla";font-style:normal;font-weight:400 700;font-display:swap;src:url("../../../public/fonts/karla-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Almarai";font-style:normal;font-weight:400;font-display:swap;src:url("../../../public/fonts/almarai-400-arabic.woff2") format("woff2");
+unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1}
+@font-face{font-family:"Almarai";font-style:normal;font-weight:400;font-display:swap;src:url("../../../public/fonts/almarai-400-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Almarai";font-style:normal;font-weight:700;font-display:swap;src:url("../../../public/fonts/almarai-700-arabic.woff2") format("woff2");
+unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1}
+@font-face{font-family:"Almarai";font-style:normal;font-weight:700;font-display:swap;src:url("../../../public/fonts/almarai-700-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+:root{--bg:#f4eee2;--card:#fffcf5;--ink:#26241f;--muted:rgb(38 36 31/66%);--green:#22402f;--gold:#c68a45;--accent:#865b29;--line:rgb(34 64 47/12%);
+--lift:0 1px 2px rgb(38 36 31/6%),0 8px 24px -12px rgb(38 36 31/18%);--lift-hover:0 2px 4px rgb(38 36 31/8%),0 18px 36px -16px rgb(38 36 31/28%);}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Karla,Almarai,sans-serif;font-size:16px;line-height:1.5}
+a{color:inherit;text-decoration:none}
+.top{background:var(--card);border-bottom:1px solid var(--line)}
+.top-in,.wrap{width:min(1120px,calc(100% - 2rem));margin-inline:auto}
+.top-in{display:flex;align-items:center;justify-content:space-between;padding:.85rem 0}
+.brand{font-family:Changa,sans-serif;font-weight:800;font-size:1.35rem;color:var(--green);line-height:1}
+.brand small{display:block;font-family:Karla,Almarai,sans-serif;font-size:.62rem;letter-spacing:.14em;color:var(--accent);font-weight:700;margin-top:.25rem}
+.who{display:flex;align-items:center;gap:.6rem;font-weight:700;font-size:.9rem}
+.avatar{width:2.25rem;height:2.25rem;border-radius:50%;background:var(--green);color:#fff;display:grid;place-items:center;font-family:Changa,sans-serif}
+.head{display:flex;justify-content:space-between;align-items:end;gap:1rem;padding:2.5rem 0 1.5rem;flex-wrap:wrap}
+h1{font-family:Changa,sans-serif;font-weight:700;font-size:2.125rem;line-height:1.15;margin:0;color:var(--green)}
+.btn{display:inline-flex;align-items:center;gap:.5rem;background:var(--green);color:#fff;font-weight:700;border-radius:.5rem;padding:.7rem 1.1rem;font-size:.95rem;box-shadow:var(--lift)}
+.btn.ghost{background:transparent;color:var(--green);box-shadow:none;border:1.5px solid rgb(34 64 47/30%)}
+footer{height:4rem}
+.card-title{font-family:Changa,sans-serif;font-weight:700;font-size:1.25rem;line-height:1.25;margin:0;color:var(--ink)}
+.sr{position:absolute;inline-size:1px;block-size:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.back{display:inline-flex;align-items:center;min-block-size:2.75rem;font-weight:700;color:var(--green)}
+.summary{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 3rem;padding-block:1rem;border-block:1px solid var(--line)}
+.facts{margin:0;display:flex;flex-wrap:wrap;gap:.5rem 3rem}
+.facts>div{display:flex;align-items:baseline;gap:12px}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0;font-weight:700}
+.results{display:grid;gap:1.5rem;margin-block-start:1.5rem}
+.res{display:grid;grid-template-columns:18rem 1fr;background:var(--card);border-radius:.875rem;box-shadow:var(--lift);overflow:hidden}
+.res-ph{background:#e9dfcc center/cover}
+.rb{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto 1fr auto auto;grid-template-areas:"title price" "facts price" "days days" "foot foot";column-gap:2rem;padding:1.25rem 1.5rem}
+.rt{grid-area:title}
+.rf{grid-area:facts;margin-block-start:.35rem}
+.rf p{margin:0}
+.loc{color:var(--muted);font-size:.92rem}
+.cap>span{color:var(--muted)}
+.cap b{margin-inline-start:12px}
+.rp{grid-area:price;display:grid;justify-items:end;align-content:start;text-align:end;font-size:.85rem;color:var(--muted)}
+.rp b{font-family:Changa,sans-serif;font-weight:700;font-size:1.5rem;line-height:1.25;color:var(--green);white-space:nowrap}
+.rp p{margin:0;max-inline-size:18rem}
+.day{grid-area:days}
+.day h3{margin:1rem 0 .5rem;font-size:.9rem;font-weight:700;line-height:1.5}
+.opts{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,1fr)}
+.opts li{display:grid;grid-template-columns:1fr auto;column-gap:.75rem;row-gap:.1rem;align-content:start;padding-inline:1rem}
+.opts li:first-child{padding-inline-start:0}
+.opts li:last-child{padding-inline-end:0}
+.opts li+li{border-inline-start:1px solid var(--line)}
+.nm,.pr{font-weight:700}
+.pr{white-space:nowrap;text-align:end}
+.tm{color:var(--muted);font-size:.92rem}
+.av{display:inline-flex;align-items:center;gap:.4rem;justify-self:end;font-size:.85rem;color:var(--muted)}
+.av i{inline-size:.5rem;block-size:.5rem;border-radius:50%;background:#2f7d4f}
+.opts li.off{color:var(--muted)}
+.off .av i{background:rgb(38 36 31/35%)}
+.foot{grid-area:foot;display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-block-start:1rem;padding-block-start:1rem;border-block-start:1px solid var(--line)}
+.foot p{margin:0;max-inline-size:28rem;font-size:.85rem;color:var(--muted)}
+.paging{display:flex;justify-content:flex-end;margin-block-start:1.5rem}
+@media (max-width:47.5rem){
+ .res{grid-template-columns:1fr}.res-ph{aspect-ratio:16/10}
+ .opts{grid-template-columns:1fr}
+ .opts li,.opts li:first-child,.opts li:last-child{padding-inline:0;padding-block:.75rem}
+ .opts li:first-child{padding-block-start:0}.opts li:last-child{padding-block-end:0}
+ .opts li+li{border-inline-start:0;border-block-start:1px solid var(--line)}
+}
+@media (max-width:40rem){
+ h1{font-size:1.625rem}.head{padding:1.5rem 0 1rem}.who span{display:none}
+ .summary{flex-direction:column;align-items:flex-start;gap:.5rem}
+ .facts{flex-direction:column;gap:16px}
+ .facts>div{flex-direction:column;gap:0}
+ .rb{grid-template-columns:1fr;grid-template-rows:auto;grid-template-areas:"title" "facts" "price" "days" "foot"}
+ .rp{justify-items:start;text-align:start;margin-block-start:.75rem}
+ .foot{flex-direction:column;align-items:stretch}
+ .foot .btn,.paging .btn{justify-content:center}
+ .paging .btn{flex:1}
+}
+</style>
+</head>
+<body>
+<div class="top"><div class="top-in">
+  <div class="brand"><span data-t="brand">RentCottage</span><small data-t="tag">COUNTRYSIDE HOMES OF IRAQ</small></div>
+  <div class="who"><span data-t="name">Sara Ahmed</span><div class="avatar" data-t="ini">S</div></div>
+</div></div>
+<main class="wrap">
+  <div class="head"><div><a class="back" href="#" data-t="back">Change search</a><h1 data-t="h1">Available cottages</h1></div></div>
+  <section class="summary" aria-labelledby="sh">
+    <h2 class="card-title" id="sh" data-t="sh">Your search</h2>
+    <dl class="facts">
+      <div><dt data-t="sf">From Service Day</dt><dd data-t="sd">Fri, Oct 23</dd></div>
+      <div><dt data-t="st">To Service Day</dt><dd data-t="sd">Fri, Oct 23</dd></div>
+      <div><dt data-t="sg">Guests</dt><dd>6</dd></div>
+    </dl>
+  </section>
+  <div class="results">
+    <article class="res">
+      <div class="res-ph" style="background-image:url(../../../public/uploads/cottage-garden.png)"></div>
+      <div class="rb">
+        <div class="rt"><h2 class="card-title" data-t="c1">Garden House, Shaqlawa</h2></div>
+        <div class="rf"><p class="loc"><span data-t="loc">Approximate location:</span> <span data-t="l1">Shaqlawa, Erbil</span></p><p class="cap"><span data-t="cap">Capacity</span><b><bdi>8</bdi> <span data-t="gw">guests</span></b></p></div>
+        <div class="rp"><span data-t="from">From</span><b><bdi>IQD 180,000</bdi></b><p data-t="note">Lowest price for one available shift on your dates, excluding the Booking Service Fee.</p></div>
+        <div class="day"><h3 data-t="day">Oct 23</h3>
+          <ul class="opts">
+            <li><span class="nm" data-t="morning">Morning</span><b class="pr"><bdi>IQD 180,000</bdi></b><span class="tm"><bdi dir="ltr">09:00–15:00</bdi></span><span class="av"><i></i><span data-t="av">Available</span></span></li>
+            <li><span class="nm" data-t="evening">Evening</span><b class="pr"><bdi>IQD 190,000</bdi></b><span class="tm"><bdi dir="ltr">17:00–23:00</bdi></span><span class="av"><i></i><span data-t="av">Available</span></span></li>
+            <li><span class="nm" data-t="full">Full-day bundle</span><b class="pr"><bdi>IQD 250,000</bdi></b><span class="tm"><bdi dir="ltr">09:00–23:00</bdi></span><span class="av"><i></i><span data-t="av">Available</span></span></li>
+          </ul></div>
+        <div class="foot"><p data-t="prices">Prices are per option. The exact quote includes the Booking Service Fee.</p><a class="btn" href="#" data-t="view">View cottage</a></div>
+      </div>
+    </article>
+    <article class="res">
+      <div class="res-ph" style="background-image:url(../../../public/uploads/cottage-river.png)"></div>
+      <div class="rb">
+        <div class="rt"><h2 class="card-title" data-t="c2">Zab Riverside</h2></div>
+        <div class="rf"><p class="loc"><span data-t="loc">Approximate location:</span> <span data-t="l2">Koya, Erbil</span></p><p class="cap"><span data-t="cap">Capacity</span><b><bdi>6</bdi> <span data-t="gw">guests</span></b></p></div>
+        <div class="rp"><span data-t="from">From</span><b><bdi>IQD 140,000</bdi></b><p data-t="note">Lowest price for one available shift on your dates, excluding the Booking Service Fee.</p></div>
+        <div class="day"><h3 data-t="day">Oct 23</h3>
+          <ul class="opts">
+            <li><span class="nm" data-t="morning">Morning</span><b class="pr"><bdi>IQD 140,000</bdi></b><span class="tm"><bdi dir="ltr">09:00–15:00</bdi></span><span class="av"><i></i><span data-t="av">Available</span></span></li>
+            <li class="off"><span class="nm" data-t="evening">Evening</span><b class="pr"><bdi>IQD 150,000</bdi></b><span class="tm"><bdi dir="ltr">17:00–23:00</bdi></span><span class="av"><i></i><span data-t="un">Unavailable</span></span></li>
+            <li class="off"><span class="nm" data-t="full">Full-day bundle</span><b class="pr"><bdi>IQD 220,000</bdi></b><span class="tm"><bdi dir="ltr">09:00–23:00</bdi></span><span class="av"><i></i><span data-t="un">Unavailable</span></span></li>
+          </ul></div>
+        <div class="foot"><p data-t="prices">Prices are per option. The exact quote includes the Booking Service Fee.</p><a class="btn" href="#" data-t="view">View cottage</a></div>
+      </div>
+    </article>
+    <article class="res">
+      <div class="res-ph" style="background-image:url(../../../public/uploads/cottage-hills.png)"></div>
+      <div class="rb">
+        <div class="rt"><h2 class="card-title" data-t="c3">Dukan Hills</h2></div>
+        <div class="rf"><p class="loc"><span data-t="loc">Approximate location:</span> <span data-t="l3">Dukan, Sulaymaniyah</span></p><p class="cap"><span data-t="cap">Capacity</span><b><bdi>12</bdi> <span data-t="gw">guests</span></b></p></div>
+        <div class="rp"><span data-t="from">From</span><b><bdi>IQD 240,000</bdi></b><p data-t="note">Lowest price for one available shift on your dates, excluding the Booking Service Fee.</p></div>
+        <div class="day"><h3 data-t="day">Oct 23</h3>
+          <ul class="opts">
+            <li><span class="nm" data-t="morning">Morning</span><b class="pr"><bdi>IQD 240,000</bdi></b><span class="tm"><bdi dir="ltr">09:00–15:00</bdi></span><span class="av"><i></i><span data-t="av">Available</span></span></li>
+            <li><span class="nm" data-t="evening">Evening</span><b class="pr"><bdi>IQD 260,000</bdi></b><span class="tm"><bdi dir="ltr">17:00–23:00</bdi></span><span class="av"><i></i><span data-t="av">Available</span></span></li>
+            <li><span class="nm" data-t="full">Full-day bundle</span><b class="pr"><bdi>IQD 360,000</bdi></b><span class="tm"><bdi dir="ltr">09:00–23:00</bdi></span><span class="av"><i></i><span data-t="av">Available</span></span></li>
+          </ul></div>
+        <div class="foot"><p data-t="prices">Prices are per option. The exact quote includes the Booking Service Fee.</p><a class="btn" href="#" data-t="view">View cottage</a></div>
+      </div>
+    </article>
+  </div>
+  <span class="sr" id="pg" data-t="pg">Results pages</span>
+  <nav class="paging" aria-labelledby="pg"><a class="btn ghost" href="#" data-t="next">Next results</a></nav>
+</main>
+<footer></footer>
+<script>
+const ar={brand:"ريف كوتج",tag:"بيوت الريف العراقي",name:"سارة أحمد",ini:"س",back:"تعديل البحث",h1:"البيوت المتاحة",sh:"بحثك",sf:"من تاريخ",st:"إلى تاريخ",sd:"الجمعة، 23 تشرين الأول",sg:"عدد الضيوف",c1:"بيت الحديقة، شقلاوة",c2:"ضفاف الزاب",c3:"تلال دوكان",loc:"الموقع التقريبي:",l1:"شقلاوة, أربيل",l2:"كويسنجق, أربيل",l3:"دوكان, السليمانية",cap:"السعة",gw:"ضيوف",from:"ابتداءً من",note:"أقل سعر لمناوبة واحدة متاحة في تواريخك، دون احتساب رسوم خدمة الحجز.",day:"23 تشرين الأول",morning:"الفترة الصباحية",evening:"الفترة المسائية",full:"اليوم الكامل",av:"متاح",un:"غير متاح",prices:"الأسعار لكل خيار. يشمل عرض السعر الدقيق رسوم خدمة الحجز.",view:"اعرض البيت",pg:"صفحات النتائج",next:"النتائج التالية"};
+if(location.search.includes("ar")){document.documentElement.lang="ar";document.documentElement.dir="rtl";document.querySelectorAll("[data-t]").forEach(e=>{const v=ar[e.dataset.t];if(v)e.textContent=v})}
+</script>
+</body></html>
