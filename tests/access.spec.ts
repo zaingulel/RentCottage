@@ -565,6 +565,17 @@ async function tabTo(page: Page, target: Locator) {
   throw new Error("Keyboard focus did not reach the expected control");
 }
 
+// The discovery form keeps a typed date only once React has attached to it,
+// which can land just after the page loads; To's minimum follows From's state.
+async function fillFromServiceDay(page: Page, day: string) {
+  const from = page.getByLabel("From Service Day");
+  const to = page.getByLabel("To Service Day");
+  await expect(async () => {
+    await from.fill(day);
+    await expect(to).toHaveAttribute("min", day, { timeout: 1_000 });
+  }).toPass();
+}
+
 async function expectCottageProfileSectionTitlesAligned(
   page: Page,
   sectionNames: readonly string[],
@@ -3133,7 +3144,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   ]);
 
   await page.goto("/en");
-  await page.getByLabel("From Service Day").fill(firstDay);
+  await fillFromServiceDay(page, firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
   await page.getByLabel("Guests", { exact: true }).fill("4");
   const optionalFilters = page
@@ -3247,7 +3258,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   }
 
   await page.goto("/en");
-  await page.getByLabel("From Service Day").fill(firstDay);
+  await fillFromServiceDay(page, firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
   await page
     .getByLabel("Approximate area (optional)")
@@ -3301,7 +3312,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(page).toHaveURL(partialResultsUrl.href);
 
   await page.goto("/en");
-  await page.getByLabel("From Service Day").fill(firstDay);
+  await fillFromServiceDay(page, firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
   await page
     .locator("summary")
@@ -3449,11 +3460,6 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await page.getByRole("button", { name: "کۆدی پشتڕاستکردنەوە بنێرە" }).click();
   await page.getByLabel("کۆدی پشتڕاستکردنەوە").fill("123456");
   await page.getByRole("button", { name: "پشتڕاست بکەرەوە" }).click();
-  await expect(page).toHaveURL(
-    (url) =>
-      url.pathname === `/ckb/request/${requestSlug}` &&
-      url.search === englishRequest.search,
-  );
   const soraniStep = accessMessages.ckb;
   await expect(
     page.getByRole("heading", { name: soraniStep.accountNameStepTitle }),
@@ -3463,6 +3469,12 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(
     page.getByRole("heading", { name: "داواکاری حجز بنێرە" }),
   ).toBeVisible();
+  // The sign-in page's redirect waits while the name step hides it.
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === `/ckb/request/${requestSlug}` &&
+      url.search === englishRequest.search,
+  );
   await expect(
     page.locator("#site-header-account-button .account-avatar"),
   ).toHaveText("ڕ");
@@ -3531,7 +3543,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expectPrivateValuesAbsent();
 
   await page.goto("/en");
-  await page.getByLabel("From Service Day").fill(firstDay);
+  await fillFromServiceDay(page, firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
   await page
     .locator("summary")
