@@ -104,7 +104,7 @@ export function CottageProfileOverview({
                 {cover ? (
                   <Image
                     src={`/api/cottage-profile-photos/${cover.id}`}
-                    alt={copy.coverPhotoAlt.replace("{name}", name)}
+                    alt={copy.coverPhotoAlt.replace("{name}", () => name)}
                     fill
                     sizes="(min-width: 40rem) 22rem, 100vw"
                   />

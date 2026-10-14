@@ -186,11 +186,13 @@ describe("Cottage Profile overview", () => {
   );
 
   it.each([
-    ["ar", "صورة غلاف Application Cottage"],
-    ["ckb", "وێنەی بەرگی Application Cottage"],
+    ["Application Cottage", "ar", "صورة غلاف Application Cottage"],
+    ["Application Cottage", "ckb", "وێنەی بەرگی Application Cottage"],
+    ["Cottage $& $$", "ar", "صورة غلاف Cottage $& $$"],
+    ["Cottage $& $$", "ckb", "وێنەی بەرگی Cottage $& $$"],
   ] as const)(
-    "names the cottage in the cover photo alternative in %s",
-    (locale, alternative) => {
+    "names the cottage %s in the cover photo alternative in %s",
+    (name, locale, alternative) => {
       render(
         <CottageProfileOverview
           locale={locale}
@@ -198,6 +200,7 @@ describe("Cottage Profile overview", () => {
           profiles={[
             {
               ...profile,
+              name,
               photos: [
                 {
                   id: "90000000-0000-4000-8000-000000000002",
