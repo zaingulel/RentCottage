@@ -1048,3 +1048,75 @@ test("the site header stays on one line inside 320 and 390 pixel screens for eve
     }
   }
 });
+
+test("the landing header shades its controls and tagline over the photo in every language", async ({
+  page,
+}, testInfo) => {
+  for (const locale of ["en", "ar", "ckb"]) {
+    const label = `${locale} ${testInfo.project.name}`;
+    await page.goto(`/${locale}`);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.locator(".site-header-language-toggle").first().waitFor();
+    const header = page.locator("header.site-header");
+    await expect(header, label).toHaveClass(/site-header-landing/);
+    await expect(header, label).not.toHaveClass(/site-header-solid/);
+
+    const measure = () =>
+      page.evaluate(() => {
+        const resolve = (property: string, token: string) => {
+          const probe = document.createElement("div");
+          probe.style.setProperty(property, `var(${token})`);
+          document.body.appendChild(probe);
+          const value = getComputedStyle(probe).getPropertyValue(property);
+          probe.remove();
+          return value;
+        };
+        const shadeMid = resolve("background-color", "--shade-mid");
+        const shadeMenu = resolve("background-color", "--shade-menu");
+        const inkOnDark = resolve("color", "--ink-on-dark");
+        const backgroundImage = getComputedStyle(
+          document.querySelector("header.site-header")!,
+        ).backgroundImage;
+        const controls = [
+          ...document.querySelectorAll(
+            ".site-header-language-toggle, .account-navigation > a, .site-header-toggle",
+          ),
+        ].filter((element) => {
+          const box = element.getBoundingClientRect();
+          return (
+            box.width > 0 &&
+            box.height > 0 &&
+            getComputedStyle(element).visibility === "visible"
+          );
+        });
+        return {
+          band:
+            backgroundImage.includes("linear-gradient") &&
+            backgroundImage.includes(shadeMid),
+          unfilled: controls
+            .filter(
+              (element) =>
+                getComputedStyle(element).backgroundColor !== shadeMenu,
+            )
+            .map(
+              (element) =>
+                element.getAttribute("aria-label") ??
+                element.textContent?.trim() ??
+                element.className,
+            ),
+          filledCount: controls.length,
+          taglineColour:
+            getComputedStyle(document.querySelector(".site-brand span")!)
+              .color === inkOnDark,
+        };
+      });
+
+    await expect
+      .poll(async () => (await measure()).band, { message: `${label} band` })
+      .toBe(true);
+    const { unfilled, filledCount, taglineColour } = await measure();
+    expect(unfilled, `${label} unfilled controls`).toEqual([]);
+    expect(filledCount, `${label} filled controls`).toBeGreaterThanOrEqual(2);
+    expect(taglineColour, `${label} tagline colour`).toBe(true);
+  }
+});
