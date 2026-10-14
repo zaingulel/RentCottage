@@ -12,6 +12,7 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import * as OTPAuth from "otpauth";
 import { createClient } from "@supabase/supabase-js";
+import { openHeaderPanel } from "./fixtures/site-header";
 
 type AccessBrowserFixture = {
   bookingCottageName: string;
@@ -878,6 +879,7 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     });
     const siteHeader = page.getByRole("banner");
     await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+    await openHeaderPanel(page, "language");
     for (const language of ["العربية", "کوردی", "English"]) {
       await expectScene(siteHeader.getByRole("link", { name: language }));
     }

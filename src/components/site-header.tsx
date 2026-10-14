@@ -44,6 +44,21 @@ const condenseAfterScroll = 140;
 
 type HeaderPanel = "language" | "menu";
 
+function Icon({ children }: { children: ReactNode }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
+      {children}
+    </svg>
+  );
+}
+
 function PanelToggle({
   label,
   controls,
@@ -66,16 +81,7 @@ function PanelToggle({
       aria-controls={controls}
       onClick={onToggle}
     >
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      >
-        {children}
-      </svg>
+      <Icon>{children}</Icon>
     </button>
   );
 }
@@ -165,33 +171,42 @@ export function SiteHeader({
           <span>{messages[locale].tagline}</span>
         </Link>
         <div className="site-header-controls">
-          <PanelToggle
-            label={messages[locale].languageLabel}
-            controls="site-header-language"
-            open={openPanel === "language"}
-            onToggle={() => toggle("language")}
-          >
-            <circle cx="12" cy="12" r="9" />
-            <ellipse cx="12" cy="12" rx="4" ry="9" />
-            <path d="M3 12h18" />
-          </PanelToggle>
-          <LocaleLinks
-            id="site-header-language"
-            locale={locale}
-            hrefFor={(target) =>
-              accessPage
-                ? accessLanguageHref(locale, target, returnToParameter)
-                : administratorAccessPage
-                  ? administratorAccessLanguageHref(
-                      locale,
-                      target,
-                      returnToParameter,
-                    )
-                  : isLocale(pathLocale)
-                    ? `/${target}${pathname.slice(locale.length + 1)}${query ? `?${query}` : ""}`
-                    : `/${target}`
-            }
-          />
+          <div className="site-header-language">
+            <button
+              type="button"
+              className="site-header-language-toggle"
+              aria-expanded={openPanel === "language"}
+              aria-controls="site-header-language"
+              onClick={() => toggle("language")}
+            >
+              <Icon>
+                <circle cx="12" cy="12" r="9" />
+                <ellipse cx="12" cy="12" rx="4" ry="9" />
+                <path d="M3 12h18" />
+              </Icon>
+              <span className="visually-hidden">
+                {messages[locale].languageLabel}
+              </span>{" "}
+              <span>{messages[locale].languageName}</span>
+            </button>
+            <LocaleLinks
+              id="site-header-language"
+              locale={locale}
+              hrefFor={(target) =>
+                accessPage
+                  ? accessLanguageHref(locale, target, returnToParameter)
+                  : administratorAccessPage
+                    ? administratorAccessLanguageHref(
+                        locale,
+                        target,
+                        returnToParameter,
+                      )
+                    : isLocale(pathLocale)
+                      ? `/${target}${pathname.slice(locale.length + 1)}${query ? `?${query}` : ""}`
+                      : `/${target}`
+              }
+            />
+          </div>
           <span className="site-header-rule" aria-hidden="true" />
           <PanelToggle
             label={copy.menu}

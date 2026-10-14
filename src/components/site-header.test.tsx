@@ -259,16 +259,37 @@ describe("shared site header", () => {
     expect(menu).not.toContainElement(support);
   });
   it.each([
-    ["en", "Language", "Menu", "Account and support"],
-    ["ar", "اللغة", "القائمة", "الحساب والدعم"],
-    ["ckb", "زمان", "پێڕست", "هەژمار و پشتیوانی"],
+    ["en", "Language English"],
+    ["ar", "اللغة العربية"],
+    ["ckb", "زمان کوردی"],
+  ] as const)(
+    "shows the current language in its own name for %s",
+    (locale, name) => {
+      location.pathname = `/${locale}/results`;
+      render(<SiteHeader locale={locale} account={{ status: "signed_out" }} />);
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveAttribute("aria-expanded", "false");
+      expect(button).not.toHaveAttribute("aria-label");
+      fireEvent.click(button);
+      expect(button).toHaveAttribute("aria-expanded", "true");
+      expect(
+        screen
+          .getByRole("navigation", { name: name.split(" ")[0] })
+          .querySelectorAll("a"),
+      ).toHaveLength(3);
+    },
+  );
+  it.each([
+    ["en", "Language English", "Menu", "Account and support"],
+    ["ar", "اللغة العربية", "القائمة", "الحساب والدعم"],
+    ["ckb", "زمان کوردی", "پێڕست", "هەژمار و پشتیوانی"],
   ] as const)(
     "names the %s phone header buttons and ties each to its panel",
     (locale, language, menu, account) => {
       location.pathname = `/${locale}`;
       render(<SiteHeader locale={locale} account={{ status: "signed_out" }} />);
       for (const [name, panel] of [
-        [language, language],
+        [language, language.split(" ")[0]!],
         [menu, account],
       ]) {
         const button = screen.getByRole("button", { name });
@@ -281,7 +302,7 @@ describe("shared site header", () => {
   );
   it("opens one header panel at a time", () => {
     render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
-    const language = screen.getByRole("button", { name: "Language" });
+    const language = screen.getByRole("button", { name: "Language English" });
     const menu = screen.getByRole("button", { name: "Menu" });
     fireEvent.click(language);
     expect(language).toHaveAttribute("aria-expanded", "true");
