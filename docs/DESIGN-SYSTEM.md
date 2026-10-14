@@ -328,7 +328,8 @@ Anything else is a token.
   toggle pattern. Actual profile options use one native
   `fieldset`/`legend` per Service Day with `.booking-period-options` and regular `ActionButton` toggles;
   `aria-pressed` exposes the selection. Inside `.booking-summary`, the date fieldsets have no border or
-  padding, with `--space-5` between days; their legends, disabled state and error semantics remain. The profile's
+  padding, with `--space-5` between days and `--space-3` after each legend; their legends, disabled state and
+  error semantics remain. The profile's
   `.booking-period-list` holds full-width outlined toggle rows with `--space-3` block padding, `--space-4` inline
   padding and line height `1.5`: name over time at the inline start, price at the inline end, with the name, time
   and price inside the same control. `aria-labelledby` retains the existing name-only accessible name; `aria-describedby` associates

@@ -1474,6 +1474,21 @@ test("lifted public cottage keeps its hero separate and every booking option rea
                   .getBoundingClientRect().top -
                   controls[0].getBoundingClientRect().top >=
                   12,
+              headingGap: [
+                ...booking.querySelectorAll(".booking-period-options"),
+              ].every((fieldset) => {
+                const legend = fieldset.querySelector(":scope > legend")!;
+                const firstOption = fieldset.querySelector(
+                  ".booking-period-list .action-toggle",
+                )!;
+                return (
+                  Math.abs(
+                    firstOption.getBoundingClientRect().top -
+                      legend.getBoundingClientRect().bottom -
+                      12,
+                  ) < 1
+                );
+              }),
               unboxedDays: [...booking.querySelectorAll("fieldset")].every(
                 (fieldset) => {
                   const style = getComputedStyle(fieldset);
@@ -1539,6 +1554,7 @@ test("lifted public cottage keeps its hero separate and every booking option rea
         noReservedGallery: true,
         leftColumnRhythm: true,
         bookingRowPadding: true,
+        headingGap: true,
         unboxedDays: true,
         bookingAlignment: true,
         thumbnails: true,

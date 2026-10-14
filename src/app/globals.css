@@ -1723,6 +1723,10 @@ html[lang="ckb"] .booking-summary h2 {
   border: 0;
 }
 
+.booking-summary .booking-period-options > legend {
+  margin-block-end: var(--space-3);
+}
+
 .booking-period-options > legend,
 .result-service-day h3 {
   color: var(--green);
