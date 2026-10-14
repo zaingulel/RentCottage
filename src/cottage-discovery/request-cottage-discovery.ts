@@ -3,7 +3,11 @@ import "server-only";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import type { Locale } from "@/i18n/routing";
 
-import type { CottageDiscoveryQuery } from "./discovery-query";
+import {
+  marketplaceToday,
+  ownerCardFromPriceWindow,
+  type CottageDiscoveryQuery,
+} from "./discovery-query";
 import { SupabaseCottageDiscovery } from "./supabase-cottage-discovery";
 
 async function requestDiscovery() {
@@ -32,4 +36,11 @@ export async function loadPublicCottageProfile(
   query: CottageDiscoveryQuery,
 ) {
   return (await requestDiscovery()).profile(locale, slug, query);
+}
+
+export async function loadOwnerCottageFromPrices(profileIds: string[]) {
+  return (await requestDiscovery()).ownerFromPrices(
+    profileIds,
+    ownerCardFromPriceWindow(marketplaceToday()),
+  );
 }

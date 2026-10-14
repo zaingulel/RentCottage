@@ -3,6 +3,7 @@ import { accountAccessHref } from "@/access/return-destination";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
 import { notFound, redirect, unstable_rethrow } from "next/navigation";
 
+import { loadOwnerCottageFromPrices } from "@/cottage-discovery/request-cottage-discovery";
 import { loadOwnerCottageAccess } from "@/cottage-profile/request-owner-cottage-access";
 import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime";
 import { waitingBookingRequestCount } from "@/booking-request/booking-request-display";
@@ -15,14 +16,22 @@ import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { isLocale } from "@/i18n/routing";
 
 async function loadOwnerCottages() {
-  return loadOwnerCottageAccess(async (cottageProfile, approvalState) => ({
-    profiles: await cottageProfile.listOwner(),
-    canCreate: approvalState === "approved",
-    notifications:
-      approvalState === "approved" && bookingRequestTestRuntimeIsEnabled()
-        ? await loadOwnerBookingRequestNotifications()
-        : undefined,
-  }));
+  return loadOwnerCottageAccess(async (cottageProfile, approvalState) => {
+    const profiles = await cottageProfile.listOwner();
+    return {
+      profiles,
+      fromPrices: await loadOwnerCottageFromPrices(
+        profiles
+          .filter((profile) => profile.currentPublicationId !== null)
+          .map((profile) => profile.id),
+      ),
+      canCreate: approvalState === "approved",
+      notifications:
+        approvalState === "approved" && bookingRequestTestRuntimeIsEnabled()
+          ? await loadOwnerBookingRequestNotifications()
+          : undefined,
+    };
+  });
 }
 
 export default async function OwnerCottagesPage({
@@ -101,6 +110,7 @@ export default async function OwnerCottagesPage({
         locale={locale}
         actor="owner"
         profiles={page.value.profiles}
+        fromPrices={page.value.fromPrices}
         canCreate={page.value.canCreate}
       />
       <OwnerBookingRequestNotifications

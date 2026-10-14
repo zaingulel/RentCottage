@@ -45,6 +45,7 @@ const acceptedKeys = new Set([
 ]);
 const maximumDefensiveServiceDays = 31;
 const maximumDefensiveSelections = maximumDefensiveServiceDays * 3;
+export const ownerCardFromPriceServiceDays = 31;
 
 function scalar(value: string | string[] | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
@@ -73,6 +74,27 @@ function nextServiceDay(value: string): string {
   const date = new Date(`${value}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + 1);
   return date.toISOString().slice(0, 10);
+}
+
+export function marketplaceToday(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Baghdad",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
+export function ownerCardFromPriceWindow(today: string): {
+  from: string;
+  to: string;
+} {
+  const last = new Date(`${today}T00:00:00Z`);
+  last.setUTCDate(last.getUTCDate() + ownerCardFromPriceServiceDays - 1);
+  return { from: today, to: last.toISOString().slice(0, 10) };
 }
 
 function parseSelection(value: string): CottageDiscoverySelection | undefined {

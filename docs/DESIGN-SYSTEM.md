@@ -331,8 +331,8 @@ its own; the block it sits in sets the space around it.
   the record's heading, in `--display` at weight 700 in `--ink` at `--font-size-4`, with line height `1.25` and
   `1.4` in Sorani; `card-detail` for the line that places or describes the record, in `--muted` at
   `--font-size-2`; and `card-small-print` for counts and other secondary facts, in `--muted` at `--font-size-1`.
-  The cottage list card, `.cottage-profile-card`, uses the pattern and adds the Cottage card rules below. A panel, notice, list row or empty state is not
-  a card and keeps its `1px` `--line` border.
+  The cottage list card, `.cottage-profile-card`, uses the pattern and adds the Cottage card rules below. A
+  panel, notice, list row or empty state is not a card and keeps its `1px` `--line` border.
 - Cottage card: a cottage list card has five rows held in a subgrid so cards in a row align: cover, title, detail,
   small print, actions. The cover runs edge to edge at `16 / 10`, cropped with `object-fit: cover`, on
   `--surface-placeholder` while it loads, and shows the first ready photo in the photo editor's order with a
@@ -340,7 +340,8 @@ its own; the block it sits in sets the space around it.
   inline start, `--space-3` in, on `--layer-raised`. A cottage with no ready photo shows the 'No photos yet'
   panel: `135deg` bands of `--surface-no-photo` and `--surface-no-photo-band`, each `--space-3` wide, with the
   label centred in bold `--ink-accent` at `--font-size-2`. The actions row puts the open action at the inline
-  start.
+  start. The owner's card shows the From Price at the inline end of the actions row in `--muted` at
+  `--font-size-2`, formatted like every other amount, and shows nothing where there is no price.
 - Status badge: `span.status-badge` is the compact status of one item in a list row or card. Its text is the
   translated status label, so the status never depends on colour. It is a pill on `--status-neutral-bg` with bold
   `--ink` text at `--font-size-1`. A badge may add one tone class, which draws a `0.5rem` dot before the label,

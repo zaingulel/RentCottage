@@ -8,7 +8,9 @@ import {
   createCottageProfileDraftAction,
   type CottageProfileActionState,
 } from "@/cottage-profile/actions";
+import type { OwnerCottageFromPricesResult } from "@/cottage-discovery/supabase-cottage-discovery";
 import type { CottageProfile } from "@/cottage-profile/cottage-profile";
+import { formatIqd } from "@/i18n/format";
 import {
   cottageProfileMessages,
   cottageProfileStatusLabel,
@@ -30,12 +32,14 @@ export function CottageProfileOverview({
   profiles,
   canCreate = false,
   continuationHref,
+  fromPrices,
 }: {
   locale: Locale;
   actor: "owner" | "administrator";
   profiles: CottageProfile[];
   canCreate?: boolean;
   continuationHref?: string;
+  fromPrices?: OwnerCottageFromPricesResult;
 }) {
   const copy = cottageProfileMessages[locale];
   const [createState, createAction] = useActionState(
@@ -67,6 +71,17 @@ export function CottageProfileOverview({
         {profiles.map((profile) => {
           const name = profile.name || copy.editorTitle;
           const cover = profile.photos.find((photo) => photo.state === "ready");
+          const price =
+            fromPrices?.status === "loaded"
+              ? fromPrices.fromPrices[profile.id]
+              : undefined;
+          const priceText =
+            price !== undefined
+              ? copy.fromPrice.replace("{price}", formatIqd(price, locale))
+              : fromPrices?.status === "unavailable" &&
+                  profile.currentPublicationId !== null
+                ? copy.fromPriceUnavailable
+                : undefined;
           return (
             <article className="card cottage-profile-card" key={profile.id}>
               <div
@@ -119,6 +134,9 @@ export function CottageProfileOverview({
                 >
                   {copy.open}
                 </ActionLink>
+                {priceText ? (
+                  <p className="cottage-profile-card-price">{priceText}</p>
+                ) : null}
               </div>
             </article>
           );

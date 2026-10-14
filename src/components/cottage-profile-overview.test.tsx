@@ -7,6 +7,7 @@ vi.mock("@/cottage-profile/actions", () => ({
 
 import type { CottageProfile } from "@/cottage-profile/cottage-profile";
 import { createCottageProfileDraftAction } from "@/cottage-profile/actions";
+import { formatIqd } from "@/i18n/format";
 import { CottageProfileOverview } from "./cottage-profile-overview";
 
 const profile = {
@@ -215,6 +216,88 @@ describe("Cottage Profile overview", () => {
       expect(screen.getByRole("img", { name: alternative })).toBeVisible();
     },
   );
+
+  it.each([
+    ["en", "From "],
+    ["ar", "ابتداءً من "],
+    ["ckb", "دەستپێک لە "],
+  ] as const)(
+    "shows the translated From Price formatted as IQD on a published profile in %s",
+    (locale, prefix) => {
+      render(
+        <CottageProfileOverview
+          locale={locale}
+          actor="owner"
+          profiles={[{ ...profile, ...published }]}
+          fromPrices={{
+            status: "loaded",
+            fromPrices: { [profile.id]: 180000 },
+          }}
+        />,
+      );
+
+      expect(
+        screen.getByText(`${prefix}${formatIqd(180000, locale)}`),
+      ).toHaveClass("cottage-profile-card-price");
+    },
+  );
+
+  it("shows no price, and no zero, where a loaded read has no price for the profile", () => {
+    const { container } = render(
+      <CottageProfileOverview
+        locale="en"
+        actor="owner"
+        profiles={[{ ...profile, ...published }]}
+        fromPrices={{ status: "loaded", fromPrices: {} }}
+      />,
+    );
+
+    expect(container.querySelector(".cottage-profile-card-price")).toBeNull();
+    expect(screen.queryByText(/IQD/)).toBeNull();
+  });
+
+  it.each([
+    ["en", "Price unavailable"],
+    ["ar", "السعر غير متاح"],
+    ["ckb", "نرخ بەردەست نییە"],
+  ] as const)(
+    "says the price is unavailable on a published profile but not a draft when the read failed in %s",
+    (locale, label) => {
+      const publishedView = render(
+        <CottageProfileOverview
+          locale={locale}
+          actor="owner"
+          profiles={[{ ...profile, ...published }]}
+          fromPrices={{ status: "unavailable" }}
+        />,
+      );
+      expect(screen.getByText(label)).toHaveClass("cottage-profile-card-price");
+      publishedView.unmount();
+
+      const { container } = render(
+        <CottageProfileOverview
+          locale={locale}
+          actor="owner"
+          profiles={[profile]}
+          fromPrices={{ status: "unavailable" }}
+        />,
+      );
+      expect(screen.queryByText(label)).toBeNull();
+      expect(container.querySelector(".cottage-profile-card-price")).toBeNull();
+    },
+  );
+
+  it("shows no price element when the list carries no price read", () => {
+    const { container } = render(
+      <CottageProfileOverview
+        locale="en"
+        actor="administrator"
+        profiles={[{ ...profile, ...published }]}
+      />,
+    );
+
+    expect(container.querySelector(".cottage-profile-card-price")).toBeNull();
+  });
 
   it("announces localized feedback when draft creation is denied", async () => {
     vi.mocked(createCottageProfileDraftAction).mockResolvedValue({

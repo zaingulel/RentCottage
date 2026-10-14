@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   hasCompleteCottageBookingSelection,
+  marketplaceToday,
+  ownerCardFromPriceWindow,
   parseCottageDiscoveryQuery,
   parseCottageResultsQuery,
   preserveRawCottageDiscoveryQuery,
@@ -259,5 +261,21 @@ describe("Cottage discovery query", () => {
         status: "invalid",
       });
     }
+  });
+
+  it("takes the marketplace day in Baghdad time, three hours ahead of UTC", () => {
+    expect(marketplaceToday(new Date("2026-10-14T20:59:00Z"))).toBe(
+      "2026-10-14",
+    );
+    expect(marketplaceToday(new Date("2026-10-14T21:30:00Z"))).toBe(
+      "2026-10-15",
+    );
+  });
+
+  it("spans the owner card price window from today across the next 30 days", () => {
+    expect(ownerCardFromPriceWindow("2026-10-14")).toEqual({
+      from: "2026-10-14",
+      to: "2026-11-13",
+    });
   });
 });

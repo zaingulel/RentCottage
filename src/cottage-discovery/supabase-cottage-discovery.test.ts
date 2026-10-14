@@ -579,4 +579,108 @@ describe("Supabase Cottage discovery", () => {
       }),
     });
   });
+
+  describe("owner From Prices", () => {
+    const window = { from: "2026-08-21", to: "2026-08-21" };
+    const profileId = "30000000-0000-4000-8000-000000000746";
+    const otherProfileId = "30000000-0000-4000-8000-000000000747";
+    const unit = (
+      kind: "shift" | "full-day",
+      position: number | undefined,
+      priceIqd: number | null,
+      available: boolean,
+    ) => ({
+      serviceDay: window.from,
+      kind,
+      ...(position === undefined ? {} : { position }),
+      name: kind === "shift" ? `Shift ${position}` : "Full-day bundle",
+      startTime: "08:00",
+      endTime: "23:00",
+      priceIqd,
+      available,
+    });
+    const pricedInventory = [
+      unit("shift", 1, 60000, true),
+      unit("shift", 2, 80000, false),
+      unit("full-day", undefined, 200000, false),
+    ];
+    const closedInventory = [
+      unit("shift", 1, null, false),
+      unit("shift", 2, null, false),
+      unit("full-day", undefined, null, false),
+    ];
+
+    it("maps each cottage to its lowest available shift price in chunks of 100", async () => {
+      const client = clientReturning([
+        { profile_id: profileId, inventory: pricedInventory },
+        { profile_id: otherProfileId, inventory: closedInventory },
+      ]);
+
+      await expect(
+        new SupabaseCottageDiscovery(client).ownerFromPrices(
+          [profileId, otherProfileId],
+          window,
+        ),
+      ).resolves.toEqual({
+        status: "loaded",
+        fromPrices: { [profileId]: 60000 },
+      });
+      expect(client.rpc).toHaveBeenCalledOnce();
+      expect(client.rpc).toHaveBeenCalledWith(
+        "list_owner_cottage_public_inventory",
+        {
+          target_profile_ids: [profileId, otherProfileId],
+          target_from: "2026-08-21",
+          target_to: "2026-08-21",
+        },
+      );
+
+      const ids = Array.from(
+        { length: 101 },
+        (_, index) =>
+          `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      );
+      const chunked = clientReturning([]);
+      await expect(
+        new SupabaseCottageDiscovery(chunked).ownerFromPrices(ids, window),
+      ).resolves.toEqual({ status: "loaded", fromPrices: {} });
+      expect(
+        vi
+          .mocked(chunked.rpc)
+          .mock.calls.map(([, args]) => args.target_profile_ids.length),
+      ).toEqual([100, 1]);
+
+      const empty = clientReturning([]);
+      await expect(
+        new SupabaseCottageDiscovery(empty).ownerFromPrices([], window),
+      ).resolves.toEqual({ status: "loaded", fromPrices: {} });
+      expect(empty.rpc).not.toHaveBeenCalled();
+    });
+
+    it("treats a provider error or a hostile row as unavailable", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const row = { profile_id: profileId, inventory: pricedInventory };
+      const otherDay = pricedInventory.map((item) => ({
+        ...item,
+        serviceDay: "2026-08-22",
+      }));
+      const cases: [unknown, unknown][] = [
+        [null, { message: "boom" }],
+        [{ rows: [row] }, null],
+        [[{ ...row, profile_id: otherProfileId }], null],
+        [[row, row], null],
+        [[{ ...row, extra: true }], null],
+        [[{ profile_id: profileId }], null],
+        [[{ ...row, inventory: otherDay }], null],
+      ];
+
+      for (const [data, error] of cases) {
+        await expect(
+          new SupabaseCottageDiscovery(
+            clientReturning(data, error),
+          ).ownerFromPrices([profileId], window),
+        ).resolves.toEqual({ status: "unavailable" });
+      }
+    });
+  });
 });

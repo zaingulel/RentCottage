@@ -554,7 +554,12 @@ test("cottage list cards start their title and open button at the same height wh
 }, testInfo) => {
   await mountBookingRequestDisplay(page, testInfo);
   await page.evaluate((photo) => {
-    const card = (pills: string[], hasPhoto: boolean, location: string) =>
+    const card = (
+      pills: string[],
+      hasPhoto: boolean,
+      location: string,
+      price: string,
+    ) =>
       '<article class="card cottage-profile-card">' +
       `<div class="cottage-profile-card-cover${hasPhoto ? "" : " cottage-profile-card-cover-empty"}">` +
       `<div class="cottage-profile-card-badges">${pills.map((pill) => `<span class="status-badge">${pill}</span>`).join("")}</div>` +
@@ -562,11 +567,12 @@ test("cottage list cards start their title and open button at the same height wh
       '<h2 class="card-title">Cottage</h2>' +
       `<p class="card-detail">${location}</p>` +
       '<p class="card-small-print">0/12 photos</p>' +
-      '<div class="cottage-profile-card-actions"><a class="action-link action-primary action-content" href="/">Open Cottage Profile</a></div>' +
+      '<div class="cottage-profile-card-actions"><a class="action-link action-primary action-content" href="/">Open Cottage Profile</a>' +
+      `${price}</div>` +
       "</article>";
     document.body.insertAdjacentHTML(
       "beforeend",
-      '<main class="results-page page"><section class="cottage-profile-overview"><div class="cottage-profile-card-grid">' +
+      '<main class="results-page page"><section class="cottage-profile-overview"><div class="cottage-profile-card-grid" style="max-width: 46rem">' +
         card(
           [
             "Published; update awaiting approval",
@@ -574,11 +580,13 @@ test("cottage list cards start their title and open button at the same height wh
           ],
           true,
           "Erbil",
+          '<p class="cottage-profile-card-price">From IQD 180,000</p>',
         ) +
         card(
           ["Draft"],
           false,
           "Erbil · Near Shaqlawa, beside the old road to the mountain village and the spring above the orchard",
+          "",
         ) +
         "</div></section></main>",
     );
@@ -599,6 +607,8 @@ test("cottage list cards start their title and open button at the same height wh
       return {
         titles: rects(".cottage-profile-card h2").map((rect) => rect.top),
         links: rects(".cottage-profile-card a").map((rect) => rect.top),
+        linkBottom: rects(".cottage-profile-card a")[0].bottom,
+        priceTop: rects(".cottage-profile-card-price")[0].top,
         coverBottoms: covers.map((rect) => rect.bottom),
         pillsFromLeft: firstPills.map(
           (rect, index) => rect.left - covers[index].left,
@@ -616,6 +626,7 @@ test("cottage list cards start their title and open button at the same height wh
     if (testInfo.project.name === "desktop") {
       expect(measured.titles[0]).toBe(measured.titles[1]);
       expect(measured.links[0]).toBe(measured.links[1]);
+      expect(measured.priceTop).toBeGreaterThanOrEqual(measured.linkBottom);
       expect(measured.coverBottoms[0]).toBe(measured.coverBottoms[1]);
     }
     const inlineStart =

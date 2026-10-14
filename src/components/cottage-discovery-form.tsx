@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import {
+  marketplaceToday,
   parseCottageDiscoveryQuery,
   serializeCottageDiscoveryQuery,
   type CottageDiscoverySelection,
@@ -90,18 +91,6 @@ const copy = {
     unavailable: "Search choices could not be loaded right now.",
   },
 } as const;
-
-function baghdadToday() {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Baghdad",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-  const value = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value ?? "";
-  return `${value("year")}-${value("month")}-${value("day")}`;
-}
 
 function serviceDays(from: string, to: string) {
   if (
@@ -210,7 +199,7 @@ export function CottageDiscoveryForm({
             kind="input"
             type="date"
             required
-            min={baghdadToday()}
+            min={marketplaceToday()}
             value={from}
             onChange={(event) => setFrom(event.target.value)}
           />
