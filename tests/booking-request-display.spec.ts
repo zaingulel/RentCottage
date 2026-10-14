@@ -662,9 +662,9 @@ test("cottage list cards start their title and open button at the same height wh
   if (testInfo.project.name === "desktop") {
     expect(lone.cardWidths[0]).toBeLessThan(lone.gridWidth / 2);
   } else {
-    expect(
-      Math.abs(lone.cardWidths[0] - lone.gridWidth),
-    ).toBeLessThanOrEqual(1);
+    expect(Math.abs(lone.cardWidths[0] - lone.gridWidth)).toBeLessThanOrEqual(
+      1,
+    );
   }
 });
 
