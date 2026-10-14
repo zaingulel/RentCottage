@@ -255,7 +255,7 @@ export function OwnerApplicationReviewStatus({
                 value={kind}
               />
             ))}
-            <ActionButton kind="primary" width="content" type="submit">
+            <ActionButton kind="primary" type="submit">
               {copy.respond}
             </ActionButton>
             <ResponseFeedback state={responseState} locale={locale} />
@@ -286,7 +286,7 @@ export function OwnerApplicationReviewStatus({
                 value={kind}
               />
             ))}
-            <ActionButton kind="primary" width="content" type="submit">
+            <ActionButton kind="primary" type="submit">
               {copy.submitRenewal}
             </ActionButton>
             <ResponseFeedback state={renewalState} locale={locale} />

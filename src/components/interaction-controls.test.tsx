@@ -35,7 +35,7 @@ describe("shared interaction controls", () => {
         >
           Pool
         </ActionButton>
-        <ActionLink kind="primary" width="content" href="/en/results">
+        <ActionLink kind="primary" href="/en/results">
           Results
         </ActionLink>
         <ActionLink kind="text" href="/en">
@@ -73,6 +73,38 @@ describe("shared interaction controls", () => {
     expect(screen.getByRole("link", { name: "Back" })).toHaveAttribute(
       "href",
       "/en",
+    );
+  });
+
+  it("sizes a primary or secondary action to its label unless full width is asked for", () => {
+    render(
+      <>
+        <ActionButton kind="primary" type="button">
+          Label button
+        </ActionButton>
+        <ActionLink kind="primary" href="/en/results">
+          Label link
+        </ActionLink>
+        <ActionButton kind="primary" width="full" type="submit">
+          Full button
+        </ActionButton>
+        <ActionLink kind="secondary" width="full" href="/en">
+          Full link
+        </ActionLink>
+      </>,
+    );
+
+    expect(screen.getByRole("button", { name: "Label button" })).toHaveClass(
+      "action-content",
+    );
+    expect(screen.getByRole("link", { name: "Label link" })).toHaveClass(
+      "action-content",
+    );
+    expect(screen.getByRole("button", { name: "Full button" })).toHaveClass(
+      "action-full",
+    );
+    expect(screen.getByRole("link", { name: "Full link" })).toHaveClass(
+      "action-full",
     );
   });
 
@@ -176,7 +208,6 @@ it("returns owned focus to an explicit enabled successor without reclaiming depa
       <ActionButton
         id="owned-source"
         kind="primary"
-        width="content"
         pending={pending}
         disabled={disabled}
         focusSuccessorId="owned-result"
@@ -227,7 +258,6 @@ it("restores a disconnected source to a persistent successor without a target re
       {sourceVisible && (
         <ActionButton
           kind="primary"
-          width="content"
           pending={pending}
           focusSuccessorId="persistent-successor"
         >
@@ -326,7 +356,7 @@ it("composes React button refs and cleanup while preserving caller handlers and 
   );
   await act(async () => {
     rerender(
-      <ActionButton kind="primary" width="content" ref={objectRef}>
+      <ActionButton kind="primary" ref={objectRef}>
         Save ref
       </ActionButton>,
     );
@@ -543,7 +573,6 @@ it("permanently cancels focus ownership on every departure signal even after tha
       <ActionButton
         id="cancel-source"
         kind="primary"
-        width="content"
         pending={pending}
         focusSuccessorId="cancel-successor"
       >

@@ -9,18 +9,19 @@ the code keeps them.
 
 - The only token block is `:root` in [globals.css](../src/app/globals.css). It holds every interface colour: the
   base palette `--background`, `--card`, `--ink`, `--muted`, `--green`, `--gold` and `--line`, then the groups
-  Surfaces, Ink, Lines and accents, Brand tints, Shade over hero imagery, and Status. It also holds the font
-  families `--display` and `--body`, the spacing scale `--space-1` to `--space-7`, the text size scale
-  `--font-size-1` to `--font-size-6`, the corner radius, state ring and stacking order tokens named under Radius,
-  shadow and stacking order, the component tokens named under Spacing and text size, the page width tokens named
+  Surfaces, Ink, Lines and accents, Brand tints, Shade over hero imagery, Status and Elevation. It also holds
+  the font families `--display` and `--body`, the spacing scale `--space-1` to `--space-7`, the text size scale
+  `--font-size-1` to `--font-size-6`, the corner radius, state ring, card shadow and stacking order tokens named
+  under Radius, shadow and stacking order, the component tokens named under Spacing and text size, the page width tokens named
   under Page template, and `color-scheme: light`. There is no Tailwind and no theme object.
-- Interface colours, font families, spacing, text sizes, corner radii, state rings and stacking order come from
-  these tokens through `var(--…)`. [globals.test.ts](../src/app/globals.test.ts) fails on a colour literal outside
+- Interface colours, font families, spacing, text sizes, corner radii, state rings, the card shadow and stacking
+  order come from these tokens through `var(--…)`. [globals.test.ts](../src/app/globals.test.ts) fails on a colour literal outside
   `:root`, on a custom property a stylesheet uses that `:root` does not declare, on a spacing or text size length
   that is neither a scale step nor listed under Tolerated literals, on a listed length that no stylesheet writes,
   on a `border-radius`, `box-shadow` or `z-index` value that is neither its token nor a tolerated literal, on text
-  in `--muted`, `--ink-accent` or `--ink-on-dark-accent` below 4.5:1 on a listed surface, on `--gold` as a text
-  colour, and on a width media query outside the list under Breakpoints.
+  in `--muted`, `--ink-accent` or `--ink-on-dark-accent` below 4.5:1 on a listed surface, on a status dot colour
+  below 3:1 on `--status-neutral-bg`, on `--gold` as a
+  text colour, and on a width media query outside the list under Breakpoints.
 - A colour or font a change needs that the block lacks is added to `:root` in the same change, named for its role
   (what it is for, not what it looks like). Two roles may share a value, each with its own token; one role never
   has two tokens.
@@ -30,7 +31,10 @@ the code keeps them.
   - A status label takes a background and text pair chosen together. `--status-approved-bg` and
     `--status-approved-text` are the pair for a good outcome: an approved application and paid or eligible
     earnings. `--status-neutral-bg` is the background of a label that is neither good nor bad, and of the status
-    badge and the status banner, which state a status in words and take no colour from it.
+    badge and the status banner, which state a status in words. `--status-published-dot`, `--status-draft-dot` and
+    `--status-review-dot` are the dot colours of the status badge's three tones; each reaches 3:1 on
+    `--status-neutral-bg`, which globals.test.ts checks, and `--status-draft-dot` is a darker gold than `--gold`
+    for that reason.
   - `--status-rejected-text` stays separate from `--error`, and `--success-text` from `--status-approved-text`: a
     label's text is chosen with its tint, and a message's text sits on whatever surface its form is on.
   - `--surface-policy` and `--surface-message-customer` stay separate: the policy box is chosen with
@@ -47,6 +51,9 @@ the code keeps them.
     themselves. `--ink-on-dark-soft` is the supporting paragraph there and `--ink-on-dark-muted` the small
     label.
   - `--line-panel` is the outline of a panel and of a message.
+  - `--line-action` is the outline of a secondary button and of a toggle at rest.
+  - `--elevation-contact` and `--elevation-cast` are the two layers of the card shadow, tinted with the `--ink`
+    colour so the shadow stays warm on the cream surfaces; only `--shadow-card` uses them.
   - `--gold-tint` is the one gold wash, behind a label or a page corner; a notice sits on `--surface-notice`.
     `--green-tint` is the green wash behind content; `--action-pressed` stays separate because it is a state, the
     fill of a pressed toggle and of the current backoffice destination.
@@ -88,7 +95,7 @@ the code keeps them.
 - Corner radius has three sizes, written in `rem`. `--radius-control` is 8 pixels and rounds what a person
   operates: a button, a link styled as a button, a form field, a stepper, a disclosure toggle and a selectable
   option. `--radius-mark` is 4 pixels and rounds the checkbox mark, which is too small to carry 8 pixels without
-  reading as a radio button. `--radius-card` is 10 pixels and rounds every other surface: a card, panel, notice,
+  reading as a radio button. `--radius-card` is 14 pixels and rounds every other surface: a card, panel, notice,
   tile, image frame, menu and list row.
 - A selectable option in a group is either a toggle button (`.action-toggle`), which is a control and takes
   `--radius-control`, or a `ChoiceControl` row of mark and text inside an `OptionGroup`, which has no border or
@@ -96,9 +103,12 @@ the code keeps them.
   option.
 - A pill is `999px`, a circle is `50%` and a square corner is `0`. They are shapes, not sizes, so they are
   literals. The radio button mark is a circle.
-- There is no elevation shadow. A surface is set apart by its background and its `1px` `--line` border;
-  `text-shadow` and `drop-shadow()` are not used.
-- `box-shadow` draws state rings only, each with no offset and no blur: `--shadow-focus` composes a 2px opaque
+- There is one elevation shadow, `--shadow-card`, and only the card pattern under Content patterns takes it. It has
+  two layers: a `1px` contact layer in `--elevation-contact` and a soft layer in `--elevation-cast` offset `8px`
+  below the card. Every other surface is set apart by its background and its `1px` `--line` border. A control never
+  takes the shadow, because a control's `box-shadow` draws its state rings, and the shadow has no hover or pressed
+  variant. `text-shadow` and `drop-shadow()` are not used.
+- Every other `box-shadow` is a state ring, each with no offset and no blur: `--shadow-focus` composes a 2px opaque
   cream separator and a 4px opaque green shadow around a keyboard-focused control or ordinary handoff target.
   The first shadow paints above the second, leaving 2px of green beyond the separator. `--shadow-invalid`
   surrounds an invalid field or mark; and `--shadow-pressed` sits inside a pressed toggle. A ring adds to the focus outline described under Accessibility conventions and never replaces it.
@@ -107,7 +117,7 @@ the code keeps them.
   block, as the hero copy is above its shade; `--layer-overlap` for a block that overlaps the one before it, as
   the search card overlaps the hero; `--layer-header` for the site header; and `--layer-menu` for a menu that
   opens over everything else.
-- New work uses these tokens. A fourth radius, an elevation shadow or a fifth layer is decided in this document
+- New work uses these tokens. A fourth radius, a second elevation shadow or a fifth layer is decided in this document
   before a stylesheet writes it.
 
 ## Tolerated literals
@@ -176,10 +186,15 @@ Anything else is a token.
 
 - [interaction-controls.tsx](../src/components/interaction-controls.tsx) holds the shared controls:
   - `ActionButton`: a primary, secondary or toggle button (`.action`, `.action-primary`, `.action-secondary`,
-    `.action-toggle`, sized by `.action-compact` or `.action-regular` and `.action-content` or `.action-full`). A pending button sets
-    `aria-busy` and is disabled. A toggle at rest looks like a secondary button, a pressed one carries the
+    `.action-toggle`, sized by `.action-compact` or `.action-regular`). A pending button sets
+    `aria-busy` and is disabled. A secondary button has a `--line-action` outline on a `--card` fill with a
+    `--green` label. A toggle at rest looks like a secondary button, a pressed one carries the
     `--shadow-pressed` ring, and a disabled one has a dashed border.
   - `ActionLink`: a link styled as a primary, secondary or text action (`.action-link`, `.action-text`).
+  - A primary or secondary `ActionButton` or `ActionLink` is as wide as its label (`.action-content`).
+    `width="full"` (`.action-full`) is the one exception, the form-column action: a button that submits a form or
+    closes a panel fills the column or grid track its fields or facts sit in. An action inside a card in a list or
+    grid is never full width.
   - `FormControl`: an input, select or textarea with `.form-control`, which shows `aria-invalid` as an error
     border.
   - `FormControl` with `type="date"` is the date field. It keeps the platform's date picker; the date text and the
@@ -275,7 +290,7 @@ Anything else is a token.
 
 ## Content patterns
 
-Six global classes in `src/app/globals.css` present facts, lists of records, statuses, section titles and empty
+Global classes in `src/app/globals.css` present facts, lists of records, cards, statuses, section titles and empty
 lists. Each sits on a semantic element and uses tokens only. Apart from the section heading none has a margin of
 its own; the block it sits in sets the space around it.
 
@@ -292,9 +307,23 @@ its own; the block it sits in sets the space around it.
   tall. Everything else is plain supporting text outside the link: `p.list-row-meta`, in `--muted` at
   `--font-size-2`, holds plain text, a reference in `bdi`, a status badge and a date in `time`, and wraps. Further blocks of the
   same record follow inside the `li`.
+- Card: `article.card` presents one record among several in a grid or list on a page that uses the Page template.
+  It is a `--card` surface with `--radius-card` corners and the `--shadow-card` elevation shadow. It shows no
+  border: its `1px` border is `transparent`, so the card keeps an edge where the browser forces colours and removes
+  shadows. It sets no padding and no layout; the block that uses it does. Its text has three tiers: `card-title` on
+  the record's heading, in `--display` at weight 700 in `--ink` at `--font-size-4`, with line height `1.25` and
+  `1.4` in Sorani; `card-detail` for the line that places or describes the record, in `--muted` at
+  `--font-size-2`; and `card-small-print` for counts and other secondary facts, in `--muted` at `--font-size-1`.
+  The cottage list card, `.cottage-profile-card`, uses the pattern. A panel, notice, list row or empty state is not
+  a card and keeps its `1px` `--line` border.
 - Status badge: `span.status-badge` is the compact status of one item in a list row or card. Its text is the
   translated status label, so the status never depends on colour. It is a pill on `--status-neutral-bg` with bold
-  `--ink` text at `--font-size-1`. It is never the page-level status.
+  `--ink` text at `--font-size-1`. A badge may add one tone class, which draws a `0.5rem` dot before the label,
+  `--space-2` from it and on the side the text starts: `status-badge-published` for a record Customers can see,
+  `status-badge-draft` for a private record not yet submitted, and `status-badge-review` for a submitted record
+  waiting for a decision with nothing published. The dot repeats the label and is never the only sign of the
+  status; a badge with any other status, or one that states a fact that is not a status, has no dot. It is never
+  the page-level status.
 - Rating stars: the `span.stars` beside a published review's rating is decorative and hidden from assistive technology, so the rating text carries the meaning.
 - Status banner: `p.status-banner` is the page-level status of a record page. It sits directly under the page
   title, at most one per page, and keeps `role="status"` and `aria-live="polite"`. It is a block on
@@ -306,7 +335,7 @@ its own; the block it sits in sets the space around it.
   a `1px` `--line` border, `--radius-card` corners and `--space-5` padding, holding one `p` with a single sentence
   saying what is absent and, `--space-3` below it, one next action as a secondary content-width `ActionLink`. It
   is not an error; a failure uses `role="alert"`.
-- New work that shows facts, a list of records, a status, a section title or an empty list reuses these. A screen
+- New work that shows facts, a list of records, a card, a status, a section title or an empty list reuses these. A screen
   with its own rules for one of them keeps those rules until it is moved onto the pattern.
 
 ## Direction and language

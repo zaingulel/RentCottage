@@ -37,7 +37,7 @@ export function AccountAccessRecovery({
           targetId="account-access-recovery-title"
           navigation
         />
-        <ActionLink kind="secondary" width="content" href={returnTo}>
+        <ActionLink kind="secondary" href={returnTo}>
           {copy.retry}
         </ActionLink>
         <form action={signOutAccount.bind(null, locale)}>

@@ -273,10 +273,10 @@ export function AdministratorBookingMoney({
           />
         </label>
         <div className={styles.actions}>
-          <ActionButton kind="primary" width="content" type="submit">
+          <ActionButton kind="primary" type="submit">
             {copy.apply}
           </ActionButton>
-          <ActionLink kind="secondary" width="content" href={base}>
+          <ActionLink kind="secondary" href={base}>
             {records.reset}
           </ActionLink>
         </div>
@@ -329,7 +329,7 @@ function BookingMoneyResults({
         {empty ? (
           <div className="empty-state">
             <p>{records.empty}</p>
-            <ActionLink kind="secondary" width="content" href={resetHref}>
+            <ActionLink kind="secondary" href={resetHref}>
               {records.reset}
             </ActionLink>
           </div>
@@ -408,16 +408,12 @@ function BookingMoneyResults({
       {continued || page.nextCursor ? (
         <nav className="results-paging" aria-label={copy.pagingLabel}>
           {continued ? (
-            <ActionLink kind="secondary" width="content" href={href()}>
+            <ActionLink kind="secondary" href={href()}>
               {copy.firstResults}
             </ActionLink>
           ) : null}
           {page.nextCursor ? (
-            <ActionLink
-              kind="secondary"
-              width="content"
-              href={href(page.nextCursor)}
-            >
+            <ActionLink kind="secondary" href={href(page.nextCursor)}>
               {records.next}
             </ActionLink>
           ) : null}

@@ -300,10 +300,10 @@ function ReviewFilterForm({
         />
       </label>
       <div className={recordStyles.actions}>
-        <ActionButton kind="primary" width="content" type="submit">
+        <ActionButton kind="primary" type="submit">
           {administratorQueuesMessages[locale].apply}
         </ActionButton>
-        <ActionLink kind="secondary" width="content" href={base}>
+        <ActionLink kind="secondary" href={base}>
           {records.reset}
         </ActionLink>
       </div>
@@ -387,7 +387,6 @@ export function CustomerReviewModeration({
       <ActionFocusTarget targetId="administrator-reviews-heading" />
       <ActionLink
         kind="secondary"
-        width="content"
         href={`/${locale}/administrator/reviews/translation-reports`}
       >
         {copy.translationReportsLink}

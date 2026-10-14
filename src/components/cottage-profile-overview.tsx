@@ -11,11 +11,17 @@ import type { CottageProfile } from "@/cottage-profile/cottage-profile";
 import {
   cottageProfileMessages,
   cottageProfileStatusLabel,
+  cottageProfileStatusTone,
 } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
 import { ActionFocusTarget, ActionLink } from "./interaction-controls";
 
 const idle: CottageProfileActionState = { status: "idle" };
+
+function statusBadgeClass(profile: CottageProfile) {
+  const tone = cottageProfileStatusTone(profile);
+  return tone ? `status-badge status-badge-${tone}` : "status-badge";
+}
 
 export function CottageProfileOverview({
   locale,
@@ -58,28 +64,27 @@ export function CottageProfileOverview({
       {profiles.length === 0 ? <p>{copy.empty}</p> : null}
       <div className="cottage-profile-card-grid">
         {profiles.map((profile) => (
-          <article className="cottage-profile-card" key={profile.id}>
+          <article className="card cottage-profile-card" key={profile.id}>
             <div>
-              <span className="status-badge">
+              <span className={statusBadgeClass(profile)}>
                 {cottageProfileStatusLabel(locale, profile)}
               </span>
               {profile.applicationId ? (
                 <span className="status-badge">{copy.applicationProfile}</span>
               ) : null}
             </div>
-            <h2>{profile.name || copy.editorTitle}</h2>
-            <p>
+            <h2 className="card-title">{profile.name || copy.editorTitle}</h2>
+            <p className="card-detail">
               {[profile.governorate, profile.approximateLocation]
                 .filter(Boolean)
                 .join(" · ") || copy.completion}
             </p>
-            <p>
+            <p className="card-small-print">
               {profile.photos.filter((photo) => photo.state === "ready").length}
               /12 {copy.photos}
             </p>
             <ActionLink
               kind="primary"
-              width="full"
               href={`/${locale}/${route}/cottages/${profile.id}`}
             >
               {copy.open}

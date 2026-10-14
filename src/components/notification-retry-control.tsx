@@ -51,7 +51,6 @@ export function NotificationRetryControl({
       <ActionButton
         type="submit"
         kind="primary"
-        width="content"
         pending={pending}
         focusSuccessorId={focusSuccessorId}
       >

@@ -124,15 +124,11 @@ export default async function BookingHistoryPage({
           <div className="empty-state">
             <p>{copy[locale].empty}</p>
             {workspace === "owner" ? (
-              <ActionLink
-                kind="secondary"
-                width="content"
-                href={`/${locale}/owner/cottages`}
-              >
+              <ActionLink kind="secondary" href={`/${locale}/owner/cottages`}>
                 {accessMessages[locale].manageCottages}
               </ActionLink>
             ) : (
-              <ActionLink kind="secondary" width="content" href={`/${locale}`}>
+              <ActionLink kind="secondary" href={`/${locale}`}>
                 {messages[locale].footerSearch}
               </ActionLink>
             )}

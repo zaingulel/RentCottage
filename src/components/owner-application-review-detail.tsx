@@ -191,7 +191,7 @@ export function OwnerApplicationReviewDetailView({
               locale={locale}
               action="start_review"
             />
-            <ActionButton kind="primary" width="content" type="submit">
+            <ActionButton kind="primary" type="submit">
               {copy.startReview}
             </ActionButton>
           </form>
@@ -293,7 +293,7 @@ export function OwnerApplicationReviewDetailView({
                   </label>
                 ))}
               </fieldset>
-              <ActionButton kind="primary" width="content" type="submit">
+              <ActionButton kind="primary" type="submit">
                 {copy.approve}
               </ActionButton>
             </form>

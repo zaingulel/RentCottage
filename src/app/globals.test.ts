@@ -48,7 +48,7 @@ const listedTokens = new Set(
 const scaledProperty =
   /^(?:(?:margin|padding|inset)(?:-[a-z-]+)?|(?:row-|column-)?gap|top|right|bottom|left|font|font-size|line-height|letter-spacing)$/;
 const scaleToken =
-  /^(?:(?:space|font-size)-\d+|radius-(?:control|card|mark)|shadow-(?:focus|invalid|pressed))$/;
+  /^(?:(?:space|font-size)-\d+|radius-(?:control|card|mark)|shadow-(?:focus|invalid|pressed|card))$/;
 
 function blank(text: string) {
   return text.replace(/[^\n]/g, " ");
@@ -294,6 +294,15 @@ describe("stylesheet colour tokens", () => {
     );
   });
 
+  it("keeps each status dot at 3 to 1 on the status badge", () => {
+    for (const dot of [
+      "--status-published-dot",
+      "--status-draft-dot",
+      "--status-review-dot",
+    ])
+      expect(contrast(dot, "--status-neutral-bg")).toBeGreaterThanOrEqual(3);
+  });
+
   it("keeps grey and gold text at 4.5 to 1 on every surface it sits on", () => {
     const surfacesOf = {
       "--muted": [
@@ -436,7 +445,7 @@ describe("stylesheet shape and layer tokens", () => {
     ).toEqual([]);
   });
 
-  it("keeps every box shadow a state ring token", () => {
+  it("keeps every box shadow a shadow token", () => {
     expect(
       offScaleHits(
         /^box-shadow$/,
@@ -451,19 +460,22 @@ describe("stylesheet shape and layer tokens", () => {
     ).toEqual([]);
   });
 
-  it("declares the agreed radius sizes and offset-free state rings", () => {
+  it("declares the agreed radius sizes, offset-free state rings and the card shadow", () => {
     const declared = [
       ...rootBlock.matchAll(/--([\w-]+)\s*:([^;{}]*)(?=[;}])/g),
     ].map(
       ([, name, value]) => `--${name}: ${value.replace(/\s+/g, " ").trim()}`,
     );
-    const rings = declared.filter((token) => token.startsWith("--shadow-"));
+    const rings = declared.filter(
+      (token) =>
+        token.startsWith("--shadow-") && !token.startsWith("--shadow-card:"),
+    );
 
     expect(declared.filter((token) => token.startsWith("--radius-"))).toEqual(
       expect.arrayContaining([
         "--radius-control: 0.5rem",
         "--radius-mark: 0.25rem",
-        "--radius-card: 0.625rem",
+        "--radius-card: 0.875rem",
       ]),
     );
     expect(rings.map((token) => token.split(":")[0])).toEqual(
@@ -481,6 +493,9 @@ describe("stylesheet shape and layer tokens", () => {
           ),
       ),
     ).toEqual([]);
+    expect(declared).toContain(
+      "--shadow-card: 0 1px 2px var(--elevation-contact), 0 8px 24px -12px var(--elevation-cast)",
+    );
   });
 
   it("gives the cottage list card explicit rows before subgrid for browsers without it", () => {

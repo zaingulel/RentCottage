@@ -174,10 +174,10 @@ export function AdministratorQueues({
           />
         </label>
         <div className={styles.actions}>
-          <ActionButton kind="primary" width="content" type="submit">
+          <ActionButton kind="primary" type="submit">
             {copy.apply}
           </ActionButton>
-          <ActionLink kind="secondary" width="content" href={resetHref}>
+          <ActionLink kind="secondary" href={resetHref}>
             {records.reset}
           </ActionLink>
         </div>
@@ -224,7 +224,7 @@ export function AdministratorQueues({
           ) : (
             <div className="empty-state">
               <p>{records.empty}</p>
-              <ActionLink kind="secondary" width="content" href={resetHref}>
+              <ActionLink kind="secondary" href={resetHref}>
                 {records.reset}
               </ActionLink>
             </div>
@@ -232,7 +232,6 @@ export function AdministratorQueues({
           {outcome.page.nextCursor ? (
             <ActionLink
               kind="secondary"
-              width="content"
               href={nextHref(outcome.page.nextCursor)}
             >
               {records.next}

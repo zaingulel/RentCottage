@@ -323,7 +323,6 @@ export function CottageShiftScheduleEditor({
         {canEdit ? (
           <ActionButton
             kind="primary"
-            width="content"
             type="submit"
             pending={pending}
             disabled={blocked}

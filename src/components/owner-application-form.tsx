@@ -49,7 +49,6 @@ function SubmitButton({
       {kind === "primary" ? (
         <ActionButton
           kind="primary"
-          width="content"
           type="submit"
           pending={pending}
           focusSuccessorId={focusSuccessorId}

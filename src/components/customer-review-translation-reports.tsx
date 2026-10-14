@@ -91,7 +91,6 @@ export function CustomerReviewTranslationReports({
         {result.status === "access-required" ? (
           <ActionLink
             kind="secondary"
-            width="content"
             href={administratorAccessHref(locale, moderationHref)}
           >
             {copy.administratorAccessAction}
@@ -111,7 +110,7 @@ export function CustomerReviewTranslationReports({
       {result.items.length === 0 ? (
         <div className="empty-state">
           <p>{copy.translationReportsEmpty}</p>
-          <ActionLink kind="secondary" width="content" href={moderationHref}>
+          <ActionLink kind="secondary" href={moderationHref}>
             {copy.administratorTitle}
           </ActionLink>
         </div>
@@ -130,7 +129,6 @@ export function CustomerReviewTranslationReports({
           {continued ? (
             <ActionLink
               kind="secondary"
-              width="content"
               href={`${moderationHref}/translation-reports`}
             >
               {copy.translationReportsFirst}
@@ -139,7 +137,6 @@ export function CustomerReviewTranslationReports({
           {result.nextCursor ? (
             <ActionLink
               kind="secondary"
-              width="content"
               href={`${moderationHref}/translation-reports?${new URLSearchParams(
                 {
                   beforeAt: result.nextCursor.reportedAt,

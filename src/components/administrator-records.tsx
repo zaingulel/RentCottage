@@ -263,7 +263,6 @@ export function AdministratorRecords({
         <div className={styles.actions}>
           <ActionButton
             kind="primary"
-            width="content"
             type="submit"
             pending={view.status === "loading"}
           >
