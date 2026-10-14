@@ -1180,11 +1180,6 @@ html[lang="ckb"] .page-title {
   gap: var(--space-4);
 }
 
-.result-service-day h3 {
-  margin: 0 0 var(--space-2);
-  font-size: var(--font-size-2);
-}
-
 .result-footer {
   grid-area: footer;
   display: flex;
@@ -1564,8 +1559,7 @@ html[lang="ckb"] .page-title {
     aspect-ratio: 16 / 10;
   }
 
-  .profile-layout,
-  .profile-layout-has-gallery {
+  .profile-layout {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: none;
     grid-template-rows: none;

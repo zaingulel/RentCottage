@@ -1334,14 +1334,14 @@ test("lifted public cottage keeps its hero separate and every booking option rea
       locale: "ckb",
       heading: "ماوەی حجزەکەت هەڵبژێرە",
       photoCount: 0,
-      narrow: true,
+      narrow: projectPhone,
       longContent: false,
     },
     {
       locale: "ckb",
       heading: "ماوەی حجزەکەت هەڵبژێرە",
       photoCount: 1,
-      narrow: true,
+      narrow: projectPhone,
       longContent: false,
     },
     {

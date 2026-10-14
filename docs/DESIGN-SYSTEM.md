@@ -85,8 +85,10 @@ the code keeps them.
 - Sizing lengths are literals: `width`, `height`, `inline-size`, `block-size`, their `min-` and `max-` forms,
   `flex-basis` and grid track sizes, including a gutter written inside one such as `calc(100% - 2.25rem)`. They are
   the dimensions of controls, images, columns and reading widths, which a seven-step spacing scale cannot express.
-  New work reuses a size already in use. The one exception is a page's content width, which is a token named
-  under Page template.
+  New work reuses a size already in use. The approved public cottage pattern additionally permits its `29rem`
+  hero height and `36rem` prose width, and the Customer progress pattern its `6px` track, as documented below;
+  these specific sizes do not permit other new sizing values. A page's content width uses a token named under
+  Page template.
 - A component token holds a length only when several declarations must share it. `--booking-progress-marker` is the
   size of the progress step marker, which the connector line is positioned from. `--booking-progress-inset` and
   `--booking-progress-row-gap` are names for `--space-2` and `--space-4`: the connector is positioned from the
