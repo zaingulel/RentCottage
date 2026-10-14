@@ -243,11 +243,15 @@ Anything else is a token.
 - Backoffice navigation: `BackofficeNavigation` in
   [backoffice-navigation.tsx](../src/components/backoffice-navigation.tsx) is the one navigation of the Owner
   Backoffice and the Platform Administrator pages, and owns each area's list of destinations. It is a server
-  component. A page renders it as the first child of `<main>`, only in a branch that has passed that page's own
+  component whose row of tabs is the client component `BackofficeNavigationLinks` in
+  [backoffice-navigation-links.tsx](../src/components/backoffice-navigation-links.tsx), which brings the focused
+  tab, and on first render the current tab, wholly into view inside the row with room for its focus ring, without
+  moving the page. A page renders it as the first child of `<main>`, only in a branch that has passed that page's own
   access check, names its destination with `current`, and adds `nested` on a page beneath that destination. It
   renders `nav.backoffice-navigation` as a tab bar, named through `aria-labelledby` by its area label, which is
   visually hidden. Each destination is a tab, `a.backoffice-navigation-tab`, the bar's own pattern and not an
-  `ActionLink`. The current tab carries `aria-current="page"`, or `aria-current="true"` on a nested page, and shows
+  `ActionLink`, and is `position: relative` so its visually hidden count label stays inside the scrolling row. The
+  current tab carries `aria-current="page"`, or `aria-current="true"` on a nested page, and shows
   it with a `--tab-indicator` line under it and `--green` text, so it is never shown by colour alone. The bar is a
   cream band that reaches both screen edges, with its tabs on one line that scrolls sideways inside the bar with a
   hidden scrollbar and never scrolls the page. The owner's Bookings tab may carry `span.backoffice-navigation-count`,

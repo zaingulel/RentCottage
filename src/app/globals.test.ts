@@ -514,6 +514,15 @@ describe("stylesheet shape and layer tokens", () => {
     expect(explicit).toBeGreaterThan(-1);
     expect(explicit).toBeLessThan(block.indexOf("grid-template-rows: subgrid"));
   });
+
+  it("makes each Backoffice tab the containing block of its visually hidden count label", () => {
+    const globals = stylesheets.find(({ file }) => file === globalsFile);
+    const tab = globals?.source.match(
+      /\.backoffice-navigation-tab\s*\{[^}]*\}/,
+    );
+
+    expect(tab?.[0]).toMatch(/position:\s*relative;/);
+  });
 });
 
 describe("stylesheet breakpoints", () => {

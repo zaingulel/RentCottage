@@ -9,6 +9,8 @@ import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { ownerBookingRequestMessages } from "@/i18n/owner-booking-request-messages";
 import type { Locale } from "@/i18n/routing";
 
+import { BackofficeNavigationLinks } from "./backoffice-navigation-links";
+
 type BackofficeNavigationProps = { locale: Locale; nested?: boolean } & (
   | { area: "owner"; current: "cottages"; waitingBookingRequests?: number }
   | {
@@ -88,7 +90,7 @@ export function BackofficeNavigation({
       <span id="backoffice-navigation-area" className="visually-hidden">
         {label}
       </span>
-      <div className="backoffice-navigation-links">
+      <BackofficeNavigationLinks>
         {destinations.map((destination) => (
           <Link
             key={destination.key}
@@ -116,7 +118,7 @@ export function BackofficeNavigation({
             ) : null}
           </Link>
         ))}
-      </div>
+      </BackofficeNavigationLinks>
     </nav>
   );
 }
