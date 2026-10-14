@@ -958,6 +958,73 @@ describe("access forms", () => {
     expect(input).toHaveValue("Lana K");
   });
 
+  it("keeps a draft changed back to the previous name while a first name saves", async () => {
+    let resolveSave!: (value: { status: "saved" }) => void;
+    saveName.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AccountNameForm locale="en" mode="details" firstName="Zana" />,
+    );
+
+    const input = screen.getByLabelText("First name");
+    await user.clear(input);
+    await user.type(input, "Lana{Enter}");
+    expect(saveName).toHaveBeenCalledExactlyOnceWith({ firstName: "Lana" });
+
+    await user.clear(input);
+    await user.type(input, "Zana");
+
+    await act(async () => resolveSave({ status: "saved" }));
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Lana" />);
+
+    expect(input).toHaveValue("Zana");
+  });
+
+  it("keeps a draft whose save failed when a saved name arrives", async () => {
+    saveName.mockResolvedValue({ status: "unavailable" });
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AccountNameForm locale="en" mode="details" firstName="Zana" />,
+    );
+
+    const input = screen.getByLabelText("First name");
+    await user.clear(input);
+    await user.type(input, "Lana");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Your first name could not be saved. Try again.",
+    );
+
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Mira" />);
+
+    expect(input).toHaveValue("Lana");
+  });
+
+  it("keeps a draft whose save could not reach the server when a saved name arrives", async () => {
+    saveName.mockRejectedValue(new Error("offline"));
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AccountNameForm locale="en" mode="details" firstName="Zana" />,
+    );
+
+    const input = screen.getByLabelText("First name");
+    await user.clear(input);
+    await user.type(input, "Lana");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Your first name could not be saved. Try again.",
+    );
+
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Mira" />);
+
+    expect(input).toHaveValue("Lana");
+  });
+
   it("shows the trimmed name after saving one with spaces", async () => {
     saveName.mockResolvedValue({ status: "saved" });
     const user = userEvent.setup();

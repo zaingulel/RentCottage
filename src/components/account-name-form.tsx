@@ -28,7 +28,7 @@ export function AccountNameForm({
   const errorId = useId();
   const [value, setValue] = useState(firstName);
   const [previousFirstName, setPreviousFirstName] = useState(firstName);
-  const [submittedFirstName, setSubmittedFirstName] = useState<string>();
+  const [unsaved, setUnsaved] = useState(false);
   const [status, setStatus] = useState<
     "saved" | "invalid" | "unavailable" | undefined
   >();
@@ -36,12 +36,11 @@ export function AccountNameForm({
   const stepTitle = useRef<HTMLHeadingElement>(null);
 
   // A first name saved elsewhere reaches this form as a new prop while it stays
-  // mounted, so the field follows it unless the person typed since the last
-  // name shown or submitted; a remount would drop the saved status.
+  // mounted, so the field follows it unless it holds an unsaved edit; a
+  // remount would drop the saved status.
   if (firstName !== previousFirstName) {
     setPreviousFirstName(firstName);
-    if (value === previousFirstName || value === submittedFirstName)
-      setValue(firstName);
+    if (!unsaved) setValue(firstName);
   }
 
   useLayoutEffect(() => {
@@ -61,15 +60,18 @@ export function AccountNameForm({
   async function save() {
     setStatus(undefined);
     let result;
-    setSubmittedFirstName(value);
+    setUnsaved(false);
     try {
       result = await run(() => saveAccountName({ firstName: value }));
     } catch (error) {
       unstable_rethrow(error);
+      setUnsaved(true);
       setStatus("unavailable");
       return;
     }
-    if (result) setStatus(result.status);
+    if (!result) return;
+    if (result.status !== "saved") setUnsaved(true);
+    setStatus(result.status);
   }
 
   const panel = (
@@ -92,7 +94,10 @@ export function AccountNameForm({
             value={value}
             aria-invalid={status === "invalid" || undefined}
             aria-describedby={status === "invalid" ? errorId : undefined}
-            onChange={(event) => setValue(event.target.value)}
+            onChange={(event) => {
+              setValue(event.target.value);
+              setUnsaved(true);
+            }}
           />
         </label>
         {status === "invalid" && (
