@@ -3451,7 +3451,7 @@ section.request-follow-up {
   border-radius: 50%;
   background: var(--ink-on-dark);
   color: var(--ink);
-  font-size: var(--font-size-2);
+  font-size: var(--font-size-3);
   font-weight: 700;
   line-height: 1;
 }

@@ -117,7 +117,7 @@ export const accessMessages: Record<
     save: "احفظ",
     accountNameSaved: "تم حفظ اسمك الأول.",
     invalidFirstName:
-      "أدخل اسمًا أول من 1 إلى 50 حرفًا يتضمن حرفًا واحدًا على الأقل، من دون رقم هاتف أو بريد إلكتروني أو رابط.",
+      "أدخل اسمًا أول من 1 إلى 50 حرفًا يتضمن حرفًا واحدًا على الأقل، من دون رقم هاتف أو بريد إلكتروني أو رابط أو رموز مخفية.",
     accountNameUnavailable: "تعذّر حفظ اسمك الأول. حاول مرة أخرى.",
     home: "الصفحة الرئيسية لـ RentCottage",
     accountNameStepTitle: "أضف اسمك الأول",
@@ -184,7 +184,7 @@ export const accessMessages: Record<
     save: "پاشەکەوت بکە",
     accountNameSaved: "ناوی یەکەمت پاشەکەوت کرا.",
     invalidFirstName:
-      "ناوێکی یەکەم بنووسە لە ١ تا ٥٠ پیت کە لانیکەم یەک پیتی تێدابێت، بەبێ ژمارەی تەلەفۆن، ئیمەیڵ یان بەستەر.",
+      "ناوێکی یەکەم بنووسە لە ١ تا ٥٠ پیت کە لانیکەم یەک پیتی تێدابێت، بەبێ ژمارەی تەلەفۆن، ئیمەیڵ، بەستەر یان هێمای شاراوە.",
     accountNameUnavailable:
       "نەتوانرا ناوی یەکەمت پاشەکەوت بکرێت. دووبارە هەوڵ بدەرەوە.",
     home: "پەڕەی سەرەکیی RentCottage",
@@ -251,7 +251,7 @@ export const accessMessages: Record<
     save: "Save",
     accountNameSaved: "Your first name is saved.",
     invalidFirstName:
-      "Enter a first name of 1 to 50 characters that includes a letter and no phone number, email address or link.",
+      "Enter a first name of 1 to 50 characters that includes a letter and no phone number, email address, link or hidden characters.",
     accountNameUnavailable: "Your first name could not be saved. Try again.",
     home: "RentCottage home",
     accountNameStepTitle: "Add your first name",

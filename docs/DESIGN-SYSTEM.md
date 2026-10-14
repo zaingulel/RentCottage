@@ -240,7 +240,7 @@ Anything else is a token.
     signed-in person's row is unchanged.
   - Avatar: the button (`.account-menu-toggle`) is a transparent `2.75rem` square with a circular focus shape,
     holding a `2.25rem` circle (`.account-avatar`). The circle shows the first letter of the person's own first
-    name, uppercased, as bold `--font-size-2` text: the first letter grapheme of the name, computed on the server
+    name, uppercased, as bold `--font-size-3` text: the first letter grapheme of the name, computed on the server
     so that only the letter reaches the header. When there is no letter, whether the person has not given a first
     name yet or the name could not be read, the circle holds a `1.25rem` person icon, which claims nothing about
     the name. On the transparent landing header the circle is `--ink-on-dark` with `--ink` text or icon; on the
