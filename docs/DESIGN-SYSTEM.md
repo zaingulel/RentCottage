@@ -9,13 +9,13 @@ the code keeps them.
 
 - The only token block is `:root` in [globals.css](../src/app/globals.css). It holds every interface colour: the
   base palette `--background`, `--card`, `--ink`, `--muted`, `--green`, `--gold` and `--line`, then the groups
-  Surfaces, Ink, Lines and accents, Brand tints, Shade over hero imagery, and Status. It also holds the font
-  families `--display` and `--body`, the spacing scale `--space-1` to `--space-7`, the text size scale
-  `--font-size-1` to `--font-size-6`, the corner radius, state ring and stacking order tokens named under Radius,
-  shadow and stacking order, the component tokens named under Spacing and text size, the page width tokens named
+  Surfaces, Ink, Lines and accents, Brand tints, Shade over hero imagery, Status and Elevation. It also holds
+  the font families `--display` and `--body`, the spacing scale `--space-1` to `--space-7`, the text size scale
+  `--font-size-1` to `--font-size-6`, the corner radius, state ring, card shadow and stacking order tokens named
+  under Radius, shadow and stacking order, the component tokens named under Spacing and text size, the page width tokens named
   under Page template, and `color-scheme: light`. There is no Tailwind and no theme object.
-- Interface colours, font families, spacing, text sizes, corner radii, state rings and stacking order come from
-  these tokens through `var(--…)`. [globals.test.ts](../src/app/globals.test.ts) fails on a colour literal outside
+- Interface colours, font families, spacing, text sizes, corner radii, state rings, the card shadow and stacking
+  order come from these tokens through `var(--…)`. [globals.test.ts](../src/app/globals.test.ts) fails on a colour literal outside
   `:root`, on a custom property a stylesheet uses that `:root` does not declare, on a spacing or text size length
   that is neither a scale step nor listed under Tolerated literals, on a listed length that no stylesheet writes,
   on a `border-radius`, `box-shadow` or `z-index` value that is neither its token nor a tolerated literal, on text
@@ -47,6 +47,8 @@ the code keeps them.
     themselves. `--ink-on-dark-soft` is the supporting paragraph there and `--ink-on-dark-muted` the small
     label.
   - `--line-panel` is the outline of a panel and of a message.
+  - `--elevation-contact` and `--elevation-cast` are the two layers of the card shadow, tinted with the `--ink`
+    colour so the shadow stays warm on the cream surfaces; only `--shadow-card` uses them.
   - `--gold-tint` is the one gold wash, behind a label or a page corner; a notice sits on `--surface-notice`.
     `--green-tint` is the green wash behind content; `--action-pressed` stays separate because it is a state, the
     fill of a pressed toggle and of the current backoffice destination.
@@ -88,7 +90,7 @@ the code keeps them.
 - Corner radius has three sizes, written in `rem`. `--radius-control` is 8 pixels and rounds what a person
   operates: a button, a link styled as a button, a form field, a stepper, a disclosure toggle and a selectable
   option. `--radius-mark` is 4 pixels and rounds the checkbox mark, which is too small to carry 8 pixels without
-  reading as a radio button. `--radius-card` is 10 pixels and rounds every other surface: a card, panel, notice,
+  reading as a radio button. `--radius-card` is 14 pixels and rounds every other surface: a card, panel, notice,
   tile, image frame, menu and list row.
 - A selectable option in a group is either a toggle button (`.action-toggle`), which is a control and takes
   `--radius-control`, or a `ChoiceControl` row of mark and text inside an `OptionGroup`, which has no border or
@@ -96,9 +98,12 @@ the code keeps them.
   option.
 - A pill is `999px`, a circle is `50%` and a square corner is `0`. They are shapes, not sizes, so they are
   literals. The radio button mark is a circle.
-- There is no elevation shadow. A surface is set apart by its background and its `1px` `--line` border;
-  `text-shadow` and `drop-shadow()` are not used.
-- `box-shadow` draws state rings only, each with no offset and no blur: `--shadow-focus` composes a 2px opaque
+- There is one elevation shadow, `--shadow-card`, and only the card pattern under Content patterns takes it. It has
+  two layers: a `1px` contact layer in `--elevation-contact` and a soft layer in `--elevation-cast` offset `8px`
+  below the card. Every other surface is set apart by its background and its `1px` `--line` border. A control never
+  takes the shadow, because a control's `box-shadow` draws its state rings, and the shadow has no hover or pressed
+  variant. `text-shadow` and `drop-shadow()` are not used.
+- Every other `box-shadow` is a state ring, each with no offset and no blur: `--shadow-focus` composes a 2px opaque
   cream separator and a 4px opaque green shadow around a keyboard-focused control or ordinary handoff target.
   The first shadow paints above the second, leaving 2px of green beyond the separator. `--shadow-invalid`
   surrounds an invalid field or mark; and `--shadow-pressed` sits inside a pressed toggle. A ring adds to the focus outline described under Accessibility conventions and never replaces it.
@@ -107,7 +112,7 @@ the code keeps them.
   block, as the hero copy is above its shade; `--layer-overlap` for a block that overlaps the one before it, as
   the search card overlaps the hero; `--layer-header` for the site header; and `--layer-menu` for a menu that
   opens over everything else.
-- New work uses these tokens. A fourth radius, an elevation shadow or a fifth layer is decided in this document
+- New work uses these tokens. A fourth radius, a second elevation shadow or a fifth layer is decided in this document
   before a stylesheet writes it.
 
 ## Tolerated literals

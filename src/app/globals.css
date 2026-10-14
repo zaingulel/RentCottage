@@ -79,6 +79,10 @@
   --status-attention-bg: #fff0d7;
   --status-attention-text: #623d00;
 
+  /* Elevation */
+  --elevation-contact: rgb(38 36 31 / 6%);
+  --elevation-cast: rgb(38 36 31 / 18%);
+
   --display: "Changa", sans-serif;
   --body: "Karla", "Almarai", sans-serif;
 
@@ -102,12 +106,16 @@
   /* Corner radius */
   --radius-control: 0.5rem;
   --radius-mark: 0.25rem;
-  --radius-card: 0.625rem;
+  --radius-card: 0.875rem;
 
   /* State rings */
   --shadow-focus: 0 0 0 2px var(--focus-outline), 0 0 0 4px var(--focus-ring);
   --shadow-invalid: 0 0 0 2px var(--error-ring);
   --shadow-pressed: inset 0 0 0 1px var(--green);
+
+  /* Elevation shadow */
+  --shadow-card:
+    0 1px 2px var(--elevation-contact), 0 8px 24px -12px var(--elevation-cast);
 
   /* Stacking order */
   --layer-raised: 1;
