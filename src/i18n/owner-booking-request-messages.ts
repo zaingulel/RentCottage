@@ -1,3 +1,6 @@
+import type { BookingQuoteItem } from "@/booking-quote/booking-quote";
+import type { BookingRequestResponseTimeLeft } from "@/booking-request/booking-request-status";
+import { formatCount, formatServiceDay, type CountForms } from "./format";
 import type { Locale } from "./routing";
 
 export const ownerBookingRequestMessages: Record<
@@ -23,6 +26,12 @@ export const ownerBookingRequestMessages: Record<
     notification: string;
     shift: string;
     fullDay: string;
+    guests: CountForms;
+    answerWithinHours: CountForms;
+    answerWithinMinutes: CountForms;
+    answerUnderAMinute: string;
+    answerTimeEnded: string;
+    listSeparator: string;
   }
 > = {
   en: {
@@ -49,6 +58,18 @@ export const ownerBookingRequestMessages: Record<
     notification: "Status notification",
     shift: "Cottage Shift",
     fullDay: "Full-Day Bundle",
+    guests: { one: "{count} guest", other: "{count} guests" },
+    answerWithinHours: {
+      one: "Answer within {count} hour",
+      other: "Answer within {count} hours",
+    },
+    answerWithinMinutes: {
+      one: "Answer within {count} minute",
+      other: "Answer within {count} minutes",
+    },
+    answerUnderAMinute: "Less than a minute left to answer",
+    answerTimeEnded: "The time to answer has ended",
+    listSeparator: ", ",
   },
   ar: {
     title: "طلبات الحجز قيد الانتظار",
@@ -73,6 +94,30 @@ export const ownerBookingRequestMessages: Record<
     notification: "إشعار الحالة",
     shift: "فترة البيت",
     fullDay: "باقة اليوم الكامل",
+    guests: {
+      one: "{count} ضيف",
+      two: "{count} ضيفان",
+      few: "{count} ضيوف",
+      many: "{count} ضيفًا",
+      other: "{count} ضيف",
+    },
+    answerWithinHours: {
+      one: "أجب خلال {count} ساعة",
+      two: "أجب خلال {count} ساعتين",
+      few: "أجب خلال {count} ساعات",
+      many: "أجب خلال {count} ساعة",
+      other: "أجب خلال {count} ساعة",
+    },
+    answerWithinMinutes: {
+      one: "أجب خلال {count} دقيقة",
+      two: "أجب خلال {count} دقيقتين",
+      few: "أجب خلال {count} دقائق",
+      many: "أجب خلال {count} دقيقة",
+      other: "أجب خلال {count} دقيقة",
+    },
+    answerUnderAMinute: "بقي أقل من دقيقة للرد",
+    answerTimeEnded: "انتهى وقت الرد",
+    listSeparator: "، ",
   },
   ckb: {
     title: "داواکارییە چاوەڕوانەکانی حجز",
@@ -98,5 +143,60 @@ export const ownerBookingRequestMessages: Record<
     notification: "ئاگادارکردنەوەی دۆخ",
     shift: "شەفتی کۆتێج",
     fullDay: "پاکێجی ڕۆژی تەواو",
+    guests: { other: "{count} میوان" },
+    answerWithinHours: {
+      other: "لە ماوەی {count} کاتژمێردا وەڵام بدەرەوە",
+    },
+    answerWithinMinutes: {
+      other: "لە ماوەی {count} خولەکدا وەڵام بدەرەوە",
+    },
+    answerUnderAMinute: "کەمتر لە خولەکێک ماوە بۆ وەڵامدانەوە",
+    answerTimeEnded: "کاتی وەڵامدانەوە تەواو بووە",
+    listSeparator: "، ",
   },
 };
+
+export function ownerRequestGuests(locale: Locale, partySize: number): string {
+  return formatCount(
+    partySize,
+    locale,
+    ownerBookingRequestMessages[locale].guests,
+  );
+}
+
+export function ownerRequestTimeLeft(
+  locale: Locale,
+  timeLeft: BookingRequestResponseTimeLeft,
+): string {
+  const messages = ownerBookingRequestMessages[locale];
+  switch (timeLeft.unit) {
+    case "hours":
+      return formatCount(timeLeft.count, locale, messages.answerWithinHours);
+    case "minutes":
+      return formatCount(timeLeft.count, locale, messages.answerWithinMinutes);
+    case "under-a-minute":
+      return messages.answerUnderAMinute;
+    case "elapsed":
+      return messages.answerTimeEnded;
+  }
+}
+
+export function ownerRequestPeriod(
+  locale: Locale,
+  bookingPeriod: readonly Pick<
+    BookingQuoteItem,
+    "serviceDay" | "displayName"
+  >[],
+): string[] {
+  const days: { serviceDay: string; names: string[] }[] = [];
+  for (const { serviceDay, displayName } of bookingPeriod) {
+    const last = days.at(-1);
+    if (last?.serviceDay === serviceDay) last.names.push(displayName);
+    else days.push({ serviceDay, names: [displayName] });
+  }
+  const { listSeparator } = ownerBookingRequestMessages[locale];
+  return days.map(
+    ({ serviceDay, names }) =>
+      `${formatServiceDay(serviceDay, locale, { weekday: true })}: ${names.join(listSeparator)}`,
+  );
+}

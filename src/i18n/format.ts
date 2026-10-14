@@ -60,3 +60,25 @@ export function formatServiceDay(
     timeZone: "UTC",
   }).format(new Date(`${serviceDay}T00:00:00Z`));
 }
+
+export type CountForms = { readonly other: string } & {
+  readonly [Category in "zero" | "one" | "two" | "few" | "many"]?: string;
+};
+
+export function formatInteger(value: number, locale: Locale): string {
+  return new Intl.NumberFormat(iraqIntlLocales[locale], {
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+export function formatCount(
+  count: number,
+  locale: Locale,
+  forms: CountForms,
+): string {
+  const category = new Intl.PluralRules(iraqIntlLocales[locale]).select(count);
+  return (forms[category as keyof CountForms] ?? forms.other).replace(
+    "{count}",
+    formatInteger(count, locale),
+  );
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatCount,
   formatFilsAsIqd,
   formatIqd,
   formatIraqDateTime,
@@ -56,5 +57,30 @@ describe("localized formatting", () => {
     expect(formatServiceDay("2026-09-22", "ckb", { weekday: true })).toBe(
       "سێشەممە، ٢٢ی ئەیلوول",
     );
+  });
+
+  it("chooses the plural form and numerals each launch language uses for a count", () => {
+    const arabic = {
+      zero: "zero {count}",
+      one: "one {count}",
+      two: "two {count}",
+      few: "few {count}",
+      many: "many {count}",
+      other: "other {count}",
+    };
+    expect(
+      [0, 1, 2, 3, 11, 100].map((count) => formatCount(count, "ar", arabic)),
+    ).toEqual(["zero 0", "one 1", "two 2", "few 3", "many 11", "other 100"]);
+    expect(formatCount(2, "ckb", { other: "{count} items" })).toBe("٢ items");
+    const english = { one: "{count} item", other: "{count} items" };
+    expect(formatCount(1, "en", english)).toBe("1 item");
+    expect(formatCount(2, "en", english)).toBe("2 items");
+  });
+
+  it("falls back to the other form when a language has no form for the category", () => {
+    expect(formatCount(1, "ckb", { other: "{count} items" })).toBe("١ items");
+    expect(
+      formatCount(2, "ar", { one: "{count} item", other: "{count} items" }),
+    ).toBe("2 items");
   });
 });
