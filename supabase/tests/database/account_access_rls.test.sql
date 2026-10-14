@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(39);
+select plan(45);
 
 select has_table(
   'public',
@@ -287,6 +287,13 @@ select throws_ok(
   'the service role cannot write a first name directly'
 );
 
+select throws_ok(
+  $$select user_id from public.account_names$$,
+  '42501',
+  null,
+  'the service role cannot read first names'
+);
+
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 
@@ -303,6 +310,14 @@ select throws_ok(
   null,
   'a signed-out visitor cannot save a first name'
 );
+
+reset role;
+
+select ok(not has_function_privilege('anon','public.save_account_name(text)','EXECUTE'),'anon cannot save a first name');
+select ok(not has_function_privilege('service_role','public.save_account_name(text)','EXECUTE'),'the service role cannot save a first name');
+select ok(not has_table_privilege('authenticated','public.account_names','INSERT'),'authenticated cannot insert first names directly');
+select ok(not has_table_privilege('authenticated','public.account_names','UPDATE'),'authenticated cannot update first names directly');
+select ok(not has_table_privilege('authenticated','public.account_names','DELETE'),'authenticated cannot delete first names directly');
 
 select * from finish();
 rollback;
