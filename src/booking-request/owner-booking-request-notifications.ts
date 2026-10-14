@@ -18,12 +18,24 @@ import {
   isBookingRequestStatus,
   paymentRequiredWindowFrom,
   paymentRequiredExpiryFrom,
+  responseTimeLeft,
   type BookingRequestPaymentRequiredExpiry,
   type BookingRequestNotificationStatus,
   type BookingRequestPaymentRequiredWindow,
   type BookingRequestPaymentStatus,
+  type BookingRequestResponseTimeLeft,
   type BookingRequestStatus,
 } from "./booking-request-status";
+
+const databaseClockPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+function isDatabaseClock(value: unknown): value is string {
+  if (typeof value !== "string" || !databaseClockPattern.test(value)) {
+    return false;
+  }
+  const instant = new Date(value);
+  return Number.isFinite(instant.getTime()) && instant.toISOString() === value;
+}
 
 export interface OwnerBookingRequestNotification {
   id: string;
@@ -50,6 +62,8 @@ export interface OwnerBookingRequestNotification {
   }[];
   responseDeadline: string;
   createdAt: string;
+  readonly coverMediaUrl: string | null;
+  readonly responseTimeLeft: BookingRequestResponseTimeLeft;
 }
 
 const keys = new Set([
@@ -73,6 +87,8 @@ const keys = new Set([
   "statusNotifications",
   "responseDeadline",
   "createdAt",
+  "coverMediaId",
+  "databaseNow",
 ]);
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -160,8 +176,12 @@ function notificationFrom(
         !isTimestamp(row.createdAt)
       );
     }) ||
-    !isTimestamp(notification.responseDeadline) ||
-    !isTimestamp(notification.createdAt)
+    !isDatabaseClock(notification.responseDeadline) ||
+    !isTimestamp(notification.createdAt) ||
+    (notification.coverMediaId !== null &&
+      (typeof notification.coverMediaId !== "string" ||
+        !uuid.test(notification.coverMediaId))) ||
+    !isDatabaseClock(notification.databaseNow)
   ) {
     return undefined;
   }
@@ -196,6 +216,14 @@ function notificationFrom(
     statusNotifications,
     responseDeadline: notification.responseDeadline,
     createdAt: notification.createdAt,
+    coverMediaUrl:
+      notification.coverMediaId === null
+        ? null
+        : `/api/cottage-media/${notification.coverMediaId}`,
+    responseTimeLeft: responseTimeLeft(
+      notification.responseDeadline,
+      notification.databaseNow,
+    ),
   };
 }
 

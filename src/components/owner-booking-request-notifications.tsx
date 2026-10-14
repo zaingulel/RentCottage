@@ -1,12 +1,14 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { ActionFocusTarget } from "./interaction-controls";
+import { ActionFocusTarget, ActionLink } from "./interaction-controls";
 import { useBookingRequestRefresh } from "@/booking-request/use-booking-request-refresh";
 import { BookingRequestStatusContent } from "./booking-request-status-content";
 import {
   isPaymentDisplayStatus,
+  isWaitingBookingRequest,
   shouldRefreshBookingRequestStatus,
   type BookingRequestDisplayStatus,
   type OwnerBookingRequestNotificationDisplay,
@@ -16,9 +18,17 @@ import {
   bookingRequestPaymentRequiredExpiryMessages,
 } from "@/i18n/booking-request-status-messages";
 import { formatFilsAsIqd, formatIqd, formatIraqDateTime } from "@/i18n/format";
-import { ownerBookingRequestMessages } from "@/i18n/owner-booking-request-messages";
+import {
+  ownerBookingRequestMessages,
+  ownerRequestGuests,
+  ownerRequestPeriod,
+  ownerRequestTimeLeft,
+} from "@/i18n/owner-booking-request-messages";
 import type { Locale } from "@/i18n/routing";
-import { BookingRequestDecisionControls } from "./booking-request-decision-controls";
+import {
+  BookingRequestDecisionControls,
+  BookingRequestRowDecisionControls,
+} from "./booking-request-decision-controls";
 
 const paymentDeadlineMessages: Record<Locale, string> = {
   en: "Payment deadline",
@@ -164,7 +174,7 @@ export function OwnerBookingRequestCard({
           </div>
         ))}
       </dl>
-      {notification.status === "pending" ? (
+      {isWaitingBookingRequest(notification) ? (
         <BookingRequestDecisionControls
           locale={locale}
           bookingRequestId={notification.id}
@@ -186,14 +196,92 @@ export function OwnerBookingRequestCard({
   );
 }
 
+function OwnerBookingRequestRow({
+  locale,
+  notification,
+  refresh,
+  focusSuccessorId,
+}: {
+  locale: Locale;
+  notification: OwnerBookingRequestNotificationDisplay;
+  refresh?: () => void;
+  focusSuccessorId?: string;
+}) {
+  const copy = ownerBookingRequestMessages[locale];
+  const [status, setStatus] = useState<BookingRequestDisplayStatus>(
+    notification.status,
+  );
+  return (
+    <article
+      aria-label={notification.bookingRequestReference}
+      className="card request-row"
+    >
+      {status !== "pending" && focusSuccessorId ? (
+        <ActionFocusTarget targetId={focusSuccessorId} />
+      ) : null}
+      <div className="request-row-photo">
+        {notification.coverMediaUrl ? (
+          <Image src={notification.coverMediaUrl} alt="" fill sizes="5rem" />
+        ) : null}
+      </div>
+      <div className="request-row-facts">
+        <h3 className="card-title">
+          {`${notification.customerName} · ${ownerRequestGuests(locale, notification.partySize)}`}
+        </h3>
+        <p className="card-detail">
+          {[
+            notification.cottageName,
+            ...ownerRequestPeriod(locale, notification.bookingPeriod),
+            formatIqd(notification.bookingPriceIqd, locale),
+          ].join(" · ")}
+        </p>
+        {status === "pending" ? (
+          <span className="status-badge status-badge-attention">
+            {ownerRequestTimeLeft(locale, notification.responseTimeLeft)}
+          </span>
+        ) : null}
+        <ActionLink
+          kind="text"
+          href={`/${locale}/owner/booking-requests/${notification.bookingRequestReference}`}
+          prefetch={false}
+        >
+          {copy.viewRequest}
+        </ActionLink>
+        <span role="status" aria-live="polite">
+          {status === "pending" ? null : (
+            <BookingRequestStatusContent
+              locale={locale}
+              status={status}
+              role="owner"
+              paymentRequiredPhase={notification.paymentRequiredWindow?.phase}
+              paymentRequiredExpiry={notification.paymentRequiredExpiry}
+            />
+          )}
+        </span>
+      </div>
+      <BookingRequestRowDecisionControls
+        locale={locale}
+        bookingRequestId={notification.id}
+        focusSuccessorId={focusSuccessorId}
+        onStatusChange={(next) => {
+          setStatus(next);
+          if (next !== "pending" && next !== "processing") refresh?.();
+        }}
+      />
+    </article>
+  );
+}
+
 export function OwnerBookingRequestNotifications({
   locale,
   notifications,
   focusSuccessorId = "owner-booking-requests-heading",
+  waitingPresentation = "card",
 }: {
   locale: Locale;
   notifications: OwnerBookingRequestNotificationDisplay[] | undefined;
   focusSuccessorId?: string;
+  waitingPresentation?: "card" | "row";
 }) {
   const copy = ownerBookingRequestMessages[locale];
   const refresh = useBookingRequestRefresh(
@@ -214,6 +302,16 @@ export function OwnerBookingRequestNotifications({
     ({ status, paymentRequiredExpiry }) =>
       isPaymentDisplayStatus(status) || paymentRequiredExpiry !== null,
   );
+  const rows =
+    waitingPresentation === "row"
+      ? notifications.filter(isWaitingBookingRequest)
+      : [];
+  const cards =
+    waitingPresentation === "row"
+      ? notifications.filter(
+          (notification) => !isWaitingBookingRequest(notification),
+        )
+      : notifications;
   return (
     <section
       className="owner-booking-requests"
@@ -230,8 +328,21 @@ export function OwnerBookingRequestNotifications({
         <p>{containsPaymentDisplayState ? copy.paymentIntro : copy.intro}</p>
       </div>
       {notifications.length === 0 ? <p>{copy.empty}</p> : null}
+      {rows.length > 0 ? (
+        <div className="request-rows">
+          {rows.map((notification) => (
+            <OwnerBookingRequestRow
+              locale={locale}
+              notification={notification}
+              key={`${notification.bookingRequestReference}:${notification.status}`}
+              refresh={refresh}
+              focusSuccessorId={focusSuccessorId}
+            />
+          ))}
+        </div>
+      ) : null}
       <div className="owner-booking-request-grid">
-        {notifications.map((notification) => (
+        {cards.map((notification) => (
           <OwnerBookingRequestCard
             locale={locale}
             notification={notification}

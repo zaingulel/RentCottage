@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/cottage-profile/actions", () => ({
@@ -410,8 +416,9 @@ describe("Cottage Profile overview", () => {
         />,
       );
 
-      expect(screen.getByText(publishedLabel)).toBeVisible();
-      expect(screen.queryByText(draftLabel)).toBeNull();
+      const card = within(screen.getByRole("article"));
+      expect(card.getByText(publishedLabel)).toBeVisible();
+      expect(card.queryByText(draftLabel)).toBeNull();
     },
   );
 
@@ -490,9 +497,119 @@ describe("Cottage Profile overview", () => {
         />,
       );
 
-      expect(screen.getByText(label)).toBeVisible();
+      expect(
+        within(screen.getByRole("article")).getByText(label),
+      ).toBeVisible();
     },
   );
+
+  it("states the owner's counts in a sentence and tiles that match the listed cards", () => {
+    const { container } = render(
+      <CottageProfileOverview
+        locale="en"
+        actor="owner"
+        profiles={[
+          { ...profile, id: "a", ...published },
+          { ...profile, id: "b", ...publishedWithUnpublishedChanges },
+          { ...profile, id: "c", ...neverPublishedDraft },
+          { ...profile, id: "d", ...neverPublishedSubmitted },
+          { ...profile, id: "e", ...abandoned },
+        ]}
+        waitingRequestCount={4}
+      />,
+    );
+
+    expect(
+      screen.getByText("You have 2 published cottages and 1 draft."),
+    ).toBeVisible();
+    expect(
+      screen.getAllByRole("listitem").map((tile) => tile.textContent),
+    ).toEqual(["2 Published", "1 Draft", "4 Requests waiting"]);
+    expect(container.querySelectorAll(".status-badge-published")).toHaveLength(
+      2,
+    );
+    expect(container.querySelectorAll(".status-badge-draft")).toHaveLength(1);
+  });
+
+  it("hides the waiting requests tile when waiting requests are switched off", () => {
+    const { rerender } = render(
+      <CottageProfileOverview locale="en" actor="owner" profiles={[profile]} />,
+    );
+
+    expect(
+      screen.getAllByRole("listitem").map((tile) => tile.textContent),
+    ).toEqual(["0 Published", "1 Draft"]);
+    expect(screen.queryByText("Requests waiting")).toBeNull();
+
+    rerender(
+      <CottageProfileOverview
+        locale="en"
+        actor="owner"
+        profiles={[profile]}
+        waitingRequestCount={0}
+      />,
+    );
+
+    expect(screen.getAllByRole("listitem")[2]).toHaveTextContent(
+      "0 Requests waiting",
+    );
+  });
+
+  it("shows an owner with no cottages an empty state and no tiles", () => {
+    const { container } = render(
+      <CottageProfileOverview
+        locale="en"
+        actor="owner"
+        profiles={[]}
+        canCreate
+        waitingRequestCount={0}
+      />,
+    );
+
+    expect(container.querySelector(".empty-state")).toHaveTextContent(
+      "You have no cottages yet.",
+    );
+    expect(screen.queryByRole("list")).toBeNull();
+    expect(container.querySelector("header p")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Create a cottage draft" }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: "Create another cottage draft" }),
+    ).toBeNull();
+  });
+
+  it("keeps the administrator list free of the owner summary", () => {
+    const { container, rerender } = render(
+      <CottageProfileOverview
+        locale="en"
+        actor="administrator"
+        profiles={[profile]}
+        waitingRequestCount={3}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Review unpublished working copies without changing submitted owner source.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole("list")).toBeNull();
+    expect(screen.queryByText(/You have/)).toBeNull();
+
+    rerender(
+      <CottageProfileOverview
+        locale="en"
+        actor="administrator"
+        profiles={[]}
+      />,
+    );
+
+    expect(
+      screen.getByText("No Cottage Profiles are available."),
+    ).toBeVisible();
+    expect(container.querySelector(".empty-state")).toBeNull();
+  });
 
   it("shows a localized administrator continuation link", () => {
     render(
@@ -552,7 +669,9 @@ describe("Cottage Profile overview", () => {
         />,
       );
 
-      expect(screen.getByText(label).className).toBe(badgeClass);
+      expect(
+        within(screen.getByRole("article")).getByText(label).className,
+      ).toBe(badgeClass);
     },
   );
 });

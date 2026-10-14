@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { listOwnerBookingRequestNotifications } from "./owner-booking-request-notifications";
 
-const notification = {
+const commonFields = {
   id: "00000000-0000-4000-8000-000000000033",
   bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
   status: "pending",
@@ -35,6 +35,16 @@ const notification = {
   statusNotifications: [],
   responseDeadline: "2099-08-21T21:00:00.000Z",
   createdAt: "2099-08-21T17:00:00.000Z",
+};
+const notification = {
+  ...commonFields,
+  coverMediaId: "70000000-0000-4000-8000-000000000747",
+  databaseNow: "2099-08-21T17:30:00.000Z",
+};
+const projection = {
+  ...commonFields,
+  coverMediaUrl: "/api/cottage-media/70000000-0000-4000-8000-000000000747",
+  responseTimeLeft: { unit: "hours", count: 3 },
 };
 
 describe("Owner Booking Request notifications", () => {
@@ -102,7 +112,7 @@ describe("Owner Booking Request notifications", () => {
       listOwnerBookingRequestNotifications({
         rpc,
       } as unknown as SupabaseClient),
-    ).resolves.toEqual([notification]);
+    ).resolves.toEqual([projection]);
     expect(rpc).toHaveBeenCalledWith(
       "list_owner_booking_request_notifications",
     );
@@ -125,7 +135,121 @@ describe("Owner Booking Request notifications", () => {
       listOwnerBookingRequestNotifications({
         rpc,
       } as unknown as SupabaseClient),
-    ).resolves.toEqual([stored]);
+    ).resolves.toEqual([{ ...projection, bookingNote }]);
+  });
+
+  it.each([
+    {
+      label: "3 h 59 min 59.999 s left",
+      databaseNow: "2099-08-21T17:00:00.001Z",
+      expected: { unit: "hours", count: 3 },
+    },
+    {
+      label: "exactly 1 h left",
+      databaseNow: "2099-08-21T20:00:00.000Z",
+      expected: { unit: "hours", count: 1 },
+    },
+    {
+      label: "59 min 59.999 s left",
+      databaseNow: "2099-08-21T20:00:00.001Z",
+      expected: { unit: "minutes", count: 59 },
+    },
+    {
+      label: "exactly 1 min left",
+      databaseNow: "2099-08-21T20:59:00.000Z",
+      expected: { unit: "minutes", count: 1 },
+    },
+    {
+      label: "59.999 s left",
+      databaseNow: "2099-08-21T20:59:00.001Z",
+      expected: { unit: "under-a-minute" },
+    },
+    {
+      label: "exactly the Response Deadline",
+      databaseNow: "2099-08-21T21:00:00.000Z",
+      expected: { unit: "elapsed" },
+    },
+    {
+      label: "one second past the Response Deadline",
+      databaseNow: "2099-08-21T21:00:01.000Z",
+      expected: { unit: "elapsed" },
+    },
+  ])(
+    "derives the time left to answer from database time: $label",
+    async ({ databaseNow, expected }) => {
+      const [result] = await listOwnerBookingRequestNotifications(
+        clientReturning([{ ...notification, databaseNow }]),
+      );
+      expect(result.responseTimeLeft).toEqual(expected);
+    },
+  );
+
+  it("maps the cover media identifier to the public cottage media address and keeps a missing photo null", async () => {
+    const result = await listOwnerBookingRequestNotifications(
+      clientReturning([
+        notification,
+        {
+          ...notification,
+          id: "00000000-0000-4000-8000-000000000035",
+          coverMediaId: null,
+        },
+      ]),
+    );
+    expect(result.map(({ coverMediaUrl }) => coverMediaUrl)).toEqual([
+      "/api/cottage-media/70000000-0000-4000-8000-000000000747",
+      null,
+    ]);
+  });
+
+  it.each([
+    {
+      label: "coverMediaId is not a UUID",
+      row: { ...notification, coverMediaId: "cover" },
+    },
+    {
+      label: "coverMediaId is a number",
+      row: { ...notification, coverMediaId: 747 },
+    },
+    {
+      label: "coverMediaId is missing",
+      row: { ...commonFields, databaseNow: notification.databaseNow },
+    },
+    {
+      label: "databaseNow is not a timestamp",
+      row: { ...notification, databaseNow: "not-a-timestamp" },
+    },
+    {
+      label: "databaseNow is a bare number string",
+      row: { ...notification, databaseNow: "0" },
+    },
+    {
+      label: "databaseNow is not a calendar date",
+      row: { ...notification, databaseNow: "2026-02-30T17:30:00.000Z" },
+    },
+    {
+      label: "databaseNow has an impossible month",
+      row: { ...notification, databaseNow: "2026-13-01T00:00:00.000Z" },
+    },
+    {
+      label: "databaseNow has no UTC designator",
+      row: { ...notification, databaseNow: "2099-08-21T17:30:00.000" },
+    },
+    {
+      label: "databaseNow has an extended year",
+      row: { ...notification, databaseNow: "+010000-01-01T00:00:00.000Z" },
+    },
+    {
+      label: "responseDeadline is not a calendar date",
+      row: { ...notification, responseDeadline: "2099-02-30T21:00:00.000Z" },
+    },
+    {
+      label: "databaseNow is missing",
+      row: { ...commonFields, coverMediaId: notification.coverMediaId },
+    },
+  ])("fails closed when $label", async ({ row }) => {
+    await expect(
+      listOwnerBookingRequestNotifications(clientReturning([row])),
+    ).rejects.toThrow("Owner Booking Request notification data is invalid");
   });
 
   it("fails closed if provider or contact metadata leaks into the projection", async () => {
@@ -177,7 +301,7 @@ describe("Owner Booking Request notifications", () => {
       ],
     };
     const expected = {
-      ...notification,
+      ...projection,
       statusNotifications: [
         {
           id: "00000000-0000-4000-8000-000000000034",

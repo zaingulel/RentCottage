@@ -759,3 +759,133 @@ test("a cottage list card casts the card shadow and each toned status badge show
     path: testInfo.outputPath("cottage-card-focus.png"),
   });
 });
+
+test("a waiting request row sits on one line on desktop and stacks with its two actions side by side on a phone in both directions", async ({
+  page,
+}, testInfo) => {
+  const phone = testInfo.project.name === "mobile";
+  if (phone) {
+    await page.setViewportSize({ width: 390, height: 844 });
+  }
+  await mountBookingRequestDisplay(page, testInfo);
+
+  for (const fixture of [
+    {
+      dir: "ltr",
+      lang: "en",
+      title: `${"A".repeat(120)} · 4 guests`,
+      detail: "Garden House · Fri, Oct 23: Evening · IQD 250,000",
+      timeLeft: "Answer within 3 hours",
+      link: "View request",
+      decline: "Decline",
+      accept: "Accept",
+    },
+    {
+      dir: "rtl",
+      lang: "ar",
+      title: `${"ب".repeat(120)} · 4 ضيوف`,
+      detail: "بيت الحديقة · الجمعة، 23 أكتوبر: مساءً · 250,000 د.ع.",
+      timeLeft: "أجب خلال 3 ساعات",
+      link: "عرض الطلب",
+      decline: "رفض",
+      accept: "قبول",
+    },
+  ] as const) {
+    await page.evaluate((input) => {
+      document.querySelector('[data-testid="request-row-page"]')?.remove();
+      document.documentElement.dir = input.dir;
+      document.documentElement.lang = input.lang;
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        '<main class="results-page page" data-testid="request-row-page"><section class="owner-booking-requests">' +
+          '<div><h2 class="section-title">Pending Booking Requests</h2></div>' +
+          '<div class="request-rows"><article class="card request-row">' +
+          '<div class="request-row-photo"></div>' +
+          '<div class="request-row-facts">' +
+          `<h3 class="card-title">${input.title}</h3>` +
+          `<p class="card-detail">${input.detail}</p>` +
+          `<span class="status-badge status-badge-attention">${input.timeLeft}</span>` +
+          `<a class="action-link action-text" href="#">${input.link}</a>` +
+          '<span role="status" aria-live="polite"></span>' +
+          "</div>" +
+          '<div class="request-row-actions">' +
+          `<button class="action action-secondary action-regular action-content" type="button" aria-expanded="false">${input.decline}</button>` +
+          `<button class="action action-primary action-regular action-content" type="button">${input.accept}</button>` +
+          "</div></article></div></section></main>",
+      );
+    }, fixture);
+    await expect(page.locator("html")).toHaveAttribute("dir", fixture.dir);
+    await expect(
+      page.getByRole("heading", { level: 3, name: fixture.title }),
+    ).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+
+    await expect(async () => {
+      const measured = await page.evaluate(() => {
+        const box = (selector: string) => {
+          const element = document.querySelector(
+            `[data-testid="request-row-page"] ${selector}`,
+          );
+          if (!element) throw new Error(`${selector} is missing`);
+          const { left, right, top, bottom, width, height } =
+            element.getBoundingClientRect();
+          return { left, right, top, bottom, width, height };
+        };
+        return {
+          available: document.documentElement.clientWidth,
+          document: document.documentElement.scrollWidth,
+          row: box(".request-row"),
+          heading: box(".request-row-facts > h3"),
+          photo: box(".request-row-photo"),
+          facts: box(".request-row-facts"),
+          actions: box(".request-row-actions"),
+          decline: box(".request-row-actions > button:first-child"),
+          accept: box(".request-row-actions > button:last-child"),
+        };
+      });
+
+      expect(measured.photo.width).toBeCloseTo(80, 0);
+      expect(measured.photo.height).toBeCloseTo(80, 0);
+      for (const element of [measured.row, measured.heading]) {
+        expect(element.left).toBeGreaterThanOrEqual(0);
+        expect(element.right).toBeLessThanOrEqual(measured.available);
+      }
+      expect(measured.document).toBeLessThanOrEqual(measured.available);
+
+      if (phone) {
+        expect(measured.actions.top).toBeGreaterThanOrEqual(
+          measured.facts.bottom,
+        );
+        expect(measured.decline.top).toBeCloseTo(measured.accept.top, 0);
+        expect(measured.decline.height).toBeGreaterThanOrEqual(44);
+        expect(measured.accept.height).toBeGreaterThanOrEqual(44);
+        for (const [inner, outer] of [
+          [measured.decline, measured.actions],
+          [measured.accept, measured.actions],
+          [measured.actions, measured.row],
+        ]) {
+          expect(inner.left).toBeGreaterThanOrEqual(outer.left - 1);
+          expect(inner.right).toBeLessThanOrEqual(outer.right + 1);
+        }
+      } else {
+        if (fixture.dir === "ltr") {
+          expect(measured.photo.right).toBeLessThanOrEqual(measured.facts.left);
+          expect(measured.facts.right).toBeLessThanOrEqual(
+            measured.actions.left,
+          );
+        } else {
+          expect(measured.photo.left).toBeGreaterThanOrEqual(
+            measured.facts.right,
+          );
+          expect(measured.facts.left).toBeGreaterThanOrEqual(
+            measured.actions.right,
+          );
+        }
+        const actionsMiddle =
+          (measured.actions.top + measured.actions.bottom) / 2;
+        expect(actionsMiddle).toBeGreaterThan(measured.facts.top);
+        expect(actionsMiddle).toBeLessThan(measured.facts.bottom);
+      }
+    }).toPass();
+  }
+});

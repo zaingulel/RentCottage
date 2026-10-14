@@ -44,6 +44,24 @@ export type BookingRequestPaymentRequiredExpiry = {
   readonly deadline: string;
 };
 
+export type BookingRequestResponseTimeLeft =
+  | { readonly unit: "hours" | "minutes"; readonly count: number }
+  | { readonly unit: "under-a-minute" }
+  | { readonly unit: "elapsed" };
+
+export function responseTimeLeft(
+  responseDeadline: string,
+  databaseNow: string,
+): BookingRequestResponseTimeLeft {
+  const ms = Date.parse(responseDeadline) - Date.parse(databaseNow);
+  // The database expires a request once evaluated_at >= response_deadline.
+  if (ms <= 0) return { unit: "elapsed" };
+  if (ms < 60_000) return { unit: "under-a-minute" };
+  if (ms < 3_600_000)
+    return { unit: "minutes", count: Math.floor(ms / 60_000) };
+  return { unit: "hours", count: Math.floor(ms / 3_600_000) };
+}
+
 export function paymentRequiredExpiryFrom(
   value: unknown,
   requestStatus: BookingRequestStatus,

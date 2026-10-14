@@ -194,6 +194,8 @@ const ownerDisplay = {
   bookingTermsVersion: "terms-v1",
   cancellationPolicyVersion: "cancel-v1",
   createdAt: "2099-08-21T17:00:00.000Z",
+  coverMediaUrl: null,
+  responseTimeLeft: { unit: "hours" as const, count: 3 },
 };
 
 export const ownerDisplayFixtures = {

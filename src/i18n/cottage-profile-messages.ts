@@ -1,3 +1,4 @@
+import { formatCount, type CountForms } from "./format";
 import type { Locale } from "./routing";
 import type {
   CottageProfile,
@@ -7,13 +8,23 @@ import type {
 const en = {
   eyebrow: "Owner Backoffice",
   overviewTitle: "Your cottages",
-  overviewIntro:
-    "Complete your first Cottage Profile or prepare another private draft.",
+  publishedCount: {
+    one: "{count} published cottage",
+    other: "{count} published cottages",
+  },
+  draftCount: { one: "{count} draft", other: "{count} drafts" },
+  ownerSummaryBoth: "You have {published} and {drafts}.",
+  ownerSummaryOne: "You have {phrase}.",
+  ownerSummaryNone: "None of your cottages is published yet.",
+  draftTile: "Draft",
+  waitingTile: "Requests waiting",
+  emptyOwner: "You have no cottages yet.",
   adminEyebrow: "Platform administration",
   adminTitle: "Private Cottage Profiles",
   adminIntro:
     "Review unpublished working copies without changing submitted owner source.",
   create: "Create another cottage draft",
+  createFirst: "Create a cottage draft",
   empty: "No Cottage Profiles are available.",
   open: "Open Cottage Profile",
   nextCottages: "Next Cottage Profiles",
@@ -137,16 +148,39 @@ const en = {
     "Administrator working-copy edits do not change this submitted source.",
 } as const;
 
-type Copy = { [Key in keyof typeof en]: string };
+type CountFormKey = "publishedCount" | "draftCount";
+
+type Copy = { [Key in Exclude<keyof typeof en, CountFormKey>]: string } & {
+  [Key in CountFormKey]: CountForms;
+};
 
 const ar: Copy = {
   eyebrow: "مكتب مالك الكوخ",
   overviewTitle: "أكواخك",
-  overviewIntro: "أكمل ملف الكوخ الأول أو جهّز مسودة خاصة أخرى.",
+  publishedCount: {
+    one: "{count} كوخ منشور",
+    two: "{count} كوخان منشوران",
+    few: "{count} أكواخ منشورة",
+    many: "{count} كوخًا منشورًا",
+    other: "{count} كوخ منشور",
+  },
+  draftCount: {
+    one: "{count} مسودة",
+    two: "{count} مسودتان",
+    few: "{count} مسودات",
+    other: "{count} مسودة",
+  },
+  ownerSummaryBoth: "لديك {published} و{drafts}.",
+  ownerSummaryOne: "لديك {phrase}.",
+  ownerSummaryNone: "لم يُنشر أي من أكواخك بعد.",
+  draftTile: "مسودة",
+  waitingTile: "طلبات بانتظارك",
+  emptyOwner: "ليس لديك أكواخ بعد.",
   adminEyebrow: "إدارة المنصة",
   adminTitle: "ملفات الأكواخ الخاصة",
   adminIntro: "راجع نسخ العمل غير المنشورة من دون تغيير مصدر المالك المرسل.",
   create: "إنشاء مسودة كوخ أخرى",
+  createFirst: "إنشاء مسودة كوخ",
   empty: "لا توجد ملفات أكواخ متاحة.",
   open: "فتح ملف الكوخ",
   nextCottages: "ملفات الأكواخ التالية",
@@ -268,13 +302,20 @@ const ar: Copy = {
 const ckb: Copy = {
   eyebrow: "بەشی بەڕێوەبردنی خاوەن کۆتێج",
   overviewTitle: "کۆتێجەکانت",
-  overviewIntro:
-    "پرۆفایلی یەکەمی کۆتێج تەواو بکە یان ڕەشنووسێکی تایبەتی تر ئامادە بکە.",
+  publishedCount: { other: "{count} کۆتێجی بڵاوکراوە" },
+  draftCount: { other: "{count} ڕەشنووس" },
+  ownerSummaryBoth: "{published} و {drafts}ت هەیە.",
+  ownerSummaryOne: "{phrase}ت هەیە.",
+  ownerSummaryNone: "هێشتا هیچ کام لە کۆتێجەکانت بڵاونەکراوەتەوە.",
+  draftTile: "ڕەشنووس",
+  waitingTile: "داواکاریی چاوەڕوان",
+  emptyOwner: "هێشتا هیچ کۆتێجێکت نییە.",
   adminEyebrow: "بەڕێوەبردنی پلاتفۆرم",
   adminTitle: "پرۆفایلە تایبەتەکانی کۆتێج",
   adminIntro:
     "کۆپی کارکردنی بڵاونەکراوە بپشکنە بەبێ گۆڕینی سەرچاوەی نێردراوی خاوەن.",
   create: "دروستکردنی ڕەشنووسی کۆتێجێکی تر",
+  createFirst: "دروستکردنی ڕەشنووسی کۆتێج",
   empty: "هیچ پرۆفایلێکی کۆتێج بەردەست نییە.",
   open: "کردنەوەی پرۆفایلی کۆتێج",
   nextCottages: "پرۆفایلەکانی دواتری کۆتێج",
@@ -453,4 +494,33 @@ export function cottageProfileStatusTone(
   profile: CottageProfileStatusFields,
 ): CottageProfileStatusTone | null {
   return cottageProfileStatusTones[cottageProfileDisplayStatus(profile)];
+}
+
+export function cottageProfileCounts(
+  profiles: readonly CottageProfileStatusFields[],
+): { published: number; drafts: number } {
+  const tones = profiles.map(cottageProfileStatusTone);
+  return {
+    published: tones.filter((tone) => tone === "published").length,
+    drafts: tones.filter((tone) => tone === "draft").length,
+  };
+}
+
+export function ownerCottagesSummarySentence(
+  locale: Locale,
+  counts: { published: number; drafts: number },
+): string {
+  const copy = cottageProfileMessages[locale];
+  const published = formatCount(counts.published, locale, copy.publishedCount);
+  const drafts = formatCount(counts.drafts, locale, copy.draftCount);
+  if (counts.published > 0 && counts.drafts > 0)
+    return copy.ownerSummaryBoth
+      .replace("{published}", published)
+      .replace("{drafts}", drafts);
+  if (counts.published > 0 || counts.drafts > 0)
+    return copy.ownerSummaryOne.replace(
+      "{phrase}",
+      counts.published > 0 ? published : drafts,
+    );
+  return copy.ownerSummaryNone;
 }

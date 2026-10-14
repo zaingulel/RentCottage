@@ -58,7 +58,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(352);
+select plan(355);
 
 set local role anon;
 select throws_ok(
@@ -6080,14 +6080,51 @@ select results_eq(
 );
 rollback to savepoint terminal_reconciliation_markers_are_monotonic;
 
+insert into public.cottage_profile_photos (
+  id, profile_id, owner_user_id, actor_user_id, object_path,
+  original_filename, media_type, size_bytes, state
+) values (
+  '40000000-0000-4000-8000-000000003201',
+  '30000000-0000-4000-8000-000000003201',
+  '00000000-0000-0000-0000-000000003201',
+  '00000000-0000-0000-0000-000000003201',
+  'private/submission/cover-3201.webp', 'cover-3201.webp', 'image/webp', 128, 'ready'
+), (
+  '40000000-0000-4000-8000-000000003202',
+  '30000000-0000-4000-8000-000000003201',
+  '00000000-0000-0000-0000-000000003201',
+  '00000000-0000-0000-0000-000000003201',
+  'private/submission/cover-3202.webp', 'cover-3202.webp', 'image/webp', 128, 'ready'
+);
+-- Position 2 is inserted first so the projection must order by position to return position 1.
+insert into public.cottage_publication_media (
+  publication_id, photo_id, opaque_id, object_path, media_type, position
+) values (
+  '66000000-0000-4000-8000-000000003201',
+  '40000000-0000-4000-8000-000000003201',
+  '41000000-0000-4000-8000-000000003201',
+  'private/submission/cover-3201.webp', 'image/webp', 2
+);
+insert into public.cottage_publication_media (
+  publication_id, photo_id, opaque_id, object_path, media_type, position
+) values (
+  '66000000-0000-4000-8000-000000003201',
+  '40000000-0000-4000-8000-000000003202',
+  '41000000-0000-4000-8000-000000003202',
+  'private/submission/cover-3202.webp', 'image/webp', 1
+);
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
   '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201"}',
   true
 );
+create temporary table owner_projection_clock as
+select clock_timestamp() as before_call, null::timestamptz as after_call;
 create temporary table owner_projection as
 select public.list_owner_booking_request_notifications() as result;
+update owner_projection_clock set after_call = clock_timestamp();
 reset role;
 select is(
   jsonb_array_length((select result from owner_projection)), 1,
@@ -6108,6 +6145,33 @@ select ok(
   ] from owner_projection),
   'the Owner card receives the complete immutable Booking Snapshot and scoped notification receipt shape'
 );
+select is(
+  (select result -> 0 ->> 'coverMediaId' from owner_projection),
+  '41000000-0000-4000-8000-000000003202',
+  'the owner projection carries the first photo Customers see for a publicly discoverable Cottage'
+);
+select ok(
+  (select (projection.result -> 0 ->> 'databaseNow')::timestamptz
+      between date_trunc('milliseconds', clock.before_call) and clock.after_call
+    from owner_projection projection cross join owner_projection_clock clock),
+  'the owner projection carries the database clock beside the Response Deadline'
+);
+savepoint owner_projection_paused_cottage;
+update public.cottage_marketplace_listings set state = 'paused'
+where profile_id = '30000000-0000-4000-8000-000000003201';
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201"}',
+  true
+);
+select is(
+  public.list_owner_booking_request_notifications() #> '{0,coverMediaId}',
+  'null'::jsonb,
+  'the owner projection carries no photo identifier once the Cottage is paused'
+);
+reset role;
+rollback to savepoint owner_projection_paused_cottage;
 
 set local role authenticated;
 select set_config(
