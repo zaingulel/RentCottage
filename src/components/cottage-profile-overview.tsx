@@ -180,7 +180,9 @@ export function CottageProfileOverview({
       {actor === "owner" && canCreate ? (
         <form action={createAction} className="cottage-profile-create-form">
           <input type="hidden" name="locale" value={locale} />
-          <button type="submit">{copy.create}</button>
+          <button type="submit">
+            {profiles.length === 0 ? copy.createFirst : copy.create}
+          </button>
           {createState.status === "unavailable" ? (
             <p role="alert">{copy.failed}</p>
           ) : null}

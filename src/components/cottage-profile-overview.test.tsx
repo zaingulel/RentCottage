@@ -572,8 +572,11 @@ describe("Cottage Profile overview", () => {
     expect(screen.queryByRole("list")).toBeNull();
     expect(container.querySelector("header p")).toBeNull();
     expect(
-      screen.getByRole("button", { name: "Create another cottage draft" }),
+      screen.getByRole("button", { name: "Create a cottage draft" }),
     ).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: "Create another cottage draft" }),
+    ).toBeNull();
   });
 
   it("keeps the administrator list free of the owner summary", () => {

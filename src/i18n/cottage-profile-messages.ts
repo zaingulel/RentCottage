@@ -24,6 +24,7 @@ const en = {
   adminIntro:
     "Review unpublished working copies without changing submitted owner source.",
   create: "Create another cottage draft",
+  createFirst: "Create a cottage draft",
   empty: "No Cottage Profiles are available.",
   open: "Open Cottage Profile",
   nextCottages: "Next Cottage Profiles",
@@ -179,6 +180,7 @@ const ar: Copy = {
   adminTitle: "ملفات الأكواخ الخاصة",
   adminIntro: "راجع نسخ العمل غير المنشورة من دون تغيير مصدر المالك المرسل.",
   create: "إنشاء مسودة كوخ أخرى",
+  createFirst: "إنشاء مسودة كوخ",
   empty: "لا توجد ملفات أكواخ متاحة.",
   open: "فتح ملف الكوخ",
   nextCottages: "ملفات الأكواخ التالية",
@@ -313,6 +315,7 @@ const ckb: Copy = {
   adminIntro:
     "کۆپی کارکردنی بڵاونەکراوە بپشکنە بەبێ گۆڕینی سەرچاوەی نێردراوی خاوەن.",
   create: "دروستکردنی ڕەشنووسی کۆتێجێکی تر",
+  createFirst: "دروستکردنی ڕەشنووسی کۆتێج",
   empty: "هیچ پرۆفایلێکی کۆتێج بەردەست نییە.",
   open: "کردنەوەی پرۆفایلی کۆتێج",
   nextCottages: "پرۆفایلەکانی دواتری کۆتێج",
