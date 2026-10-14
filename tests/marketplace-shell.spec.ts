@@ -478,17 +478,21 @@ test("the open account menu stays inside a 390 pixel screen for every role and l
         .getBoundingClientRect();
       const rows = [
         ...document.querySelectorAll(
-          '#site-header-account a, #site-header-account button[type="submit"]',
+          '#site-header-account-menu [role="menuitem"]',
         ),
       ];
       return {
-        menuInsideScreen:
+        menuSpansScreen:
           menu.width > 0 &&
-          menu.left >= 0 &&
-          menu.right <= root.clientWidth &&
+          Math.abs(menu.left) <= 1 &&
+          Math.abs(menu.right - 390) <= 1 &&
           menu.top >= 0 &&
           menu.bottom <= window.innerHeight,
         rows: rows.length > 0,
+        strayControls: document.querySelectorAll(
+          '#site-header-account-menu a:not([role="menuitem"]), #site-header-account-menu button:not([role="menuitem"])',
+        ).length,
+        firstItemFocused: document.activeElement === rows[0],
         clippedRows: rows.filter((row) => {
           const box = row.getBoundingClientRect();
           return (
@@ -522,25 +526,26 @@ test("the open account menu stays inside a 390 pixel screen for every role and l
         locale === "en" ? "ltr" : "rtl",
       );
       const header = page.getByRole("banner");
-      const opener = header
-        .locator('button[aria-controls^="site-header-account"]')
-        .filter({ visible: true });
-      const signOutButton = header.getByRole("button", {
+      const opener = header.locator(".account-menu-toggle");
+      const signOutItem = header.getByRole("menuitem", {
         name: signOut[locale],
       });
-      await expect(signOutButton, label).toBeHidden();
+      await expect(signOutItem, label).toBeHidden();
       await expect(opener, label).toHaveAttribute("aria-expanded", "false");
       await opener.tap();
-      await expect(signOutButton, label).toBeVisible();
+      await expect(signOutItem, label).toBeVisible();
       await page.evaluate(() => document.fonts.ready);
       await expect.poll(measure, { message: label }).toEqual({
-        menuInsideScreen: true,
+        menuSpansScreen: true,
         rows: true,
+        strayControls: 0,
+        firstItemFocused: true,
         clippedRows: 0,
         sidewaysScroll: 0,
       });
-      await opener.tap();
+      await page.keyboard.press("Escape");
       await expect(opener, label).toHaveAttribute("aria-expanded", "false");
+      await expect(opener, label).toBeFocused();
     }
   }
 
@@ -552,14 +557,11 @@ test("the open account menu stays inside a 390 pixel screen for every role and l
     },
   });
   const header = page.getByRole("banner");
-  await header
-    .locator('button[aria-controls^="site-header-account"]')
-    .filter({ visible: true })
-    .tap();
-  await header.locator("#site-header-account-menu a").first().focus();
+  const accountToggle = header.locator(".account-menu-toggle");
+  await accountToggle.tap();
+  await expect(header.getByRole("menuitem").first()).toBeFocused();
   await page.setViewportSize({ width: 1280, height: 390 });
   await page.keyboard.press("Escape");
-  const accountToggle = header.locator(".account-menu-toggle");
   await expect(accountToggle).toHaveAttribute("aria-expanded", "false");
   await expect(accountToggle).toBeFocused();
 });
@@ -753,7 +755,7 @@ test("the site header keeps one compact row and opens its panels as cards inside
         .getBoundingClientRect();
       const toggles = [
         ...document.querySelectorAll(
-          ".site-header-toggle, .site-header-language-toggle",
+          ".site-header-toggle, .site-header-language-toggle, .account-menu-toggle",
         ),
       ]
         .filter(isVisible)
@@ -768,7 +770,7 @@ test("the site header keeps one compact row and opens its panels as cards inside
         }).length,
         visibleDesktopItems: [
           ...document.querySelectorAll(
-            "nav.language-links a, .account-menu-toggle, nav.account-navigation > a",
+            "nav.language-links a, nav.account-navigation > a",
           ),
         ].filter(isVisible).length,
         headerHeight: document.querySelector("header")!.getBoundingClientRect()
@@ -875,11 +877,17 @@ test("the site header keeps one compact row and opens its panels as cards inside
           sidewaysScroll: 0,
         });
         for (const panel of [
-          {
-            controls: "site-header-account",
-            anchor: ".site-header-controls",
-            minimumRows: 1,
-          },
+          account.status === "authenticated"
+            ? {
+                controls: "site-header-account-menu",
+                anchor: ".account-menu-toggle",
+                minimumRows: 5,
+              }
+            : {
+                controls: "site-header-account",
+                anchor: ".site-header-controls",
+                minimumRows: 1,
+              },
           {
             controls: "site-header-language",
             anchor: ".site-header-language-toggle",

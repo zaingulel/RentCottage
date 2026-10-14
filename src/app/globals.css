@@ -3408,8 +3408,7 @@ section.request-follow-up {
   gap: var(--space-2);
 }
 
-.account-navigation > a,
-.account-menu-toggle {
+.account-navigation > a {
   min-height: 2.75rem;
   display: inline-flex;
   align-items: center;
@@ -3421,8 +3420,7 @@ section.request-follow-up {
   text-decoration: none;
 }
 
-.site-header-solid .account-navigation > a,
-.site-header-solid .account-menu-toggle {
+.site-header-solid .account-navigation > a {
   border-color: var(--line-menu);
   color: var(--green);
 }
@@ -3432,13 +3430,43 @@ section.request-follow-up {
 }
 
 .account-menu-toggle {
-  padding-block: 0;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
   background: transparent;
+}
+
+.account-avatar {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--ink-on-dark);
+  color: var(--ink);
+}
+
+.site-header-solid .account-avatar {
+  background: var(--green);
+  color: var(--ink-on-dark);
+}
+
+.account-avatar svg {
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 .account-menu-panel {
   position: absolute;
   z-index: var(--layer-menu);
+  inset-block-start: 100%;
   inset-inline-end: 0;
   min-width: 14.5rem;
   margin-block-start: var(--space-2);
@@ -3456,11 +3484,19 @@ section.request-follow-up {
   align-items: center;
   width: 100%;
   border: 0;
+  border-radius: var(--radius-control);
   padding: var(--space-2) var(--space-3);
   background: transparent;
   text-align: start;
   text-decoration: none;
   cursor: pointer;
+}
+
+.account-menu-panel hr {
+  height: 1px;
+  margin-block: var(--space-2);
+  border: 0;
+  background: var(--line);
 }
 
 @media (max-width: 64rem) {
@@ -3477,8 +3513,7 @@ section.request-follow-up {
     position: relative;
   }
 
-  .site-header-rule,
-  .account-menu-toggle {
+  .site-header-rule {
     display: none;
   }
 
@@ -3543,18 +3578,6 @@ section.request-follow-up {
   .site-header-toggle[aria-expanded="true"] + .site-header-panel > span {
     padding: var(--space-2) var(--space-3);
   }
-
-  .account-menu-panel {
-    position: static;
-    min-width: 0;
-    margin: 0;
-    padding: 0;
-    border: 0;
-  }
-
-  .account-menu-panel button {
-    border-radius: var(--radius-control);
-  }
 }
 
 @media (max-width: 40rem) {
@@ -3571,11 +3594,13 @@ section.request-follow-up {
   }
 
   .site-header-controls,
-  .site-header-language {
+  .site-header-language,
+  .account-menu {
     position: static;
   }
 
   .language-links,
+  .account-menu-panel,
   .site-header-toggle[aria-expanded="true"] + .site-header-panel {
     inset-block-start: 100%;
     inset-inline: 0;

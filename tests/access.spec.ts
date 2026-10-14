@@ -3799,7 +3799,7 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
   await openHeaderPanel(page, "menu");
   await page
     .getByRole("banner")
-    .getByRole("link", { name: "List your cottage" })
+    .getByRole("menuitem", { name: "List your cottage" })
     .click();
   await expect(
     page.getByRole("heading", { name: "Become a Cottage Owner" }),
@@ -3840,7 +3840,7 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
       secondPage.getByRole("heading", { name: "My bookings", exact: true }),
     ).toBeVisible();
     await openHeaderPanel(page, "menu");
-    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
     await expect(page).toHaveURL(/\/en$/);
     await openHeaderPanel(page, "menu");
     await expect(

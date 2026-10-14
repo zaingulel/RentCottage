@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -43,6 +44,27 @@ export type NavigationAccount =
 const condenseAfterScroll = 140;
 
 type HeaderPanel = "language" | "menu";
+
+const menuItem = { role: "menuitem", tabIndex: -1 } as const;
+
+function menuItems(menu: HTMLElement | null) {
+  return [...(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+}
+
+function nextMenuIndex(key: string, index: number, count: number) {
+  switch (key) {
+    case "ArrowDown":
+      return (index + 1) % count;
+    case "ArrowUp":
+      return (index - 1 + count) % count;
+    case "Home":
+      return 0;
+    case "End":
+      return count - 1;
+    default:
+      return undefined;
+  }
+}
 
 function Icon({ children }: { children: ReactNode }) {
   return (
@@ -115,6 +137,13 @@ export function SiteHeader({
   }, [landing]);
   const [openPanel, setOpenPanel] = useState<HeaderPanel | null>(null);
   const header = useRef<HTMLElement>(null);
+  const accountMenu = useRef<HTMLDivElement>(null);
+  const menuEntry = useRef<"first" | "last">("first");
+  useEffect(() => {
+    if (openPanel !== "menu") return;
+    const items = menuItems(accountMenu.current);
+    (menuEntry.current === "last" ? items.at(-1) : items[0])?.focus();
+  }, [openPanel]);
   useEffect(() => {
     if (openPanel === null) return;
     const closeOutside = (event: Event) => {
@@ -150,6 +179,32 @@ export function SiteHeader({
   const closeOnChoice = (event: MouseEvent<HTMLElement>) => {
     if (event.target instanceof Element && event.target.closest("a, form"))
       setOpenPanel(null);
+  };
+  const openMenuByKey = (event: ReactKeyboardEvent) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    menuEntry.current = event.key === "ArrowUp" ? "last" : "first";
+    setOpenPanel("menu");
+  };
+  const navigateMenu = (event: ReactKeyboardEvent) => {
+    if (event.key === "Tab") {
+      setOpenPanel(null);
+      return;
+    }
+    if (event.key === " " && event.target instanceof HTMLAnchorElement) {
+      event.preventDefault();
+      event.target.click();
+      return;
+    }
+    const items = menuItems(accountMenu.current);
+    const next = nextMenuIndex(
+      event.key,
+      items.findIndex((item) => item === event.target),
+      items.length,
+    );
+    if (next === undefined) return;
+    event.preventDefault();
+    items[next]?.focus();
   };
   const copy = accessMessages[locale];
   const returnTo =
@@ -208,84 +263,128 @@ export function SiteHeader({
             />
           </div>
           <span className="site-header-rule" aria-hidden="true" />
-          <PanelToggle
-            label={copy.menu}
-            controls="site-header-account"
-            open={openPanel === "menu"}
-            onToggle={() => toggle("menu")}
-          >
-            <path d="M4 7h16M4 12h16M4 17h16" />
-          </PanelToggle>
+          {account.status !== "authenticated" && (
+            <PanelToggle
+              label={copy.menu}
+              controls="site-header-account"
+              open={openPanel === "menu"}
+              onToggle={() => toggle("menu")}
+            >
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            </PanelToggle>
+          )}
           <nav
             id="site-header-account"
             aria-label={copy.accountNavigation}
             className="account-navigation site-header-panel"
           >
-            {account.status === "unavailable" ? (
-              <span role="status">{copy.sessionUnavailable}</span>
-            ) : account.status === "signed_out" ? (
-              <>
-                <Link href={accountAccessHref(locale, returnTo)}>
-                  {copy.signInAccount}
-                </Link>
-                <Link href={enrollHref}>{copy.listCottage}</Link>
-              </>
-            ) : (
+            {account.status === "authenticated" ? (
               <div className="account-menu">
                 <button
                   type="button"
+                  id="site-header-account-button"
                   className="account-menu-toggle"
+                  aria-haspopup="menu"
                   aria-expanded={openPanel === "menu"}
                   aria-controls="site-header-account-menu"
-                  onClick={() => toggle("menu")}
+                  onClick={() => {
+                    menuEntry.current = "first";
+                    toggle("menu");
+                  }}
+                  onKeyDown={openMenuByKey}
                 >
-                  {copy.account}
+                  <span className="visually-hidden">{copy.account}</span>
+                  <span className="account-avatar" aria-hidden="true">
+                    <Icon>
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M4.5 21c0-4.2 3.4-6.5 7.5-6.5s7.5 2.3 7.5 6.5" />
+                    </Icon>
+                  </span>
                 </button>
                 <div
                   id="site-header-account-menu"
                   className="account-menu-panel"
+                  role="menu"
+                  aria-labelledby="site-header-account-button"
                   hidden={openPanel !== "menu"}
+                  ref={accountMenu}
+                  onKeyDown={navigateMenu}
                 >
-                  {account.context?.role === "platform_administrator" ? (
-                    <>
-                      <Link href={`/${locale}/administrator/access`}>
-                        {copy.administratorTitle}
-                      </Link>
-                      <Link href={`/${locale}/administrator/messages`}>
-                        {messagingMessages[locale].moderation}
-                      </Link>
-                      <Link href={`/${locale}/administrator/reviews`}>
-                        {customerReviewMessages[locale].administratorLink}
-                      </Link>
-                    </>
-                  ) : (
-                    <>
-                      <Link href={`/${locale}/bookings`}>
-                        {copy.myBookings}
-                      </Link>
-                      <Link href={`/${locale}/messages`}>{copy.messages}</Link>
-                      {account.context?.role === "cottage_owner" ? (
+                  <div role="group" aria-label={copy.account}>
+                    {account.context?.role === "platform_administrator" ? (
+                      <>
                         <Link
-                          href={`/${locale}/owner/${account.context.approvalState === "prospective" ? "application" : "cottages"}`}
+                          {...menuItem}
+                          href={`/${locale}/administrator/access`}
                         >
-                          {account.context.approvalState === "prospective"
-                            ? copy.ownerApplicationCta
-                            : copy.manageCottages}
+                          {copy.administratorTitle}
                         </Link>
-                      ) : (
-                        <Link href={enrollHref}>{copy.listCottage}</Link>
-                      )}
-                    </>
-                  )}
-                  <form action={signOutAccount.bind(null, locale)}>
-                    <button type="submit">{copy.signOut}</button>
+                        <Link
+                          {...menuItem}
+                          href={`/${locale}/administrator/messages`}
+                        >
+                          {messagingMessages[locale].moderation}
+                        </Link>
+                        <Link
+                          {...menuItem}
+                          href={`/${locale}/administrator/reviews`}
+                        >
+                          {customerReviewMessages[locale].administratorLink}
+                        </Link>
+                      </>
+                    ) : (
+                      <>
+                        <Link {...menuItem} href={`/${locale}/bookings`}>
+                          {copy.myBookings}
+                        </Link>
+                        <Link {...menuItem} href={`/${locale}/messages`}>
+                          {copy.messages}
+                        </Link>
+                        {account.context?.role === "cottage_owner" ? (
+                          <Link
+                            {...menuItem}
+                            href={`/${locale}/owner/${account.context.approvalState === "prospective" ? "application" : "cottages"}`}
+                          >
+                            {account.context.approvalState === "prospective"
+                              ? copy.ownerApplicationCta
+                              : copy.manageCottages}
+                          </Link>
+                        ) : (
+                          <Link {...menuItem} href={enrollHref}>
+                            {copy.listCottage}
+                          </Link>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <hr />
+                  <Link {...menuItem} href={`/${locale}/support`}>
+                    {supportMessages[locale].title}
+                  </Link>
+                  <form role="none" action={signOutAccount.bind(null, locale)}>
+                    <button type="submit" {...menuItem}>
+                      {copy.signOut}
+                    </button>
                   </form>
                 </div>
               </div>
+            ) : (
+              <>
+                {account.status === "unavailable" ? (
+                  <span role="status">{copy.sessionUnavailable}</span>
+                ) : (
+                  <>
+                    <Link href={accountAccessHref(locale, returnTo)}>
+                      {copy.signInAccount}
+                    </Link>
+                    <Link href={enrollHref}>{copy.listCottage}</Link>
+                  </>
+                )}
+                <Link href={`/${locale}/support`}>
+                  {supportMessages[locale].title}
+                </Link>
+              </>
             )}
-            <Link href={`/${locale}/support`}>
-              {supportMessages[locale].title}
-            </Link>
           </nav>
         </div>
       </div>
