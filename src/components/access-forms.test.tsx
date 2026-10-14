@@ -890,6 +890,37 @@ describe("access forms", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("shows a first name that arrives after the form mounted", async () => {
+    saveName.mockResolvedValue({ status: "saved" });
+    const user = userEvent.setup();
+    const { rerender } = render(<AccountNameForm locale="en" mode="details" />);
+    expect(screen.getByLabelText("First name")).toHaveValue("");
+
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Lana" />);
+    expect(screen.getByLabelText("First name")).toHaveValue("Lana");
+
+    await user.type(screen.getByLabelText("First name"), " K");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Lana K" />);
+
+    expect(screen.getByLabelText("First name")).toHaveValue("Lana K");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Your first name is saved.",
+    );
+  });
+
+  it("reports a save that could not reach the server", async () => {
+    saveName.mockRejectedValue(new Error("offline"));
+    const user = userEvent.setup();
+    render(<AccountNameForm locale="en" mode="details" firstName="Zana" />);
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Your first name could not be saved. Try again.",
+    );
+  });
+
   it("renders a stored name as text", () => {
     const hostile = "<img src=x onerror=alert(1)>";
     const { container } = render(

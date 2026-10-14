@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useLayoutEffect, useRef, useState } from "react";
+import { unstable_rethrow } from "next/navigation";
 
 import { saveAccountName } from "@/access/actions";
 import { accessMessages } from "@/i18n/access-messages";
@@ -26,11 +27,19 @@ export function AccountNameForm({
   const inputId = useId();
   const errorId = useId();
   const [value, setValue] = useState(firstName);
+  const [previousFirstName, setPreviousFirstName] = useState(firstName);
   const [status, setStatus] = useState<
     "saved" | "invalid" | "unavailable" | undefined
   >();
   const { pending, run } = useExclusiveAction();
   const stepTitle = useRef<HTMLHeadingElement>(null);
+
+  // A first name saved elsewhere reaches this form as a new prop while it stays
+  // mounted, so the field follows it; a remount would drop the saved status.
+  if (firstName !== previousFirstName) {
+    setPreviousFirstName(firstName);
+    setValue(firstName);
+  }
 
   useLayoutEffect(() => {
     const title = stepTitle.current;
@@ -48,7 +57,14 @@ export function AccountNameForm({
 
   async function save() {
     setStatus(undefined);
-    const result = await run(() => saveAccountName({ firstName: value }));
+    let result;
+    try {
+      result = await run(() => saveAccountName({ firstName: value }));
+    } catch (error) {
+      unstable_rethrow(error);
+      setStatus("unavailable");
+      return;
+    }
     if (result) setStatus(result.status);
   }
 
