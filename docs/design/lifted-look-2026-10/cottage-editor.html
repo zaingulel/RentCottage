@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mock-up: Cottage Owner cottage editor</title>
+<title lang="en">Mock-up: Cottage Owner cottage editor</title>
 <style>
 @font-face{font-family:"Changa";font-style:normal;font-weight:500 800;font-display:swap;src:url("../../../public/fonts/changa-arabic.woff2") format("woff2");
 unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1}
@@ -150,7 +150,7 @@ legend{padding:0;margin-block-end:.1rem;font-weight:700;font-size:.9rem;color:va
         <label class="field"><span class="lab" data-t="lat">Latitude</span><input class="ctl" type="text" inputmode="decimal" dir="ltr" value="37.0917"></label>
         <label class="field"><span class="lab" data-t="lng">Longitude</span><input class="ctl" type="text" inputmode="decimal" dir="ltr" value="43.4877"></label>
       </div>
-      <a class="btn ghost device" href="#" data-t="dev">Use this device's location</a>
+      <a class="btn ghost device" href="#" role="button" data-t="dev">Use this device's location</a>
       <p class="hint note"><span data-t="pv1">Latitude </span><bdi dir="ltr">37.0917</bdi><span data-t="pv2"> north, longitude </span><bdi dir="ltr">43.4877</bdi><span data-t="pv3"> east. These numbers are within the supported area. No map is connected, so check them against the pin in your own maps app.</span></p>
       <label class="choice"><input type="checkbox" checked><span data-t="conf">I checked this point is the cottage</span></label>
       <label class="field"><span class="lab" data-t="dirs">Private directions</span><textarea class="ctl" data-v="v_dirs">From the Amedi road, take the second turning after the fuel station; green gate on the right.</textarea></label>
@@ -166,26 +166,26 @@ legend{padding:0;margin-block-end:.1rem;font-weight:700;font-size:.9rem;color:va
       <label class="field"><span class="lab" data-t="rules">Source House Rules</span><textarea class="ctl" data-v="v_rules">Respect neighbours, do not smoke indoors, and stay within the guest capacity.</textarea></label>
     </div>
   </section>
-  <div class="save"><a class="btn" href="#" data-t="save">Save private draft</a></div>
+  <div class="save"><a class="btn" href="#" role="button" data-t="save">Save private draft</a></div>
 
   <section class="section">
     <div class="side"><h2 class="section-title" data-t="s4">Private cottage photos</h2><p class="detail" data-t="pg">Add 1–12 JPEG, PNG or WebP images. Each image must be 5 MiB or smaller. HEIC is not accepted.</p></div>
     <div class="form-card">
       <div>
-        <div class="photo"><div class="thumb" style="background-image:url(../../../public/uploads/cottage-orchard.png)"></div><div><span class="fname"><bdi>orchard-front.jpg</bdi></span><span class="state"><i></i><span data-t="ready">Ready</span></span></div><div class="acts"><a class="act" href="#" data-t="prev">Create private preview</a><a class="act" href="#" data-t="del">Delete photo</a></div></div>
-        <div class="photo"><div class="thumb" style="background-image:url(../../../public/uploads/interior-living.png)"></div><div><span class="fname"><bdi>living-room.jpg</bdi></span><span class="state"><i></i><span data-t="ready">Ready</span></span></div><div class="acts"><a class="act" href="#" data-t="prev">Create private preview</a><a class="act" href="#" data-t="del">Delete photo</a></div></div>
-        <div class="photo"><div class="thumb" style="background-image:url(../../../public/uploads/interior-bedroom.png)"></div><div><span class="fname"><bdi>bedroom.jpg</bdi></span><span class="state"><i></i><span data-t="ready">Ready</span></span></div><div class="acts"><a class="act" href="#" data-t="prev">Create private preview</a><a class="act" href="#" data-t="del">Delete photo</a></div></div>
-        <div class="photo"><div class="thumb" style="background-image:url(../../../public/uploads/detail-tea.png)"></div><div><span class="fname"><bdi>tea-corner.jpg</bdi></span><span class="state"><i></i><span data-t="ready">Ready</span></span></div><div class="acts"><a class="act" href="#" data-t="prev">Create private preview</a><a class="act" href="#" data-t="del">Delete photo</a></div></div>
-        <div class="photo"><div class="thumb" style="background-image:url(../../../public/uploads/detail-lattice.png)"></div><div><span class="fname"><bdi>window-lattice.jpg</bdi></span><span class="state"><i></i><span data-t="ready">Ready</span></span></div><div class="acts"><a class="act" href="#" data-t="prev">Create private preview</a><a class="act" href="#" data-t="del">Delete photo</a></div></div>
+        <div class="photo"><div class="thumb" role="img" aria-labelledby="fn1" style="background-image:url(../../../public/uploads/cottage-orchard.png)"></div><div><span class="fname" id="fn1"><bdi>orchard-front.jpg</bdi></span><span class="state"><i></i><span data-t="ready">Ready</span></span></div><div class="acts"><a class="act" href="#" role="button" aria-describedby="fn1" data-t="prev">Create private preview</a><a class="act" href="#" role="button" aria-describedby="fn1" data-t="del">Delete photo</a></div></div>
+        <div class="photo"><div class="thumb" role="img" aria-labelledby="fn2" style="background-image:url(../../../public/uploads/interior-living.png)"></div><div><span class="fname" id="fn2"><bdi>living-room.jpg</bdi></span><span class="state"><i></i><span data-t="ready">Ready</span></span></div><div class="acts"><a class="act" href="#" role="button" aria-describedby="fn2" data-t="prev">Create private preview</a><a class="act" href="#" role="button" aria-describedby="fn2" data-t="del">Delete photo</a></div></div>
+        <div class="photo"><div class="thumb" role="img" aria-labelledby="fn3" style="background-image:url(../../../public/uploads/interior-bedroom.png)"></div><div><span class="fname" id="fn3"><bdi>bedroom.jpg</bdi></span><span class="state"><i></i><span data-t="ready">Ready</span></span></div><div class="acts"><a class="act" href="#" role="button" aria-describedby="fn3" data-t="prev">Create private preview</a><a class="act" href="#" role="button" aria-describedby="fn3" data-t="del">Delete photo</a></div></div>
+        <div class="photo"><div class="thumb" role="img" aria-labelledby="fn4" style="background-image:url(../../../public/uploads/detail-tea.png)"></div><div><span class="fname" id="fn4"><bdi>tea-corner.jpg</bdi></span><span class="state"><i></i><span data-t="ready">Ready</span></span></div><div class="acts"><a class="act" href="#" role="button" aria-describedby="fn4" data-t="prev">Create private preview</a><a class="act" href="#" role="button" aria-describedby="fn4" data-t="del">Delete photo</a></div></div>
+        <div class="photo"><div class="thumb" role="img" aria-labelledby="fn5" style="background-image:url(../../../public/uploads/detail-lattice.png)"></div><div><span class="fname" id="fn5"><bdi>window-lattice.jpg</bdi></span><span class="state"><i></i><span data-t="ready">Ready</span></span></div><div class="acts"><a class="act" href="#" role="button" aria-describedby="fn5" data-t="prev">Create private preview</a><a class="act" href="#" role="button" aria-describedby="fn5" data-t="del">Delete photo</a></div></div>
       </div>
       <div class="upload">
         <label class="field"><span class="lab" data-t="pf">Choose cottage photo</span><input class="ctl" type="file" accept="image/jpeg,image/png,image/webp"></label>
-        <a class="btn ghost" href="#" data-t="up">Upload photo</a>
+        <a class="btn ghost" href="#" role="button" data-t="up">Upload photo</a>
       </div>
     </div>
   </section>
 
-  <div class="submit"><a class="btn" href="#" data-t="sub2">Submit for content approval</a></div>
+  <div class="submit"><a class="btn" href="#" role="button" data-t="sub2">Submit for content approval</a></div>
 </main>
 <footer></footer>
 <script>

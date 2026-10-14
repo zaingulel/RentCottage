@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mock-up: owner cottages list</title>
+<title lang="en">Mock-up: owner cottages list</title>
 <style>
 @font-face{font-family:"Changa";font-style:normal;font-weight:500 800;font-display:swap;src:url("../../../public/fonts/changa-arabic.woff2") format("woff2");
 unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1}
@@ -53,6 +53,7 @@ h1{font-family:Changa,sans-serif;font-weight:700;font-size:2.125rem;line-height:
 .cot{background:var(--card);border-radius:.875rem;overflow:hidden;box-shadow:var(--lift);display:flex;flex-direction:column}
 .cot.hover{box-shadow:var(--lift-hover);transform:translateY(-3px)}
 .ph{aspect-ratio:16/10;background:#e9dfcc center/cover;position:relative}
+.phi{position:absolute;inset:0}
 .ph.empty{display:grid;place-items:center;color:var(--accent);font-weight:700;font-size:.9rem;background:repeating-linear-gradient(135deg,#efe6d4,#efe6d4 12px,#eadfca 12px,#eadfca 24px)}
 .pill{position:absolute;inset-block-start:.75rem;inset-inline-start:.75rem;display:inline-flex;align-items:center;gap:.4rem;font-size:.78rem;font-weight:700;padding:.3rem .65rem;border-radius:999px;background:rgb(255 252 245/94%);color:var(--ink)}
 .pill i{width:.5rem;height:.5rem;border-radius:50%;background:#2f7d4f}
@@ -70,7 +71,7 @@ h2{font-family:Changa,sans-serif;font-weight:700;font-size:1.25rem;line-height:1
 .link{font-weight:700;color:var(--green);display:inline-flex;gap:.35rem;align-items:center}
 .arrow{display:inline-block}
 [dir=rtl] .arrow{transform:scaleX(-1)}
-h3{font-family:Changa,sans-serif;font-weight:700;font-size:1.375rem;color:var(--green);margin:3rem 0 1rem}
+.sect{font-family:Changa,sans-serif;font-weight:700;font-size:1.375rem;line-height:1.5;color:var(--green);margin:3rem 0 1rem}
 .req{background:var(--card);border-radius:.875rem;box-shadow:var(--lift);display:grid;grid-template-columns:5rem 1fr auto;gap:1.25rem;align-items:center;padding:1rem 1.25rem}
 .req .thumb{width:5rem;height:5rem;border-radius:.625rem;background:center/cover}
 .req strong{font-size:1.05rem}
@@ -98,7 +99,7 @@ footer{height:4rem}
 <main class="wrap">
   <div class="head">
     <div><h1 data-t="h1">Your cottages</h1><p data-t="sub">Two are live. One draft needs photos before you can submit it.</p></div>
-    <a class="btn" href="#"><span>+</span><span data-t="add">Add a cottage</span></a>
+    <a class="btn" href="#" role="button"><span>+</span><span data-t="add">Add a cottage</span></a>
   </div>
   <div class="stats">
     <div class="stat"><b>2</b><span data-t="s1">Published</span></div>
@@ -107,14 +108,14 @@ footer{height:4rem}
   </div>
   <div class="grid">
     <article class="cot hover">
-      <div class="ph" style="background-image:url(../../../public/uploads/cottage-garden.png)"><span class="pill"><i></i><span data-t="pub">Published</span></span></div>
-      <div class="body"><h2 data-t="c1">Garden House, Shaqlawa</h2><div class="loc" data-t="l1">Erbil · near Shaqlawa</div>
+      <div class="ph" style="background-image:url(../../../public/uploads/cottage-garden.png)"><div class="phi" role="img" aria-labelledby="n1"></div><span class="pill"><i></i><span data-t="pub">Published</span></span></div>
+      <div class="body"><h2 id="n1" data-t="c1">Garden House, Shaqlawa</h2><div class="loc" data-t="l1">Erbil · near Shaqlawa</div>
         <div class="meta"><span><b>8</b> <span data-t="g">guests</span></span><span><b>3</b> <span data-t="b">bedrooms</span></span><span><b>12</b> <span data-t="p">photos</span></span></div>
         <div class="acts"><a class="link" href="#"><span data-t="edit">Edit cottage</span><span class="arrow">→</span></a><span class="loc" data-t="from1">from IQD 180,000</span></div></div>
     </article>
     <article class="cot">
-      <div class="ph" style="background-image:url(../../../public/uploads/cottage-pool.png)"><span class="pill"><i></i><span data-t="pub">Published</span></span></div>
-      <div class="body"><h2 data-t="c2">Courtyard with pool</h2><div class="loc" data-t="l2">Duhok · Amedi road</div>
+      <div class="ph" style="background-image:url(../../../public/uploads/cottage-pool.png)"><div class="phi" role="img" aria-labelledby="n2"></div><span class="pill"><i></i><span data-t="pub">Published</span></span></div>
+      <div class="body"><h2 id="n2" data-t="c2">Courtyard with pool</h2><div class="loc" data-t="l2">Duhok · Amedi road</div>
         <div class="meta"><span><b>10</b> <span data-t="g">guests</span></span><span><b>4</b> <span data-t="b">bedrooms</span></span><span><b>9</b> <span data-t="p">photos</span></span></div>
         <div class="acts"><a class="link" href="#"><span data-t="edit">Edit cottage</span><span class="arrow">→</span></a><span class="loc" data-t="from2">from IQD 250,000</span></div></div>
     </article>
@@ -125,11 +126,11 @@ footer{height:4rem}
         <div class="acts"><a class="link" href="#"><span data-t="cont">Continue setup</span><span class="arrow">→</span></a></div></div>
     </article>
   </div>
-  <h3 data-t="h3">Requests waiting for you</h3>
+  <h2 class="sect" data-t="h3">Requests waiting for you</h2>
   <div class="req">
-    <div class="thumb" style="background-image:url(../../../public/uploads/cottage-garden.png)"></div>
+    <div class="thumb" role="img" aria-labelledby="n1" style="background-image:url(../../../public/uploads/cottage-garden.png)"></div>
     <div><strong data-t="r1">Sara Ahmed · 6 guests</strong><small data-t="r2">Garden House · Fri 23 Oct, full day · IQD 250,000</small><span class="due" data-t="due">Answer within 5 hours</span></div>
-    <div class="do"><a class="btn ghost" href="#" data-t="dec">Decline</a><a class="btn" href="#" data-t="acc">Accept</a></div>
+    <div class="do"><a class="btn ghost" href="#" role="button" data-t="dec">Decline</a><a class="btn" href="#" role="button" data-t="acc">Accept</a></div>
   </div>
 </main>
 <footer></footer>
