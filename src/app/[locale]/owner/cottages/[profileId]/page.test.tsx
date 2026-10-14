@@ -1,13 +1,17 @@
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { loadOwnerCottageEditor, notFound, unstableRethrow } = vi.hoisted(
-  () => ({
-    loadOwnerCottageEditor: vi.fn(),
-    notFound: vi.fn(),
-    unstableRethrow: vi.fn(),
-  }),
-);
+const {
+  loadOwnerBookingRequestNotifications,
+  loadOwnerCottageEditor,
+  notFound,
+  unstableRethrow,
+} = vi.hoisted(() => ({
+  loadOwnerBookingRequestNotifications: vi.fn(),
+  loadOwnerCottageEditor: vi.fn(),
+  notFound: vi.fn(),
+  unstableRethrow: vi.fn(),
+}));
 
 vi.mock("@/access/request-account-context", () => ({
   requireRequestAccount: vi.fn().mockResolvedValue({
@@ -24,11 +28,16 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/cottage-profile/owner-cottage-editor", () => ({
   loadOwnerCottageEditor,
 }));
+vi.mock(
+  "@/booking-request/request-owner-booking-request-notifications",
+  () => ({ loadOwnerBookingRequestNotifications }),
+);
 vi.mock("next/navigation", () => ({
   notFound,
   unstable_rethrow: unstableRethrow,
 }));
 
+import { ownerDisplayFixtures } from "../../../../../../tests/fixtures/booking-request-display.fixtures";
 import OwnerCottageProfilePage from "./page";
 
 const profileId = "70000000-0000-4000-8000-000000000203";
@@ -195,6 +204,57 @@ describe("Cottage Profile owner detail page", () => {
           screen.getByRole("button", { name: "Abandon draft" }),
         ) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("shows the waiting Booking Request count on the editor's Bookings tab", async () => {
+    loadOwnerCottageEditor.mockResolvedValue(ready());
+    loadOwnerBookingRequestNotifications.mockResolvedValueOnce([
+      { ...ownerDisplayFixtures["capture-processing"], status: "pending" },
+      ownerDisplayFixtures["payment-required-open"],
+    ]);
+
+    render(
+      await OwnerCottageProfilePage({
+        params: Promise.resolve({ locale: "en", profileId }),
+      }),
+    );
+
+    expect(
+      within(
+        screen.getByRole("navigation", { name: "Owner Backoffice" }),
+      ).getByRole("link", { name: /^Bookings for my cottages/ }),
+    ).toHaveAccessibleName(
+      "Bookings for my cottages Pending Booking Requests: 1",
+    );
+  });
+
+  it("shows the editor as unavailable when the waiting Booking Requests cannot be loaded", async () => {
+    const failure = new Error("waiting requests unavailable");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    loadOwnerCottageEditor.mockResolvedValue(ready());
+    loadOwnerBookingRequestNotifications.mockRejectedValueOnce(failure);
+
+    render(
+      await OwnerCottageProfilePage({
+        params: Promise.resolve({ locale: "en", profileId }),
+      }),
+    );
+
+    expect(unstableRethrow).toHaveBeenCalledWith(failure);
+    expect(log).toHaveBeenCalledWith(
+      "Owner Booking Request count load failed",
+      {
+        phase: "owner_cottage_profile_editor_waiting_requests_load",
+        result: "unavailable",
+      },
+    );
+    expect(
+      screen.getByText(
+        "Cottage Profiles are temporarily unavailable. Please try again.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByLabelText("Cottage name")).not.toBeInTheDocument();
+    log.mockRestore();
   });
 
   it("keeps price setup editable during review while publication opening stays blocked", async () => {

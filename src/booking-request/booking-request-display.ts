@@ -54,6 +54,12 @@ export function ownerBookingRequestNotificationDisplay({
   return { ...notification, status: paymentStatus ?? notification.status };
 }
 
+export function waitingBookingRequestCount(
+  notifications: readonly OwnerBookingRequestNotificationDisplay[],
+): number {
+  return notifications.filter(({ status }) => status === "pending").length;
+}
+
 export function canRecoverBookingRequestPayment(
   request: Pick<
     CustomerBookingRequestDisplay,

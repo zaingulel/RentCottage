@@ -1,6 +1,9 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import { accessMessages } from "@/i18n/access-messages";
+import { ownerBookingRequestMessages } from "@/i18n/owner-booking-request-messages";
+
 import { BackofficeNavigation } from "./backoffice-navigation";
 
 function links(areaLabel: string) {
@@ -182,5 +185,62 @@ describe("BackofficeNavigation", () => {
       />,
     );
     expectTabs("Platform administration");
+  });
+
+  it.each([
+    ["en", "Owner Backoffice", "2"],
+    ["ar", "مكتب مالك الكوخ", "2"],
+    ["ckb", "بەشی بەڕێوەبردنی خاوەن کۆتێج", "٢"],
+  ] as const)(
+    "shows and announces the waiting Booking Request count on the owner's Bookings tab",
+    (locale, areaLabel, number) => {
+      render(
+        <BackofficeNavigation
+          locale={locale}
+          area="owner"
+          current="cottages"
+          waitingBookingRequests={2}
+        />,
+      );
+      const navigation = within(
+        screen.getByRole("navigation", { name: areaLabel }),
+      );
+      const { ownerBookings, manageCottages } = accessMessages[locale];
+      expect(
+        navigation.getByRole("link", {
+          name: `${ownerBookings} ${ownerBookingRequestMessages[locale].title}: ${number}`,
+        }),
+      ).toBeVisible();
+      expect(
+        navigation.getByRole("link", { name: manageCottages }),
+      ).toBeVisible();
+    },
+  );
+
+  it("shows no count on the Bookings tab when no Booking Request is waiting or the list is unavailable", () => {
+    const { container, rerender } = render(
+      <BackofficeNavigation
+        locale="en"
+        area="owner"
+        current="cottages"
+        waitingBookingRequests={0}
+      />,
+    );
+    const expectNoCount = () => {
+      expect(
+        within(
+          screen.getByRole("navigation", { name: "Owner Backoffice" }),
+        ).getByRole("link", { name: "Bookings for my cottages" }),
+      ).toBeVisible();
+      expect(
+        container.querySelector(".backoffice-navigation-count"),
+      ).toBeNull();
+    };
+    expectNoCount();
+
+    rerender(
+      <BackofficeNavigation locale="en" area="owner" current="cottages" />,
+    );
+    expectNoCount();
   });
 });

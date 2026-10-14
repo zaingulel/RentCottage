@@ -3,6 +3,8 @@ import { accountAccessHref } from "@/access/return-destination";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
 import { notFound, redirect, unstable_rethrow } from "next/navigation";
 
+import { waitingBookingRequestCount } from "@/booking-request/booking-request-display";
+import { loadOwnerBookingRequestNotifications } from "@/booking-request/request-owner-booking-request-notifications";
 import { loadOwnerCottageEditor } from "@/cottage-profile/owner-cottage-editor";
 import { BackofficeNavigation } from "@/components/backoffice-navigation";
 import { CottageProfileEditor } from "@/components/cottage-profile-editor";
@@ -72,6 +74,25 @@ export default async function OwnerCottageProfilePage({
     );
   }
   if (!page.value.profile) notFound();
+  let notifications: Awaited<
+    ReturnType<typeof loadOwnerBookingRequestNotifications>
+  >;
+  try {
+    notifications = await loadOwnerBookingRequestNotifications();
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("Owner Booking Request count load failed", {
+      phase: "owner_cottage_profile_editor_waiting_requests_load",
+      result: "unavailable",
+    });
+    return (
+      <OwnerCottageAccessFallback
+        locale={locale}
+        title={copy.editorTitle}
+        status="unavailable"
+      />
+    );
+  }
   return (
     <main className="results-page page">
       <BackofficeNavigation
@@ -79,6 +100,9 @@ export default async function OwnerCottageProfilePage({
         area="owner"
         current="cottages"
         nested
+        waitingBookingRequests={
+          notifications ? waitingBookingRequestCount(notifications) : undefined
+        }
       />
       <CottageProfileEditor
         locale={locale}

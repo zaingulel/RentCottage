@@ -250,7 +250,12 @@ Anything else is a token.
   `ActionLink`. The current tab carries `aria-current="page"`, or `aria-current="true"` on a nested page, and shows
   it with a `--tab-indicator` line under it and `--green` text, so it is never shown by colour alone. The bar is a
   cream band that reaches both screen edges, with its tabs on one line that scrolls sideways inside the bar with a
-  hidden scrollbar and never scrolls the page. The block has no direction selector. A page renders at most one and
+  hidden scrollbar and never scrolls the page. The owner's Bookings tab may carry `span.backoffice-navigation-count`,
+  a `--gold` pill with the number in `--ink` at `--font-size-1`, shown only when at least one Booking Request is
+  waiting. The number is preceded by visually hidden text, so the tab is announced with its name and the count. A
+  page passes the count through `waitingBookingRequests` and the navigation loads nothing itself. An unavailable
+  count is shown as no pill only where the page lists no requests either, never in place of a failed load. The
+  block has no direction selector. A page renders at most one and
   never adds a brand link, which the site header owns; a page with no access check of its own does not render it.
 - Read back and confirm: [cottage-location-fields.tsx](../src/components/cottage-location-fields.tsx) is the
   pattern for a value the interface cannot show and a mistake in which is costly. The entry is read back in words

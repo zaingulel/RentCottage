@@ -6,12 +6,14 @@ import { administratorQueuesMessages } from "@/i18n/administrator-queues-message
 import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
 import { administratorTotalsMessages } from "@/i18n/administrator-totals-messages";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
+import { ownerBookingRequestMessages } from "@/i18n/owner-booking-request-messages";
 import type { Locale } from "@/i18n/routing";
 
 type BackofficeNavigationProps = { locale: Locale; nested?: boolean } & (
-  | { area: "owner"; current: "cottages" }
+  | { area: "owner"; current: "cottages"; waitingBookingRequests?: number }
   | {
       area: "administrator";
+      waitingBookingRequests?: never;
       current:
         | "owner-applications"
         | "cottages"
@@ -26,6 +28,7 @@ export function BackofficeNavigation({
   nested,
   area,
   current,
+  waitingBookingRequests,
 }: BackofficeNavigationProps) {
   const access = accessMessages[locale];
   const profile = cottageProfileMessages[locale];
@@ -100,6 +103,17 @@ export function BackofficeNavigation({
             }
           >
             {destination.label}
+            {destination.key === "bookings" && waitingBookingRequests ? (
+              <>
+                {" "}
+                <span className="backoffice-navigation-count">
+                  <span className="visually-hidden">
+                    {ownerBookingRequestMessages[locale].title}:
+                  </span>{" "}
+                  {new Intl.NumberFormat(locale).format(waitingBookingRequests)}
+                </span>
+              </>
+            ) : null}
           </Link>
         ))}
       </div>

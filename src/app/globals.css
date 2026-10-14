@@ -537,6 +537,16 @@ input[type="file"].form-control::file-selector-button {
   border-block-end-color: var(--tab-indicator);
 }
 
+.backoffice-navigation-count {
+  padding-inline: var(--space-2);
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--ink);
+  font-size: var(--font-size-1);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
 .owner-application-layout {
   width: min(78rem, calc(100% - 2.25rem));
   margin: var(--space-7) auto 0;
