@@ -29,6 +29,8 @@ type AccessBrowserFixture = {
   exactAddress: string;
   reviewLegalName: string;
   reviewOwnerPhone: string;
+  bookingOwnerPhone: string;
+  bookingCottageName: string;
 };
 
 const {
@@ -257,8 +259,6 @@ const auditClient = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } },
 );
 
-const ownerCoverPhotoPathByProject = new Map<string, string>();
-
 const cleanCottagePhoto = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
@@ -273,6 +273,9 @@ function pngChunk(type: string, data: Buffer) {
   return Buffer.concat([length, typeAndData, checksum]);
 }
 
+const pngSignature = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+]);
 const endOfPngHeader = 33;
 const locatedCottagePhoto = Buffer.concat([
   cleanCottagePhoto.subarray(0, endOfPngHeader),
@@ -381,6 +384,32 @@ async function administratorId(email: string) {
   const userId = users.find((user) => user.email === email)?.id;
   if (!userId) throw new Error(`No test administrator exists for ${email}`);
   return userId;
+}
+
+async function bookingFixtureCoverPhotoPath(fixture: AccessBrowserFixture) {
+  const owner = findAccessFixtureUser(
+    await listAllAccessFixtureUsers(auditClient.auth.admin),
+    fixture.bookingOwnerPhone,
+  );
+  if (!owner) throw new Error("Booking fixture owner is unavailable");
+  const { data: publications, error: publicationError } = await auditClient
+    .from("cottage_publication_snapshots")
+    .select("profile_id")
+    .eq("name", fixture.bookingCottageName);
+  if (publicationError) throw publicationError;
+  const profileIds = new Set(publications.map(({ profile_id }) => profile_id));
+  if (profileIds.size !== 1)
+    throw new Error("Booking fixture Cottage Profile is not exactly one");
+  const { data: photos, error: photoError } = await auditClient
+    .from("cottage_profile_photos")
+    .select("id")
+    .eq("profile_id", [...profileIds][0])
+    .eq("owner_user_id", owner.id)
+    .eq("state", "ready");
+  if (photoError) throw photoError;
+  if (photos.length !== 1)
+    throw new Error("Booking fixture Cottage Profile photo is not exactly one");
+  return `/api/cottage-profile-photos/${photos[0].id}`;
 }
 
 async function currentAudit(
@@ -1940,7 +1969,6 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   expect(await signedOutCoverPhoto.text()).toBe(
     "Cottage Profile photo is unavailable",
   );
-  ownerCoverPhotoPathByProject.set(testInfo.project.name, coverPhotoPath);
   await page.goto(`/en${profilePath}`);
 
   await page.reload();
@@ -2103,13 +2131,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   const reviewFixture = accessBrowserFixture(testInfo.project.name);
   const email = `platform-administrator-${testInfo.project.name}@rentcottage.test`;
   const actorUserId = await administratorId(email);
-  const coverPhotoPath = ownerCoverPhotoPathByProject.get(
-    testInfo.project.name,
-  );
-  if (!coverPhotoPath)
-    throw new Error(
-      "The owner journey must run first to supply the private cover photo path",
-    );
+  const coverPhotoPath = await bookingFixtureCoverPhotoPath(reviewFixture);
   const attemptedAfter = new Date().toISOString();
   await page.goto("/en/administrator/access");
   await page.getByLabel("Email").fill(email);
@@ -2163,7 +2185,18 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   ).toBeFocused();
   const assuranceLevelTwoCoverPhoto = await page.request.get(coverPhotoPath);
   expect(assuranceLevelTwoCoverPhoto.status()).toBe(200);
-  expect(await assuranceLevelTwoCoverPhoto.body()).toEqual(cleanCottagePhoto);
+  expect(assuranceLevelTwoCoverPhoto.headers()["content-type"]).toContain(
+    "image/png",
+  );
+  expect(assuranceLevelTwoCoverPhoto.headers()["cache-control"]).toContain(
+    "private",
+  );
+  expect(assuranceLevelTwoCoverPhoto.headers()["cache-control"]).toContain(
+    "no-store",
+  );
+  expect((await assuranceLevelTwoCoverPhoto.body()).subarray(0, 8)).toEqual(
+    pngSignature,
+  );
 
   const audit = await currentAudit(
     actorUserId,
