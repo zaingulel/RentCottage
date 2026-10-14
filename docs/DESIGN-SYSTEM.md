@@ -186,6 +186,8 @@ Anything else is a token.
   not-found screen still uses as a label: `--font-size-1`, bold, in `--ink-accent`, with the title `--space-1`
   below it. No page on the template carries a label; the first that does moves that rule's declarations to a
   shared `page-label` class, so there is one label style.
+- Personal information (`/account`) is a record page: `page page-record` with a page heading whose back link goes
+  home, the page title and a plain `p`, then the first-name form (`AccountNameForm`, in its details mode).
 - A page that is not on the template keeps its own width and heading rules until its screen is moved onto it.
 
 ## Component patterns
@@ -237,9 +239,13 @@ Anything else is a token.
     links sit behind one icon button (`.site-header-toggle`) of three bars, a pill `2.75rem` wide and tall; a
     signed-in person's row is unchanged.
   - Avatar: the button (`.account-menu-toggle`) is a transparent `2.75rem` square with a circular focus shape,
-    holding a `2.25rem` circle (`.account-avatar`) with a `1.25rem` person icon. On the transparent landing
-    header the circle is `--ink-on-dark` with an `--ink` icon; on the solid header it is `--green` with an
-    `--ink-on-dark` icon. The button is named by a visually hidden "Account" label, never by the icon.
+    holding a `2.25rem` circle (`.account-avatar`). The circle shows the first letter of the person's own first
+    name, uppercased, as bold `--font-size-2` text: the first letter grapheme of the name, computed on the server
+    so that only the letter reaches the header. When there is no letter, whether the person has not given a first
+    name yet or the name could not be read, the circle holds a `1.25rem` person icon, which claims nothing about
+    the name. On the transparent landing header the circle is `--ink-on-dark` with `--ink` text or icon; on the
+    solid header it is `--green` with `--ink-on-dark` text or icon. The button is named by a visually hidden
+    "Account" label, never by the letter or the icon.
   - Panels: an open panel is a card on `--surface-raised` at `--layer-menu` with the card radius, at least
     `14.5rem` wide, opening under its own button and aligned to that button's end edge, lying over the page and
     moving nothing. At the `phone` breakpoint every panel instead spans the screen directly under the header, with
@@ -257,8 +263,8 @@ Anything else is a token.
     `aria-controls`, and opens `.account-menu-panel`, a `role="menu"` named by the button through
     `aria-labelledby`; the panel carries the `hidden` attribute, set from the same state as the button's
     `aria-expanded`. Every destination is a `role="menuitem"` with `tabindex="-1"`, each row at least `2.75rem`
-    tall: the person's own destinations in a `role="group"` named "Account", a rule, Support, then Sign out as a
-    button inside a `role="none"` form. Focus moves to the first item when the menu opens, or to the last when it
+    tall: the person's own destinations in a `role="group"` named "Account", whose first item is Personal
+    information for every role, a rule, Support, then Sign out as a button inside a `role="none"` form. Focus moves to the first item when the menu opens, or to the last when it
     opens by ArrowUp.
 
     | Key | In the menu button | In the open menu |
@@ -273,6 +279,9 @@ Anything else is a token.
   - Closing: one panel is open at a time. A panel closes when a destination or Sign out is chosen, on Escape, which
     returns focus to the visible button that is expanded, on a press outside the header and when focus leaves the
     header. Focus is not trapped and no panel is a dialog.
+  - Required first-name step: while a signed-in person has not given a first name, the header is solid and in
+    flow on every route, the landing page included, and the step replaces the page under it (see Accessibility
+    conventions).
 - Icons: an icon is an inline `svg` in the component that uses it, with `aria-hidden="true"`, a 24-unit
   `viewBox`, no fill and a 2-unit `currentColor` stroke with round ends, so it takes its control's text colour.
   The control's rule sets its size and the control's `aria-label` names the control; an icon never carries the
@@ -480,6 +489,11 @@ its own; the block it sits in sets the space around it.
   pagehide permanently cancels owned focus, even if the element the person moved to later disappears. An action
   that navigates must explicitly opt into a handoff to a named destination target after its commit; ordinary
   navigation and initial page loads do not move focus through this pattern.
+- The required first-name step (`AccountNameGate`) replaces the page with a standalone `main` holding the step
+  title as an `h1`, a short introduction and the first-name form. The page underneath stays mounted and hidden,
+  so it keeps its state and is revealed unchanged after saving. The step title takes focus when the step shows,
+  unless focus is already in the site header or in the step. "Save and continue" names the avatar button
+  (`site-header-account-button`) as its focus successor.
 - The `prefers-reduced-motion: reduce` rule turns off transitions and smooth scrolling.
 - `.action`, `.action-link`, `.action-regular`, `.form-control`, `.choice-control` and the `.disclosure` summary
   are at least `2.75rem` tall; of the shared controls only `.action-compact` (`2.25rem`) and the inline

@@ -36,6 +36,10 @@ _Avoid_: Guest, buyer, client
 The identity created from a verified phone number at sign-in, before an In-Platform Message or Booking Request. The same account may also enroll as a Cottage Owner and retain access to its own customer bookings. Browsing cottages does not require an account.
 _Avoid_: Anonymous booking, email account
 
+**Account First Name**:
+The first name a person gives for their own account. Only its holder can read it; its first letter shows on their avatar. It is not an Owner Application's legal name or a Booking Request's customer name.
+_Avoid_: Display name, profile name, username
+
 **Cottage**:
 A privately operated leisure property, such as a cottage or chalet, booked exclusively by one customer group as a whole property. It excludes hotels, individual rooms, shared accommodation, farms without guest facilities, and dedicated event venues.
 _Avoid_: Room, hotel, event venue, shared accommodation
