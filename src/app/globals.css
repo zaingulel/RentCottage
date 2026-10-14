@@ -16,6 +16,8 @@
   --surface-notice: #fff7e8;
   --surface-raised: #fffdf7;
   --surface-placeholder: #e9dfcc;
+  --surface-no-photo: #efe6d4;
+  --surface-no-photo-band: #ece2ce;
   --surface-footer: #f0e9db;
   --surface-verification: #f0e6d4;
   --surface-submit: #f7f1e5;
@@ -1969,15 +1971,64 @@ html[lang="ckb"] .result-content h2 {
   grid-template-rows: auto auto 1fr auto auto;
   grid-template-rows: subgrid;
   gap: var(--space-3);
-  padding: clamp(var(--space-4), 3vw, var(--space-5));
+  overflow: hidden;
+  padding-block-end: clamp(var(--space-4), 3vw, var(--space-5));
 }
 
-.cottage-profile-card > div {
+.cottage-profile-card > :not(.cottage-profile-card-cover) {
+  padding-inline: clamp(var(--space-4), 3vw, var(--space-5));
+}
+
+.cottage-profile-card-cover {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  aspect-ratio: 16 / 10;
+  background: var(--surface-placeholder);
+}
+
+.cottage-profile-card-cover img {
+  object-fit: cover;
+}
+
+.cottage-profile-card-cover-empty {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--surface-no-photo),
+    var(--surface-no-photo) var(--space-3),
+    var(--surface-no-photo-band) var(--space-3),
+    var(--surface-no-photo-band) var(--space-5)
+  );
+}
+
+.cottage-profile-card-badges {
+  position: relative;
+  z-index: var(--layer-raised);
   display: flex;
   flex-wrap: wrap;
   align-content: start;
   align-items: start;
   gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.cottage-profile-card-no-photo {
+  place-self: center;
+  margin: 0;
+  padding-inline: var(--space-3);
+  padding-block-end: var(--space-3);
+  color: var(--ink-accent);
+  font-size: var(--font-size-2);
+  font-weight: 700;
+  text-align: center;
+}
+
+.cottage-profile-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
 }
 
 .cottage-profile-status {

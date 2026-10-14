@@ -27,6 +27,10 @@ declare global {
   }
 }
 
+// What next/image renders for `fill`: an absolutely positioned image over its cover.
+const coverPhotoMarkup =
+  '<img alt="Cover photo of Cottage" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" style="position:absolute;inset:0;width:100%;height:100%">';
+
 async function mountBookingRequestDisplay(
   page: Page,
   testInfo: TestInfo,
@@ -549,14 +553,16 @@ test("cottage list cards start their title and open button at the same height wh
   page,
 }, testInfo) => {
   await mountBookingRequestDisplay(page, testInfo);
-  await page.evaluate(() => {
-    const card = (pills: string[], location: string) =>
+  await page.evaluate((photo) => {
+    const card = (pills: string[], hasPhoto: boolean, location: string) =>
       '<article class="card cottage-profile-card">' +
-      `<div>${pills.map((pill) => `<span class="status-badge">${pill}</span>`).join("")}</div>` +
+      `<div class="cottage-profile-card-cover${hasPhoto ? "" : " cottage-profile-card-cover-empty"}">` +
+      `<div class="cottage-profile-card-badges">${pills.map((pill) => `<span class="status-badge">${pill}</span>`).join("")}</div>` +
+      `${hasPhoto ? photo : '<p class="cottage-profile-card-no-photo">No photos yet</p>'}</div>` +
       '<h2 class="card-title">Cottage</h2>' +
       `<p class="card-detail">${location}</p>` +
       '<p class="card-small-print">0/12 photos</p>' +
-      '<a class="action-link action-primary action-content" href="/">Open Cottage Profile</a>' +
+      '<div class="cottage-profile-card-actions"><a class="action-link action-primary action-content" href="/">Open Cottage Profile</a></div>' +
       "</article>";
     document.body.insertAdjacentHTML(
       "beforeend",
@@ -566,56 +572,80 @@ test("cottage list cards start their title and open button at the same height wh
             "Published; update awaiting approval",
             "Started in Owner Application",
           ],
+          true,
           "Erbil",
         ) +
         card(
           ["Draft"],
+          false,
           "Erbil · Near Shaqlawa, beside the old road to the mountain village and the spring above the orchard",
         ) +
         "</div></section></main>",
     );
-  });
+  }, coverPhotoMarkup);
 
-  const measured = await page.evaluate(() => {
-    const tops = (selector: string) =>
-      [...document.querySelectorAll(selector)].map(
-        (element) => element.getBoundingClientRect().top,
-      );
-    return {
-      titles: tops(".cottage-profile-card h2"),
-      links: tops(".cottage-profile-card a"),
-      document: document.documentElement.scrollWidth,
-      available: document.documentElement.clientWidth,
-    };
-  });
-  if (testInfo.project.name === "desktop") {
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    await page.evaluate((language) => {
+      document.documentElement.lang = language;
+      document.documentElement.dir = language === "en" ? "ltr" : "rtl";
+    }, locale);
+    const measured = await page.evaluate(() => {
+      const rects = (selector: string) =>
+        [...document.querySelectorAll(selector)].map((element) =>
+          element.getBoundingClientRect(),
+        );
+      const covers = rects(".cottage-profile-card-cover");
+      const firstPills = rects(".cottage-profile-card-badges > :first-child");
+      return {
+        titles: rects(".cottage-profile-card h2").map((rect) => rect.top),
+        links: rects(".cottage-profile-card a").map((rect) => rect.top),
+        coverBottoms: covers.map((rect) => rect.bottom),
+        pillsFromLeft: firstPills.map(
+          (rect, index) => rect.left - covers[index].left,
+        ),
+        pillsFromRight: firstPills.map(
+          (rect, index) => covers[index].right - rect.right,
+        ),
+        document: document.documentElement.scrollWidth,
+        available: document.documentElement.clientWidth,
+      };
+    });
     expect(measured.titles).toHaveLength(2);
-    expect(measured.titles[0]).toBe(measured.titles[1]);
     expect(measured.links).toHaveLength(2);
-    expect(measured.links[0]).toBe(measured.links[1]);
+    expect(measured.coverBottoms).toHaveLength(2);
+    if (testInfo.project.name === "desktop") {
+      expect(measured.titles[0]).toBe(measured.titles[1]);
+      expect(measured.links[0]).toBe(measured.links[1]);
+      expect(measured.coverBottoms[0]).toBe(measured.coverBottoms[1]);
+    }
+    const inlineStart =
+      locale === "en" ? measured.pillsFromLeft : measured.pillsFromRight;
+    for (const offset of inlineStart) expect(offset).toBeCloseTo(12, 1);
+    expect(measured.document).toBeLessThanOrEqual(measured.available);
   }
-  expect(measured.document).toBeLessThanOrEqual(measured.available);
 });
 
 test("a cottage list card casts the card shadow and each toned status badge shows its own dot", async ({
   page,
 }, testInfo) => {
   await mountBookingRequestDisplay(page, testInfo);
-  await page.evaluate(() => {
+  await page.evaluate((photo) => {
     document.body.insertAdjacentHTML(
       "beforeend",
       '<main class="results-page page"><section class="cottage-profile-overview"><div class="cottage-profile-card-grid">' +
         '<article class="card cottage-profile-card" data-testid="card">' +
-        '<div><span class="status-badge status-badge-published">Published</span>' +
+        '<div class="cottage-profile-card-cover"><div class="cottage-profile-card-badges">' +
+        '<span class="status-badge status-badge-published">Published</span>' +
         '<span class="status-badge status-badge-draft">Private draft</span>' +
         '<span class="status-badge status-badge-review">Submitted for content approval</span></div>' +
+        `${photo}</div>` +
         '<h2 class="card-title">Cottage</h2>' +
         '<p class="card-detail">Erbil</p>' +
         '<p class="card-small-print">0/12 photos</p>' +
-        '<a class="action-link action-primary action-content" href="#">Open Cottage Profile</a>' +
+        '<div class="cottage-profile-card-actions"><a class="action-link action-primary action-content" href="#">Open Cottage Profile</a></div>' +
         "</article></div></section></main>",
     );
-  });
+  }, coverPhotoMarkup);
 
   const card = page.getByTestId("card");
   const measureEdge = () =>

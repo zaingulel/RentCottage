@@ -45,6 +45,8 @@ the code keeps them.
     Normal-size text in these three text tokens reaches 4.5:1 on every surface it sits on, which
     [globals.test.ts](../src/app/globals.test.ts) checks against a list of surfaces, so new work that puts such
     text on another surface adds that surface to the test.
+  - `--surface-no-photo` and `--surface-no-photo-band` are the two bands of the cottage card's 'No photos yet'
+    panel. `--ink-accent` text sits on them and reaches 4.5:1 on both, which globals.test.ts checks.
   - `--ink-on-dark` is the text colour on a dark surface, the green panels and buttons and the shaded hero
     photograph alike; the one exception is `--ink-on-green-bright`, the white label of the solid green buttons and
     links that the administrator review list, the publication review and the cottage profile editor style for
@@ -132,6 +134,7 @@ A stylesheet may write these as literals:
 - Border and outline widths and offsets, and lengths inside `background`, `transform`, `backdrop-filter` and
   text-decoration properties. New work reuses a value already in use.
 - Unitless `line-height` ratios and `letter-spacing` in `em`.
+- The cottage card cover's `16 / 10` aspect ratio and the `135deg` angle of its 'No photos yet' bands.
 - The two page width tokens, `--page-width` and `--page-width-record`, which hold the sizing lengths named under
   Page template.
 - The two component tokens that hold a length, `--hero-headline-gap-rtl` and `--booking-progress-marker`.
@@ -328,8 +331,16 @@ its own; the block it sits in sets the space around it.
   the record's heading, in `--display` at weight 700 in `--ink` at `--font-size-4`, with line height `1.25` and
   `1.4` in Sorani; `card-detail` for the line that places or describes the record, in `--muted` at
   `--font-size-2`; and `card-small-print` for counts and other secondary facts, in `--muted` at `--font-size-1`.
-  The cottage list card, `.cottage-profile-card`, uses the pattern. A panel, notice, list row or empty state is not
+  The cottage list card, `.cottage-profile-card`, uses the pattern and adds the Cottage card rules below. A panel, notice, list row or empty state is not
   a card and keeps its `1px` `--line` border.
+- Cottage card: a cottage list card has five rows held in a subgrid so cards in a row align: cover, title, detail,
+  small print, actions. The cover runs edge to edge at `16 / 10`, cropped with `object-fit: cover`, on
+  `--surface-placeholder` while it loads, and shows the first ready photo in the photo editor's order with a
+  translated text alternative that names the cottage. Status badges sit over the cover at its block start and
+  inline start, `--space-3` in, on `--layer-raised`. A cottage with no ready photo shows the 'No photos yet'
+  panel: `135deg` bands of `--surface-no-photo` and `--surface-no-photo-band`, each `--space-3` wide, with the
+  label centred in bold `--ink-accent` at `--font-size-2`. The actions row puts the open action at the inline
+  start.
 - Status badge: `span.status-badge` is the compact status of one item in a list row or card. Its text is the
   translated status label, so the status never depends on colour. It is a pill on `--status-neutral-bg` with bold
   `--ink` text at `--font-size-1`. A badge may add one tone class, which draws a `0.5rem` dot before the label,
@@ -337,7 +348,8 @@ its own; the block it sits in sets the space around it.
   `status-badge-draft` for a private record not yet submitted, and `status-badge-review` for a submitted record
   waiting for a decision with nothing published. The dot repeats the label and is never the only sign of the
   status; a badge with any other status, or one that states a fact that is not a status, has no dot. It is never
-  the page-level status.
+  the page-level status. Over a cottage card's cover it is unchanged and stays opaque, so its contrast never
+  depends on the photo.
 - Rating stars: the `span.stars` beside a published review's rating is decorative and hidden from assistive technology, so the rating text carries the meaning.
 - Status banner: `p.status-banner` is the page-level status of a record page. It sits directly under the page
   title, at most one per page, and keeps `role="status"` and `aria-live="polite"`. It is a block on

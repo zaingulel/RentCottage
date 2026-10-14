@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useActionState } from "react";
 
@@ -63,34 +64,65 @@ export function CottageProfileOverview({
       </header>
       {profiles.length === 0 ? <p>{copy.empty}</p> : null}
       <div className="cottage-profile-card-grid">
-        {profiles.map((profile) => (
-          <article className="card cottage-profile-card" key={profile.id}>
-            <div>
-              <span className={statusBadgeClass(profile)}>
-                {cottageProfileStatusLabel(locale, profile)}
-              </span>
-              {profile.applicationId ? (
-                <span className="status-badge">{copy.applicationProfile}</span>
-              ) : null}
-            </div>
-            <h2 className="card-title">{profile.name || copy.editorTitle}</h2>
-            <p className="card-detail">
-              {[profile.governorate, profile.approximateLocation]
-                .filter(Boolean)
-                .join(" · ") || copy.completion}
-            </p>
-            <p className="card-small-print">
-              {profile.photos.filter((photo) => photo.state === "ready").length}
-              /12 {copy.photos}
-            </p>
-            <ActionLink
-              kind="primary"
-              href={`/${locale}/${route}/cottages/${profile.id}`}
-            >
-              {copy.open}
-            </ActionLink>
-          </article>
-        ))}
+        {profiles.map((profile) => {
+          const name = profile.name || copy.editorTitle;
+          const cover = profile.photos.find((photo) => photo.state === "ready");
+          return (
+            <article className="card cottage-profile-card" key={profile.id}>
+              <div
+                className={
+                  cover
+                    ? "cottage-profile-card-cover"
+                    : "cottage-profile-card-cover cottage-profile-card-cover-empty"
+                }
+              >
+                <div className="cottage-profile-card-badges">
+                  <span className={statusBadgeClass(profile)}>
+                    {cottageProfileStatusLabel(locale, profile)}
+                  </span>
+                  {profile.applicationId ? (
+                    <span className="status-badge">
+                      {copy.applicationProfile}
+                    </span>
+                  ) : null}
+                </div>
+                {cover ? (
+                  <Image
+                    src={`/api/cottage-profile-photos/${cover.id}`}
+                    alt={copy.coverPhotoAlt.replace("{name}", name)}
+                    fill
+                    sizes="(min-width: 40rem) 22rem, 100vw"
+                  />
+                ) : (
+                  <p className="cottage-profile-card-no-photo">
+                    {copy.noPhotos}
+                  </p>
+                )}
+              </div>
+              <h2 className="card-title">{name}</h2>
+              <p className="card-detail">
+                {[profile.governorate, profile.approximateLocation]
+                  .filter(Boolean)
+                  .join(" · ") || copy.completion}
+              </p>
+              <p className="card-small-print">
+                {
+                  profile.photos.filter((photo) => photo.state === "ready")
+                    .length
+                }
+                /12 {copy.photos}
+              </p>
+              <div className="cottage-profile-card-actions">
+                <ActionLink
+                  kind="primary"
+                  href={`/${locale}/${route}/cottages/${profile.id}`}
+                >
+                  {copy.open}
+                </ActionLink>
+              </div>
+            </article>
+          );
+        })}
       </div>
       {actor === "administrator" && continuationHref ? (
         <Link href={continuationHref}>{copy.nextCottages}</Link>
