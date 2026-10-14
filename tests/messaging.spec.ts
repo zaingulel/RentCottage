@@ -113,6 +113,9 @@ test("booking customer keeps the original while using fictional translations acr
     .getByLabel("Message", { exact: true })
     .fill("هل يمكننا استخدام الحديقة؟");
   const sendEnControl = page.getByRole("button", { name: "Send message" });
+  // The conversation's actions share one busy state that lasts until the refresh settles.
+  await expect(sendEnControl).toBeEnabled();
+  await expect(sendEnControl).not.toHaveAttribute("aria-busy", "true");
   await sendEnControl.focus();
   await expect(sendEnControl).toBeFocused();
   await sendEnControl.press("Enter");
@@ -128,6 +131,8 @@ test("booking customer keeps the original while using fictional translations acr
   const translateEnControl = message.getByRole("button", {
     name: "Automatic translation",
   });
+  await expect(translateEnControl).toBeEnabled();
+  await expect(translateEnControl).not.toHaveAttribute("aria-busy", "true");
   await translateEnControl.focus();
   await expect(translateEnControl).toBeFocused();
   await translateEnControl.press("Enter");
@@ -145,6 +150,8 @@ test("booking customer keeps the original while using fictional translations acr
   const reportEnControl = message.getByRole("button", {
     name: "Report poor translation",
   });
+  await expect(reportEnControl).toBeEnabled();
+  await expect(reportEnControl).not.toHaveAttribute("aria-busy", "true");
   await reportEnControl.focus();
   await expect(reportEnControl).toBeFocused();
   await reportEnControl.press("Enter");
@@ -173,6 +180,8 @@ test("booking customer keeps the original while using fictional translations acr
     .getByLabel("الرسالة", { exact: true })
     .fill("هل يمكننا استخدام الحديقة؟");
   const sendArControl = page.getByRole("button", { name: "إرسال الرسالة" });
+  await expect(sendArControl).toBeEnabled();
+  await expect(sendArControl).not.toHaveAttribute("aria-busy", "true");
   await sendArControl.focus();
   await expect(sendArControl).toBeFocused();
   await sendArControl.press("Enter");
