@@ -864,7 +864,7 @@ describe("access forms", () => {
 
     expect(saveName).toHaveBeenCalledExactlyOnceWith({ firstName: "12345" });
     const reason = screen.getByText(
-      "Enter a first name of 1 to 50 characters that includes a letter and no phone number, email address, link or hidden characters.",
+      "Enter a first name of 1 to 50 characters that includes a letter and no phone number, email address, link or control character such as a tab.",
     );
     expect(reason).toHaveClass("field-error");
     expect(input).toHaveAttribute("aria-invalid", "true");
