@@ -909,7 +909,7 @@ describe("access forms", () => {
     );
   });
 
-  it("keeps the field read-only while a first name saves", async () => {
+  it("keeps a draft typed while a first name saves", async () => {
     let resolveSave!: (value: { status: "saved" }) => void;
     saveName.mockImplementation(
       () =>
@@ -923,20 +923,60 @@ describe("access forms", () => {
     const input = screen.getByLabelText("First name");
     await user.type(input, "Lana{Enter}");
     expect(saveName).toHaveBeenCalledExactlyOnceWith({ firstName: "Lana" });
-    expect(input).toHaveAttribute("readonly");
     expect(input).toHaveFocus();
 
     await user.type(input, " K");
-    expect(input).toHaveValue("Lana");
+    expect(input).toHaveValue("Lana K");
 
     await act(async () => resolveSave({ status: "saved" }));
     rerender(<AccountNameForm locale="en" mode="details" firstName="Lana" />);
 
-    expect(input).toHaveValue("Lana");
-    expect(input).not.toHaveAttribute("readonly");
+    expect(input).toHaveValue("Lana K");
     expect(screen.getByRole("status")).toHaveTextContent(
       "Your first name is saved.",
     );
+  });
+
+  it("keeps a draft typed after the save settles but before the saved name arrives", async () => {
+    saveName.mockResolvedValue({ status: "saved" });
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AccountNameForm locale="en" mode="details" firstName="Zana" />,
+    );
+
+    const input = screen.getByLabelText("First name");
+    await user.clear(input);
+    await user.type(input, "Lana");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Your first name is saved.",
+    );
+
+    await user.type(input, " K");
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Lana" />);
+
+    expect(input).toHaveValue("Lana K");
+  });
+
+  it("shows the trimmed name after saving one with spaces", async () => {
+    saveName.mockResolvedValue({ status: "saved" });
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AccountNameForm locale="en" mode="details" firstName="Zana" />,
+    );
+
+    const input = screen.getByLabelText("First name");
+    await user.clear(input);
+    await user.type(input, "  Lana  ");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Your first name is saved.",
+    );
+    expect(saveName).toHaveBeenCalledExactlyOnceWith({ firstName: "  Lana  " });
+
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Lana" />);
+
+    expect(input).toHaveValue("Lana");
   });
 
   it("reports a save that could not reach the server", async () => {

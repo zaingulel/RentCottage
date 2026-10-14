@@ -28,6 +28,7 @@ export function AccountNameForm({
   const errorId = useId();
   const [value, setValue] = useState(firstName);
   const [previousFirstName, setPreviousFirstName] = useState(firstName);
+  const [submittedFirstName, setSubmittedFirstName] = useState<string>();
   const [status, setStatus] = useState<
     "saved" | "invalid" | "unavailable" | undefined
   >();
@@ -35,10 +36,12 @@ export function AccountNameForm({
   const stepTitle = useRef<HTMLHeadingElement>(null);
 
   // A first name saved elsewhere reaches this form as a new prop while it stays
-  // mounted, so the field follows it; a remount would drop the saved status.
+  // mounted, so the field follows it unless the person typed since the last
+  // name shown or submitted; a remount would drop the saved status.
   if (firstName !== previousFirstName) {
     setPreviousFirstName(firstName);
-    setValue(firstName);
+    if (value === previousFirstName || value === submittedFirstName)
+      setValue(firstName);
   }
 
   useLayoutEffect(() => {
@@ -58,6 +61,7 @@ export function AccountNameForm({
   async function save() {
     setStatus(undefined);
     let result;
+    setSubmittedFirstName(value);
     try {
       result = await run(() => saveAccountName({ firstName: value }));
     } catch (error) {
@@ -86,7 +90,6 @@ export function AccountNameForm({
             id={inputId}
             autoComplete="given-name"
             value={value}
-            readOnly={pending}
             aria-invalid={status === "invalid" || undefined}
             aria-describedby={status === "invalid" ? errorId : undefined}
             onChange={(event) => setValue(event.target.value)}
