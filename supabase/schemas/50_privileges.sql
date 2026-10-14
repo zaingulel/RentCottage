@@ -1532,6 +1532,8 @@ REVOKE ALL ON FUNCTION public.search_administrator_booking_queue(text,text,date,
 GRANT EXECUTE ON FUNCTION public.search_administrator_booking_queue(text,text,date,date,timestamptz,uuid) TO authenticated;
 REVOKE ALL ON FUNCTION public.administrator_booking_money_facts(text,date,date,integer),public.list_administrator_booking_money(text,date,date) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.list_administrator_booking_money(text,date,date) TO authenticated;
+REVOKE ALL ON FUNCTION public.list_owner_cottage_public_inventory(uuid[],date,date) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.list_owner_cottage_public_inventory(uuid[],date,date) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.reads_as_coordinate_pair(text) FROM PUBLIC,anon,authenticated,service_role;
 
