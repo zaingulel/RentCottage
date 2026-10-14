@@ -96,10 +96,31 @@ describe("Customer Booking Request status", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
   it("shows the request details as a fact list with each label directly before its value", () => {
-    render(<CustomerBookingRequestStatus locale="en" request={request} />);
+    const view = render(
+      <CustomerBookingRequestStatus locale="en" request={request} />,
+    );
     const label = screen.getByText("Cottage");
     expect(label.closest("dl")).toHaveClass("fact-list");
     expect(label.nextSibling).toHaveTextContent("Quiet Garden");
+    const cottageName = '<img src=x onerror=alert("cottage")>';
+    const declineNote = '<script>alert("note")</script>';
+    view.rerender(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={{ ...request, cottageName, declineNote }}
+      />,
+    );
+    expect(screen.getByText("Cottage").nextSibling).toHaveTextContent(
+      cottageName,
+    );
+    expect(
+      screen.getByText("Cottage Owner note").nextSibling,
+    ).toHaveTextContent(declineNote);
+    expect(view.container.querySelector("img, script")).toBeNull();
+    for (const fact of view.container.querySelectorAll("dl.fact-list > div")) {
+      expect(fact.firstElementChild?.tagName).toBe("DT");
+      expect(fact.firstElementChild?.nextElementSibling?.tagName).toBe("DD");
+    }
   });
   it("shows the four progress steps with the current step and each state in text", () => {
     const steps = (name: string) =>

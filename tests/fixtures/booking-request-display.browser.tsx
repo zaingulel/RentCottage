@@ -4,6 +4,8 @@ import { CustomerBookingRequestStatus } from "@/components/customer-booking-requ
 import { OwnerBookingRequestNotifications } from "@/components/owner-booking-request-notifications";
 import { PublicCottageProfileView } from "@/components/public-cottage-profile";
 import { PublicCottageResults } from "@/components/public-cottage-results";
+import { ActionButton } from "@/components/interaction-controls";
+import { messagingMessages } from "@/i18n/messaging-messages";
 import {
   serializeCottageDiscoveryQuery,
   type CottageDiscoveryQuery,
@@ -65,7 +67,19 @@ function renderBookingRequestDisplay({
                 : customerDisplayFixtures[status]
             }
           />
-          <div className="request-follow-up" />
+          <div className="card customer-request-messages">
+            <section
+              className="request-follow-up"
+              aria-label={messagingMessages[locale].inbox}
+            >
+              <h2 className="section-title">
+                {messagingMessages[locale].inbox}
+              </h2>
+              <ActionButton kind="secondary" size="regular" type="button">
+                {messagingMessages[locale].open}
+              </ActionButton>
+            </section>
+          </div>
         </>
       ) : (
         <OwnerBookingRequestNotifications

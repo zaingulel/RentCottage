@@ -3202,8 +3202,7 @@ html[lang="ckb"] .card-title {
 
 .booking-request-decision-controls,
 .booking-request-decision-controls form,
-.request-row-below form,
-.customer-booking-request-status {
+.request-row-below form {
   display: grid;
   gap: var(--space-4);
 }
@@ -3220,7 +3219,6 @@ html[lang="ckb"] .card-title {
   gap: var(--space-2);
 }
 
-.customer-booking-request-status,
 section.request-follow-up {
   width: min(100%, 48rem);
   margin-inline: auto;
@@ -3453,6 +3451,140 @@ section.request-follow-up {
     inset-inline: calc(var(--booking-progress-marker) / 2) auto;
     border-block-start: 0;
     border-inline-start: 1px solid var(--line);
+  }
+}
+
+.customer-booking-request-status {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.customer-booking-request-progress,
+.customer-booking-request-details {
+  display: grid;
+  gap: var(--space-5);
+  min-inline-size: 0;
+  padding: var(--space-5);
+}
+
+.customer-booking-request-details > strong {
+  display: block;
+  padding-block-end: var(--space-5);
+  border-block-end: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--font-size-2);
+  overflow-wrap: anywhere;
+}
+
+.customer-booking-request-total {
+  padding-block: var(--space-3);
+  border-block: 1px solid var(--line);
+}
+
+.customer-booking-request-total dd {
+  color: var(--green);
+  font-family: var(--display);
+  font-size: var(--font-size-4);
+  font-weight: 700;
+}
+
+.customer-booking-request-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
+.customer-booking-request-actions:empty {
+  display: none;
+}
+
+.customer-booking-request-progress .booking-request-progress {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+}
+
+.customer-booking-request-progress .booking-request-progress > li {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  align-items: start;
+  min-inline-size: 0;
+  padding-inline-end: var(--booking-progress-inset);
+  overflow-wrap: anywhere;
+}
+
+.customer-booking-request-progress .booking-request-progress-marker {
+  grid-row: 1;
+}
+
+.customer-booking-request-progress
+  .booking-request-progress
+  > li
+  > .booking-request-progress-name {
+  grid-row: 2;
+  align-self: start;
+  font-size: var(--font-size-2);
+}
+
+.customer-booking-request-progress .booking-request-progress-state {
+  grid-row: 3;
+  font-size: var(--font-size-1);
+}
+
+.customer-booking-request-progress
+  .booking-request-progress
+  > li:not(:last-child)::after {
+  inset-block: calc(var(--booking-progress-marker) / 2) auto;
+  inset-inline: calc(
+      var(--booking-progress-marker) + var(--booking-progress-inset)
+    )
+    var(--booking-progress-inset);
+  border-block-start: 6px solid var(--line);
+  border-inline-start: 0;
+  transform: translateY(-50%);
+}
+
+.customer-booking-request-progress
+  .booking-request-progress
+  > [data-state="completed"]:not(:last-child)::after {
+  border-block-start-color: var(--gold);
+}
+
+.customer-request-messages {
+  margin-block-start: var(--space-5);
+}
+
+.customer-request-messages > .request-follow-up {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  inline-size: auto;
+  margin: 0;
+  padding: var(--space-5);
+  border: 0;
+  background: transparent;
+}
+
+.customer-request-messages .section-title {
+  margin: 0;
+}
+
+.customer-request-messages > .request-follow-up > p {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 40rem) {
+  .customer-booking-request-actions > .action {
+    inline-size: 100%;
+  }
+
+  .customer-request-messages > .request-follow-up {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .customer-request-messages .action {
+    inline-size: 100%;
   }
 }
 

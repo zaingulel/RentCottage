@@ -217,141 +217,146 @@ function CustomerBookingRequestStatusView({
         {copy.title}
       </h1>
       <ActionFocusTarget targetId="customer-booking-request-title" navigation />
-      <p className="status-banner" role="status" aria-live="polite">
-        <BookingRequestStatusContent
+      <div className="card customer-booking-request-progress">
+        <p className="status-banner" role="status" aria-live="polite">
+          <BookingRequestStatusContent
+            locale={locale}
+            status={status}
+            role="customer"
+            paymentRequiredPhase={request.paymentRequiredWindow?.phase}
+            paymentRequiredExpiry={request.paymentRequiredExpiry}
+          />
+          {status === "processing" ? (
+            <span>{copy.processing}</span>
+          ) : status === request.status &&
+            !isPaymentDisplayStatus(status) &&
+            request.paymentRequiredExpiry === null ? (
+            <span>{copy.statusSentence[status]}</span>
+          ) : null}
+        </p>
+        <BookingRequestProgress
           locale={locale}
-          status={status}
-          role="customer"
-          paymentRequiredPhase={request.paymentRequiredWindow?.phase}
-          paymentRequiredExpiry={request.paymentRequiredExpiry}
+          progress={customerBookingRequestProgress({ ...request, status })}
         />
-        {status === "processing" ? (
-          <span>{copy.processing}</span>
-        ) : status === request.status &&
-          !isPaymentDisplayStatus(status) &&
-          request.paymentRequiredExpiry === null ? (
-          <span>{copy.statusSentence[status]}</span>
-        ) : null}
-      </p>
-      <BookingRequestProgress
-        locale={locale}
-        progress={customerBookingRequestProgress({ ...request, status })}
-      />
-      <strong>{request.bookingRequestReference}</strong>
-      <dl className="fact-list">
-        <div>
-          <dt>{copy.cottage}</dt>
-          <dd>{request.cottageName}</dd>
-        </div>
-        <div>
-          <dt>{copy.period}</dt>
-          <dd>
-            {request.bookingPeriod.map((item) => (
-              <span
-                key={`${item.serviceDay}-${item.kind}-${item.position ?? "full"}`}
-              >
-                {formatIraqDateTime(item.startsAt, locale)} –{" "}
-                {formatIraqDateTime(item.endsAt, locale)}
-              </span>
-            ))}
-          </dd>
-        </div>
-        <div>
-          <dt>{copy.party}</dt>
-          <dd>{request.partySize}</dd>
-        </div>
-        <div>
-          <dt>{copy.price}</dt>
-          <dd>{formatIqd(request.bookingPriceIqd, locale)}</dd>
-        </div>
-        <div>
-          <dt>{copy.fee}</dt>
-          <dd>{formatIqd(request.serviceFeeIqd, locale)}</dd>
-        </div>
-        <div>
-          <dt>{copy.total}</dt>
-          <dd>{formatIqd(request.customerTotalIqd, locale)}</dd>
-        </div>
-        {!isPaymentDisplayStatus(status) && !request.paymentRequiredExpiry ? (
+      </div>
+      <div className="card customer-booking-request-details">
+        <strong>{request.bookingRequestReference}</strong>
+        <dl className="fact-list">
           <div>
-            <dt>{copy.deadline}</dt>
-            <dd>{formatIraqDateTime(request.responseDeadline, locale)}</dd>
+            <dt>{copy.cottage}</dt>
+            <dd>{request.cottageName}</dd>
           </div>
-        ) : null}
-        {paymentDeadline ? (
           <div>
-            <dt>{copy.paymentDeadline}</dt>
-            <dd>{formatIraqDateTime(paymentDeadline, locale)}</dd>
-          </div>
-        ) : null}
-        {request.declineReason ? (
-          <div>
-            <dt>{copy.reason}</dt>
+            <dt>{copy.period}</dt>
             <dd>
-              {
-                bookingRequestDeclineReasonMessages[locale][
-                  request.declineReason
-                ]
-              }
+              {request.bookingPeriod.map((item) => (
+                <span
+                  key={`${item.serviceDay}-${item.kind}-${item.position ?? "full"}`}
+                >
+                  {formatIraqDateTime(item.startsAt, locale)} –{" "}
+                  {formatIraqDateTime(item.endsAt, locale)}
+                </span>
+              ))}
             </dd>
           </div>
-        ) : null}
-        {request.statusNotifications.map((receipt) => (
-          <div key={receipt.id}>
-            <dt>{copy.notification}</dt>
-            <dd>
-              {receipt.status === "expired" &&
-              request.paymentRequiredExpiry?.status === "expired"
-                ? bookingRequestPaymentRequiredExpiryMessages[locale]
-                    .expiredLabel
-                : bookingRequestDisplayStatusMessages[locale][
-                    receipt.status
-                  ]}{" "}
-              · {formatIraqDateTime(receipt.createdAt, locale)}
-            </dd>
-          </div>
-        ))}
-        {request.declineNote ? (
           <div>
-            <dt>{copy.note}</dt>
-            <dd>{request.declineNote}</dd>
+            <dt>{copy.party}</dt>
+            <dd>{request.partySize}</dd>
           </div>
+          <div>
+            <dt>{copy.price}</dt>
+            <dd>{formatIqd(request.bookingPriceIqd, locale)}</dd>
+          </div>
+          <div>
+            <dt>{copy.fee}</dt>
+            <dd>{formatIqd(request.serviceFeeIqd, locale)}</dd>
+          </div>
+          <div className="customer-booking-request-total">
+            <dt>{copy.total}</dt>
+            <dd>{formatIqd(request.customerTotalIqd, locale)}</dd>
+          </div>
+          {!isPaymentDisplayStatus(status) && !request.paymentRequiredExpiry ? (
+            <div>
+              <dt>{copy.deadline}</dt>
+              <dd>{formatIraqDateTime(request.responseDeadline, locale)}</dd>
+            </div>
+          ) : null}
+          {paymentDeadline ? (
+            <div>
+              <dt>{copy.paymentDeadline}</dt>
+              <dd>{formatIraqDateTime(paymentDeadline, locale)}</dd>
+            </div>
+          ) : null}
+          {request.declineReason ? (
+            <div>
+              <dt>{copy.reason}</dt>
+              <dd>
+                {
+                  bookingRequestDeclineReasonMessages[locale][
+                    request.declineReason
+                  ]
+                }
+              </dd>
+            </div>
+          ) : null}
+          {request.statusNotifications.map((receipt) => (
+            <div key={receipt.id}>
+              <dt>{copy.notification}</dt>
+              <dd>
+                {receipt.status === "expired" &&
+                request.paymentRequiredExpiry?.status === "expired"
+                  ? bookingRequestPaymentRequiredExpiryMessages[locale]
+                      .expiredLabel
+                  : bookingRequestDisplayStatusMessages[locale][
+                      receipt.status
+                    ]}{" "}
+                · {formatIraqDateTime(receipt.createdAt, locale)}
+              </dd>
+            </div>
+          ))}
+          {request.declineNote ? (
+            <div>
+              <dt>{copy.note}</dt>
+              <dd>{request.declineNote}</dd>
+            </div>
+          ) : null}
+        </dl>
+        {status === "payment-required" &&
+        request.paymentRecovery?.status === "processing" ? (
+          <p>{recoveryCopy.processing}</p>
         ) : null}
-      </dl>
-      {status === "payment-required" &&
-      request.paymentRecovery?.status === "processing" ? (
-        <p>{recoveryCopy.processing}</p>
-      ) : null}
-      {canRecoverBookingRequestPayment(request) ? (
-        <ActionButton
-          kind="primary"
-          width="full"
-          type="button"
-          pending={pending}
-          focusSuccessorId={focusSuccessorId}
-          onClick={() => void recoverPayment()}
-        >
-          {request.paymentRecovery?.status === "retryable"
-            ? recoveryCopy.retry
-            : recoveryCopy.action}
-        </ActionButton>
-      ) : null}
-      {status === "pending" ? (
-        <ActionButton
-          kind="secondary"
-          size="regular"
-          width="full"
-          type="button"
-          pending={pending}
-          focusSuccessorId={focusSuccessorId}
-          onClick={() => void withdraw()}
-        >
-          {copy.withdraw}
-        </ActionButton>
-      ) : null}
-      {error ? (
-        <ActionFeedback kind="error">{copy.failed}</ActionFeedback>
-      ) : null}
+        <div className="customer-booking-request-actions">
+          {canRecoverBookingRequestPayment(request) ? (
+            <ActionButton
+              kind="primary"
+              width="full"
+              type="button"
+              pending={pending}
+              focusSuccessorId={focusSuccessorId}
+              onClick={() => void recoverPayment()}
+            >
+              {request.paymentRecovery?.status === "retryable"
+                ? recoveryCopy.retry
+                : recoveryCopy.action}
+            </ActionButton>
+          ) : null}
+          {status === "pending" ? (
+            <ActionButton
+              kind="secondary"
+              size="regular"
+              type="button"
+              pending={pending}
+              focusSuccessorId={focusSuccessorId}
+              onClick={() => void withdraw()}
+            >
+              {copy.withdraw}
+            </ActionButton>
+          ) : null}
+        </div>
+        {error ? (
+          <ActionFeedback kind="error">{copy.failed}</ActionFeedback>
+        ) : null}
+      </div>
     </section>
   );
 }

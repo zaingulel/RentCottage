@@ -213,6 +213,12 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
                       ? locale.paymentRequired
                       : locale.confirmed,
         );
+        const requestButtons =
+          role === "customer"
+            ? page
+                .locator(".customer-booking-request-status")
+                .getByRole("button")
+            : page.getByRole("button");
         if (status.startsWith("payment-correction-")) {
           await expect(page.getByRole("status")).toContainText(
             locale.unconfirmed,
@@ -222,7 +228,7 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
             status === "payment-correction-quarantined"
           )
             await expect(page.getByRole("status")).toContainText(locale.held);
-          await expect(page.getByRole("button")).toHaveCount(0);
+          await expect(requestButtons).toHaveCount(0);
           if (status !== "payment-correction-expired")
             await expect(page.getByRole("status")).not.toContainText(
               locale.refunded,
@@ -260,14 +266,14 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
             String(digit.charCodeAt(0) - (digit <= "٩" ? 0x660 : 0x6f0)),
           );
           expect(westernDigits).toContain("12:20");
-          await expect(page.getByRole("button")).toHaveCount(0);
+          await expect(requestButtons).toHaveCount(0);
         } else {
           await expect(
             page.getByText(locale.paymentDeadline, { exact: true }),
           ).toHaveCount(0);
         }
         await expect(page.getByRole("status")).toBeVisible();
-        await expect(page.getByRole("button")).toHaveCount(0);
+        await expect(requestButtons).toHaveCount(0);
         await page.evaluate(() => document.fonts.ready);
         const dimensions = await page.evaluate(() => {
           const card = document.querySelector("article, section");
@@ -300,10 +306,12 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
         await expect(
           page.getByText(copy.processing, { exact: true }),
         ).toBeVisible();
-        await expect(page.getByRole("button")).toHaveCount(0);
+        await expect(
+          page.locator(".customer-booking-request-status").getByRole("button"),
+        ).toHaveCount(0);
       } else
         await expect(
-          page.getByRole("button", {
+          page.locator(".customer-booking-request-status").getByRole("button", {
             name: recovery === "available" ? copy.action : copy.retry,
           }),
         ).toBeVisible();
@@ -363,7 +371,7 @@ test("Customer Booking Request status sits in the record page column under the h
     const measured = await page.evaluate(() => {
       const column = document.querySelector("main.page");
       const card = column?.querySelector(".customer-booking-request-status");
-      const followUp = column?.querySelector(".request-follow-up");
+      const followUp = column?.querySelector(".customer-request-messages");
       if (!column || !card || !followUp)
         throw new Error("Booking Request record page column is missing");
       const columnBox = column.getBoundingClientRect();
@@ -396,6 +404,117 @@ test("Customer Booking Request status sits in the record page column under the h
     expect(measured.followUpWidth).toBeCloseTo(columnWidth, 0);
     expect(measured.cardTop - measured.columnTop).toBeCloseTo(32, 0);
     expect(measured.document).toBeLessThanOrEqual(measured.available);
+    await expect(
+      page.locator(".customer-booking-request-status > .card"),
+    ).toHaveCount(2);
+    await expect(
+      page.getByText("RC-REQ-AAAAAAAAAAAAAAAA", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("img")).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate((phone) => {
+          const status = document.querySelector(
+            ".customer-booking-request-status",
+          );
+          const title = status?.querySelector("h1");
+          const progress = status?.querySelector(
+            ".customer-booking-request-progress",
+          );
+          const details = status?.querySelector(
+            ".customer-booking-request-details",
+          );
+          const total = details?.querySelector(
+            ".customer-booking-request-total",
+          );
+          const messages = document.querySelector(".customer-request-messages");
+          const row = messages?.querySelector(".request-follow-up");
+          const heading = row?.querySelector("h2");
+          const action = row?.querySelector("button");
+          if (
+            !status ||
+            !title ||
+            !progress ||
+            !details ||
+            !total ||
+            !messages ||
+            !row ||
+            !heading ||
+            !action
+          )
+            throw new Error("Customer status composition is missing");
+          const statusBox = status.getBoundingClientRect();
+          const progressBox = progress.getBoundingClientRect();
+          const detailsBox = details.getBoundingClientRect();
+          const messagesBox = messages.getBoundingClientRect();
+          const headingBox = heading.getBoundingClientRect();
+          const actionBox = action.getBoundingClientRect();
+          const markers = [
+            ...progress.querySelectorAll(".booking-request-progress-marker"),
+          ].map((node) => node.getBoundingClientRect());
+          const rowStyle = getComputedStyle(row);
+          const totalStyle = getComputedStyle(total);
+          const value = total.querySelector("dd")!;
+          return {
+            fullWidth: [progressBox, detailsBox, messagesBox].every(
+              (box) => Math.abs(box.width - statusBox.width) < 1,
+            ),
+            titleOutsideCards:
+              title.closest(".card") === null &&
+              title.getBoundingClientRect().bottom <= progressBox.top,
+            separateGroups:
+              progressBox.bottom <= detailsBox.top &&
+              detailsBox.bottom <= messagesBox.top &&
+              [progress, details, messages].every(
+                (node) => getComputedStyle(node).boxShadow !== "none",
+              ),
+            totalBetweenRules:
+              parseFloat(totalStyle.borderBlockStartWidth) >= 1 &&
+              parseFloat(totalStyle.borderBlockEndWidth) >= 1 &&
+              getComputedStyle(value).fontFamily.includes("Changa"),
+            horizontalProgress:
+              markers.length === 4 &&
+              markers.every((box) => Math.abs(box.top - markers[0].top) < 1) &&
+              markers.every(
+                (box, index) =>
+                  index === 0 ||
+                  (document.documentElement.dir === "rtl"
+                    ? box.right <= markers[index - 1].left
+                    : box.left >= markers[index - 1].right),
+              ),
+            readableProgress: [
+              ...progress.querySelectorAll(".booking-request-progress-name"),
+            ].every((node) => node.scrollWidth <= node.clientWidth + 1),
+            messagesRow: phone
+              ? actionBox.top >= headingBox.bottom &&
+                Math.abs(
+                  actionBox.width -
+                    (row.clientWidth -
+                      parseFloat(rowStyle.paddingInlineStart) -
+                      parseFloat(rowStyle.paddingInlineEnd)),
+                ) < 1
+              : document.documentElement.dir === "rtl"
+                ? actionBox.right <= headingBox.left
+                : actionBox.left >= headingBox.right,
+            noOverflow:
+              document.documentElement.scrollWidth <=
+                document.documentElement.clientWidth &&
+              [progress, details, messages].every(
+                (node) => node.scrollWidth <= node.clientWidth,
+              ),
+          };
+        }, testInfo.project.name === "mobile"),
+      )
+      .toEqual({
+        fullWidth: true,
+        titleOutsideCards: true,
+        separateGroups: true,
+        totalBetweenRules: true,
+        horizontalProgress: true,
+        readableProgress: true,
+        messagesRow: true,
+        noOverflow: true,
+      });
   }
 });
 
