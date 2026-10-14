@@ -612,10 +612,20 @@ test("a cottage list card casts the card shadow and each toned status badge show
         '<h2 class="card-title">Cottage</h2>' +
         '<p class="card-detail">Erbil</p>' +
         '<p class="card-small-print">0/12 photos</p>' +
+        '<a class="action-link action-primary action-content" href="#">Open Cottage Profile</a>' +
         "</article></div></section></main>",
     );
   });
 
+  const card = page.getByTestId("card");
+  const measureEdge = () =>
+    card.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        width: style.borderTopWidth,
+        color: style.borderTopColor,
+      };
+    });
   const measured = await page.evaluate(() => {
     const card = document.querySelector('[data-testid="card"]');
     if (!card) throw new Error("The cottage list card is missing");
@@ -623,16 +633,56 @@ test("a cottage list card casts the card shadow and each toned status badge show
     return {
       boxShadow: style.boxShadow,
       radius: style.borderStartStartRadius,
-      dots: [...card.querySelectorAll(".status-badge")].map(
-        (badge) => getComputedStyle(badge, "::before").backgroundColor,
-      ),
+      dots: [...card.querySelectorAll(".status-badge")].map((badge) => {
+        const dot = getComputedStyle(badge, "::before");
+        return {
+          color: dot.backgroundColor,
+          content: dot.content,
+          width: dot.width,
+          height: dot.height,
+        };
+      }),
     };
   });
   expect(measured.boxShadow).toContain("0px 8px 24px -12px");
+  expect(measured.boxShadow).toContain("rgba(38, 36, 31, 0.06)");
+  expect(measured.boxShadow).toContain("rgba(38, 36, 31, 0.18)");
   expect(measured.radius).toBe("14px");
-  expect(measured.dots).toEqual([
-    "rgb(47, 125, 79)",
-    "rgb(178, 124, 62)",
-    "rgb(59, 110, 165)",
-  ]);
+  expect(measured.dots).toEqual(
+    ["rgb(47, 125, 79)", "rgb(178, 124, 62)", "rgb(59, 110, 165)"].map(
+      (color) => ({ color, content: '""', width: "8px", height: "8px" }),
+    ),
+  );
+
+  const normalEdge = await measureEdge();
+  expect(normalEdge.color).toBe("rgba(0, 0, 0, 0)");
+  await page.emulateMedia({ forcedColors: "active" });
+  const forcedEdge = await measureEdge();
+  expect(Number.parseFloat(forcedEdge.width)).toBeGreaterThan(0);
+  expect(forcedEdge.color).not.toBe("rgba(0, 0, 0, 0)");
+  await page.screenshot({
+    path: testInfo.outputPath("cottage-card-forced-colours.png"),
+  });
+  await page.emulateMedia({ forcedColors: "none" });
+
+  const link = card.getByRole("link", { name: "Open Cottage Profile" });
+  for (let presses = 0; presses < 20; presses += 1) {
+    if (await link.evaluate((element) => element === document.activeElement)) {
+      break;
+    }
+    await page.keyboard.press("Tab");
+  }
+  await expect(link).toBeFocused();
+  expect(
+    await link.evaluate((element) => element.matches(":focus-visible")),
+  ).toBe(true);
+  const focus = await link.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { boxShadow: style.boxShadow, outlineStyle: style.outlineStyle };
+  });
+  expect(focus.boxShadow).not.toBe("none");
+  expect(focus.outlineStyle).toBe("solid");
+  await page.screenshot({
+    path: testInfo.outputPath("cottage-card-focus.png"),
+  });
 });
