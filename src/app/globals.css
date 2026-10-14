@@ -37,7 +37,6 @@
   --ink-on-green-bright: #fff;
   --ink-on-dark: #f7f1e1;
   --ink-on-dark-soft: rgb(247 241 225 / 88%);
-  --ink-on-dark-muted: rgb(247 241 225 / 72%);
   --ink-on-progress-note: #f7d8af;
 
   /* Lines and accents */
@@ -3260,6 +3259,15 @@ section.request-follow-up {
   inset-inline: 0;
 }
 
+.site-header-landing:not(.site-header-solid) {
+  background: linear-gradient(
+    to bottom,
+    var(--shade-mid),
+    var(--shade-mid) 55%,
+    transparent
+  );
+}
+
 .site-header-solid {
   background: var(--surface-raised);
   color: var(--ink);
@@ -3301,7 +3309,7 @@ section.request-follow-up {
 }
 
 .site-brand span {
-  color: var(--ink-on-dark-muted);
+  color: var(--ink-on-dark);
   font-size: var(--font-size-1);
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -3423,6 +3431,12 @@ section.request-follow-up {
 .site-header-solid .account-navigation > a {
   border-color: var(--line-menu);
   color: var(--green);
+}
+
+.site-header:not(.site-header-solid) .site-header-language-toggle,
+.site-header:not(.site-header-solid) .account-navigation > a,
+.site-header:not(.site-header-solid) .site-header-toggle {
+  background: var(--shade-menu);
 }
 
 .account-menu {
@@ -3573,6 +3587,7 @@ section.request-follow-up {
     border: 0;
     border-radius: var(--radius-control);
     padding: var(--space-2) var(--space-3);
+    background: transparent;
     color: inherit;
     font-size: inherit;
     font-weight: inherit;

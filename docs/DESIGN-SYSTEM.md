@@ -51,8 +51,7 @@ the code keeps them.
   - `--ink-on-dark` is the text colour on a dark surface, the green panels and buttons and the shaded hero
     photograph alike; the one exception is `--ink-on-green-bright`, the white label of the solid green buttons and
     links that the administrator review list, the publication review and the cottage profile editor style for
-    themselves. `--ink-on-dark-soft` is the supporting paragraph there and `--ink-on-dark-muted` the small
-    label.
+    themselves. `--ink-on-dark-soft` is the supporting paragraph there.
   - `--line-panel` is the outline of a panel and of a message.
   - `--line-action` is the outline of a secondary button and of a toggle at rest.
   - `--elevation-contact` and `--elevation-cast` are the two layers of the card shadow, tinted with the `--ink`
@@ -246,6 +245,11 @@ Anything else is a token.
     the name. On the transparent landing header the circle is `--ink-on-dark` with `--ink` text or icon; on the
     solid header it is `--green` with `--ink-on-dark` text or icon. The button is named by a visually hidden
     "Account" label, never by the letter or the icon.
+  - Header band: while the landing header is transparent, a `--shade-mid` band lies behind it, solid for its top
+    55% and fading to nothing at its bottom edge. The language button, the account links and the three-bars button
+    are filled with `--shade-menu`, which keeps their text and the brand's tagline at AA contrast over any part of
+    the photograph. The brand's tagline is `--ink-on-dark` there, not a muted shade. The solid header has neither
+    the band nor the fill.
   - Panels: an open panel is a card on `--surface-raised` at `--layer-menu` with the card radius, at least
     `14.5rem` wide, opening under its own button and aligned to that button's end edge, lying over the page and
     moving nothing. At the `phone` breakpoint every panel instead spans the screen directly under the header, with
