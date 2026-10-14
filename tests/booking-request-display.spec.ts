@@ -572,7 +572,8 @@ test("cottage list cards start their title and open button at the same height wh
       "</article>";
     document.body.insertAdjacentHTML(
       "beforeend",
-      '<main class="results-page page"><section class="cottage-profile-overview"><div class="cottage-profile-card-grid" style="max-width: 46rem">' +
+      // The cap sits on the section: on the grid, auto-fill would count its tracks against the cap and leave a phone with two columns.
+      '<main class="results-page page"><section class="cottage-profile-overview" style="max-width: 46rem"><div class="cottage-profile-card-grid">' +
         card(
           [
             "Published; update awaiting approval",
@@ -633,6 +634,37 @@ test("cottage list cards start their title and open button at the same height wh
       locale === "en" ? measured.pillsFromLeft : measured.pillsFromRight;
     for (const offset of inlineStart) expect(offset).toBeCloseTo(12, 1);
     expect(measured.document).toBeLessThanOrEqual(measured.available);
+  }
+
+  // A lone card keeps its column width: drop the second card and the fixture's width cap, so the grid is the page column.
+  await page.evaluate(() => {
+    const grid = document.querySelector<HTMLElement>(
+      ".cottage-profile-card-grid",
+    );
+    const section = document.querySelector<HTMLElement>(
+      ".cottage-profile-overview",
+    );
+    if (!grid || !section) throw new Error("The cottage card grid is missing");
+    grid.querySelectorAll(".cottage-profile-card")[1].remove();
+    section.removeAttribute("style");
+  });
+  const lone = await page.evaluate(() => {
+    const grid = document.querySelector(".cottage-profile-card-grid");
+    if (!grid) throw new Error("The cottage card grid is missing");
+    return {
+      gridWidth: grid.getBoundingClientRect().width,
+      cardWidths: [...grid.querySelectorAll(".cottage-profile-card")].map(
+        (card) => card.getBoundingClientRect().width,
+      ),
+    };
+  });
+  expect(lone.cardWidths).toHaveLength(1);
+  if (testInfo.project.name === "desktop") {
+    expect(lone.cardWidths[0]).toBeLessThan(lone.gridWidth / 2);
+  } else {
+    expect(
+      Math.abs(lone.cardWidths[0] - lone.gridWidth),
+    ).toBeLessThanOrEqual(1);
   }
 });
 
