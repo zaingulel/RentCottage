@@ -280,7 +280,7 @@ Anything else is a token.
 
 ## Content patterns
 
-Six global classes in `src/app/globals.css` present facts, lists of records, statuses, section titles and empty
+Global classes in `src/app/globals.css` present facts, lists of records, cards, statuses, section titles and empty
 lists. Each sits on a semantic element and uses tokens only. Apart from the section heading none has a margin of
 its own; the block it sits in sets the space around it.
 
@@ -297,6 +297,15 @@ its own; the block it sits in sets the space around it.
   tall. Everything else is plain supporting text outside the link: `p.list-row-meta`, in `--muted` at
   `--font-size-2`, holds plain text, a reference in `bdi`, a status badge and a date in `time`, and wraps. Further blocks of the
   same record follow inside the `li`.
+- Card: `article.card` presents one record among several in a grid or list on a page that uses the Page template.
+  It is a `--card` surface with `--radius-card` corners and the `--shadow-card` elevation shadow. It shows no
+  border: its `1px` border is `transparent`, so the card keeps an edge where the browser forces colours and removes
+  shadows. It sets no padding and no layout; the block that uses it does. Its text has three tiers: `card-title` on
+  the record's heading, in `--display` at weight 700 in `--ink` at `--font-size-4`, with line height `1.25` and
+  `1.4` in Sorani; `card-detail` for the line that places or describes the record, in `--muted` at
+  `--font-size-2`; and `card-small-print` for counts and other secondary facts, in `--muted` at `--font-size-1`.
+  The cottage list card, `.cottage-profile-card`, uses the pattern. A panel, notice, list row or empty state is not
+  a card and keeps its `1px` `--line` border.
 - Status badge: `span.status-badge` is the compact status of one item in a list row or card. Its text is the
   translated status label, so the status never depends on colour. It is a pill on `--status-neutral-bg` with bold
   `--ink` text at `--font-size-1`. It is never the page-level status.
@@ -311,7 +320,7 @@ its own; the block it sits in sets the space around it.
   a `1px` `--line` border, `--radius-card` corners and `--space-5` padding, holding one `p` with a single sentence
   saying what is absent and, `--space-3` below it, one next action as a secondary content-width `ActionLink`. It
   is not an error; a failure uses `role="alert"`.
-- New work that shows facts, a list of records, a status, a section title or an empty list reuses these. A screen
+- New work that shows facts, a list of records, a card, a status, a section title or an empty list reuses these. A screen
   with its own rules for one of them keeps those rules until it is moved onto the pattern.
 
 ## Direction and language

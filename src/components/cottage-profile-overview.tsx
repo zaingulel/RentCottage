@@ -58,7 +58,7 @@ export function CottageProfileOverview({
       {profiles.length === 0 ? <p>{copy.empty}</p> : null}
       <div className="cottage-profile-card-grid">
         {profiles.map((profile) => (
-          <article className="cottage-profile-card" key={profile.id}>
+          <article className="card cottage-profile-card" key={profile.id}>
             <div>
               <span className="status-badge">
                 {cottageProfileStatusLabel(locale, profile)}
@@ -67,13 +67,13 @@ export function CottageProfileOverview({
                 <span className="status-badge">{copy.applicationProfile}</span>
               ) : null}
             </div>
-            <h2>{profile.name || copy.editorTitle}</h2>
-            <p>
+            <h2 className="card-title">{profile.name || copy.editorTitle}</h2>
+            <p className="card-detail">
               {[profile.governorate, profile.approximateLocation]
                 .filter(Boolean)
                 .join(" · ") || copy.completion}
             </p>
-            <p>
+            <p className="card-small-print">
               {profile.photos.filter((photo) => photo.state === "ready").length}
               /12 {copy.photos}
             </p>

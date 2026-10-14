@@ -88,9 +88,13 @@ describe("Cottage Profile overview", () => {
     expect(screen.getByText("Started in Owner Application")).toBeVisible();
     const card = screen.getByRole("article");
     expect(card.children).toHaveLength(5);
+    expect(card).toHaveClass("card");
     expect(card.children[0].querySelectorAll("span.status-badge")).toHaveLength(
       2,
     );
+    expect(screen.getByRole("heading", { level: 2 })).toHaveClass("card-title");
+    expect(card.children[2]).toHaveClass("card-detail");
+    expect(card.children[3]).toHaveClass("card-small-print");
     expect(card.lastElementChild).toBe(
       screen.getByRole("link", { name: "Open Cottage Profile" }),
     );
