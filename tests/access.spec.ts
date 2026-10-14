@@ -257,6 +257,8 @@ const auditClient = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } },
 );
 
+const ownerCoverPhotoPathByProject = new Map<string, string>();
+
 const cleanCottagePhoto = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
@@ -1387,6 +1389,7 @@ registerOwnedJourney("owner-layout", async ({ page }, testInfo) => {
 
 test("an approved owner continues the first Cottage Profile and submits a private photo-backed working copy", async ({
   page,
+  request,
 }, testInfo) => {
   const phoneByProject: Record<string, string> = {
     mobile: "+9647510000000",
@@ -1916,6 +1919,30 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   expect(previewResponse.headers()["content-type"]).toContain("image/png");
   expect(await previewResponse.body()).toEqual(cleanCottagePhoto);
 
+  await page.goto("/en/owner/cottages");
+  const coverPhotoPath = await page
+    .locator("article.cottage-profile-card")
+    .filter({ has: page.locator(`a[href="/en${profilePath}"]`) })
+    .locator("img")
+    .getAttribute("src");
+  expect(coverPhotoPath).toMatch(
+    /^\/api\/cottage-profile-photos\/[0-9a-f-]{36}$/,
+  );
+  if (!coverPhotoPath) throw new Error("Cover photo has no source");
+  const coverPhotoResponse = await page.request.get(coverPhotoPath);
+  expect(coverPhotoResponse.status()).toBe(200);
+  expect(coverPhotoResponse.headers()["content-type"]).toContain("image/png");
+  expect(coverPhotoResponse.headers()["cache-control"]).toContain("private");
+  expect(coverPhotoResponse.headers()["cache-control"]).toContain("no-store");
+  expect(await coverPhotoResponse.body()).toEqual(cleanCottagePhoto);
+  const signedOutCoverPhoto = await request.get(coverPhotoPath);
+  expect(signedOutCoverPhoto.status()).toBe(404);
+  expect(await signedOutCoverPhoto.text()).toBe(
+    "Cottage Profile photo is unavailable",
+  );
+  ownerCoverPhotoPathByProject.set(testInfo.project.name, coverPhotoPath);
+  await page.goto(`/en${profilePath}`);
+
   await page.reload();
   await expect(page.getByLabel("Source language")).toHaveValue("en");
   await expect(page.getByText("shaqlawa-orchard-cottage.png")).toBeVisible();
@@ -2076,6 +2103,13 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   const reviewFixture = accessBrowserFixture(testInfo.project.name);
   const email = `platform-administrator-${testInfo.project.name}@rentcottage.test`;
   const actorUserId = await administratorId(email);
+  const coverPhotoPath = ownerCoverPhotoPathByProject.get(
+    testInfo.project.name,
+  );
+  if (!coverPhotoPath)
+    throw new Error(
+      "The owner journey must run first to supply the private cover photo path",
+    );
   const attemptedAfter = new Date().toISOString();
   await page.goto("/en/administrator/access");
   await page.getByLabel("Email").fill(email);
@@ -2091,6 +2125,11 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
 
   const secret = await page.getByTestId("mfa-secret").textContent();
   if (!secret) throw new Error("MFA enrollment returned no secret");
+  const assuranceLevelOneCoverPhoto = await page.request.get(coverPhotoPath);
+  expect(assuranceLevelOneCoverPhoto.status()).toBe(404);
+  expect(await assuranceLevelOneCoverPhoto.text()).toBe(
+    "Cottage Profile photo is unavailable",
+  );
   const failedAttemptedAfter = new Date().toISOString();
   await page.getByLabel("Authenticator app code").fill("12");
   await page.getByLabel("Authenticator app code").press("Enter");
@@ -2122,6 +2161,9 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
       .getByRole("status")
       .filter({ hasText: "Administrator access is ready" }),
   ).toBeFocused();
+  const assuranceLevelTwoCoverPhoto = await page.request.get(coverPhotoPath);
+  expect(assuranceLevelTwoCoverPhoto.status()).toBe(200);
+  expect(await assuranceLevelTwoCoverPhoto.body()).toEqual(cleanCottagePhoto);
 
   const audit = await currentAudit(
     actorUserId,
@@ -2215,6 +2257,9 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     .getByRole("article")
     .filter({ hasText: "Submitted for content approval" })
     .last();
+  expect(await submittedProfile.locator("img").getAttribute("src")).toMatch(
+    /^\/api\/cottage-profile-photos\/[0-9a-f-]{36}$/,
+  );
   const cottageHref = await submittedProfile
     .getByRole("link", { name: "Open Cottage Profile" })
     .getAttribute("href");
