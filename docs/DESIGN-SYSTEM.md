@@ -86,8 +86,8 @@ the code keeps them.
   `flex-basis` and grid track sizes, including a gutter written inside one such as `calc(100% - 2.25rem)`. They are
   the dimensions of controls, images, columns and reading widths, which a seven-step spacing scale cannot express.
   New work reuses a size already in use. The approved public cottage pattern additionally permits its `29rem`
-  hero height and `36rem` prose width, and the Customer progress pattern its `6px` track, as documented below;
-  these specific sizes do not permit other new sizing values. A page's content width uses a token named under
+  hero height and `36rem` prose width, as documented below; these specific sizes do not permit other new
+  sizing values. A page's content width uses a token named under
   Page template.
 - A component token holds a length only when several declarations must share it. `--booking-progress-marker` is the
   size of the progress step marker, which the connector line is positioned from. `--booking-progress-inset` and
@@ -134,7 +134,8 @@ A stylesheet may write these as literals:
 - Percentages and `fr` or flex sizing in layout, and the sizing lengths described under Spacing and text size.
 - `currentColor` and `transparent`.
 - Border and outline widths and offsets, and lengths inside `background`, `transform`, `backdrop-filter` and
-  text-decoration properties. New work reuses a value already in use.
+  text-decoration properties. New work reuses a value already in use, except for the approved Customer progress
+  pattern's `6px` border-track thickness documented below; this permits no other new border or outline value.
 - Unitless `line-height` ratios and `letter-spacing` in `em`.
 - The cottage card cover's `16 / 10` aspect ratio and the `135deg` angle of its 'No photos yet' bands.
 - The two page width tokens, `--page-width` and `--page-width-record`, which hold the sizing lengths named under
