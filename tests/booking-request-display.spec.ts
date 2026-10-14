@@ -820,68 +820,72 @@ test("a waiting request row sits on one line on desktop and stacks with its two 
     ).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
 
-    const measured = await page.evaluate(() => {
-      const box = (selector: string) => {
-        const element = document.querySelector(
-          `[data-testid="request-row-page"] ${selector}`,
-        );
-        if (!element) throw new Error(`${selector} is missing`);
-        const { left, right, top, bottom, width, height } =
-          element.getBoundingClientRect();
-        return { left, right, top, bottom, width, height };
-      };
-      return {
-        available: document.documentElement.clientWidth,
-        document: document.documentElement.scrollWidth,
-        row: box(".request-row"),
-        heading: box(".request-row-facts > h3"),
-        photo: box(".request-row-photo"),
-        facts: box(".request-row-facts"),
-        actions: box(".request-row-actions"),
-        decline: box(".request-row-actions > button:first-child"),
-        accept: box(".request-row-actions > button:last-child"),
-      };
-    });
+    await expect(async () => {
+      const measured = await page.evaluate(() => {
+        const box = (selector: string) => {
+          const element = document.querySelector(
+            `[data-testid="request-row-page"] ${selector}`,
+          );
+          if (!element) throw new Error(`${selector} is missing`);
+          const { left, right, top, bottom, width, height } =
+            element.getBoundingClientRect();
+          return { left, right, top, bottom, width, height };
+        };
+        return {
+          available: document.documentElement.clientWidth,
+          document: document.documentElement.scrollWidth,
+          row: box(".request-row"),
+          heading: box(".request-row-facts > h3"),
+          photo: box(".request-row-photo"),
+          facts: box(".request-row-facts"),
+          actions: box(".request-row-actions"),
+          decline: box(".request-row-actions > button:first-child"),
+          accept: box(".request-row-actions > button:last-child"),
+        };
+      });
 
-    expect(measured.photo.width).toBeCloseTo(80, 0);
-    expect(measured.photo.height).toBeCloseTo(80, 0);
-    for (const element of [measured.row, measured.heading]) {
-      expect(element.left).toBeGreaterThanOrEqual(0);
-      expect(element.right).toBeLessThanOrEqual(measured.available);
-    }
-    expect(measured.document).toBeLessThanOrEqual(measured.available);
-
-    if (phone) {
-      expect(measured.actions.top).toBeGreaterThanOrEqual(
-        measured.facts.bottom,
-      );
-      expect(measured.decline.top).toBeCloseTo(measured.accept.top, 0);
-      expect(measured.decline.height).toBeGreaterThanOrEqual(44);
-      expect(measured.accept.height).toBeGreaterThanOrEqual(44);
-      for (const [inner, outer] of [
-        [measured.decline, measured.actions],
-        [measured.accept, measured.actions],
-        [measured.actions, measured.row],
-      ]) {
-        expect(inner.left).toBeGreaterThanOrEqual(outer.left - 1);
-        expect(inner.right).toBeLessThanOrEqual(outer.right + 1);
+      expect(measured.photo.width).toBeCloseTo(80, 0);
+      expect(measured.photo.height).toBeCloseTo(80, 0);
+      for (const element of [measured.row, measured.heading]) {
+        expect(element.left).toBeGreaterThanOrEqual(0);
+        expect(element.right).toBeLessThanOrEqual(measured.available);
       }
-    } else {
-      if (fixture.dir === "ltr") {
-        expect(measured.photo.right).toBeLessThanOrEqual(measured.facts.left);
-        expect(measured.facts.right).toBeLessThanOrEqual(measured.actions.left);
+      expect(measured.document).toBeLessThanOrEqual(measured.available);
+
+      if (phone) {
+        expect(measured.actions.top).toBeGreaterThanOrEqual(
+          measured.facts.bottom,
+        );
+        expect(measured.decline.top).toBeCloseTo(measured.accept.top, 0);
+        expect(measured.decline.height).toBeGreaterThanOrEqual(44);
+        expect(measured.accept.height).toBeGreaterThanOrEqual(44);
+        for (const [inner, outer] of [
+          [measured.decline, measured.actions],
+          [measured.accept, measured.actions],
+          [measured.actions, measured.row],
+        ]) {
+          expect(inner.left).toBeGreaterThanOrEqual(outer.left - 1);
+          expect(inner.right).toBeLessThanOrEqual(outer.right + 1);
+        }
       } else {
-        expect(measured.photo.left).toBeGreaterThanOrEqual(
-          measured.facts.right,
-        );
-        expect(measured.facts.left).toBeGreaterThanOrEqual(
-          measured.actions.right,
-        );
+        if (fixture.dir === "ltr") {
+          expect(measured.photo.right).toBeLessThanOrEqual(measured.facts.left);
+          expect(measured.facts.right).toBeLessThanOrEqual(
+            measured.actions.left,
+          );
+        } else {
+          expect(measured.photo.left).toBeGreaterThanOrEqual(
+            measured.facts.right,
+          );
+          expect(measured.facts.left).toBeGreaterThanOrEqual(
+            measured.actions.right,
+          );
+        }
+        const actionsMiddle =
+          (measured.actions.top + measured.actions.bottom) / 2;
+        expect(actionsMiddle).toBeGreaterThan(measured.facts.top);
+        expect(actionsMiddle).toBeLessThan(measured.facts.bottom);
       }
-      const actionsMiddle =
-        (measured.actions.top + measured.actions.bottom) / 2;
-      expect(actionsMiddle).toBeGreaterThan(measured.facts.top);
-      expect(actionsMiddle).toBeLessThan(measured.facts.bottom);
-    }
+    }).toPass();
   }
 });

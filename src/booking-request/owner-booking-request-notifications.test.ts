@@ -219,6 +219,30 @@ describe("Owner Booking Request notifications", () => {
       row: { ...notification, databaseNow: "not-a-timestamp" },
     },
     {
+      label: "databaseNow is a bare number string",
+      row: { ...notification, databaseNow: "0" },
+    },
+    {
+      label: "databaseNow is not a calendar date",
+      row: { ...notification, databaseNow: "2026-02-30T17:30:00.000Z" },
+    },
+    {
+      label: "databaseNow has an impossible month",
+      row: { ...notification, databaseNow: "2026-13-01T00:00:00.000Z" },
+    },
+    {
+      label: "databaseNow has no UTC designator",
+      row: { ...notification, databaseNow: "2099-08-21T17:30:00.000" },
+    },
+    {
+      label: "databaseNow has an extended year",
+      row: { ...notification, databaseNow: "+010000-01-01T00:00:00.000Z" },
+    },
+    {
+      label: "responseDeadline is not a calendar date",
+      row: { ...notification, responseDeadline: "2099-02-30T21:00:00.000Z" },
+    },
+    {
       label: "databaseNow is missing",
       row: { ...commonFields, coverMediaId: notification.coverMediaId },
     },

@@ -27,6 +27,16 @@ import {
   type BookingRequestStatus,
 } from "./booking-request-status";
 
+const databaseClockPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+function isDatabaseClock(value: unknown): value is string {
+  if (typeof value !== "string" || !databaseClockPattern.test(value)) {
+    return false;
+  }
+  const instant = new Date(value);
+  return Number.isFinite(instant.getTime()) && instant.toISOString() === value;
+}
+
 export interface OwnerBookingRequestNotification {
   id: string;
   bookingRequestReference: string;
@@ -166,12 +176,12 @@ function notificationFrom(
         !isTimestamp(row.createdAt)
       );
     }) ||
-    !isTimestamp(notification.responseDeadline) ||
+    !isDatabaseClock(notification.responseDeadline) ||
     !isTimestamp(notification.createdAt) ||
     (notification.coverMediaId !== null &&
       (typeof notification.coverMediaId !== "string" ||
         !uuid.test(notification.coverMediaId))) ||
-    !isTimestamp(notification.databaseNow)
+    !isDatabaseClock(notification.databaseNow)
   ) {
     return undefined;
   }
