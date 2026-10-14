@@ -909,6 +909,36 @@ describe("access forms", () => {
     );
   });
 
+  it("keeps the field read-only while a first name saves", async () => {
+    let resolveSave!: (value: { status: "saved" }) => void;
+    saveName.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(<AccountNameForm locale="en" mode="details" />);
+
+    const input = screen.getByLabelText("First name");
+    await user.type(input, "Lana{Enter}");
+    expect(saveName).toHaveBeenCalledExactlyOnceWith({ firstName: "Lana" });
+    expect(input).toHaveAttribute("readonly");
+    expect(input).toHaveFocus();
+
+    await user.type(input, " K");
+    expect(input).toHaveValue("Lana");
+
+    await act(async () => resolveSave({ status: "saved" }));
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Lana" />);
+
+    expect(input).toHaveValue("Lana");
+    expect(input).not.toHaveAttribute("readonly");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Your first name is saved.",
+    );
+  });
+
   it("reports a save that could not reach the server", async () => {
     saveName.mockRejectedValue(new Error("offline"));
     const user = userEvent.setup();

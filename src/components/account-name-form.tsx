@@ -86,6 +86,7 @@ export function AccountNameForm({
             id={inputId}
             autoComplete="given-name"
             value={value}
+            readOnly={pending}
             aria-invalid={status === "invalid" || undefined}
             aria-describedby={status === "invalid" ? errorId : undefined}
             onChange={(event) => setValue(event.target.value)}
