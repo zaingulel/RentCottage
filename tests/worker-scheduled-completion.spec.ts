@@ -218,6 +218,10 @@ async function participant(
     password,
   });
   if (error) throw error;
+  const named = await client.rpc("save_account_name", {
+    account_first_name: userId === owner ? "Avan" : "Lana",
+  });
+  if (named.error) throw named.error;
   // A real authenticated setup/read preflight fails before any browser journey
   // when the purchased snapshot, participant binding or financial view is invalid.
   const role = userId === owner ? "cottage_owner" : "customer";
@@ -257,6 +261,9 @@ async function administrator(page: Page) {
     target_user_id: data.user.id,
   });
   if (provision.error) throw provision.error;
+  harness.runSql(
+    `insert into public.account_names (user_id, first_name) values ('${data.user.id}', 'Sara') on conflict (user_id) do update set first_name = excluded.first_name;`,
+  );
   await page.goto("/en/administrator/access");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("Local-test-password-2026");

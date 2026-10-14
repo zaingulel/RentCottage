@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { accessMessages } from "../src/i18n/access-messages";
 import { cottageShiftScheduleMessages } from "../src/i18n/cottage-shift-schedule-messages";
 import { openHeaderPanel } from "./fixtures/site-header";
 import { createHmac } from "node:crypto";
@@ -473,6 +474,12 @@ async function openOwnerApplication(
   await page.getByRole("button", { name: copy.sendCode }).click();
   await page.getByLabel(copy.code).fill("123456");
   await page.getByRole("button", { name: copy.verify }).click();
+  const step = accessMessages[locale];
+  await expect(
+    page.getByRole("heading", { name: step.accountNameStepTitle }),
+  ).toBeVisible();
+  await page.getByLabel(step.firstName, { exact: true }).fill("Avan");
+  await page.getByRole("button", { name: step.saveAndContinue }).click();
   await expect(page.getByRole("button", { name: copy.enroll })).toBeVisible();
   await page.getByRole("button", { name: copy.enroll }).click();
   await expect(page).toHaveURL(new RegExp(`/${locale}/owner/application$`));
@@ -556,6 +563,17 @@ async function tabTo(page: Page, target: Locator) {
     }
   }
   throw new Error("Keyboard focus did not reach the expected control");
+}
+
+// The discovery form keeps a typed date only once React has attached to it,
+// which can land just after the page loads; To's minimum follows From's state.
+async function fillFromServiceDay(page: Page, day: string) {
+  const from = page.getByLabel("From Service Day");
+  const to = page.getByLabel("To Service Day");
+  await expect(async () => {
+    await from.fill(day);
+    await expect(to).toHaveAttribute("min", day, { timeout: 1_000 });
+  }).toPass();
 }
 
 async function expectCottageProfileSectionTitlesAligned(
@@ -932,8 +950,33 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
     );
     await administratorPage.getByRole("button", { name: "Verify" }).click();
     await expect(
+      administratorPage.getByRole("heading", { name: "Add your first name" }),
+    ).toBeVisible();
+    await administratorPage
+      .getByLabel("First name", { exact: true })
+      .fill("Sara");
+    await administratorPage
+      .getByRole("button", { name: "Save and continue" })
+      .click();
+    await expect(
       administratorPage.getByText(/Administrator access is ready/),
     ).toBeVisible();
+    const administratorMain = administratorPage.getByRole("main");
+    for (const [name, href] of [
+      [
+        "Review submitted Owner Applications",
+        "/en/administrator/owner-applications",
+      ],
+      ["Manage Cottage Profiles", "/en/administrator/cottages"],
+      ["Records", "/en/administrator/records"],
+    ]) {
+      await expect(
+        administratorMain.getByRole("link", { name }),
+      ).toHaveAttribute("href", href);
+    }
+    await expect(
+      administratorPage.locator("#site-header-account-button .account-avatar"),
+    ).toHaveText("S");
 
     async function openOwnedIdentity(
       locale: BrowserLocale,
@@ -2132,6 +2175,11 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   const email = `platform-administrator-${testInfo.project.name}@rentcottage.test`;
   const actorUserId = await administratorId(email);
   const coverPhotoPath = await bookingFixtureCoverPhotoPath(reviewFixture);
+  const database = createLocalSupabaseConcurrencyHarness();
+  database.guardDisposableLocalDatabase();
+  database.runSql(
+    `insert into public.account_names (user_id, first_name) values ('${actorUserId}', 'Sara') on conflict (user_id) do update set first_name = excluded.first_name;`,
+  );
   const attemptedAfter = new Date().toISOString();
   await page.goto("/en/administrator/access");
   await page.getByLabel("Email").fill(email);
@@ -3096,7 +3144,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   ]);
 
   await page.goto("/en");
-  await page.getByLabel("From Service Day").fill(firstDay);
+  await fillFromServiceDay(page, firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
   await page.getByLabel("Guests", { exact: true }).fill("4");
   const optionalFilters = page
@@ -3210,7 +3258,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   }
 
   await page.goto("/en");
-  await page.getByLabel("From Service Day").fill(firstDay);
+  await fillFromServiceDay(page, firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
   await page
     .getByLabel("Approximate area (optional)")
@@ -3264,7 +3312,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(page).toHaveURL(partialResultsUrl.href);
 
   await page.goto("/en");
-  await page.getByLabel("From Service Day").fill(firstDay);
+  await fillFromServiceDay(page, firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
   await page
     .locator("summary")
@@ -3412,14 +3460,24 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await page.getByRole("button", { name: "کۆدی پشتڕاستکردنەوە بنێرە" }).click();
   await page.getByLabel("کۆدی پشتڕاستکردنەوە").fill("123456");
   await page.getByRole("button", { name: "پشتڕاست بکەرەوە" }).click();
+  const soraniStep = accessMessages.ckb;
+  await expect(
+    page.getByRole("heading", { name: soraniStep.accountNameStepTitle }),
+  ).toBeVisible();
+  await page.getByLabel(soraniStep.firstName, { exact: true }).fill("ڕێبین");
+  await page.getByRole("button", { name: soraniStep.saveAndContinue }).click();
+  await expect(
+    page.getByRole("heading", { name: "داواکاری حجز بنێرە" }),
+  ).toBeVisible();
+  // The sign-in page's redirect waits while the name step hides it.
   await expect(page).toHaveURL(
     (url) =>
       url.pathname === `/ckb/request/${requestSlug}` &&
       url.search === englishRequest.search,
   );
   await expect(
-    page.getByRole("heading", { name: "داواکاری حجز بنێرە" }),
-  ).toBeVisible();
+    page.locator("#site-header-account-button .account-avatar"),
+  ).toHaveText("ڕ");
   const englishLink = page
     .getByRole("banner")
     .getByRole("link", { name: "English" });
@@ -3485,7 +3543,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expectPrivateValuesAbsent();
 
   await page.goto("/en");
-  await page.getByLabel("From Service Day").fill(firstDay);
+  await fillFromServiceDay(page, firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
   await page
     .locator("summary")
@@ -3702,7 +3760,11 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
   assertIsolatedLocalAccessDatabase();
   const before = await listAllAccessFixtureUsers(auditClient.auth.admin);
   expect(findAccessFixtureUser(before, phone)).toBeUndefined();
-  async function verify(target: Page, moveDuringSend = false) {
+  async function verify(
+    target: Page,
+    moveDuringSend = false,
+    firstName?: string,
+  ) {
     await target.getByLabel("Iraqi phone number").fill(phone);
     const phoneSendControl = target.getByRole("button", {
       name: "Send verification code",
@@ -3761,16 +3823,39 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
     await phoneVerifyControl.focus();
     await expect(phoneVerifyControl).toBeFocused();
     await phoneVerifyControl.press("Enter");
-    await expect(
-      target.getByRole("heading", { name: "My bookings", exact: true }),
-    ).toBeVisible();
-    await expect(
-      target.getByRole("heading", { name: "My bookings", exact: true }),
-    ).toBeFocused();
+    const bookingsHeading = target.getByRole("heading", {
+      name: "My bookings",
+      exact: true,
+    });
+    if (firstName) {
+      const stepTitle = target.getByRole("heading", {
+        name: "Add your first name",
+      });
+      await expect(stepTitle).toBeVisible();
+      await expect(stepTitle).toBeFocused();
+      await expect(bookingsHeading).toBeHidden();
+      await target.getByLabel("First name", { exact: true }).fill(firstName);
+      const saveControl = target.getByRole("button", {
+        name: "Save and continue",
+      });
+      await saveControl.focus();
+      await expect(saveControl).toBeFocused();
+      await saveControl.press("Enter");
+      await expect(bookingsHeading).toBeVisible();
+      // The sign-in page's redirect waits while the name step hides it.
+      await expect(target).toHaveURL(/\/en\/bookings$/);
+      await expect(target.locator("#site-header-account-button")).toBeFocused();
+      await expect(
+        target.locator("#site-header-account-button .account-avatar"),
+      ).toHaveText(firstName[0]);
+      return;
+    }
+    await expect(bookingsHeading).toBeVisible();
+    await expect(bookingsHeading).toBeFocused();
   }
   await page.goto("/en/bookings");
   await expect(page).toHaveURL(/\/en\/access\?returnTo=%2Fen%2Fbookings/);
-  await verify(page, true);
+  await verify(page, true, "Zana");
   await expect(
     page.getByRole("heading", { name: "My bookings", exact: true }),
   ).toBeVisible();
@@ -3796,10 +3881,49 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
     role: "customer",
     owner_approval_state: null,
   });
+  const avatarLetter = page.locator(
+    "#site-header-account-button .account-avatar",
+  );
+  await expect(avatarLetter).toHaveText("Z");
+  await page.evaluate(() => Reflect.set(window, "personalInformation", "kept"));
   await openHeaderPanel(page, "menu");
   await page
     .getByRole("banner")
-    .getByRole("link", { name: "List your cottage" })
+    .getByRole("menuitem", { name: "Personal information" })
+    .click();
+  await expect(page).toHaveURL(/\/en\/account$/);
+  await expect(
+    page.getByRole("heading", { name: "Personal information", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("First name").fill("Rebin");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Your first name is saved." }),
+  ).toBeVisible();
+  await expect(avatarLetter).toHaveText("R");
+  expect(
+    await page.evaluate(() => Reflect.get(window, "personalInformation")),
+  ).toBe("kept");
+  const ownDetails = await page.request.get("/en/account");
+  expect(ownDetails.headers()["cache-control"]).toContain("no-store");
+  expect(await ownDetails.text()).toContain("Rebin");
+  const signedOut = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+  });
+  try {
+    const refused = await signedOut.request.get("/en/account");
+    expect(new URL(refused.url()).pathname).toBe("/en/access");
+    expect(new URL(refused.url()).searchParams.get("returnTo")).toBe(
+      "/en/account",
+    );
+    expect(await refused.text()).not.toContain("Rebin");
+  } finally {
+    await signedOut.close();
+  }
+  await openHeaderPanel(page, "menu");
+  await page
+    .getByRole("banner")
+    .getByRole("menuitem", { name: "List your cottage" })
     .click();
   await expect(
     page.getByRole("heading", { name: "Become a Cottage Owner" }),
@@ -3840,7 +3964,7 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
       secondPage.getByRole("heading", { name: "My bookings", exact: true }),
     ).toBeVisible();
     await openHeaderPanel(page, "menu");
-    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
     await expect(page).toHaveURL(/\/en$/);
     await openHeaderPanel(page, "menu");
     await expect(

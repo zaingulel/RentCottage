@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { openHeaderPanel } from "./fixtures/site-header";
+
 test("serves the trilingual shell and health response from the Worker", async ({
   page,
   request,
@@ -194,6 +196,7 @@ test("shows the Arabic not-found screen when the address has no recognisable lan
       "href",
       "/ar",
     );
+    await openHeaderPanel(page, "language");
     const languageLinks = [
       { name: "العربية", href: "/ar" },
       { name: "کوردی", href: "/ckb" },

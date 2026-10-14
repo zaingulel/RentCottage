@@ -5,30 +5,30 @@ import { openHeaderPanel } from "./fixtures/site-header";
 
 const ownerSignIn = {
   en: {
-    brand: "RentCottage",
     label: "List your cottage",
     history: "Sign in",
     language: "Language",
+    languageButton: "Language English",
     menu: "Menu",
     href: "/en/access?returnTo=%2Fen%2Fowner%2Fapplication",
     heading: "Sign in or create an account",
     dir: "ltr",
   },
   ar: {
-    brand: "ريف كوتج",
     label: "أدرج كوخك",
     history: "تسجيل الدخول",
     language: "اللغة",
+    languageButton: "اللغة العربية",
     menu: "القائمة",
     href: "/ar/access?returnTo=%2Far%2Fowner%2Fapplication",
     heading: "سجّل الدخول أو أنشئ حسابًا",
     dir: "rtl",
   },
   ckb: {
-    brand: "ڕێنت کۆتاج",
     label: "کۆتێجەکەت تۆمار بکە",
     history: "چوونەژوورەوە",
     language: "زمان",
+    languageButton: "زمان کوردی",
     menu: "پێڕست",
     href: "/ckb/access?returnTo=%2Fckb%2Fowner%2Fapplication",
     heading: "بچۆ ژوورەوە یان هەژمارێک دروست بکە",
@@ -128,20 +128,12 @@ test("shared sign-in and owner enrollment stay localized and keyboard-operable",
           .getByRole("link", { name: language, exact: true }),
       ).toHaveCount(0);
     }
-    const axis = testInfo.project.name === "mobile" ? "y" : "x";
-    expect(languageBoxes[0]![axis]).toBeLessThan(languageBoxes[1]![axis]);
-    expect(languageBoxes[1]![axis]).toBeLessThan(languageBoxes[2]![axis]);
+    expect(languageBoxes[0]!.y).toBeLessThan(languageBoxes[1]!.y);
+    expect(languageBoxes[1]!.y).toBeLessThan(languageBoxes[2]!.y);
 
-    if (testInfo.project.name === "mobile") {
-      await expect(
-        header.getByRole("button", { name: copy.language, exact: true }),
-      ).toBeFocused();
-    } else {
-      await page.keyboard.press("Tab");
-      await expect(
-        header.getByRole("link", { name: copy.brand }),
-      ).toBeFocused();
-    }
+    await expect(
+      header.getByRole("button", { name: copy.languageButton, exact: true }),
+    ).toBeFocused();
     for (const language of languageNames) {
       await page.keyboard.press("Tab");
       await expect(
@@ -272,7 +264,7 @@ test("pre-live support stays honest, private and keyboard-accessible in every la
     });
     await openHeaderPanel(page, "menu");
     await expect(support).toHaveAttribute("href", `/${locale}/support`);
-    const tabs = testInfo.project.name === "mobile" ? 3 : 7;
+    const tabs = testInfo.project.name === "mobile" ? 3 : 5;
     for (let index = 0; index < tabs; index += 1) {
       await page.keyboard.press("Tab");
     }
@@ -486,17 +478,21 @@ test("the open account menu stays inside a 390 pixel screen for every role and l
         .getBoundingClientRect();
       const rows = [
         ...document.querySelectorAll(
-          '#site-header-account a, #site-header-account button[type="submit"]',
+          '#site-header-account-menu [role="menuitem"]',
         ),
       ];
       return {
-        menuInsideScreen:
+        menuSpansScreen:
           menu.width > 0 &&
-          menu.left >= 0 &&
-          menu.right <= root.clientWidth &&
+          Math.abs(menu.left) <= 1 &&
+          Math.abs(menu.right - 390) <= 1 &&
           menu.top >= 0 &&
           menu.bottom <= window.innerHeight,
         rows: rows.length > 0,
+        strayControls: document.querySelectorAll(
+          '#site-header-account-menu a:not([role="menuitem"]), #site-header-account-menu button:not([role="menuitem"])',
+        ).length,
+        firstItemFocused: document.activeElement === rows[0],
         clippedRows: rows.filter((row) => {
           const box = row.getBoundingClientRect();
           return (
@@ -530,25 +526,26 @@ test("the open account menu stays inside a 390 pixel screen for every role and l
         locale === "en" ? "ltr" : "rtl",
       );
       const header = page.getByRole("banner");
-      const opener = header
-        .locator('button[aria-controls^="site-header-account"]')
-        .filter({ visible: true });
-      const signOutButton = header.getByRole("button", {
+      const opener = header.locator(".account-menu-toggle");
+      const signOutItem = header.getByRole("menuitem", {
         name: signOut[locale],
       });
-      await expect(signOutButton, label).toBeHidden();
+      await expect(signOutItem, label).toBeHidden();
       await expect(opener, label).toHaveAttribute("aria-expanded", "false");
       await opener.tap();
-      await expect(signOutButton, label).toBeVisible();
+      await expect(signOutItem, label).toBeVisible();
       await page.evaluate(() => document.fonts.ready);
       await expect.poll(measure, { message: label }).toEqual({
-        menuInsideScreen: true,
+        menuSpansScreen: true,
         rows: true,
+        strayControls: 0,
+        firstItemFocused: true,
         clippedRows: 0,
         sidewaysScroll: 0,
       });
-      await opener.tap();
+      await page.keyboard.press("Escape");
       await expect(opener, label).toHaveAttribute("aria-expanded", "false");
+      await expect(opener, label).toBeFocused();
     }
   }
 
@@ -560,14 +557,11 @@ test("the open account menu stays inside a 390 pixel screen for every role and l
     },
   });
   const header = page.getByRole("banner");
-  await header
-    .locator('button[aria-controls^="site-header-account"]')
-    .filter({ visible: true })
-    .tap();
-  await header.locator("#site-header-account-menu a").first().focus();
+  const accountToggle = header.locator(".account-menu-toggle");
+  await accountToggle.tap();
+  await expect(header.getByRole("menuitem").first()).toBeFocused();
   await page.setViewportSize({ width: 1280, height: 390 });
   await page.keyboard.press("Escape");
-  const accountToggle = header.locator(".account-menu-toggle");
   await expect(accountToggle).toHaveAttribute("aria-expanded", "false");
   await expect(accountToggle).toBeFocused();
 });
@@ -591,7 +585,7 @@ test("site header pills and language links are at least 44 pixels tall above the
       };
       const pills = [
         ...document.querySelectorAll(
-          "nav.account-navigation > a, .account-menu-toggle",
+          "nav.account-navigation > a, .account-menu-toggle, .site-header-language-toggle",
         ),
       ].filter(isVisible);
       const languageLinks = [
@@ -616,7 +610,14 @@ test("site header pills and language links are at least 44 pixels tall above the
           element.scrollWidth > element.clientWidth
         );
       };
-      const language = document.querySelector("nav.language-links")!;
+      const card = document
+        .querySelector("nav.language-links")!
+        .getBoundingClientRect();
+      const button = document
+        .querySelector(".site-header-language-toggle")!
+        .getBoundingClientRect();
+      const rtl = getComputedStyle(root).direction === "rtl";
+      const endGap = rtl ? card.left - button.left : card.right - button.right;
       return {
         pillCount: pills.length > 0,
         languageLinkCount: languageLinks.length,
@@ -627,7 +628,8 @@ test("site header pills and language links are at least 44 pixels tall above the
           .filter((link) => link.getBoundingClientRect().height < 44)
           .map(name),
         clipped: [...pills, ...languageLinks].filter(clipped).map(name),
-        offBrandRow: [language, ...pills].filter(offBrandRow).map(name),
+        offBrandRow: pills.filter(offBrandRow).map(name),
+        cardOffButtonEnd: languageLinks.length > 0 && Math.abs(endGap) > 1,
         sidewaysScroll: root.scrollWidth - root.clientWidth,
       };
     });
@@ -667,15 +669,37 @@ test("site header pills and language links are at least 44 pixels tall above the
           locale === "en" ? "ltr" : "rtl",
         );
         await page.evaluate(() => document.fonts.ready);
-        await expect.poll(measure, { message: label }).toEqual({
+        await expect.poll(measure, { message: `${label} closed` }).toEqual({
+          pillCount: true,
+          languageLinkCount: 0,
+          shortPills: [],
+          shortLanguageLinks: [],
+          clipped: [],
+          offBrandRow: [],
+          cardOffButtonEnd: false,
+          sidewaysScroll: 0,
+        });
+        const languageButton = page.locator(".site-header-language-toggle");
+        await languageButton.click();
+        await expect(languageButton, label).toHaveAttribute(
+          "aria-expanded",
+          "true",
+        );
+        await expect.poll(measure, { message: `${label} open` }).toEqual({
           pillCount: true,
           languageLinkCount: 3,
           shortPills: [],
           shortLanguageLinks: [],
           clipped: [],
           offBrandRow: [],
+          cardOffButtonEnd: false,
           sidewaysScroll: 0,
         });
+        await page.keyboard.press("Escape");
+        await expect(languageButton, label).toHaveAttribute(
+          "aria-expanded",
+          "false",
+        );
       }
     }
   }
@@ -729,7 +753,11 @@ test("the site header keeps one compact row and opens its panels as cards inside
       const brand = document
         .querySelector(".site-brand")!
         .getBoundingClientRect();
-      const toggles = [...document.querySelectorAll(".site-header-toggle")]
+      const toggles = [
+        ...document.querySelectorAll(
+          ".site-header-toggle, .site-header-language-toggle, .account-menu-toggle",
+        ),
+      ]
         .filter(isVisible)
         .map((toggle) => toggle.getBoundingClientRect());
       return {
@@ -742,7 +770,7 @@ test("the site header keeps one compact row and opens its panels as cards inside
         }).length,
         visibleDesktopItems: [
           ...document.querySelectorAll(
-            "nav.language-links a, .account-menu-toggle, nav.account-navigation > a",
+            "nav.language-links a, nav.account-navigation > a",
           ),
         ].filter(isVisible).length,
         headerHeight: document.querySelector("header")!.getBoundingClientRect()
@@ -750,8 +778,12 @@ test("the site header keeps one compact row and opens its panels as cards inside
         sidewaysScroll: root.scrollWidth - root.clientWidth,
       };
     });
-  const measurePanel = (input: { controls: string; minimumRows: number }) =>
-    page.evaluate(({ controls, minimumRows }) => {
+  const measurePanel = (input: {
+    controls: string;
+    anchor: string;
+    minimumRows: number;
+  }) =>
+    page.evaluate(({ controls, anchor, minimumRows }) => {
       const root = document.documentElement;
       const isVisible = (element: Element) => {
         const box = element.getBoundingClientRect();
@@ -766,13 +798,11 @@ test("the site header keeps one compact row and opens its panels as cards inside
       ].find(isVisible)!;
       const panel = document.getElementById(controls)!;
       const box = panel.getBoundingClientRect();
-      const controlsBox = document
-        .querySelector(".site-header-controls")!
-        .getBoundingClientRect();
+      const anchorBox = document.querySelector(anchor)!.getBoundingClientRect();
       const rtl = getComputedStyle(root).direction === "rtl";
       const endGap = rtl
-        ? box.left - controlsBox.left
-        : box.right - controlsBox.right;
+        ? box.left - anchorBox.left
+        : box.right - anchorBox.right;
       const rows = [
         ...panel.querySelectorAll('a, button[type="submit"]'),
       ].filter(isVisible);
@@ -847,8 +877,22 @@ test("the site header keeps one compact row and opens its panels as cards inside
           sidewaysScroll: 0,
         });
         for (const panel of [
-          { controls: "site-header-account", minimumRows: 1 },
-          { controls: "site-header-language", minimumRows: 3 },
+          account.status === "authenticated"
+            ? {
+                controls: "site-header-account-menu",
+                anchor: ".account-menu-toggle",
+                minimumRows: 5,
+              }
+            : {
+                controls: "site-header-account",
+                anchor: ".site-header-controls",
+                minimumRows: 1,
+              },
+          {
+            controls: "site-header-language",
+            anchor: ".site-header-language-toggle",
+            minimumRows: 3,
+          },
         ]) {
           const panelLabel = `${label} ${panel.controls}`;
           const toggle = page
@@ -882,5 +926,197 @@ test("the site header keeps one compact row and opens its panels as cards inside
         }
       }
     }
+  }
+});
+
+test("the site header stays on one line inside 320 and 390 pixel screens for every account state and language", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile");
+  await mountSiteHeader(page, testInfo);
+
+  const measure = () =>
+    page.evaluate(() => {
+      const root = document.documentElement;
+      const rtl = getComputedStyle(root).direction === "rtl";
+      const controls = [
+        ...document.querySelectorAll(
+          ".site-header-row button, .site-header-row a",
+        ),
+      ].filter((element) => {
+        const box = element.getBoundingClientRect();
+        return (
+          box.width > 0 &&
+          box.height > 0 &&
+          getComputedStyle(element).visibility === "visible"
+        );
+      });
+      const name = (element: Element) => {
+        const box = element.getBoundingClientRect();
+        return `${element.getAttribute("aria-label") ?? element.textContent?.trim()} ${Math.round(box.width)}x${Math.round(box.height)}px`;
+      };
+      const brand = document
+        .querySelector(".site-brand")!
+        .getBoundingClientRect();
+      const boxes = controls.map((element) => element.getBoundingClientRect());
+      return {
+        sidewaysScroll: root.scrollWidth - root.clientWidth,
+        visibleControls: controls.length,
+        smallControls: controls
+          .filter((element) => {
+            const box = element.getBoundingClientRect();
+            return box.height < 44 || box.width < 24;
+          })
+          .map(name),
+        outsideScreen: controls
+          .filter((element) => {
+            const box = element.getBoundingClientRect();
+            return box.left < 0 || box.right > root.clientWidth;
+          })
+          .map(name),
+        offBrandLine: controls
+          .filter((element) => {
+            const box = element.getBoundingClientRect();
+            const middle = (box.top + box.bottom) / 2;
+            return middle < brand.top || middle > brand.bottom;
+          })
+          .map(name),
+        brandNotAtInlineStart: boxes.some((box) =>
+          rtl ? box.right > brand.right + 1 : box.left < brand.left - 1,
+        ),
+        overlappingControls: boxes.reduce(
+          (count, box, index) =>
+            count +
+            boxes
+              .slice(index + 1)
+              .filter(
+                (other) =>
+                  Math.min(box.right, other.right) -
+                    Math.max(box.left, other.left) >
+                  1,
+              ).length,
+          0,
+        ),
+      };
+    });
+
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect
+      .poll(() => page.evaluate(() => window.innerWidth), {
+        message: `viewport ${width}`,
+      })
+      .toBe(width);
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      for (const account of [
+        { status: "signed_out" },
+        { status: "unavailable" },
+        { status: "authenticated", context: { role: "customer" } },
+        {
+          status: "authenticated",
+          context: { role: "cottage_owner", approvalState: "prospective" },
+        },
+        {
+          status: "authenticated",
+          context: { role: "platform_administrator" },
+        },
+      ] as const) {
+        const label = `${width} ${locale} ${account.status === "authenticated" ? account.context.role : account.status}`;
+        await page.evaluate((input) => window.renderSiteHeader(input), {
+          locale,
+          account,
+        });
+        await expect(page.locator("html"), label).toHaveAttribute(
+          "lang",
+          locale,
+        );
+        await expect(page.locator("html"), label).toHaveAttribute(
+          "dir",
+          locale === "en" ? "ltr" : "rtl",
+        );
+        await page.evaluate(() => document.fonts.ready);
+        await expect.poll(measure, { message: label }).toEqual({
+          sidewaysScroll: 0,
+          visibleControls: 3,
+          smallControls: [],
+          outsideScreen: [],
+          offBrandLine: [],
+          brandNotAtInlineStart: false,
+          overlappingControls: 0,
+        });
+      }
+    }
+  }
+});
+
+test("the landing header shades its controls and tagline over the photo in every language", async ({
+  page,
+}, testInfo) => {
+  for (const locale of ["en", "ar", "ckb"]) {
+    const label = `${locale} ${testInfo.project.name}`;
+    await page.goto(`/${locale}`);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.locator(".site-header-language-toggle").first().waitFor();
+    const header = page.locator("header.site-header");
+    await expect(header, label).toHaveClass(/site-header-landing/);
+    await expect(header, label).not.toHaveClass(/site-header-solid/);
+
+    const measure = () =>
+      page.evaluate(() => {
+        const resolve = (property: string, token: string) => {
+          const probe = document.createElement("div");
+          probe.style.setProperty(property, `var(${token})`);
+          document.body.appendChild(probe);
+          const value = getComputedStyle(probe).getPropertyValue(property);
+          probe.remove();
+          return value;
+        };
+        const shadeMid = resolve("background-color", "--shade-mid");
+        const shadeMenu = resolve("background-color", "--shade-menu");
+        const inkOnDark = resolve("color", "--ink-on-dark");
+        const backgroundImage = getComputedStyle(
+          document.querySelector("header.site-header")!,
+        ).backgroundImage;
+        const controls = [
+          ...document.querySelectorAll(
+            ".site-header-language-toggle, .account-navigation > a, .site-header-toggle",
+          ),
+        ].filter((element) => {
+          const box = element.getBoundingClientRect();
+          return (
+            box.width > 0 &&
+            box.height > 0 &&
+            getComputedStyle(element).visibility === "visible"
+          );
+        });
+        return {
+          band:
+            backgroundImage.includes("linear-gradient") &&
+            backgroundImage.includes(shadeMid),
+          unfilled: controls
+            .filter(
+              (element) =>
+                getComputedStyle(element).backgroundColor !== shadeMenu,
+            )
+            .map(
+              (element) =>
+                element.getAttribute("aria-label") ??
+                element.textContent?.trim() ??
+                element.className,
+            ),
+          filledCount: controls.length,
+          taglineColour:
+            getComputedStyle(document.querySelector(".site-brand span")!)
+              .color === inkOnDark,
+        };
+      });
+
+    await expect
+      .poll(async () => (await measure()).band, { message: `${label} band` })
+      .toBe(true);
+    const { unfilled, filledCount, taglineColour } = await measure();
+    expect(unfilled, `${label} unfilled controls`).toEqual([]);
+    expect(filledCount, `${label} filled controls`).toBeGreaterThanOrEqual(2);
+    expect(taglineColour, `${label} tagline colour`).toBe(true);
   }
 });

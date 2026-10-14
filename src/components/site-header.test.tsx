@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, it, expect, vi } from "vitest";
 const { location, router } = vi.hoisted(() => ({
   location: { pathname: "/en", query: "" },
@@ -197,6 +197,35 @@ describe("shared site header", () => {
     scrollTo(500);
     expect(header).toHaveClass("site-header-solid");
   });
+  it("uses the solid in-flow header on the landing page while the first-name step shows", () => {
+    const customer = { role: "customer" } as const;
+    const { rerender } = render(
+      <SiteHeader
+        locale="en"
+        account={{
+          status: "authenticated",
+          context: customer,
+          name: { status: "missing" },
+        }}
+      />,
+    );
+    const header = screen.getByRole("banner");
+    expect(header).toHaveClass("site-header-solid");
+    expect(header).not.toHaveClass("site-header-landing");
+
+    rerender(
+      <SiteHeader
+        locale="en"
+        account={{
+          status: "authenticated",
+          context: customer,
+          name: { status: "named", initial: "Z" },
+        }}
+      />,
+    );
+    expect(header).toHaveClass("site-header-landing");
+    expect(header).not.toHaveClass("site-header-solid");
+  });
   it("reports an unavailable session in the account slot", () => {
     render(<SiteHeader locale="en" account={{ status: "unavailable" }} />);
     expect(screen.getByRole("status")).toHaveTextContent(
@@ -242,33 +271,197 @@ describe("shared site header", () => {
       );
     },
   );
-  it("shows support to a customer outside the account disclosure", () => {
+  it("shows support to a customer inside the account menu", () => {
     render(
       <SiteHeader
         locale="en"
         account={{ status: "authenticated", context: { role: "customer" } }}
       />,
     );
-    const support = screen.getByRole("link", { name: "Support" });
-    expect(support).toHaveAttribute("href", "/en/support");
     const account = screen.getByRole("button", { name: "Account" });
     const menu = document.getElementById(
       account.getAttribute("aria-controls") ?? "",
     );
-    expect(menu).not.toBeNull();
-    expect(menu).not.toContainElement(support);
+    fireEvent.click(account);
+    const support = screen.getByRole("menuitem", { name: "Support" });
+    expect(support).toHaveAttribute("href", "/en/support");
+    expect(menu).toContainElement(support);
+    expect(screen.queryByRole("link", { name: "Support" })).toBeNull();
   });
   it.each([
-    ["en", "Language", "Menu", "Account and support"],
-    ["ar", "اللغة", "القائمة", "الحساب والدعم"],
-    ["ckb", "زمان", "پێڕست", "هەژمار و پشتیوانی"],
+    ["customer", { role: "customer" }],
+    ["cottage owner", { role: "cottage_owner", approvalState: "approved" }],
+    ["platform administrator", { role: "platform_administrator" }],
+  ] as const)(
+    "announces the %s avatar as a menu button with its open state",
+    (_kind, context) => {
+      render(
+        <SiteHeader
+          locale="en"
+          account={{ status: "authenticated", context }}
+        />,
+      );
+      const avatar = screen.getByRole("button", { name: "Account" });
+      expect(avatar).toHaveAttribute("aria-haspopup", "menu");
+      expect(avatar).toHaveAttribute("aria-expanded", "false");
+      expect(avatar).toHaveTextContent(/^Account$/);
+      const shape = avatar.querySelector(".account-avatar");
+      expect(shape).toHaveAttribute("aria-hidden", "true");
+      expect(shape?.querySelector("svg")).not.toBeNull();
+      expect(shape?.textContent).toBe("");
+      expect(screen.queryByRole("button", { name: "Menu" })).toBeNull();
+      const menu = document.getElementById(
+        avatar.getAttribute("aria-controls") ?? "",
+      );
+      expect(menu).toHaveAttribute("role", "menu");
+      expect(menu).toHaveAttribute("aria-labelledby", avatar.id);
+      expect(menu).not.toBeVisible();
+      fireEvent.click(avatar);
+      expect(avatar).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByRole("menu", { name: "Account" })).toBe(menu);
+      expect(
+        screen.getByRole("group", { name: "Account" }).querySelectorAll("a")
+          .length,
+      ).toBeGreaterThan(0);
+      for (const item of within(menu!).getAllByRole("menuitem"))
+        expect(item).toHaveAttribute("tabindex", "-1");
+      expect(
+        within(menu!)
+          .getAllByRole("menuitem")
+          .map((item) => item.textContent),
+      ).toEqual(expect.arrayContaining(["Support", "Sign out"]));
+      fireEvent.click(avatar);
+      expect(avatar).toHaveAttribute("aria-expanded", "false");
+    },
+  );
+  it.each([
+    ["en", "Z", "Account"],
+    ["ar", "ز", "الحساب"],
+  ] as const)(
+    "shows the first letter on the %s avatar",
+    (locale, initial, label) => {
+      location.pathname = `/${locale}`;
+      render(
+        <SiteHeader
+          locale={locale}
+          account={{
+            status: "authenticated",
+            context: { role: "customer" },
+            name: { status: "named", initial },
+          }}
+        />,
+      );
+      const avatar = screen.getByRole("button", { name: label });
+      const shape = avatar.querySelector(".account-avatar");
+      expect(shape).toHaveAttribute("aria-hidden", "true");
+      expect(shape?.textContent).toBe(initial);
+      expect(shape?.querySelector("svg")).toBeNull();
+    },
+  );
+  it.each([
+    ["no name", undefined],
+    ["a missing name", { status: "missing" }],
+  ] as const)(
+    "shows the person shape when there is no letter (%s)",
+    (_kind, name) => {
+      render(
+        <SiteHeader
+          locale="en"
+          account={{
+            status: "authenticated",
+            context: { role: "customer" },
+            name,
+          }}
+        />,
+      );
+      const shape = screen
+        .getByRole("button", { name: "Account" })
+        .querySelector(".account-avatar");
+      expect(shape?.querySelector("svg")).not.toBeNull();
+      expect(shape?.textContent).toBe("");
+    },
+  );
+  it("shows a signed-out visitor no avatar", () => {
+    render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
+    expect(screen.queryByRole("button", { name: "Account" })).toBeNull();
+    expect(screen.queryByRole("menu", { hidden: true })).toBeNull();
+    expect(document.querySelector(".account-avatar")).toBeNull();
+    expect(screen.getByRole("button", { name: "Menu" })).toBeVisible();
+  });
+  it("moves through the avatar menu by keyboard", () => {
+    render(
+      <SiteHeader
+        locale="en"
+        account={{ status: "authenticated", context: { role: "customer" } }}
+      />,
+    );
+    const avatar = screen.getByRole("button", { name: "Account" });
+    fireEvent.keyDown(avatar, { key: "ArrowDown" });
+    expect(avatar).toHaveAttribute("aria-expanded", "true");
+    const items = screen.getAllByRole("menuitem");
+    const first = items[0]!;
+    const last = items.at(-1)!;
+    expect(first).toHaveFocus();
+    fireEvent.keyDown(first, { key: "ArrowDown" });
+    expect(items[1]).toHaveFocus();
+    fireEvent.keyDown(items[1]!, { key: "ArrowUp" });
+    expect(first).toHaveFocus();
+    fireEvent.keyDown(first, { key: "ArrowUp" });
+    expect(last).toHaveFocus();
+    fireEvent.keyDown(last, { key: "ArrowDown" });
+    expect(first).toHaveFocus();
+    fireEvent.keyDown(first, { key: "End" });
+    expect(last).toHaveFocus();
+    fireEvent.keyDown(last, { key: "Home" });
+    expect(first).toHaveFocus();
+    fireEvent.keyDown(first, { key: "Escape" });
+    expect(avatar).toHaveAttribute("aria-expanded", "false");
+    expect(avatar).toHaveFocus();
+    fireEvent.keyDown(avatar, { key: "ArrowUp" });
+    expect(avatar).toHaveAttribute("aria-expanded", "true");
+    expect(last).toHaveFocus();
+    fireEvent.keyDown(last, { key: "Tab" });
+    expect(avatar).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(avatar);
+    expect(first).toHaveFocus();
+    const activated = vi.fn((event: Event) => event.preventDefault());
+    first.addEventListener("click", activated);
+    expect(fireEvent.keyDown(first, { key: " " })).toBe(false);
+    expect(activated).toHaveBeenCalledTimes(1);
+    expect(avatar).toHaveAttribute("aria-expanded", "false");
+  });
+  it.each([
+    ["en", "Language English"],
+    ["ar", "اللغة العربية"],
+    ["ckb", "زمان کوردی"],
+  ] as const)(
+    "shows the current language in its own name for %s",
+    (locale, name) => {
+      location.pathname = `/${locale}/results`;
+      render(<SiteHeader locale={locale} account={{ status: "signed_out" }} />);
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveAttribute("aria-expanded", "false");
+      expect(button).not.toHaveAttribute("aria-label");
+      fireEvent.click(button);
+      expect(button).toHaveAttribute("aria-expanded", "true");
+      expect(
+        screen
+          .getByRole("navigation", { name: name.split(" ")[0] })
+          .querySelectorAll("a"),
+      ).toHaveLength(3);
+    },
+  );
+  it.each([
+    ["en", "Language English", "Menu", "Account and support"],
+    ["ar", "اللغة العربية", "القائمة", "الحساب والدعم"],
+    ["ckb", "زمان کوردی", "پێڕست", "هەژمار و پشتیوانی"],
   ] as const)(
     "names the %s phone header buttons and ties each to its panel",
     (locale, language, menu, account) => {
       location.pathname = `/${locale}`;
       render(<SiteHeader locale={locale} account={{ status: "signed_out" }} />);
       for (const [name, panel] of [
-        [language, language],
+        [language, language.split(" ")[0]!],
         [menu, account],
       ]) {
         const button = screen.getByRole("button", { name });
@@ -280,8 +473,10 @@ describe("shared site header", () => {
     },
   );
   it("opens one header panel at a time", () => {
-    render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
-    const language = screen.getByRole("button", { name: "Language" });
+    const { unmount } = render(
+      <SiteHeader locale="en" account={{ status: "signed_out" }} />,
+    );
+    const language = screen.getByRole("button", { name: "Language English" });
     const menu = screen.getByRole("button", { name: "Menu" });
     fireEvent.click(language);
     expect(language).toHaveAttribute("aria-expanded", "true");
@@ -292,6 +487,24 @@ describe("shared site header", () => {
     fireEvent.click(menu);
     expect(language).toHaveAttribute("aria-expanded", "false");
     expect(menu).toHaveAttribute("aria-expanded", "false");
+    unmount();
+    render(
+      <SiteHeader
+        locale="en"
+        account={{ status: "authenticated", context: { role: "customer" } }}
+      />,
+    );
+    const avatar = screen.getByRole("button", { name: "Account" });
+    const signedInLanguage = screen.getByRole("button", {
+      name: "Language English",
+    });
+    fireEvent.click(signedInLanguage);
+    fireEvent.click(avatar);
+    expect(signedInLanguage).toHaveAttribute("aria-expanded", "false");
+    expect(avatar).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(signedInLanguage);
+    expect(signedInLanguage).toHaveAttribute("aria-expanded", "true");
+    expect(avatar).toHaveAttribute("aria-expanded", "false");
   });
   it("closes the open panel on Escape and returns focus to its visible button", () => {
     render(<SiteHeader locale="en" account={{ status: "signed_out" }} />);
@@ -328,16 +541,14 @@ describe("shared site header", () => {
         />,
       );
       fireEvent.click(screen.getByRole("button", { name: "Account" }));
-      expect(screen.getByRole("link", { name: "My bookings" })).toHaveAttribute(
-        "href",
-        "/en/bookings",
-      );
-      expect(screen.getByRole("link", { name: "Messages" })).toHaveAttribute(
-        "href",
-        "/en/messages",
-      );
       expect(
-        screen.getByRole("link", {
+        screen.getByRole("menuitem", { name: "My bookings" }),
+      ).toHaveAttribute("href", "/en/bookings");
+      expect(
+        screen.getByRole("menuitem", { name: "Messages" }),
+      ).toHaveAttribute("href", "/en/messages");
+      expect(
+        screen.getByRole("menuitem", {
           name:
             approvalState === "prospective"
               ? "Continue to Owner Application"
@@ -349,8 +560,8 @@ describe("shared site header", () => {
           ? "/en/owner/application"
           : "/en/owner/cottages",
       );
-      expect(screen.getByRole("button", { name: "Sign out" })).toBeVisible();
-      expect(screen.getByRole("link", { name: "Support" })).toHaveAttribute(
+      expect(screen.getByRole("menuitem", { name: "Sign out" })).toBeVisible();
+      expect(screen.getByRole("menuitem", { name: "Support" })).toHaveAttribute(
         "href",
         "/en/support",
       );
@@ -366,13 +577,34 @@ describe("shared site header", () => {
     const account = screen.getByRole("button", { name: "Account" });
     fireEvent.click(account);
     expect(account).toHaveAttribute("aria-expanded", "true");
-    fireEvent.click(screen.getByRole("link", { name: "List your cottage" }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "List your cottage" }),
+    );
     expect(account).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(account);
     expect(account).toHaveAttribute("aria-expanded", "true");
-    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" }));
     expect(account).toHaveAttribute("aria-expanded", "false");
   });
+  it.each([
+    ["customer", { role: "customer" }],
+    ["cottage owner", { role: "cottage_owner", approvalState: "approved" }],
+    ["platform administrator", { role: "platform_administrator" }],
+  ] as const)(
+    "puts Personal information first in the account menu of a %s",
+    (_kind, context) => {
+      render(
+        <SiteHeader
+          locale="en"
+          account={{ status: "authenticated", context }}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Account" }));
+      const first = screen.getAllByRole("menuitem")[0]!;
+      expect(first).toHaveTextContent("Personal information");
+      expect(first).toHaveAttribute("href", "/en/account");
+    },
+  );
   it("keeps administrator access separate", () => {
     render(
       <SiteHeader
@@ -385,13 +617,13 @@ describe("shared site header", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Account" }));
     expect(
-      screen.getByRole("link", { name: "Platform Administrator access" }),
+      screen.getByRole("menuitem", { name: "Platform Administrator access" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("link", { name: "Review moderation" }),
+      screen.getByRole("menuitem", { name: "Review moderation" }),
     ).toHaveAttribute("href", "/en/administrator/reviews");
     expect(
-      screen.queryByRole("link", { name: "My bookings" }),
+      screen.queryByRole("menuitem", { name: "My bookings" }),
     ).not.toBeInTheDocument();
   });
 });

@@ -371,6 +371,14 @@ export async function prepareAccessJourney({
         "Access journey private draft acknowledgement was incorrect.",
       );
     }
+    const { error: nameError } = await ownerClient.rpc("save_account_name", {
+      account_first_name: "Avan",
+    });
+    if (nameError) {
+      throw new Error("Access journey first name was not saved.", {
+        cause: nameError,
+      });
+    }
     return {
       ...identity,
       applicationId,

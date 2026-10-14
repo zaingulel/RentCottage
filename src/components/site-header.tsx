@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -38,11 +39,48 @@ export type NavigationAccount =
               | "suspended";
           }
         | undefined;
+      name?: { status: "named"; initial: string } | { status: "missing" };
     };
 
 const condenseAfterScroll = 140;
 
 type HeaderPanel = "language" | "menu";
+
+const menuItem = { role: "menuitem", tabIndex: -1 } as const;
+
+function menuItems(menu: HTMLElement | null) {
+  return [...(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+}
+
+function nextMenuIndex(key: string, index: number, count: number) {
+  switch (key) {
+    case "ArrowDown":
+      return (index + 1) % count;
+    case "ArrowUp":
+      return (index - 1 + count) % count;
+    case "Home":
+      return 0;
+    case "End":
+      return count - 1;
+    default:
+      return undefined;
+  }
+}
+
+function Icon({ children }: { children: ReactNode }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
+      {children}
+    </svg>
+  );
+}
 
 function PanelToggle({
   label,
@@ -66,16 +104,7 @@ function PanelToggle({
       aria-controls={controls}
       onClick={onToggle}
     >
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      >
-        {children}
-      </svg>
+      <Icon>{children}</Icon>
     </button>
   );
 }
@@ -92,7 +121,9 @@ export function SiteHeader({
   const query = searchParams.toString();
   const pathLocale = pathname.split("/")[1];
   const locale = isLocale(pathLocale) ? pathLocale : initialLocale;
-  const landing = pathname === `/${locale}`;
+  const landing =
+    pathname === `/${locale}` &&
+    !(account.status === "authenticated" && account.name?.status === "missing");
   const accessPage = pathname === `/${locale}/access`;
   const administratorAccessPage =
     pathname === `/${locale}/administrator/access`;
@@ -109,6 +140,13 @@ export function SiteHeader({
   }, [landing]);
   const [openPanel, setOpenPanel] = useState<HeaderPanel | null>(null);
   const header = useRef<HTMLElement>(null);
+  const accountMenu = useRef<HTMLDivElement>(null);
+  const menuEntry = useRef<"first" | "last">("first");
+  useEffect(() => {
+    if (openPanel !== "menu") return;
+    const items = menuItems(accountMenu.current);
+    (menuEntry.current === "last" ? items.at(-1) : items[0])?.focus();
+  }, [openPanel]);
   useEffect(() => {
     if (openPanel === null) return;
     const closeOutside = (event: Event) => {
@@ -145,6 +183,32 @@ export function SiteHeader({
     if (event.target instanceof Element && event.target.closest("a, form"))
       setOpenPanel(null);
   };
+  const openMenuByKey = (event: ReactKeyboardEvent) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    menuEntry.current = event.key === "ArrowUp" ? "last" : "first";
+    setOpenPanel("menu");
+  };
+  const navigateMenu = (event: ReactKeyboardEvent) => {
+    if (event.key === "Tab") {
+      setOpenPanel(null);
+      return;
+    }
+    if (event.key === " " && event.target instanceof HTMLAnchorElement) {
+      event.preventDefault();
+      event.target.click();
+      return;
+    }
+    const items = menuItems(accountMenu.current);
+    const next = nextMenuIndex(
+      event.key,
+      items.findIndex((item) => item === event.target),
+      items.length,
+    );
+    if (next === undefined) return;
+    event.preventDefault();
+    items[next]?.focus();
+  };
   const copy = accessMessages[locale];
   const returnTo =
     landing && !query
@@ -165,112 +229,172 @@ export function SiteHeader({
           <span>{messages[locale].tagline}</span>
         </Link>
         <div className="site-header-controls">
-          <PanelToggle
-            label={messages[locale].languageLabel}
-            controls="site-header-language"
-            open={openPanel === "language"}
-            onToggle={() => toggle("language")}
-          >
-            <circle cx="12" cy="12" r="9" />
-            <ellipse cx="12" cy="12" rx="4" ry="9" />
-            <path d="M3 12h18" />
-          </PanelToggle>
-          <LocaleLinks
-            id="site-header-language"
-            locale={locale}
-            hrefFor={(target) =>
-              accessPage
-                ? accessLanguageHref(locale, target, returnToParameter)
-                : administratorAccessPage
-                  ? administratorAccessLanguageHref(
-                      locale,
-                      target,
-                      returnToParameter,
-                    )
-                  : isLocale(pathLocale)
-                    ? `/${target}${pathname.slice(locale.length + 1)}${query ? `?${query}` : ""}`
-                    : `/${target}`
-            }
-          />
+          <div className="site-header-language">
+            <button
+              type="button"
+              className="site-header-language-toggle"
+              aria-expanded={openPanel === "language"}
+              aria-controls="site-header-language"
+              onClick={() => toggle("language")}
+            >
+              <Icon>
+                <circle cx="12" cy="12" r="9" />
+                <ellipse cx="12" cy="12" rx="4" ry="9" />
+                <path d="M3 12h18" />
+              </Icon>
+              <span className="visually-hidden">
+                {messages[locale].languageLabel}
+              </span>{" "}
+              <span>{messages[locale].languageName}</span>
+            </button>
+            <LocaleLinks
+              id="site-header-language"
+              locale={locale}
+              hrefFor={(target) =>
+                accessPage
+                  ? accessLanguageHref(locale, target, returnToParameter)
+                  : administratorAccessPage
+                    ? administratorAccessLanguageHref(
+                        locale,
+                        target,
+                        returnToParameter,
+                      )
+                    : isLocale(pathLocale)
+                      ? `/${target}${pathname.slice(locale.length + 1)}${query ? `?${query}` : ""}`
+                      : `/${target}`
+              }
+            />
+          </div>
           <span className="site-header-rule" aria-hidden="true" />
-          <PanelToggle
-            label={copy.menu}
-            controls="site-header-account"
-            open={openPanel === "menu"}
-            onToggle={() => toggle("menu")}
-          >
-            <path d="M4 7h16M4 12h16M4 17h16" />
-          </PanelToggle>
+          {account.status !== "authenticated" && (
+            <PanelToggle
+              label={copy.menu}
+              controls="site-header-account"
+              open={openPanel === "menu"}
+              onToggle={() => toggle("menu")}
+            >
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            </PanelToggle>
+          )}
           <nav
             id="site-header-account"
             aria-label={copy.accountNavigation}
             className="account-navigation site-header-panel"
           >
-            {account.status === "unavailable" ? (
-              <span role="status">{copy.sessionUnavailable}</span>
-            ) : account.status === "signed_out" ? (
-              <>
-                <Link href={accountAccessHref(locale, returnTo)}>
-                  {copy.signInAccount}
-                </Link>
-                <Link href={enrollHref}>{copy.listCottage}</Link>
-              </>
-            ) : (
+            {account.status === "authenticated" ? (
               <div className="account-menu">
                 <button
                   type="button"
+                  id="site-header-account-button"
                   className="account-menu-toggle"
+                  aria-haspopup="menu"
                   aria-expanded={openPanel === "menu"}
                   aria-controls="site-header-account-menu"
-                  onClick={() => toggle("menu")}
+                  onClick={() => {
+                    menuEntry.current = "first";
+                    toggle("menu");
+                  }}
+                  onKeyDown={openMenuByKey}
                 >
-                  {copy.account}
+                  <span className="visually-hidden">{copy.account}</span>
+                  <span className="account-avatar" aria-hidden="true">
+                    {account.name?.status === "named" ? (
+                      account.name.initial
+                    ) : (
+                      <Icon>
+                        <circle cx="12" cy="8" r="4" />
+                        <path d="M4.5 21c0-4.2 3.4-6.5 7.5-6.5s7.5 2.3 7.5 6.5" />
+                      </Icon>
+                    )}
+                  </span>
                 </button>
                 <div
                   id="site-header-account-menu"
                   className="account-menu-panel"
+                  role="menu"
+                  aria-labelledby="site-header-account-button"
                   hidden={openPanel !== "menu"}
+                  ref={accountMenu}
+                  onKeyDown={navigateMenu}
                 >
-                  {account.context?.role === "platform_administrator" ? (
-                    <>
-                      <Link href={`/${locale}/administrator/access`}>
-                        {copy.administratorTitle}
-                      </Link>
-                      <Link href={`/${locale}/administrator/messages`}>
-                        {messagingMessages[locale].moderation}
-                      </Link>
-                      <Link href={`/${locale}/administrator/reviews`}>
-                        {customerReviewMessages[locale].administratorLink}
-                      </Link>
-                    </>
-                  ) : (
-                    <>
-                      <Link href={`/${locale}/bookings`}>
-                        {copy.myBookings}
-                      </Link>
-                      <Link href={`/${locale}/messages`}>{copy.messages}</Link>
-                      {account.context?.role === "cottage_owner" ? (
+                  <div role="group" aria-label={copy.account}>
+                    <Link {...menuItem} href={`/${locale}/account`}>
+                      {copy.personalInformation}
+                    </Link>
+                    {account.context?.role === "platform_administrator" ? (
+                      <>
                         <Link
-                          href={`/${locale}/owner/${account.context.approvalState === "prospective" ? "application" : "cottages"}`}
+                          {...menuItem}
+                          href={`/${locale}/administrator/access`}
                         >
-                          {account.context.approvalState === "prospective"
-                            ? copy.ownerApplicationCta
-                            : copy.manageCottages}
+                          {copy.administratorTitle}
                         </Link>
-                      ) : (
-                        <Link href={enrollHref}>{copy.listCottage}</Link>
-                      )}
-                    </>
-                  )}
-                  <form action={signOutAccount.bind(null, locale)}>
-                    <button type="submit">{copy.signOut}</button>
+                        <Link
+                          {...menuItem}
+                          href={`/${locale}/administrator/messages`}
+                        >
+                          {messagingMessages[locale].moderation}
+                        </Link>
+                        <Link
+                          {...menuItem}
+                          href={`/${locale}/administrator/reviews`}
+                        >
+                          {customerReviewMessages[locale].administratorLink}
+                        </Link>
+                      </>
+                    ) : (
+                      <>
+                        <Link {...menuItem} href={`/${locale}/bookings`}>
+                          {copy.myBookings}
+                        </Link>
+                        <Link {...menuItem} href={`/${locale}/messages`}>
+                          {copy.messages}
+                        </Link>
+                        {account.context?.role === "cottage_owner" ? (
+                          <Link
+                            {...menuItem}
+                            href={`/${locale}/owner/${account.context.approvalState === "prospective" ? "application" : "cottages"}`}
+                          >
+                            {account.context.approvalState === "prospective"
+                              ? copy.ownerApplicationCta
+                              : copy.manageCottages}
+                          </Link>
+                        ) : (
+                          <Link {...menuItem} href={enrollHref}>
+                            {copy.listCottage}
+                          </Link>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <hr />
+                  <Link {...menuItem} href={`/${locale}/support`}>
+                    {supportMessages[locale].title}
+                  </Link>
+                  <form role="none" action={signOutAccount.bind(null, locale)}>
+                    <button type="submit" {...menuItem}>
+                      {copy.signOut}
+                    </button>
                   </form>
                 </div>
               </div>
+            ) : (
+              <>
+                {account.status === "unavailable" ? (
+                  <span role="status">{copy.sessionUnavailable}</span>
+                ) : (
+                  <>
+                    <Link href={accountAccessHref(locale, returnTo)}>
+                      {copy.signInAccount}
+                    </Link>
+                    <Link href={enrollHref}>{copy.listCottage}</Link>
+                  </>
+                )}
+                <Link href={`/${locale}/support`}>
+                  {supportMessages[locale].title}
+                </Link>
+              </>
             )}
-            <Link href={`/${locale}/support`}>
-              {supportMessages[locale].title}
-            </Link>
           </nav>
         </div>
       </div>

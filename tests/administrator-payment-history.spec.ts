@@ -158,6 +158,9 @@ test("AAL2 support sees ordered redacted history in every launch language", asyn
     throw new Error("History administrator fixture provisioning failed", {
       cause: provisionError,
     });
+  harness.runSql(
+    `insert into public.account_names (user_id, first_name) values ('${created.user.id}', 'Sara') on conflict (user_id) do update set first_name = excluded.first_name;`,
+  );
   await page.goto("/en/administrator/access");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("Local-test-password-2026");

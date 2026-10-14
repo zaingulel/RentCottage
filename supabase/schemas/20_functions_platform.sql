@@ -165,6 +165,36 @@ $_$;
 
 ALTER FUNCTION "public"."record_privileged_sign_in_attempt"("attempted_email" "text", "attempted_email_digest" "text", "attempt_stage" "text", "attempt_outcome" "text") OWNER TO "postgres";
 
+CREATE OR REPLACE FUNCTION "public"."save_account_name"("account_first_name" "text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  caller_role public.account_role;
+begin
+  select account_contexts.role into caller_role
+  from public.account_contexts
+  where account_contexts.user_id = (select auth.uid());
+
+  if caller_role is null then
+    raise exception 'A marketplace account is required'
+      using errcode = '42501';
+  end if;
+
+  if caller_role = 'platform_administrator' and public.is_platform_administrator('aal2') is not true then
+    raise exception 'Two-step sign-in is required'
+      using errcode = '42501';
+  end if;
+
+  insert into public.account_names (user_id, first_name)
+  values ((select auth.uid()), account_first_name)
+  on conflict (user_id) do update
+    set first_name = excluded.first_name, updated_at = now();
+end;
+$$;
+
+ALTER FUNCTION "public"."save_account_name"("account_first_name" "text") OWNER TO "postgres";
+
 CREATE OR REPLACE FUNCTION "public"."reject_authorization_claim_inventory_mutation"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''

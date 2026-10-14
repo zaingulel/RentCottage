@@ -531,6 +531,11 @@ if (demoEnvironmentError) {
         { requested_role: "customer" },
       );
       if (claimError) throw claimError;
+      const { error: nameError } = await fixtureCustomer.rpc(
+        "save_account_name",
+        { account_first_name: "Lana" },
+      );
+      if (nameError) throw nameError;
     } else if (context.role !== "customer") {
       throw new Error("Booking Customer fixture belongs to another role");
     }
@@ -582,6 +587,11 @@ if (demoEnvironmentError) {
       { requested_role: "cottage_owner" },
     );
     if (fixtureClaimError) throw fixtureClaimError;
+    const { error: fixtureNameError } = await fixtureOwner.rpc(
+      "save_account_name",
+      { account_first_name: "Avan" },
+    );
+    if (fixtureNameError) throw fixtureNameError;
     const { error: fixtureSaveError } = await fixtureOwner.rpc(
       "save_owner_application",
       {

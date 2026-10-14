@@ -7,6 +7,7 @@ const {
   refresh,
   replace,
   requestPhone,
+  saveName,
   signInAdministrator,
   verifyAdministrator,
   verifyPhone,
@@ -15,6 +16,7 @@ const {
   refresh: vi.fn(),
   replace: vi.fn(),
   requestPhone: vi.fn(),
+  saveName: vi.fn(),
   signInAdministrator: vi.fn(),
   verifyAdministrator: vi.fn(),
   verifyPhone: vi.fn(),
@@ -28,11 +30,13 @@ vi.mock("next/navigation", async (importOriginal) => ({
 vi.mock("@/access/actions", () => ({
   completePhoneAccess: completePhone,
   requestPhoneAccess: requestPhone,
+  saveAccountName: saveName,
   signInPlatformAdministrator: signInAdministrator,
   verifyPhoneAccess: verifyPhone,
   verifyPlatformAdministratorMfa: verifyAdministrator,
 }));
 
+import { AccountNameForm } from "./account-name-form";
 import { ActionFocusTarget } from "./interaction-controls";
 import { AdministratorAccessForm } from "./administrator-access-form";
 import { PhoneAccessForm } from "./phone-access-form";
@@ -846,5 +850,317 @@ describe("access forms", () => {
     } finally {
       window.history.replaceState(null, "", origin);
     }
+  });
+
+  it("shows why a first name was refused", async () => {
+    saveName.mockResolvedValue({ status: "invalid" });
+    const user = userEvent.setup();
+    render(<AccountNameForm locale="en" mode="details" />);
+
+    const input = screen.getByLabelText("First name");
+    expect(input).not.toHaveAttribute("aria-invalid");
+    await user.type(input, "12345");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(saveName).toHaveBeenCalledExactlyOnceWith({ firstName: "12345" });
+    const reason = screen.getByText(
+      "Enter a first name of 1 to 50 characters that includes a letter and no phone number, email address, link or control character such as a tab.",
+    );
+    expect(reason).toHaveClass("field-error");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAttribute("aria-describedby", reason.id);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("confirms a saved first name and reports a failed save", async () => {
+    saveName.mockResolvedValue({ status: "unavailable" });
+    const user = userEvent.setup();
+    render(<AccountNameForm locale="en" mode="details" firstName="Zana" />);
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Your first name could not be saved. Try again.",
+    );
+
+    saveName.mockResolvedValue({ status: "saved" });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Your first name is saved.",
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows a first name that arrives after the form mounted", async () => {
+    saveName.mockResolvedValue({ status: "saved" });
+    const user = userEvent.setup();
+    const { rerender } = render(<AccountNameForm locale="en" mode="details" />);
+    expect(screen.getByLabelText("First name")).toHaveValue("");
+
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Lana" />);
+    expect(screen.getByLabelText("First name")).toHaveValue("Lana");
+
+    await user.type(screen.getByLabelText("First name"), " K");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Lana K" />);
+
+    expect(screen.getByLabelText("First name")).toHaveValue("Lana K");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Your first name is saved.",
+    );
+  });
+
+  it("keeps a draft typed while a first name saves", async () => {
+    let resolveSave!: (value: { status: "saved" }) => void;
+    saveName.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(<AccountNameForm locale="en" mode="details" />);
+
+    const input = screen.getByLabelText("First name");
+    await user.type(input, "Lana{Enter}");
+    expect(saveName).toHaveBeenCalledExactlyOnceWith({ firstName: "Lana" });
+    expect(input).toHaveFocus();
+
+    await user.type(input, " K");
+    expect(input).toHaveValue("Lana K");
+
+    await act(async () => resolveSave({ status: "saved" }));
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Lana" />);
+
+    expect(input).toHaveValue("Lana K");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Your first name is saved.",
+    );
+  });
+
+  it("keeps a draft typed after the save settles but before the saved name arrives", async () => {
+    saveName.mockResolvedValue({ status: "saved" });
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AccountNameForm locale="en" mode="details" firstName="Zana" />,
+    );
+
+    const input = screen.getByLabelText("First name");
+    await user.clear(input);
+    await user.type(input, "Lana");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Your first name is saved.",
+    );
+
+    await user.type(input, " K");
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Lana" />);
+
+    expect(input).toHaveValue("Lana K");
+  });
+
+  it("keeps a draft changed back to the previous name while a first name saves", async () => {
+    let resolveSave!: (value: { status: "saved" }) => void;
+    saveName.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AccountNameForm locale="en" mode="details" firstName="Zana" />,
+    );
+
+    const input = screen.getByLabelText("First name");
+    await user.clear(input);
+    await user.type(input, "Lana{Enter}");
+    expect(saveName).toHaveBeenCalledExactlyOnceWith({ firstName: "Lana" });
+
+    await user.clear(input);
+    await user.type(input, "Zana");
+
+    await act(async () => resolveSave({ status: "saved" }));
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Lana" />);
+
+    expect(input).toHaveValue("Zana");
+  });
+
+  it("keeps a draft whose save failed when a saved name arrives", async () => {
+    saveName.mockResolvedValue({ status: "unavailable" });
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AccountNameForm locale="en" mode="details" firstName="Zana" />,
+    );
+
+    const input = screen.getByLabelText("First name");
+    await user.clear(input);
+    await user.type(input, "Lana");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Your first name could not be saved. Try again.",
+    );
+
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Mira" />);
+
+    expect(input).toHaveValue("Lana");
+  });
+
+  it("keeps a draft whose save could not reach the server when a saved name arrives", async () => {
+    saveName.mockRejectedValue(new Error("offline"));
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AccountNameForm locale="en" mode="details" firstName="Zana" />,
+    );
+
+    const input = screen.getByLabelText("First name");
+    await user.clear(input);
+    await user.type(input, "Lana");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Your first name could not be saved. Try again.",
+    );
+
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Mira" />);
+
+    expect(input).toHaveValue("Lana");
+  });
+
+  it("shows the trimmed name after saving one with spaces", async () => {
+    saveName.mockResolvedValue({ status: "saved" });
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AccountNameForm locale="en" mode="details" firstName="Zana" />,
+    );
+
+    const input = screen.getByLabelText("First name");
+    await user.clear(input);
+    await user.type(input, "  Lana  ");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Your first name is saved.",
+    );
+    expect(saveName).toHaveBeenCalledExactlyOnceWith({ firstName: "  Lana  " });
+
+    rerender(<AccountNameForm locale="en" mode="details" firstName="Lana" />);
+
+    expect(input).toHaveValue("Lana");
+  });
+
+  it("reports a save that could not reach the server", async () => {
+    saveName.mockRejectedValue(new Error("offline"));
+    const user = userEvent.setup();
+    render(<AccountNameForm locale="en" mode="details" firstName="Zana" />);
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Your first name could not be saved. Try again.",
+    );
+  });
+
+  it("renders a stored name as text", () => {
+    const hostile = "<img src=x onerror=alert(1)>";
+    const { container } = render(
+      <AccountNameForm locale="en" mode="details" firstName={hostile} />,
+    );
+
+    expect(screen.getByLabelText("First name")).toHaveValue(hostile);
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("never puts the first name in a native form submission", async () => {
+    const user = userEvent.setup();
+    render(<AccountNameForm locale="en" mode="details" />);
+
+    await user.type(screen.getByLabelText("First name"), "Zana");
+    const form = screen.getByRole("button", { name: "Save" }).closest("form")!;
+    expect([...new FormData(form).entries()]).toEqual([]);
+  });
+
+  it("moves focus to the step title when focus is outside the header", () => {
+    const { rerender } = render(<button type="button">Continue</button>);
+    const pageControl = screen.getByRole("button", { name: "Continue" });
+    act(() => pageControl.focus());
+
+    rerender(
+      <>
+        <button type="button">Continue</button>
+        <main>
+          <AccountNameForm locale="en" mode="step" />
+        </main>
+      </>,
+    );
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Add your first name" }),
+    ).toHaveFocus();
+  });
+
+  it("leaves focus in the site header", () => {
+    const { rerender } = render(
+      <header className="site-header">
+        <button type="button">Language English</button>
+      </header>,
+    );
+    const language = screen.getByRole("button", { name: "Language English" });
+    act(() => language.focus());
+
+    rerender(
+      <>
+        <header className="site-header">
+          <button type="button">Language English</button>
+        </header>
+        <main>
+          <AccountNameForm locale="en" mode="step" />
+        </main>
+      </>,
+    );
+
+    expect(language).toHaveFocus();
+  });
+
+  it("names the avatar button as the successor after saving", async () => {
+    let resolveSave!: (value: { status: "saved" }) => void;
+    saveName.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    const header = (
+      <header className="site-header">
+        <button type="button" id="site-header-account-button">
+          Account
+        </button>
+      </header>
+    );
+    const { rerender } = render(
+      <>
+        {header}
+        <main>
+          <AccountNameForm locale="en" mode="step" />
+        </main>
+      </>,
+    );
+
+    await user.type(screen.getByLabelText("First name"), "Zana");
+    const save = screen.getByRole("button", { name: "Save and continue" });
+    await user.click(save);
+    expect(save).toBeDisabled();
+    expect(saveName).toHaveBeenCalledExactlyOnceWith({ firstName: "Zana" });
+    await act(async () => resolveSave({ status: "saved" }));
+
+    await act(async () =>
+      rerender(
+        <>
+          {header}
+          <ActionFocusTarget targetId="site-header-account-button" />
+        </>,
+      ),
+    );
+
+    expect(save).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Account" })).toHaveFocus();
   });
 });

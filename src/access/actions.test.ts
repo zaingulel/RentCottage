@@ -8,8 +8,10 @@ const {
   redirect,
   revalidatePath,
   resolveRequestAccount,
+  saveRequestAccountName,
 } = vi.hoisted(() => ({
   resolveRequestAccount: vi.fn(),
+  saveRequestAccountName: vi.fn(),
   recordAudit: vi.fn(),
   redirect: vi.fn(),
   revalidatePath: vi.fn(),
@@ -19,6 +21,7 @@ const {
 }));
 
 vi.mock("./request-account-context", () => ({ resolveRequestAccount }));
+vi.mock("./request-account-name", () => ({ saveRequestAccountName }));
 
 vi.mock("next/cache", () => ({ revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect }));
@@ -38,6 +41,7 @@ import {
   enrollOwner,
   signOutAccount,
   requestPhoneAccess,
+  saveAccountName,
   signInPlatformAdministrator,
   verifyPhoneAccess,
   verifyPlatformAdministratorMfa,
@@ -422,4 +426,44 @@ describe("current-device sign out", () => {
       expect(redirect).toHaveBeenCalledWith("/ckb");
     },
   );
+});
+
+describe("first name save", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("saves a valid first name and refreshes the layout", async () => {
+    saveRequestAccountName.mockResolvedValue("saved");
+    await expect(saveAccountName({ firstName: " Zana " })).resolves.toEqual({
+      status: "saved",
+    });
+    expect(saveRequestAccountName).toHaveBeenCalledExactlyOnceWith("Zana");
+    expect(revalidatePath).toHaveBeenCalledExactlyOnceWith("/", "layout");
+  });
+
+  it.each([
+    undefined,
+    {},
+    { firstName: 7 },
+    { firstName: "  " },
+    { firstName: "12345" },
+    { firstName: "zana@example.com" },
+    { firstName: "Z".repeat(51) },
+  ])(
+    "refuses an invalid first name without calling the database",
+    async (value) => {
+      await expect(saveAccountName(value)).resolves.toEqual({
+        status: "invalid",
+      });
+      expect(saveRequestAccountName).not.toHaveBeenCalled();
+      expect(revalidatePath).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reports a failed save as unavailable", async () => {
+    saveRequestAccountName.mockResolvedValue("unavailable");
+    await expect(saveAccountName({ firstName: "Zana" })).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
 });

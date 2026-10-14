@@ -94,6 +94,7 @@ describe("account return destinations", () => {
     "/en/results?from=2101-01-01&to=2101-01-01&guests=4&selection=2101-01-01:shift:1",
     "/en/cottages/river-house",
     "/en/request/river-house",
+    "/en/account",
     "/en/bookings?workspace=owner",
     "/en/messages",
     "/en/messages?cottage=cottage-0123456789abcdef0123456789abcdef",

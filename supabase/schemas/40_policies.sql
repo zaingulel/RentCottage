@@ -13,6 +13,8 @@ SET default_table_access_method = "heap";
 
 CREATE POLICY "Account holder reads own context" ON "public"."account_contexts" FOR SELECT TO "authenticated" USING ((( SELECT "auth"."uid"() AS "uid") = "user_id"));
 
+CREATE POLICY "Account holder reads own name" ON "public"."account_names" FOR SELECT TO "authenticated" USING ((( SELECT "auth"."uid"() AS "uid") = "user_id"));
+
 CREATE POLICY "Authorized readers see messaging conversations" ON "public"."messaging_conversations" FOR SELECT TO "authenticated" USING ((SELECT "public"."messaging_conversation_is_readable"("id")));
 
 CREATE POLICY "Authorized readers see messaging links" ON "public"."messaging_conversation_booking_requests" FOR SELECT TO "authenticated" USING ((SELECT "public"."messaging_conversation_is_readable"("conversation_id")));
@@ -105,6 +107,8 @@ CREATE POLICY "Owner or MFA administrator reads private Cottage Profiles" ON "pu
 CREATE POLICY "Owner reads own Cottage translation quality reports" ON "public"."cottage_translation_quality_reports" FOR SELECT TO "authenticated" USING (("reporter_user_id" = ( SELECT "auth"."uid"() AS "uid")));
 
 ALTER TABLE "public"."account_contexts" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."account_names" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."booking_confirmations" ENABLE ROW LEVEL SECURITY;
 

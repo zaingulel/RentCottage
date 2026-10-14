@@ -378,7 +378,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
 
   // Same-route completion refreshes the account header before switching language.
   await expect(
-    page.getByRole("banner").getByText("Account", { exact: true }),
+    page
+      .getByRole("banner")
+      .getByRole("button", { name: "Account", exact: true }),
   ).toBeAttached();
   await expect(page).toHaveURL(inlineRequestUrl);
   await expect(inlineRequestFrame).toBeFocused();
@@ -552,7 +554,10 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await ownerPage.goto("/en/owner/cottages");
 
   await openHeaderPanel(page, "menu");
-  await page.getByRole("banner").getByRole("link", { name: "Support" }).click();
+  await page
+    .getByRole("banner")
+    .getByRole("menuitem", { name: "Support" })
+    .click();
   await expect(page.getByRole("status")).toContainText(
     "support is not operating",
   );
@@ -568,7 +573,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await openHeaderPanel(ownerPage, "menu");
   await ownerPage
     .getByRole("banner")
-    .getByRole("link", { name: "Support" })
+    .getByRole("menuitem", { name: "Support" })
     .click();
   // The owner list carries one status per request, earlier attempts included, so
   // wait for the Support page before reading its single status.
