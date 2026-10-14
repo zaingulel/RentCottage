@@ -3819,7 +3819,6 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
       const stepTitle = target.getByRole("heading", {
         name: "Add your first name",
       });
-      await expect(target).toHaveURL(/\/en\/bookings$/);
       await expect(stepTitle).toBeVisible();
       await expect(stepTitle).toBeFocused();
       await expect(bookingsHeading).toBeHidden();
@@ -3831,6 +3830,8 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
       await expect(saveControl).toBeFocused();
       await saveControl.press("Enter");
       await expect(bookingsHeading).toBeVisible();
+      // The sign-in page's redirect waits while the name step hides it.
+      await expect(target).toHaveURL(/\/en\/bookings$/);
       await expect(target.locator("#site-header-account-button")).toBeFocused();
       await expect(
         target.locator("#site-header-account-button .account-avatar"),

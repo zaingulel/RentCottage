@@ -183,7 +183,6 @@ test("same-phone reauthentication restores the same real history and owner unpai
         await page.goto("/en/bookings");
         await expect(page).toHaveURL(/\/en\/access\?returnTo=%2Fen%2Fbookings/);
         await verifyPhone(page, phone);
-        await expect(page).toHaveURL(/\/en\/bookings/);
         await expect(
           page.getByRole("heading", { name: "Add your first name" }),
         ).toBeVisible();
@@ -192,6 +191,8 @@ test("same-phone reauthentication restores the same real history and owner unpai
         await expect(
           page.getByRole("heading", { name: "My bookings", exact: true }),
         ).toBeVisible();
+        // The sign-in page's redirect waits while the name step hides it.
+        await expect(page).toHaveURL(/\/en\/bookings$/);
       } finally {
         await context.close();
       }
