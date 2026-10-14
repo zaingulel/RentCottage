@@ -2,12 +2,13 @@ import { createRoot } from "react-dom/client";
 
 import { CustomerBookingRequestStatus } from "@/components/customer-booking-request-status";
 import { OwnerBookingRequestNotifications } from "@/components/owner-booking-request-notifications";
+import { PublicCottageProfileView } from "@/components/public-cottage-profile";
 import { PublicCottageResults } from "@/components/public-cottage-results";
 import {
   serializeCottageDiscoveryQuery,
   type CottageDiscoveryQuery,
 } from "@/cottage-discovery/discovery-query";
-import type { PublicCottageSummary } from "@/cottage-discovery/supabase-cottage-discovery";
+import type { PublicCottageProfile } from "@/cottage-discovery/supabase-cottage-discovery";
 
 import {
   customerDisplayFixtures,
@@ -93,7 +94,12 @@ const publicCottageQuery: CottageDiscoveryQuery = {
   amenities: ["pool", "parking"],
 };
 
-const publicDisplayCottage: PublicCottageSummary = {
+const publicDisplayCottage: PublicCottageProfile = {
+  bedrooms: 3,
+  bathrooms: 2,
+  description:
+    "A fictional garden house for a family gathering, with a shaded veranda and room for tea outdoors.",
+  houseRules: "No smoking indoors. Keep music low after 10 PM.",
   slug: "cottage-00000000000040008000000000000754",
   name: "Fictional Garden Cottage",
   governorate: "Erbil",
@@ -181,19 +187,40 @@ const publicDisplayCottage: PublicCottageSummary = {
 };
 
 function renderPublicCottageDisplay({
+  screen,
   locale,
   photoCount,
   longContent,
 }: {
-  screen: "results";
+  screen: "results" | "profile";
   locale: "en" | "ar" | "ckb";
   photoCount: 0 | 1 | 4 | 6;
   longContent?: boolean;
 }) {
   document.documentElement.lang = locale;
   document.documentElement.dir = locale === "en" ? "ltr" : "rtl";
-  const cottage: PublicCottageSummary = {
+  const cottage: PublicCottageProfile = {
     ...publicDisplayCottage,
+    description: longContent
+      ? "کۆتێجێکی باخچەدار بۆ کۆبوونەوەی خێزان و پشوودان لە ناوچەی شەقڵاوە لەگەڵ دەقی درێژ بۆ پشکنینی پێچانەوە و خوێندنەوە. ".repeat(
+          8,
+        )
+      : publicDisplayCottage.description,
+    inventory:
+      screen === "profile"
+        ? publicDisplayCottage.inventory.map((unit) => ({
+            ...unit,
+            available: !(
+              unit.serviceDay === "2099-08-21" &&
+              unit.kind === "shift" &&
+              unit.position === 2
+            ),
+            name:
+              longContent && unit.kind === "shift" && unit.position === 1
+                ? "هەڵبژاردەی درێژی بەیانی بۆ پشوودانی خێزان لە باخچەکە"
+                : unit.name,
+          }))
+        : publicDisplayCottage.inventory,
     mediaUrls: publicDisplayCottage.mediaUrls.slice(0, photoCount),
     name: longContent
       ? "کۆتێجی باخچەی خەیاڵی بۆ کۆبوونەوەی خێزان لە ناوچەی شەقڵاوە لە نێوان دارەکان و چیاکان لەگەڵ شوێنی پشوودان و دانیشتنی دەرەوە"
@@ -203,17 +230,26 @@ function renderPublicCottageDisplay({
       : publicDisplayCottage.approximateLocation,
   };
   root.render(
-    <PublicCottageResults
-      locale={locale}
-      result={{
-        status: "loaded",
-        cottages: [cottage],
-        nextAfter: "cottage-00000000000040008000000000000755",
-      }}
-      query={publicCottageQuery}
-      queryString={serializeCottageDiscoveryQuery(publicCottageQuery)}
-      after={null}
-    />,
+    screen === "profile" ? (
+      <PublicCottageProfileView
+        locale={locale}
+        result={{ status: "loaded", cottage }}
+        query={publicCottageQuery}
+        resultsQueryString={serializeCottageDiscoveryQuery(publicCottageQuery)}
+      />
+    ) : (
+      <PublicCottageResults
+        locale={locale}
+        result={{
+          status: "loaded",
+          cottages: [cottage],
+          nextAfter: "cottage-00000000000040008000000000000755",
+        }}
+        query={publicCottageQuery}
+        queryString={serializeCottageDiscoveryQuery(publicCottageQuery)}
+        after={null}
+      />
+    ),
   );
 }
 

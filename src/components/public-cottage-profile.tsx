@@ -98,39 +98,58 @@ export function PublicCottageProfileView({
           {cottage.governorate}
         </p>
       </header>
-      <div className="profile-layout">
-        <div>
-          {cottage.mediaUrls.length ? (
-            <section className="profile-gallery">
-              {cottage.mediaUrls.map((url, index) => (
-                <div
-                  className={index === 0 ? "profile-main-image" : undefined}
-                  key={url}
-                >
-                  <Image
-                    src={url}
-                    alt={`${cottage.name} ${index + 1}`}
-                    fill
-                    sizes="(min-width: 900px) 50vw, 100vw"
-                  />
-                </div>
-              ))}
-            </section>
-          ) : null}
-          <dl className="fact-list">
-            <div>
-              <dt>{messages.capacity}</dt>
-              <dd>
-                {cottage.capacity} {messages.guests}
-              </dd>
-            </div>
-            <div>
-              <dt>{messages.rooms}</dt>
-              <dd>
+      {cottage.mediaUrls[0] ? (
+        <div className="profile-main-image">
+          <Image
+            src={cottage.mediaUrls[0]}
+            alt={`${cottage.name} 1`}
+            fill
+            sizes="(max-width: 72.25rem) calc(100vw - 36px), 1120px"
+          />
+        </div>
+      ) : null}
+      <div
+        className={`profile-layout${cottage.mediaUrls.length > 1 ? " profile-layout-has-gallery" : ""}`}
+      >
+        {cottage.mediaUrls.length > 1 ? (
+          <section className="profile-gallery">
+            {cottage.mediaUrls.slice(1).map((url, index) => (
+              <div key={url}>
+                <Image
+                  src={url}
+                  alt={`${cottage.name} ${index + 2}`}
+                  fill
+                  sizes="(max-width: 40rem) calc((100vw - 52px) / 3), (max-width: 47.5rem) calc((100vw - 60px) / 3), (max-width: 72.25rem) calc((100vw - 476px) / 3), calc(680px / 3)"
+                />
+              </div>
+            ))}
+          </section>
+        ) : null}
+        <dl className="fact-list profile-facts">
+          <div>
+            <dt>{messages.capacity}</dt>
+            <dd>
+              {cottage.capacity} {messages.guests}
+            </dd>
+          </div>
+          <div>
+            <dt>{messages.rooms}</dt>
+            <dd>
+              <bdi dir="ltr">
                 {cottage.bedrooms} / {cottage.bathrooms}
-              </dd>
-            </div>
-          </dl>
+              </bdi>
+            </dd>
+          </div>
+        </dl>
+        <aside className="card booking-summary">
+          <CottageBookingPeriodPicker
+            locale={locale}
+            slug={cottage.slug}
+            query={query}
+            inventory={cottage.inventory}
+          />
+        </aside>
+        <div className="profile-copy">
           <section className="profile-section">
             <p>{cottage.description}</p>
           </section>
@@ -157,14 +176,6 @@ export function PublicCottageProfileView({
             </ActionLink>
           </section>
         </div>
-        <aside className="booking-summary">
-          <CottageBookingPeriodPicker
-            locale={locale}
-            slug={cottage.slug}
-            query={query}
-            inventory={cottage.inventory}
-          />
-        </aside>
       </div>
     </main>
   );

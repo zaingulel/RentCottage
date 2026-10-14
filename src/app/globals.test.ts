@@ -315,6 +315,7 @@ describe("stylesheet colour tokens", () => {
         "--surface-verification",
         "--status-neutral-bg",
         "--gold-tint over --background",
+        "--action-pressed over --card",
       ],
       "--ink-accent": [
         "--background",

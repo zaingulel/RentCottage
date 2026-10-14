@@ -185,13 +185,14 @@ export function CottageBookingPeriodPicker({
               </ActionButton>
             </>
           )}
-          <ul className="result-shifts">
+          <ul className="booking-period-list">
             {inventory
               .filter((unit) => unit.serviceDay === day)
               .map((unit) => {
                 const selected = query.selections.some((selection) =>
                   matches(selection, unit),
                 );
+                const optionId = `${headingId}-${day}-${unit.kind}-${unit.position ?? "full"}`;
                 return (
                   <li key={`${unit.kind}-${unit.position ?? "full"}`}>
                     <ActionButton
@@ -201,26 +202,44 @@ export function CottageBookingPeriodPicker({
                       pressed={selected}
                       disabled={pending || (!unit.available && !selected)}
                       focusSuccessorId={headingId}
+                      aria-labelledby={`${optionId}-name`}
+                      aria-describedby={`${optionId}-time ${optionId}-price${unit.available ? "" : ` ${optionId}-unavailable`}`}
                       onClick={() => toggle(unit)}
                     >
-                      {unit.kind === "full-day" ? messages.fullDay : unit.name}
+                      <span className="booking-period-label">
+                        <span id={`${optionId}-name`}>
+                          {unit.kind === "full-day"
+                            ? messages.fullDay
+                            : unit.name}
+                        </span>
+                        <span
+                          className="booking-period-time"
+                          id={`${optionId}-time`}
+                        >
+                          <bdi dir="ltr">
+                            {unit.startTime}–{unit.endTime}
+                          </bdi>
+                          {(unit.endTime < unit.startTime ||
+                            (unit.kind === "full-day" &&
+                              unit.endTime === unit.startTime)) && (
+                            <> {messages.nextDay}</>
+                          )}
+                        </span>
+                      </span>
+                      <b id={`${optionId}-price`}>
+                        {unit.priceIqd === null
+                          ? messages.noPrice
+                          : formatIqd(unit.priceIqd, locale)}
+                      </b>
                     </ActionButton>
-                    <span>
-                      <bdi dir="ltr">
-                        {unit.startTime}–{unit.endTime}
-                      </bdi>
-                      {(unit.endTime < unit.startTime ||
-                        (unit.kind === "full-day" &&
-                          unit.endTime === unit.startTime)) && (
-                        <> {messages.nextDay}</>
-                      )}
-                    </span>
-                    <b>
-                      {unit.priceIqd === null
-                        ? messages.noPrice
-                        : formatIqd(unit.priceIqd, locale)}
-                    </b>
-                    {!unit.available && <span>{messages.unavailable}</span>}
+                    {!unit.available && (
+                      <span
+                        className="booking-period-unavailable"
+                        id={`${optionId}-unavailable`}
+                      >
+                        {messages.unavailable}
+                      </span>
+                    )}
                   </li>
                 );
               })}

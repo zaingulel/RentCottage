@@ -10,7 +10,7 @@ import { readApplicationStylesheet } from "./fixtures/application-stylesheet";
 declare global {
   interface Window {
     renderPublicCottageDisplay: (input: {
-      screen: "results";
+      screen: "results" | "profile";
       locale: "en" | "ar" | "ckb";
       photoCount: 0 | 1 | 4 | 6;
       longContent?: boolean;
@@ -72,7 +72,8 @@ async function mountBookingRequestDisplay(
           pluginBuild.onLoad(
             { filter: /.*/, namespace: "router-fixture" },
             () => ({
-              contents: "export const useRouter = () => ({ refresh() {} });",
+              contents:
+                "export const useRouter = () => ({ refresh() {}, replace() {} });",
               loader: "ts",
             }),
           );
@@ -1150,5 +1151,289 @@ test("lifted public results retain readable options and responsive hierarchy in 
         fontsLoaded: true,
         noOverflow: true,
       });
+  }
+});
+
+test("lifted public cottage keeps its hero separate and every booking option readable in every language", async ({
+  page,
+}, testInfo) => {
+  const projectPhone = testInfo.project.name === "mobile";
+  if (projectPhone) await page.setViewportSize({ width: 390, height: 844 });
+  await mountBookingRequestDisplay(page, testInfo);
+  const media = [
+    "/uploads/cottage-garden.png",
+    "/uploads/interior-living.png",
+    "/uploads/interior-bedroom.png",
+    "/uploads/detail-tea.png",
+    "/uploads/cottage-river.png",
+    "/uploads/cottage-hills.png",
+  ];
+  for (const input of [
+    {
+      locale: "en",
+      heading: "Choose your Booking Period",
+      photoCount: 4,
+      narrow: projectPhone,
+      longContent: false,
+    },
+    {
+      locale: "ar",
+      heading: "اختر فترة الحجز",
+      photoCount: 4,
+      narrow: projectPhone,
+      longContent: false,
+    },
+    {
+      locale: "ckb",
+      heading: "ماوەی حجزەکەت هەڵبژێرە",
+      photoCount: 4,
+      narrow: projectPhone,
+      longContent: false,
+    },
+    {
+      locale: "ckb",
+      heading: "ماوەی حجزەکەت هەڵبژێرە",
+      photoCount: 0,
+      narrow: true,
+      longContent: false,
+    },
+    {
+      locale: "ckb",
+      heading: "ماوەی حجزەکەت هەڵبژێرە",
+      photoCount: 1,
+      narrow: true,
+      longContent: false,
+    },
+    {
+      locale: "ckb",
+      heading: "ماوەی حجزەکەت هەڵبژێرە",
+      photoCount: 6,
+      narrow: true,
+      longContent: true,
+    },
+  ] as const) {
+    if (input.narrow) await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate((state) => window.renderPublicCottageDisplay(state), {
+      screen: "profile" as const,
+      locale: input.locale,
+      photoCount: input.photoCount,
+      longContent: input.longContent,
+    });
+    const name = input.longContent
+      ? "کۆتێجی باخچەی خەیاڵی بۆ کۆبوونەوەی خێزان لە ناوچەی شەقڵاوە لە نێوان دارەکان و چیاکان لەگەڵ شوێنی پشوودان و دانیشتنی دەرەوە"
+      : "Fictional Garden Cottage";
+    const title = page.getByRole("heading", { level: 1 });
+    await expect(title).toHaveText(name);
+    await expect(
+      page.getByRole("heading", { name: input.heading, exact: true }),
+    ).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("lang", input.locale);
+    await expect(page.locator("html")).toHaveAttribute(
+      "dir",
+      input.locale === "en" ? "ltr" : "rtl",
+    );
+    const images = page.getByRole("img");
+    await expect(images).toHaveCount(input.photoCount);
+    await page.evaluate(() => document.fonts.ready);
+    await expect
+      .poll(() =>
+        images.evaluateAll((nodes) =>
+          nodes.every(
+            (image) =>
+              image instanceof HTMLImageElement &&
+              image.complete &&
+              image.naturalWidth > 0,
+          ),
+        ),
+      )
+      .toBe(true);
+    expect(
+      await images.evaluateAll((nodes) =>
+        nodes.map(
+          (image) =>
+            new URL(image.getAttribute("src")!, location.href).pathname,
+        ),
+      ),
+    ).toEqual(media.slice(0, input.photoCount));
+    for (let index = 0; index < input.photoCount; index++)
+      await expect(images.nth(index)).toHaveAttribute(
+        "alt",
+        `${name} ${index + 1}`,
+      );
+    await expect(page.locator(".profile-gallery")).toHaveCount(
+      input.photoCount > 1 ? 1 : 0,
+    );
+    const booking = page.getByRole("complementary");
+    await expect(booking.getByRole("group")).toHaveCount(2);
+    await expect(booking.getByRole("button", { pressed: true })).toHaveCount(2);
+    await expect(booking.locator(".booking-period-list > li")).toHaveCount(7);
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (state) => {
+            const main = document.querySelector("main.profile-page");
+            const heading = main?.querySelector(".page-heading");
+            const layout = main?.querySelector(".profile-layout");
+            const hero = main?.querySelector(".profile-main-image");
+            const gallery = main?.querySelector(".profile-gallery");
+            const facts = main?.querySelector(".profile-facts");
+            const booking = main?.querySelector(".booking-summary");
+            const copy = main?.querySelector(".profile-copy");
+            if (!main || !heading || !layout || !facts || !booking || !copy)
+              throw new Error("Public cottage composition is missing");
+            const mainBox = main.getBoundingClientRect();
+            const layoutBox = layout.getBoundingClientRect();
+            const heroBox = hero?.getBoundingClientRect();
+            const galleryBox = gallery?.getBoundingClientRect();
+            const factsBox = facts.getBoundingClientRect();
+            const bookingBox = booking.getBoundingClientRect();
+            const copyBox = copy.getBoundingClientRect();
+            const thumbnails = [
+              ...(gallery?.querySelectorAll("img") ?? []),
+            ].map((node) => node.getBoundingClientRect());
+            const controls = [
+              ...booking.querySelectorAll(
+                ".booking-period-list .action-toggle",
+              ),
+            ];
+            return {
+              heroSize:
+                state.photos === 0
+                  ? !hero
+                  : !!heroBox &&
+                    Math.abs(heroBox.width - mainBox.width) < 1 &&
+                    (state.phone
+                      ? Math.abs(heroBox.width / heroBox.height - 1.6) < 0.01
+                      : Math.abs(heroBox.height - 464) < 1),
+              heroClearance:
+                !heroBox ||
+                (state.phone
+                  ? layoutBox.top >= heroBox.bottom + 23
+                  : Math.abs(bookingBox.top - heroBox.bottom - 24) < 1),
+              noReservedGallery:
+                state.photos > 1 ||
+                (!galleryBox &&
+                  Math.abs(factsBox.top - layoutBox.top) < 1 &&
+                  (heroBox
+                    ? Math.abs(layoutBox.top - heroBox.bottom - 24) < 1
+                    : Math.abs(
+                        layoutBox.top -
+                          heading.getBoundingClientRect().bottom -
+                          24,
+                      ) < 1)),
+              bookingAlignment: state.phone
+                ? (!galleryBox || galleryBox.bottom <= factsBox.top) &&
+                  factsBox.bottom <= bookingBox.top &&
+                  bookingBox.bottom <= copyBox.top
+                : Math.abs(bookingBox.top - (galleryBox ?? factsBox).top) < 1,
+              thumbnails:
+                thumbnails.every(
+                  (box) => Math.abs(box.width / box.height - 1.6) < 0.01,
+                ) &&
+                thumbnails
+                  .slice(0, 3)
+                  .every((box) => Math.abs(box.top - thumbnails[0].top) < 1) &&
+                (thumbnails.length <= 3 ||
+                  thumbnails[3].top >= thumbnails[0].bottom),
+              wholeRows: controls.every((control) => {
+                const row = control.closest("li")!;
+                const box = control.getBoundingClientRect();
+                return (
+                  Math.abs(box.width - row.getBoundingClientRect().width) < 1 &&
+                  [...control.querySelectorAll("span, b, bdi")].every(
+                    (node) => {
+                      const child = node.getBoundingClientRect();
+                      return (
+                        child.left >= box.left &&
+                        child.right <= box.right &&
+                        child.top >= box.top &&
+                        child.bottom <= box.bottom
+                      );
+                    },
+                  )
+                );
+              }),
+              staticBooking: getComputedStyle(booking).position === "static",
+              noOverflow:
+                document.documentElement.scrollWidth <=
+                  document.documentElement.clientWidth &&
+                [...main.querySelectorAll("p, h1, h2, li, dd, button")].every(
+                  (node) => node.scrollWidth <= node.clientWidth + 1,
+                ),
+            };
+          },
+          { phone: input.narrow, photos: input.photoCount },
+        ),
+      )
+      .toEqual({
+        heroSize: true,
+        heroClearance: true,
+        noReservedGallery: true,
+        bookingAlignment: true,
+        thumbnails: true,
+        wholeRows: true,
+        staticBooking: true,
+        noOverflow: true,
+      });
+
+    await title.focus();
+    await page.keyboard.press("Tab");
+    const selected = booking.getByRole("button", { pressed: true }).first();
+    await expect(selected).toBeFocused();
+    await expect
+      .poll(() =>
+        selected.evaluate((button) => {
+          const style = getComputedStyle(button);
+          const box = button.getBoundingClientRect();
+          const card = button.closest("aside")!.getBoundingClientRect();
+          const outer =
+            parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+          return (
+            button.matches(":focus-visible") &&
+            style.outlineStyle !== "none" &&
+            parseFloat(style.outlineWidth) >= 2 &&
+            (style.boxShadow.match(/rgba?\(/g)?.length ?? 0) >= 3 &&
+            style.boxShadow.includes("inset") &&
+            box.left - outer >= card.left &&
+            box.right + outer <= card.right
+          );
+        }),
+      )
+      .toBe(true);
+
+    const bookingTop = await booking.evaluate(
+      (node) => node.getBoundingClientRect().top + window.scrollY,
+    );
+    for (const fraction of [0, 0.5, 1]) {
+      await page.evaluate(
+        (part) =>
+          window.scrollTo(
+            0,
+            (document.documentElement.scrollHeight - innerHeight) * part,
+          ),
+        fraction,
+      );
+      await expect
+        .poll(() =>
+          booking.evaluate(
+            (node) => node.getBoundingClientRect().top + window.scrollY,
+          ),
+        )
+        .toBeCloseTo(bookingTop, 0);
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const hero = document
+              .querySelector(".profile-main-image")
+              ?.getBoundingClientRect();
+            const card = document
+              .querySelector(".booking-summary")!
+              .getBoundingClientRect();
+            return !hero || card.top >= hero.bottom + 23;
+          }),
+        )
+        .toBe(true);
+    }
   }
 });
