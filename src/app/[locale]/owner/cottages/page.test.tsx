@@ -45,7 +45,20 @@ vi.mock("@/components/cottage-profile-overview", () => ({
   CottageProfileOverview: () => <h1>Your cottages</h1>,
 }));
 
+import { ownerDisplayFixtures } from "../../../../../tests/fixtures/booking-request-display.fixtures";
 import OwnerCottagesPage from "./page";
+
+function notification(
+  suffix: string,
+  status: "pending" | "payment-required" = "pending",
+) {
+  return {
+    ...ownerDisplayFixtures["payment-required-open"],
+    id: `00000000-0000-4000-8000-00000000090${suffix}`,
+    bookingRequestReference: `RC-REQ-AAAAAAAAAAAAAAA${suffix}`,
+    status,
+  };
+}
 
 describe("owner Cottage Profiles page", () => {
   it("keeps profiles available but suppresses the alert query outside the isolated test runtime", async () => {
@@ -72,6 +85,41 @@ describe("owner Cottage Profiles page", () => {
     );
     expect(listOwner).toHaveBeenCalledOnce();
     expect(loadOwnerBookingRequestNotifications).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("link", { name: "Bookings for my cottages" }),
+    ).toBeVisible();
+  });
+
+  it("shows on the Bookings tab the number of pending Booking Requests the page lists", async () => {
+    listOwner.mockResolvedValue([]);
+    loadOwnerCottageAccess.mockImplementation(async (load) => ({
+      status: "ready",
+      value: await load({ listOwner }, "approved"),
+    }));
+    loadOwnerBookingRequestNotifications.mockResolvedValue([
+      notification("1"),
+      notification("2", "payment-required"),
+      notification("3"),
+    ]);
+    vi.stubEnv("APP_ENVIRONMENT", "test");
+    vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
+    vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
+
+    render(
+      await OwnerCottagesPage({
+        params: Promise.resolve({ locale: "en" }),
+      }),
+    );
+
+    const bookings = within(
+      screen.getByRole("navigation", { name: "Owner Backoffice" }),
+    ).getByRole("link", { name: /^Bookings for my cottages/ });
+    expect(bookings).toHaveAccessibleName(
+      "Bookings for my cottages Pending Booking Requests: 2",
+    );
+    expect(
+      screen.getAllByRole("button", { name: "Accept complete request" }),
+    ).toHaveLength(2);
   });
 
   it("shows the Owner Backoffice navigation on the cottages list with no brand link of its own", async () => {

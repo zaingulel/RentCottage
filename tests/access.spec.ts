@@ -2159,16 +2159,16 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
   await expect
     .poll(() =>
       administratorNavigation.evaluate((navigation) => {
-        const content = navigation.nextElementSibling?.getBoundingClientRect();
-        if (!content) return "no content after the navigation";
         const links = [...navigation.querySelectorAll("a")].map((link) =>
           link.getBoundingClientRect(),
         );
         return {
-          insideContent: links.every(
-            (link) =>
-              link.left >= content.left - 1 && link.right <= content.right + 1,
+          oneLine: links.every(
+            (link) => Math.round(link.top) === Math.round(links[0].top),
           ),
+          pageStaysPut:
+            document.documentElement.scrollWidth <=
+            document.documentElement.clientWidth,
           separate: links.every((first, index) =>
             links
               .slice(index + 1)
@@ -2183,7 +2183,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
         };
       }),
     )
-    .toEqual({ insideContent: true, separate: true });
+    .toEqual({ oneLine: true, pageStaysPut: true, separate: true });
   const abandonedProfile = page
     .getByRole("article")
     .filter({ hasText: "Abandoned" });

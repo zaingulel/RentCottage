@@ -1,16 +1,21 @@
-import { ActionLink } from "@/components/interaction-controls";
+import Link from "next/link";
+
 import { accessMessages } from "@/i18n/access-messages";
 import { administratorPaymentHistoryMessages } from "@/i18n/administrator-payment-history-messages";
 import { administratorQueuesMessages } from "@/i18n/administrator-queues-messages";
 import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
 import { administratorTotalsMessages } from "@/i18n/administrator-totals-messages";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
+import { ownerBookingRequestMessages } from "@/i18n/owner-booking-request-messages";
 import type { Locale } from "@/i18n/routing";
 
+import { BackofficeNavigationLinks } from "./backoffice-navigation-links";
+
 type BackofficeNavigationProps = { locale: Locale; nested?: boolean } & (
-  | { area: "owner"; current: "cottages" }
+  | { area: "owner"; current: "cottages"; waitingBookingRequests?: number }
   | {
       area: "administrator";
+      waitingBookingRequests?: never;
       current:
         | "owner-applications"
         | "cottages"
@@ -25,6 +30,7 @@ export function BackofficeNavigation({
   nested,
   area,
   current,
+  waitingBookingRequests,
 }: BackofficeNavigationProps) {
   const access = accessMessages[locale];
   const profile = cottageProfileMessages[locale];
@@ -81,17 +87,14 @@ export function BackofficeNavigation({
       className="backoffice-navigation"
       aria-labelledby="backoffice-navigation-area"
     >
-      <span
-        id="backoffice-navigation-area"
-        className="backoffice-navigation-area"
-      >
+      <span id="backoffice-navigation-area" className="visually-hidden">
         {label}
       </span>
-      <div className="backoffice-navigation-links">
+      <BackofficeNavigationLinks>
         {destinations.map((destination) => (
-          <ActionLink
+          <Link
             key={destination.key}
-            kind="secondary"
+            className="backoffice-navigation-tab"
             href={destination.href}
             aria-current={
               destination.key === current
@@ -102,9 +105,20 @@ export function BackofficeNavigation({
             }
           >
             {destination.label}
-          </ActionLink>
+            {destination.key === "bookings" && waitingBookingRequests ? (
+              <>
+                {" "}
+                <span className="backoffice-navigation-count">
+                  <span className="visually-hidden">
+                    {ownerBookingRequestMessages[locale].title}:
+                  </span>{" "}
+                  {new Intl.NumberFormat(locale).format(waitingBookingRequests)}
+                </span>
+              </>
+            ) : null}
+          </Link>
         ))}
-      </div>
+      </BackofficeNavigationLinks>
     </nav>
   );
 }

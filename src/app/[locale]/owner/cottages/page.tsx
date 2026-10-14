@@ -5,6 +5,7 @@ import { notFound, redirect, unstable_rethrow } from "next/navigation";
 
 import { loadOwnerCottageAccess } from "@/cottage-profile/request-owner-cottage-access";
 import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime";
+import { waitingBookingRequestCount } from "@/booking-request/booking-request-display";
 import { loadOwnerBookingRequestNotifications } from "@/booking-request/request-owner-booking-request-notifications";
 import { BackofficeNavigation } from "@/components/backoffice-navigation";
 import { CottageProfileOverview } from "@/components/cottage-profile-overview";
@@ -86,7 +87,16 @@ export default async function OwnerCottagesPage({
   }
   return (
     <main className="results-page page">
-      <BackofficeNavigation locale={locale} area="owner" current="cottages" />
+      <BackofficeNavigation
+        locale={locale}
+        area="owner"
+        current="cottages"
+        waitingBookingRequests={
+          page.value.notifications
+            ? waitingBookingRequestCount(page.value.notifications)
+            : undefined
+        }
+      />
       <CottageProfileOverview
         locale={locale}
         actor="owner"
