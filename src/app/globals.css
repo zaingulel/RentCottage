@@ -1137,16 +1137,16 @@ html[lang="ckb"] .page-title {
   display: grid;
   grid-template-columns: 18rem minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--card);
 }
 
 .result-image {
   position: relative;
-  align-self: start;
-  aspect-ratio: 4 / 3;
+  align-self: stretch;
   background: var(--surface-placeholder);
+}
+
+.result-content:only-child {
+  grid-column: 1 / -1;
 }
 
 .result-image img {
@@ -1155,12 +1155,48 @@ html[lang="ckb"] .page-title {
 
 .result-content {
   display: grid;
-  gap: var(--space-3);
-  padding: var(--space-4);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 18rem);
+  grid-template-areas: "overview price" "days days" "footer footer";
+  gap: var(--space-5) var(--space-6);
+  min-inline-size: 0;
+  padding: var(--space-5);
 }
 
-.result-content > .action-primary {
-  justify-self: start;
+.result-content > * {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.result-overview {
+  grid-area: overview;
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+}
+
+.result-days {
+  grid-area: days;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.result-service-day h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-2);
+}
+
+.result-footer {
+  grid-area: footer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-block-start: var(--space-4);
+  border-block-start: 1px solid var(--line);
+}
+
+.result-footer > .action-primary {
+  flex-shrink: 0;
 }
 
 .result-content .fact-list {
@@ -1169,12 +1205,30 @@ html[lang="ckb"] .page-title {
 }
 
 .search-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3) var(--space-5);
   margin-block-end: var(--space-5);
+  padding-block: var(--space-4);
+  border-block: 1px solid var(--line);
+}
+
+.search-summary .section-title {
+  margin: 0;
 }
 
 .search-summary .fact-list {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-3) var(--space-5);
+  min-inline-size: 0;
+}
+
+.search-summary .fact-list > div {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
 }
 
 .access-panel {
@@ -1212,14 +1266,6 @@ html[lang="ckb"] .page-title {
   font-weight: 700;
 }
 
-.result-content h2 {
-  margin: 0;
-  color: var(--green);
-  font-family: var(--display);
-  font-size: var(--font-size-4);
-  line-height: 1.25;
-}
-
 .result-content p {
   margin: 0;
   color: var(--muted);
@@ -1227,17 +1273,19 @@ html[lang="ckb"] .page-title {
 }
 
 .result-price {
+  grid-area: price;
   display: grid;
+  align-content: start;
+  justify-items: end;
   gap: var(--space-1);
-}
-
-.result-content .result-from-price {
-  color: var(--ink);
-  font-size: var(--font-size-3);
+  text-align: end;
 }
 
 .result-content .result-from-price b {
-  font-size: var(--font-size-4);
+  display: block;
+  color: var(--green);
+  font-family: var(--display);
+  font-size: var(--font-size-5);
 }
 
 .result-shifts {
@@ -1280,17 +1328,68 @@ html[lang="ckb"] .page-title {
   margin-block-start: var(--space-1);
 }
 
-@media (max-width: 40rem) {
+.results-list .result-shifts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.results-list .result-shifts > li {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  align-content: start;
+}
+
+.result-availability {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+}
+
+.result-availability::before {
+  content: "";
+  flex: 0 0 0.5rem;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.result-availability-available::before {
+  background: var(--success-text);
+}
+
+@media (max-width: 47.5rem) {
   .results-list article {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .result-image:empty {
-    display: none;
+  .result-image {
+    aspect-ratio: 16 / 10;
   }
 
-  .result-content > .action-primary {
-    justify-self: stretch;
+  .results-list .result-shifts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 40rem) {
+  .result-content {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "overview" "price" "days" "footer";
+  }
+
+  .result-price {
+    justify-items: start;
+    text-align: start;
+  }
+
+  .result-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .result-footer > .action-primary {
     inline-size: auto;
   }
 }
@@ -1373,8 +1472,7 @@ html[lang="ckb"] .profile-page {
 
 html[lang="ckb"] .profile-heading h1,
 html[lang="ckb"] .profile-section h2,
-html[lang="ckb"] .booking-summary h2,
-html[lang="ckb"] .result-content h2 {
+html[lang="ckb"] .booking-summary h2 {
   line-height: 1.4;
 }
 

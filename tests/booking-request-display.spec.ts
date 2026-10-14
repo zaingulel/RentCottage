@@ -2,11 +2,19 @@ import { bookingRequestPaymentRecoveryMessages } from "../src/i18n/booking-reque
 import { ownerBookingRequestMessages } from "../src/i18n/owner-booking-request-messages";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { build } from "esbuild";
+import { imageConfigDefault } from "next/dist/shared/lib/image-config.js";
+import nextConfig from "../next.config";
 
 import { readApplicationStylesheet } from "./fixtures/application-stylesheet";
 
 declare global {
   interface Window {
+    renderPublicCottageDisplay: (input: {
+      screen: "results";
+      locale: "en" | "ar" | "ckb";
+      photoCount: 0 | 1 | 4 | 6;
+      longContent?: boolean;
+    }) => void;
     renderBookingRequestDisplay: (input: {
       locale: "en" | "ar" | "ckb";
       role: "customer" | "owner";
@@ -44,7 +52,15 @@ async function mountBookingRequestDisplay(
     platform: "browser",
     target: "es2022",
     jsx: "automatic",
-    define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
+    alias: { "next/image": "next/dist/esm/shared/lib/image-external.js" },
+    define: {
+      "process.env.NODE_ENV": '"production"',
+      "process.env": "{}",
+      "process.env.__NEXT_IMAGE_OPTS": JSON.stringify({
+        ...imageConfigDefault,
+        ...nextConfig.images,
+      }),
+    },
     plugins: [
       {
         name: "replace-booking-request-server-action",
@@ -81,7 +97,7 @@ async function mountBookingRequestDisplay(
   });
   await page.goto("/api/health");
   await page.setContent(
-    '<meta name="viewport" content="width=device-width, initial-scale=1"><main id="fixture-root"></main>',
+    '<meta name="viewport" content="width=device-width, initial-scale=1"><div id="fixture-root"></div>',
   );
   await page.addStyleTag({ content: await readApplicationStylesheet() });
   await page.addScriptTag({ path: bundlePath });
@@ -887,5 +903,252 @@ test("a waiting request row sits on one line on desktop and stacks with its two 
         expect(actionsMiddle).toBeLessThan(measured.facts.bottom);
       }
     }).toPass();
+  }
+});
+
+test("lifted public results retain readable options and responsive hierarchy in every language", async ({
+  page,
+}, testInfo) => {
+  const phone = testInfo.project.name === "mobile";
+  if (phone) await page.setViewportSize({ width: 390, height: 844 });
+  await mountBookingRequestDisplay(page, testInfo);
+
+  for (const input of [
+    {
+      locale: "en",
+      title: "Available cottages",
+      noPrice: "Price unavailable",
+      unavailable: "Unavailable",
+      selected: "Selected filter",
+      view: "View cottage",
+      photoCount: 1,
+      longContent: false,
+    },
+    {
+      locale: "ar",
+      title: "البيوت المتاحة",
+      noPrice: "السعر غير متاح",
+      unavailable: "غير متاح",
+      selected: "مرشح محدد",
+      view: "اعرض البيت",
+      photoCount: 1,
+      longContent: false,
+    },
+    {
+      locale: "ckb",
+      title: "کۆتێجە بەردەستەکان",
+      noPrice: "نرخ بەردەست نییە",
+      unavailable: "بەردەست نییە",
+      selected: "پاڵاوتەی دیاریکراو",
+      view: "کۆتێجەکە ببینە",
+      photoCount: 1,
+      longContent: false,
+    },
+    {
+      locale: "ckb",
+      title: "کۆتێجە بەردەستەکان",
+      noPrice: "نرخ بەردەست نییە",
+      unavailable: "بەردەست نییە",
+      selected: "پاڵاوتەی دیاریکراو",
+      view: "کۆتێجەکە ببینە",
+      photoCount: 0,
+      longContent: true,
+    },
+  ] as const) {
+    await page.evaluate((state) => window.renderPublicCottageDisplay(state), {
+      screen: "results" as const,
+      locale: input.locale,
+      photoCount: input.photoCount,
+      longContent: input.longContent,
+    });
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      input.title,
+    );
+    await expect(page.locator("html")).toHaveAttribute(
+      "dir",
+      input.locale === "en" ? "ltr" : "rtl",
+    );
+    const card = page.getByRole("article");
+    await expect(card.getByRole("heading", { level: 2 })).toHaveText(
+      input.longContent
+        ? "کۆتێجی باخچەی خەیاڵی بۆ کۆبوونەوەی خێزان لە ناوچەی شەقڵاوە لە نێوان دارەکان و چیاکان لەگەڵ شوێنی پشوودان و دانیشتنی دەرەوە"
+        : "Fictional Garden Cottage",
+    );
+    await expect(card.getByRole("img")).toHaveCount(input.photoCount);
+    await page.evaluate(() => document.fonts.ready);
+    await expect
+      .poll(() =>
+        card
+          .getByRole("img")
+          .evaluateAll((images) =>
+            images.every(
+              (image) =>
+                image instanceof HTMLImageElement &&
+                image.complete &&
+                image.naturalWidth > 0,
+            ),
+          ),
+      )
+      .toBe(true);
+    await expect(card.getByText(input.noPrice, { exact: true })).toBeVisible();
+    for (const unavailable of await card
+      .getByText(input.unavailable, { exact: true })
+      .all())
+      await expect(unavailable).toBeVisible();
+    await expect(card.getByText(input.selected, { exact: true })).toHaveCount(
+      2,
+    );
+    for (const selected of await card
+      .getByText(input.selected, { exact: true })
+      .all())
+      await expect(selected).toBeVisible();
+    await expect(
+      card.getByRole("link", { name: input.view, exact: true }),
+    ).toBeVisible();
+    await expect(card.locator(".result-service-day")).toHaveCount(2);
+    await expect(
+      card.locator(".result-service-day").first().getByRole("listitem"),
+    ).toHaveCount(3);
+    await expect(
+      card.locator(".result-service-day").last().getByRole("listitem"),
+    ).toHaveCount(4);
+
+    await expect
+      .poll(() =>
+        card.evaluate(
+          (article, state) => {
+            const content = article.querySelector(".result-content");
+            const overview = article.querySelector(".result-overview");
+            const price = article.querySelector(".result-price");
+            const days = article.querySelector(".result-days");
+            const footer = article.querySelector(".result-footer");
+            const title = article.querySelector("h2");
+            const image = article.querySelector(".result-image");
+            const action = footer?.querySelector("a");
+            if (
+              !content ||
+              !overview ||
+              !price ||
+              !days ||
+              !footer ||
+              !title ||
+              !action
+            )
+              throw new Error("Public Search composition is missing");
+            const [
+              contentBox,
+              overviewBox,
+              priceBox,
+              daysBox,
+              footerBox,
+              titleBox,
+              actionBox,
+            ] = [content, overview, price, days, footer, title, action].map(
+              (node) => node.getBoundingClientRect(),
+            );
+            const imageBox = image?.getBoundingClientRect();
+            const dayBoxes = [
+              ...days.querySelectorAll(".result-service-day"),
+            ].map((node) => node.getBoundingClientRect());
+            const optionBoxes = [
+              ...days.querySelectorAll(".result-service-day:first-child li"),
+            ].map((node) => node.getBoundingClientRect());
+            const historicalBoxes = [
+              ...days.querySelectorAll(".result-service-day:last-child li"),
+            ].map((node) => node.getBoundingClientRect());
+            const atStart = (box: DOMRect, parent: DOMRect) =>
+              Math.abs(
+                state.rtl ? box.right - parent.right : box.left - parent.left,
+              ) < 1;
+            return {
+              photoPlacement: state.hasPhoto
+                ? !!imageBox &&
+                  (state.phone
+                    ? imageBox.bottom <= contentBox.top &&
+                      Math.abs(imageBox.width / imageBox.height - 1.6) < 0.01
+                    : Math.abs(imageBox.height - contentBox.height) < 1 &&
+                      Math.abs(imageBox.top - contentBox.top) < 1 &&
+                      (state.rtl
+                        ? imageBox.left >= contentBox.right
+                        : imageBox.right <= contentBox.left))
+                : !imageBox &&
+                  Math.abs(contentBox.width - article.clientWidth) < 1,
+              priceHierarchy: state.phone
+                ? priceBox.top >= overviewBox.bottom &&
+                  daysBox.top >= priceBox.bottom &&
+                  atStart(priceBox, overviewBox) &&
+                  atStart(
+                    price.querySelector("p")!.getBoundingClientRect(),
+                    overviewBox,
+                  )
+                : Math.abs(priceBox.top - titleBox.top) < 1 &&
+                  (state.rtl
+                    ? priceBox.right <= overviewBox.left
+                    : priceBox.left >= overviewBox.right),
+              dayColumns: state.phone
+                ? optionBoxes.every(
+                    (box, index) =>
+                      index === 0 || box.top >= optionBoxes[index - 1].bottom,
+                  )
+                : optionBoxes.every(
+                    (box) => Math.abs(box.top - optionBoxes[0].top) < 1,
+                  ) &&
+                  optionBoxes.every(
+                    (box, index) =>
+                      index === 0 ||
+                      (state.rtl
+                        ? box.right <= optionBoxes[index - 1].left
+                        : box.left >= optionBoxes[index - 1].right),
+                  ),
+              historicalRow: state.phone
+                ? historicalBoxes.every(
+                    (box, index) =>
+                      index === 0 ||
+                      box.top >= historicalBoxes[index - 1].bottom,
+                  )
+                : historicalBoxes[3].top >=
+                  Math.max(
+                    ...historicalBoxes.slice(0, 3).map((box) => box.bottom),
+                  ),
+              footerAfterDays: dayBoxes.every(
+                (box) => footerBox.top >= box.bottom,
+              ),
+              phoneAction:
+                !state.phone || Math.abs(actionBox.width - footerBox.width) < 1,
+              lifted: getComputedStyle(article).boxShadow !== "none",
+              inkTitle:
+                getComputedStyle(title).color ===
+                getComputedStyle(document.body).color,
+              fontsLoaded: document.fonts.check(
+                "700 20px Changa",
+                title.textContent ?? "",
+              ),
+              noOverflow:
+                document.documentElement.scrollWidth <=
+                  document.documentElement.clientWidth &&
+                article.scrollWidth <= article.clientWidth &&
+                [
+                  ...article.querySelectorAll("p, h2, li, dd"),
+                  ...document.querySelectorAll(
+                    ".search-summary dt, .search-summary dd",
+                  ),
+                ].every((node) => node.scrollWidth <= node.clientWidth + 1),
+            };
+          },
+          { phone, rtl: input.locale !== "en", hasPhoto: input.photoCount > 0 },
+        ),
+      )
+      .toEqual({
+        photoPlacement: true,
+        priceHierarchy: true,
+        dayColumns: true,
+        historicalRow: true,
+        footerAfterDays: true,
+        phoneAction: true,
+        lifted: true,
+        inkTitle: true,
+        fontsLoaded: true,
+        noOverflow: true,
+      });
   }
 });
