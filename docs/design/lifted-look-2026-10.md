@@ -173,6 +173,23 @@ approved "23 أكتوبر".
   shows if the cottage later changes or is unpublished is unsettled. Fallback if not adopted: the header row keeps the
   reference alone and "Cottage" returns to the fact list as its first fact, as today.
 
+## Accessibility
+
+The ten captured views were measured in Chromium against the Web Content Accessibility Guidelines 2.2, level AA: text
+and non-text contrast, pointer target size, accessible names and roles, heading order, focus order and reflow. Three
+colours changed as a result, and the owner accepted them on issue
+[#743](https://github.com/zaingulel/RentCottage/issues/743): the digit on the count badge is ink on gold, the line
+under the current tab is the accent colour, and the darker stripe of the "No photos yet" panel is one shade lighter.
+The captures show the accepted colours.
+
+- Not measured: a screen reader's announcement, browsers other than Chromium, text resizing and text spacing, forced
+  colours, and everything listed under Not shown.
+- On the Platform Administrator cottage list at 390 pixels wide in Arabic, a tab cut by the edge of the bar shows its
+  focus ring on three sides until the bar is scrolled; the first and third tabs open that way.
+  [#745](https://github.com/zaingulel/RentCottage/issues/745) inherits this with the bar's opening position.
+- These measure below 3 to 1 and pass only because text beside them carries the same information: the outlined
+  button's edge, the status dots and the progress tracks. A card that makes one of them the only cue must darken it.
+
 ## Sample content
 
 All names, places, prices, addresses and directions are invented for the mock-ups, and the Arabic sample content has
@@ -191,5 +208,3 @@ already in the repository.
 - The first mock-up keeps its approved wording: "Answer within 5 hours" although the Response Deadline is four hours
   ([#748](https://github.com/zaingulel/RentCottage/issues/748) owns the wording), and the Arabic money format noted
   above.
-- Accessibility was not measured on the mock-ups: no contrast ratio, target size, focus order or accessible name was
-  checked, because they do not ship. Each card that builds a page measures it on the running page.
