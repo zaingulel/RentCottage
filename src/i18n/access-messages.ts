@@ -48,6 +48,14 @@ export const accessMessages: Record<
     reviewApplications: string;
     manageCottageProfiles: string;
     invalidSignIn: string;
+    personalInformation: string;
+    accountNameIntro: string;
+    firstName: string;
+    save: string;
+    accountNameSaved: string;
+    invalidFirstName: string;
+    accountNameUnavailable: string;
+    home: string;
   }
 > = {
   ar: {
@@ -100,6 +108,16 @@ export const accessMessages: Record<
     reviewApplications: "راجع طلبات المالك المرسلة",
     manageCottageProfiles: "إدارة ملفات الأكواخ",
     invalidSignIn: "بيانات الدخول غير صحيحة أو الحساب ليس لمسؤول.",
+    personalInformation: "المعلومات الشخصية",
+    accountNameIntro:
+      "لا يرى اسمك الأول أحد غيرك. يظهر أول حرف منه على زر حسابك.",
+    firstName: "الاسم الأول",
+    save: "احفظ",
+    accountNameSaved: "تم حفظ اسمك الأول.",
+    invalidFirstName:
+      "أدخل اسمًا أول من 1 إلى 50 حرفًا يتضمن حرفًا واحدًا على الأقل، من دون رقم هاتف أو بريد إلكتروني أو رابط.",
+    accountNameUnavailable: "تعذّر حفظ اسمك الأول. حاول مرة أخرى.",
+    home: "الصفحة الرئيسية لـ RentCottage",
   },
   ckb: {
     account: "هەژمار",
@@ -155,6 +173,17 @@ export const accessMessages: Record<
     manageCottageProfiles: "پرۆفایلەکانی کۆتێج بەڕێوەببە",
     invalidSignIn:
       "زانیاری چوونەژوورەوە نادروستە یان هەژمارەکە بەڕێوەبەر نییە.",
+    personalInformation: "زانیاریی کەسی",
+    accountNameIntro:
+      "تەنها خۆت ناوی یەکەمت دەبینیت. یەکەم پیتی لەسەر دوگمەی هەژمارەکەت دەردەکەوێت.",
+    firstName: "ناوی یەکەم",
+    save: "پاشەکەوت بکە",
+    accountNameSaved: "ناوی یەکەمت پاشەکەوت کرا.",
+    invalidFirstName:
+      "ناوێکی یەکەم بنووسە لە ١ تا ٥٠ پیت کە لانیکەم یەک پیتی تێدابێت، بەبێ ژمارەی تەلەفۆن، ئیمەیڵ یان بەستەر.",
+    accountNameUnavailable:
+      "نەتوانرا ناوی یەکەمت پاشەکەوت بکرێت. دووبارە هەوڵ بدەرەوە.",
+    home: "پەڕەی سەرەکیی RentCottage",
   },
   en: {
     account: "Account",
@@ -209,5 +238,15 @@ export const accessMessages: Record<
     manageCottageProfiles: "Manage Cottage Profiles",
     invalidSignIn:
       "The sign-in is invalid or this is not an administrator account.",
+    personalInformation: "Personal information",
+    accountNameIntro:
+      "Only you can see your first name. Its first letter shows on your account button.",
+    firstName: "First name",
+    save: "Save",
+    accountNameSaved: "Your first name is saved.",
+    invalidFirstName:
+      "Enter a first name of 1 to 50 characters that includes a letter and no phone number, email address or link.",
+    accountNameUnavailable: "Your first name could not be saved. Try again.",
+    home: "RentCottage home",
   },
 };

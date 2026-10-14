@@ -7,6 +7,7 @@ const {
   refresh,
   replace,
   requestPhone,
+  saveName,
   signInAdministrator,
   verifyAdministrator,
   verifyPhone,
@@ -15,6 +16,7 @@ const {
   refresh: vi.fn(),
   replace: vi.fn(),
   requestPhone: vi.fn(),
+  saveName: vi.fn(),
   signInAdministrator: vi.fn(),
   verifyAdministrator: vi.fn(),
   verifyPhone: vi.fn(),
@@ -28,11 +30,13 @@ vi.mock("next/navigation", async (importOriginal) => ({
 vi.mock("@/access/actions", () => ({
   completePhoneAccess: completePhone,
   requestPhoneAccess: requestPhone,
+  saveAccountName: saveName,
   signInPlatformAdministrator: signInAdministrator,
   verifyPhoneAccess: verifyPhone,
   verifyPlatformAdministratorMfa: verifyAdministrator,
 }));
 
+import { AccountNameForm } from "./account-name-form";
 import { ActionFocusTarget } from "./interaction-controls";
 import { AdministratorAccessForm } from "./administrator-access-form";
 import { PhoneAccessForm } from "./phone-access-form";
@@ -846,5 +850,62 @@ describe("access forms", () => {
     } finally {
       window.history.replaceState(null, "", origin);
     }
+  });
+
+  it("shows why a first name was refused", async () => {
+    saveName.mockResolvedValue({ status: "invalid" });
+    const user = userEvent.setup();
+    render(<AccountNameForm locale="en" mode="details" />);
+
+    const input = screen.getByLabelText("First name");
+    expect(input).not.toHaveAttribute("aria-invalid");
+    await user.type(input, "12345");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(saveName).toHaveBeenCalledExactlyOnceWith({ firstName: "12345" });
+    const reason = screen.getByText(
+      "Enter a first name of 1 to 50 characters that includes a letter and no phone number, email address or link.",
+    );
+    expect(reason).toHaveClass("field-error");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAttribute("aria-describedby", reason.id);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("confirms a saved first name and reports a failed save", async () => {
+    saveName.mockResolvedValue({ status: "unavailable" });
+    const user = userEvent.setup();
+    render(<AccountNameForm locale="en" mode="details" firstName="Zana" />);
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Your first name could not be saved. Try again.",
+    );
+
+    saveName.mockResolvedValue({ status: "saved" });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Your first name is saved.",
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("renders a stored name as text", () => {
+    const hostile = "<img src=x onerror=alert(1)>";
+    const { container } = render(
+      <AccountNameForm locale="en" mode="details" firstName={hostile} />,
+    );
+
+    expect(screen.getByLabelText("First name")).toHaveValue(hostile);
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("never puts the first name in a native form submission", async () => {
+    const user = userEvent.setup();
+    render(<AccountNameForm locale="en" mode="details" />);
+
+    await user.type(screen.getByLabelText("First name"), "Zana");
+    const form = screen.getByRole("button", { name: "Save" }).closest("form")!;
+    expect([...new FormData(form).entries()]).toEqual([]);
   });
 });

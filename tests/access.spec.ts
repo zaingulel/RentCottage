@@ -3796,6 +3796,46 @@ registerOwnedJourney("shared-account", async ({ page, browser }, testInfo) => {
     role: "customer",
     owner_approval_state: null,
   });
+  const avatarLetter = page.locator(
+    "#site-header-account-button .account-avatar",
+  );
+  await expect(avatarLetter).toHaveText("");
+  await expect(avatarLetter.locator("svg")).toHaveCount(1);
+  await page.evaluate(() => Reflect.set(window, "personalInformation", "kept"));
+  await openHeaderPanel(page, "menu");
+  await page
+    .getByRole("banner")
+    .getByRole("menuitem", { name: "Personal information" })
+    .click();
+  await expect(page).toHaveURL(/\/en\/account$/);
+  await expect(
+    page.getByRole("heading", { name: "Personal information", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("First name").fill("Rebin");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Your first name is saved." }),
+  ).toBeVisible();
+  await expect(avatarLetter).toHaveText("R");
+  expect(
+    await page.evaluate(() => Reflect.get(window, "personalInformation")),
+  ).toBe("kept");
+  const ownDetails = await page.request.get("/en/account");
+  expect(ownDetails.headers()["cache-control"]).toContain("no-store");
+  expect(await ownDetails.text()).toContain("Rebin");
+  const signedOut = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+  });
+  try {
+    const refused = await signedOut.request.get("/en/account");
+    expect(new URL(refused.url()).pathname).toBe("/en/access");
+    expect(new URL(refused.url()).searchParams.get("returnTo")).toBe(
+      "/en/account",
+    );
+    expect(await refused.text()).not.toContain("Rebin");
+  } finally {
+    await signedOut.close();
+  }
   await openHeaderPanel(page, "menu");
   await page
     .getByRole("banner")

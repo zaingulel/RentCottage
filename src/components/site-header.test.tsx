@@ -557,6 +557,25 @@ describe("shared site header", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" }));
     expect(account).toHaveAttribute("aria-expanded", "false");
   });
+  it.each([
+    ["customer", { role: "customer" }],
+    ["cottage owner", { role: "cottage_owner", approvalState: "approved" }],
+    ["platform administrator", { role: "platform_administrator" }],
+  ] as const)(
+    "puts Personal information first in the account menu of a %s",
+    (_kind, context) => {
+      render(
+        <SiteHeader
+          locale="en"
+          account={{ status: "authenticated", context }}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Account" }));
+      const first = screen.getAllByRole("menuitem")[0]!;
+      expect(first).toHaveTextContent("Personal information");
+      expect(first).toHaveAttribute("href", "/en/account");
+    },
+  );
   it("keeps administrator access separate", () => {
     render(
       <SiteHeader

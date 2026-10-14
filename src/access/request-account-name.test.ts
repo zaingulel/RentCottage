@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { assurance, createClient, eq, from, maybeSingle, select } = vi.hoisted(
-  () => {
+const { assurance, createClient, eq, from, maybeSingle, rpc, select } =
+  vi.hoisted(() => {
     const maybeSingle = vi.fn();
     const eq = vi.fn(() => ({ maybeSingle }));
     const select = vi.fn(() => ({ eq }));
@@ -11,15 +11,18 @@ const { assurance, createClient, eq, from, maybeSingle, select } = vi.hoisted(
       eq,
       from: vi.fn(() => ({ select })),
       maybeSingle,
+      rpc: vi.fn(),
       select,
     };
-  },
-);
+  });
 vi.mock("server-only", () => ({}));
 vi.mock("./supabase-server", () => ({
   createRequestSupabaseClient: createClient,
 }));
-import { resolveRequestAccountName } from "./request-account-name";
+import {
+  resolveRequestAccountName,
+  saveRequestAccountName,
+} from "./request-account-name";
 
 const customer = { userId: "user-1", role: "customer" } as const;
 const administrator = {
@@ -33,6 +36,7 @@ describe("current request account first name", () => {
     createClient.mockResolvedValue({
       auth: { mfa: { getAuthenticatorAssuranceLevel: assurance } },
       from,
+      rpc,
     });
     assurance.mockResolvedValue({
       data: { currentLevel: "aal2" },
@@ -42,6 +46,7 @@ describe("current request account first name", () => {
       data: { first_name: " Zana " },
       error: null,
     });
+    rpc.mockResolvedValue({ error: null });
   });
 
   it("reads only the signed-in account's own first name", async () => {
@@ -119,5 +124,25 @@ describe("current request account first name", () => {
     await expect(resolveRequestAccountName({ ...customer })).rejects.toBe(
       signal,
     );
+  });
+
+  it("saves through the person's own session", async () => {
+    await expect(saveRequestAccountName("Zana")).resolves.toBe("saved");
+    expect(createClient).toHaveBeenCalledOnce();
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("save_account_name", {
+      account_first_name: "Zana",
+    });
+
+    rpc.mockResolvedValueOnce({ error: { message: "permission denied" } });
+    await expect(saveRequestAccountName("Zana")).resolves.toBe("unavailable");
+
+    rpc.mockRejectedValueOnce(new Error("Network unavailable"));
+    await expect(saveRequestAccountName("Zana")).resolves.toBe("unavailable");
+
+    const signal = Object.assign(new Error("Request-time cookies"), {
+      digest: "DYNAMIC_SERVER_USAGE",
+    });
+    createClient.mockRejectedValueOnce(signal);
+    await expect(saveRequestAccountName("Zana")).rejects.toBe(signal);
   });
 });

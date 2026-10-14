@@ -35,3 +35,18 @@ export const resolveRequestAccountName = cache(
     }
   },
 );
+
+export async function saveRequestAccountName(
+  firstName: string,
+): Promise<"saved" | "unavailable"> {
+  try {
+    const client = await createRequestSupabaseClient();
+    const { error } = await client.rpc("save_account_name", {
+      account_first_name: firstName,
+    });
+    return error ? "unavailable" : "saved";
+  } catch (error) {
+    unstable_rethrow(error);
+    return "unavailable";
+  }
+}

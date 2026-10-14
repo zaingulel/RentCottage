@@ -316,6 +316,9 @@ export function SiteHeader({
                   onKeyDown={navigateMenu}
                 >
                   <div role="group" aria-label={copy.account}>
+                    <Link {...menuItem} href={`/${locale}/account`}>
+                      {copy.personalInformation}
+                    </Link>
                     {account.context?.role === "platform_administrator" ? (
                       <>
                         <Link

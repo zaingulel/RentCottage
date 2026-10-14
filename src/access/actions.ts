@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { isLocale } from "@/i18n/routing";
+import { parseAccountName } from "./account-name";
 import {
   accountAccessHref,
   isOwnerEnrollmentDestination,
@@ -266,6 +267,16 @@ export async function completePhoneAccess(
   revalidatePath("/", "layout");
   if (inlineCompletion) return { status: "completed" as const };
   redirect(accountAccessHref(locale, returnTo));
+}
+
+export async function saveAccountName(value: unknown) {
+  const name = parseAccountName(recordInput(value)?.firstName);
+  if (!name) return { status: "invalid" as const };
+  const { saveRequestAccountName } = await import("./request-account-name");
+  if ((await saveRequestAccountName(name.firstName)) !== "saved")
+    return { status: "unavailable" as const };
+  revalidatePath("/", "layout");
+  return { status: "saved" as const };
 }
 
 export async function signOutAccount(locale: unknown) {
