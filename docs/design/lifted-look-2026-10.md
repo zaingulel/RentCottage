@@ -191,3 +191,5 @@ already in the repository.
 - The first mock-up keeps its approved wording: "Answer within 5 hours" although the Response Deadline is four hours
   ([#748](https://github.com/zaingulel/RentCottage/issues/748) owns the wording), and the Arabic money format noted
   above.
+- Accessibility was not measured on the mock-ups: no contrast ratio, target size, focus order or accessible name was
+  checked, because they do not ship. Each card that builds a page measures it on the running page.

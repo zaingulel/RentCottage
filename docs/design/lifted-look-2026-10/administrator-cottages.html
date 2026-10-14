@@ -24,12 +24,13 @@ unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3
 @font-face{font-family:"Almarai";font-style:normal;font-weight:700;font-display:swap;src:url("../../../public/fonts/almarai-700-latin.woff2") format("woff2");
 unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 :root{--bg:#f4eee2;--card:#fffcf5;--ink:#26241f;--muted:rgb(38 36 31/66%);--green:#22402f;--gold:#c68a45;--accent:#865b29;--line:rgb(34 64 47/12%);
---lift:0 1px 2px rgb(38 36 31/6%),0 8px 24px -12px rgb(38 36 31/18%);--lift-hover:0 2px 4px rgb(38 36 31/8%),0 18px 36px -16px rgb(38 36 31/28%);}
+--lift:0 1px 2px rgb(38 36 31/6%),0 8px 24px -12px rgb(38 36 31/18%);}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Karla,Almarai,sans-serif;font-size:16px;line-height:1.5}
 a{color:inherit;text-decoration:none}
 .top{background:var(--card);border-bottom:1px solid var(--line)}
 .top-in,.wrap{width:min(1120px,calc(100% - 2rem));margin-inline:auto}
+.sr{position:absolute;inline-size:1px;block-size:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .top-in{display:flex;align-items:center;justify-content:space-between;padding:.85rem 0}
 .brand{font-family:Changa,sans-serif;font-weight:800;font-size:1.35rem;color:var(--green);line-height:1}
 .brand small{display:block;font-family:Karla,Almarai,sans-serif;font-size:.62rem;letter-spacing:.14em;color:var(--accent);font-weight:700;margin-top:.25rem}
@@ -81,7 +82,7 @@ footer{height:4rem}
   <div class="brand"><span data-t="brand">RentCottage</span><small data-t="tag">COUNTRYSIDE HOMES OF IRAQ</small></div>
   <div class="who"><span data-t="name">Layla Karim</span><div class="avatar" data-t="ini">L</div></div>
 </div></div>
-<div class="tabs"><div class="wrap"><nav aria-label="Platform administration">
+<div class="tabs"><div class="wrap"><span class="sr" id="nlabel" data-t="nl">Platform administration</span><nav aria-labelledby="nlabel">
   <a href="#" data-t="t1">Review submitted Owner Applications</a>
   <a href="#" aria-current="page" data-t="t2">Manage Cottage Profiles</a>
   <a href="#" data-t="t3">Payment support history</a>
@@ -129,7 +130,7 @@ footer{height:4rem}
 </main>
 <footer></footer>
 <script>
-const ar={brand:"ريف كوتج",tag:"بيوت الريف العراقي",name:"ليلى كريم",ini:"ل",t1:"راجع طلبات المالك المرسلة",t2:"إدارة ملفات الأكواخ",t3:"سجل دعم الدفع",t4:"طوابير الحجوزات",t5:"إجماليات الحجوزات",t6:"السجلات",h1:"ملفات الأكواخ الخاصة",sub:"راجع نسخ العمل غير المنشورة من دون تغيير مصدر المالك المرسل.",submitted:"مُرسل للموافقة على المحتوى",draft:"مسودة خاصة",app:"بدأ في طلب المالك",photos:"صور الكوخ الخاصة",open:"فتح ملف الكوخ",next:"ملفات الأكواخ التالية",nophoto:"لا توجد صور بعد",c1:"استراحة البستان",l1:"دهوك · العمادية",c2:"ضفاف الزاب",l2:"أربيل · كويسنجق",c3:"تلال دوكان",l3:"السليمانية · دوكان",c4:"كوخ النخيل",l4:"بابل · الحلة",c5:"ملف الكوخ",l5:"أكمل جميع الحقول المطلوبة وأضف من 1 إلى 12 صورة جاهزة قبل الإرسال."};
+const ar={brand:"ريف كوتج",tag:"بيوت الريف العراقي",name:"ليلى كريم",ini:"ل",t1:"راجع طلبات المالك المرسلة",t2:"إدارة ملفات الأكواخ",t3:"سجل دعم الدفع",t4:"طوابير الحجوزات",t5:"إجماليات الحجوزات",t6:"السجلات",h1:"ملفات الأكواخ الخاصة",sub:"راجع نسخ العمل غير المنشورة من دون تغيير مصدر المالك المرسل.",submitted:"مُرسل للموافقة على المحتوى",draft:"مسودة خاصة",app:"بدأ في طلب المالك",photos:"صور الكوخ الخاصة",open:"فتح ملف الكوخ",next:"ملفات الأكواخ التالية",nophoto:"لا توجد صور بعد",c1:"استراحة البستان",l1:"دهوك · العمادية",c2:"ضفاف الزاب",l2:"أربيل · كويسنجق",c3:"تلال دوكان",l3:"السليمانية · دوكان",c4:"كوخ النخيل",l4:"بابل · الحلة",c5:"ملف الكوخ",l5:"أكمل جميع الحقول المطلوبة وأضف من 1 إلى 12 صورة جاهزة قبل الإرسال.",nl:"إدارة المنصة"};
 if(location.search.includes("ar")){document.documentElement.lang="ar";document.documentElement.dir="rtl";document.querySelectorAll("[data-t]").forEach(e=>{const v=ar[e.dataset.t];if(v)e.textContent=v})}
 document.fonts.ready.then(()=>document.querySelector("[aria-current]").scrollIntoView({inline:"center",block:"nearest"}))
 </script>
