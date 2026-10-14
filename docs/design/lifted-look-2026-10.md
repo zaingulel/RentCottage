@@ -182,9 +182,10 @@ colours changed as a result, and the owner accepted them on issue
 under the current tab is the accent colour, and the darker stripe of the "No photos yet" panel is one shade lighter.
 The captures show the accepted colours.
 
-- Not measured: a screen reader's announcement, browsers other than Chromium, text resizing and text spacing, forced
-  colours, Sorani, and the hover, error, disabled and pending states. Keyboard focus was measured with the browser's own
-  focus ring, and reflow was also measured at 320 and 720 pixels wide.
+- Not measured: a screen reader's announcement, browsers other than Chromium, zoom to 200 and 400 percent, text spacing,
+  forced colours, a device scale factor of 2, Sorani, the error, disabled and loading states, any hover state beyond the
+  one drawn, and the focus ring at widths other than 1440 and 390. Keyboard focus was measured as each view renders it,
+  and reflow was also measured at 320 and 720 pixels wide.
 - On the Platform Administrator cottage list at 390 pixels wide in Arabic, a tab cut by the edge of the bar shows its
   focus ring on three sides until the bar is scrolled; the first and third tabs open that way.
   [#745](https://github.com/zaingulel/RentCottage/issues/745) inherits this with the bar's opening position.
