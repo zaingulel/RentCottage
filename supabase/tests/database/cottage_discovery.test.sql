@@ -1,5 +1,5 @@
 begin;
-select plan(105);
+select plan(113);
 
 select has_table(
   'public', 'cottage_marketplace_listings',
@@ -43,6 +43,14 @@ select ok(
 select ok(
   has_function_privilege('anon', 'public.get_public_cottage_facets(public.cottage_profile_source_language)', 'execute'),
   'anonymous callers can load privacy-safe discovery facets'
+);
+select ok(
+  (select prosecdef and proconfig = array['search_path=""'] from pg_proc
+    where oid = 'public.list_owner_cottage_public_inventory(uuid[],date,date)'::regprocedure)
+    and has_function_privilege('authenticated', 'public.list_owner_cottage_public_inventory(uuid[],date,date)', 'execute')
+    and not has_function_privilege('anon', 'public.list_owner_cottage_public_inventory(uuid[],date,date)', 'execute')
+    and not has_function_privilege('service_role', 'public.list_owner_cottage_public_inventory(uuid[],date,date)', 'execute'),
+  'only authenticated callers execute the security-definer owner public inventory read'
 );
 select is(
   (select production_ready from public.cottage_translation_runtime_control where singleton),
@@ -451,6 +459,53 @@ select public.set_cottage_inventory_availability(
     from jsonb_array_elements(current_setting('rentcottage.test_pricing')::jsonb -> 'units') unit
     where unit ->> 'standardPriceIqd' in ('80000', '110000')
   )
+);
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000002801","role":"authenticated","aal":"aal1"}', true);
+select results_eq(
+  $$select profile_id, inventory from public.list_owner_cottage_public_inventory(
+    array['30000000-0000-4000-8000-000000002801', '30000000-0000-4000-8000-000000002802']::uuid[],
+    '2099-08-21', '2099-08-22')$$,
+  $$values ('30000000-0000-4000-8000-000000002801'::uuid, '[
+    {"serviceDay":"2099-08-21","kind":"shift","position":1,"name":"Morning","startTime":"08:00","endTime":"14:00","priceIqd":60000,"available":true},
+    {"serviceDay":"2099-08-21","kind":"shift","position":2,"name":"Evening","startTime":"18:00","endTime":"23:00","priceIqd":80000,"available":false},
+    {"serviceDay":"2099-08-21","kind":"full-day","name":"Full-day bundle","startTime":"08:00","endTime":"23:00","priceIqd":110000,"available":false},
+    {"serviceDay":"2099-08-22","kind":"shift","position":1,"name":"Morning","startTime":"08:00","endTime":"14:00","priceIqd":65000,"available":true},
+    {"serviceDay":"2099-08-22","kind":"shift","position":2,"name":"Evening","startTime":"18:00","endTime":"23:00","priceIqd":90000,"available":true},
+    {"serviceDay":"2099-08-22","kind":"full-day","name":"Full-day bundle","startTime":"08:00","endTime":"23:00","priceIqd":120000,"available":true}
+  ]'::jsonb)$$,
+  'an owner reads the public inventory of their own discoverable Cottages and not an unpublished one'
+);
+select results_eq(
+  $$select profile_id, jsonb_array_length(inventory) from public.list_owner_cottage_public_inventory(
+    array['30000000-0000-4000-8000-000000002801', '30000000-0000-4000-8000-000000002802']::uuid[],
+    '2099-08-21', '2099-09-20')$$,
+  $$values ('30000000-0000-4000-8000-000000002801'::uuid, 93)$$,
+  'the owner public inventory read accepts 31 Service Days'
+);
+select throws_ok(
+  $$select * from public.list_owner_cottage_public_inventory(
+    array['30000000-0000-4000-8000-000000002801']::uuid[], '2099-08-21', '2099-09-21')$$,
+  '22023', 'Owner Cottage public inventory request is invalid',
+  'the owner public inventory read refuses 32 Service Days'
+);
+select throws_ok(
+  $$select * from public.list_owner_cottage_public_inventory(
+    array(select ('30000000-0000-4000-8000-' || lpad(value::text, 12, '0'))::uuid
+      from generate_series(1, 101) value),
+    '2099-08-21', '2099-08-21')$$,
+  '22023', 'Owner Cottage public inventory request is invalid',
+  'the owner public inventory read refuses more than 100 Cottages'
+);
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000002802","role":"authenticated","aal":"aal1"}', true);
+select throws_ok(
+  $$select * from public.list_owner_cottage_public_inventory(
+    array['30000000-0000-4000-8000-000000002801']::uuid[], '2099-08-21', '2099-08-22')$$,
+  '42501', 'Approved Cottage Owner access is required',
+  'a signed-in user without an owner context reads no owner public inventory'
 );
 reset role;
 set local role anon;
@@ -922,6 +977,27 @@ from jsonb_array_elements(current_setting('rentcottage.test_paged_inventory')::j
 reset role;
 update public.cottage_marketplace_listings set state = 'paused'
 where profile_id = '30000000-0000-4000-8000-000000002812';
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000002803","role":"authenticated","aal":"aal1"}', true);
+select results_eq(
+  $$select profile_id from public.list_owner_cottage_public_inventory(
+    array['30000000-0000-4000-8000-000000002811', '30000000-0000-4000-8000-000000002812',
+      '30000000-0000-4000-8000-000000002813', '30000000-0000-4000-8000-000000002814']::uuid[],
+    '2099-08-21', '2099-08-21') order by profile_id$$,
+  $$values ('30000000-0000-4000-8000-000000002811'::uuid),
+    ('30000000-0000-4000-8000-000000002813'::uuid), ('30000000-0000-4000-8000-000000002814'::uuid)$$,
+  'an owner reads public inventory for each discoverable Cottage they own and not a paused one'
+);
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000002801","role":"authenticated","aal":"aal1"}', true);
+select is_empty(
+  $$select profile_id from public.list_owner_cottage_public_inventory(
+    array['30000000-0000-4000-8000-000000002811', '30000000-0000-4000-8000-000000002813']::uuid[],
+    '2099-08-21', '2099-08-21')$$,
+  'an established owner reads no public inventory of another owner''s Cottages'
+);
+reset role;
 
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);

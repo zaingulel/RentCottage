@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { getServerEnvironment } from "@/config/server-runtime";
+import { createCottagePublicationMediaService } from "@/cottage-publication/cottage-publication-media";
 import { createCottageProfile } from "./cottage-profile";
 import {
   SupabaseCottageProfileRepository,
@@ -28,5 +29,21 @@ export async function createRequestCottageProfile() {
   return createCottageProfile({
     repository: new SupabaseCottageProfileRepository(client, serviceClient),
     storage: new SupabaseCottageProfileStorage(serviceClient),
+  });
+}
+
+export async function createRequestCottageProfilePhotoMedia() {
+  const serviceClient = getPrivilegedClient();
+  const repository = new SupabaseCottageProfileRepository(
+    await createRequestSupabaseClient(),
+    serviceClient,
+  );
+  const storage = new SupabaseCottageProfileStorage(serviceClient);
+  return createCottagePublicationMediaService({
+    adapter: {
+      resolveMedia: (photoId) => repository.preparePhotoPreview(photoId),
+      signMedia: (objectPath) => storage.createSignedUrl(objectPath, 60),
+    },
+    configuredSupabaseUrl: getServerEnvironment().supabase.url,
   });
 }

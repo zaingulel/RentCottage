@@ -323,6 +323,8 @@ describe("stylesheet colour tokens", () => {
         "--surface-footer",
         "--gold-tint over --card",
         "--gold-tint over --background",
+        "--surface-no-photo",
+        "--surface-no-photo-band",
       ],
       "--ink-on-dark-accent": ["--green"],
     };

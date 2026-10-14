@@ -2,15 +2,19 @@ import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
+  CottageProfileOverview,
   listOwner,
   loadOwnerBookingRequestNotifications,
   loadOwnerCottageAccess,
+  loadOwnerCottageFromPrices,
   notFound,
   router,
 } = vi.hoisted(() => ({
+  CottageProfileOverview: vi.fn(() => <h1>Your cottages</h1>),
   listOwner: vi.fn(),
   loadOwnerBookingRequestNotifications: vi.fn(),
   loadOwnerCottageAccess: vi.fn(),
+  loadOwnerCottageFromPrices: vi.fn(),
   notFound: vi.fn(),
   router: { refresh: vi.fn() },
 }));
@@ -41,8 +45,11 @@ vi.mock(
     loadOwnerBookingRequestNotifications,
   }),
 );
+vi.mock("@/cottage-discovery/request-cottage-discovery", () => ({
+  loadOwnerCottageFromPrices,
+}));
 vi.mock("@/components/cottage-profile-overview", () => ({
-  CottageProfileOverview: () => <h1>Your cottages</h1>,
+  CottageProfileOverview,
 }));
 
 import { ownerDisplayFixtures } from "../../../../../tests/fixtures/booking-request-display.fixtures";
@@ -154,6 +161,35 @@ describe("owner Cottage Profiles page", () => {
     expect(
       screen.queryByRole("link", { name: "RentCottage" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("asks for the From Price of published profiles only and hands the result to the overview", async () => {
+    const published = { id: "published-id", currentPublicationId: "pub-1" };
+    const draft = { id: "draft-id", currentPublicationId: null };
+    const fromPrices = {
+      status: "loaded",
+      fromPrices: { "published-id": 180000 },
+    };
+    listOwner.mockResolvedValue([published, draft]);
+    loadOwnerCottageFromPrices.mockResolvedValue(fromPrices);
+    loadOwnerCottageAccess.mockImplementation(async (load) => ({
+      status: "ready",
+      value: await load({ listOwner }, "approved"),
+    }));
+
+    render(
+      await OwnerCottagesPage({
+        params: Promise.resolve({ locale: "en" }),
+      }),
+    );
+
+    expect(loadOwnerCottageFromPrices).toHaveBeenCalledExactlyOnceWith([
+      "published-id",
+    ]);
+    expect(CottageProfileOverview).toHaveBeenCalledWith(
+      expect.objectContaining({ profiles: [published, draft], fromPrices }),
+      undefined,
+    );
   });
 
   afterEach(() => {

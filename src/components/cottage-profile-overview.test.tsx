@@ -7,6 +7,7 @@ vi.mock("@/cottage-profile/actions", () => ({
 
 import type { CottageProfile } from "@/cottage-profile/cottage-profile";
 import { createCottageProfileDraftAction } from "@/cottage-profile/actions";
+import { formatIqd } from "@/i18n/format";
 import { CottageProfileOverview } from "./cottage-profile-overview";
 
 const profile = {
@@ -92,13 +93,16 @@ describe("Cottage Profile overview", () => {
     const card = screen.getByRole("article");
     expect(card.children).toHaveLength(5);
     expect(card).toHaveClass("card");
+    expect(card.children[0]).toHaveClass("cottage-profile-card-cover");
     expect(card.children[0].querySelectorAll("span.status-badge")).toHaveLength(
       2,
     );
+    expect(card.children[1]).toBe(screen.getByRole("heading", { level: 2 }));
     expect(screen.getByRole("heading", { level: 2 })).toHaveClass("card-title");
     expect(card.children[2]).toHaveClass("card-detail");
     expect(card.children[3]).toHaveClass("card-small-print");
-    expect(card.lastElementChild).toBe(
+    expect(card.lastElementChild).toHaveClass("cottage-profile-card-actions");
+    expect(card.lastElementChild).toContainElement(
       screen.getByRole("link", { name: "Open Cottage Profile" }),
     );
     expect(
@@ -115,6 +119,187 @@ describe("Cottage Profile overview", () => {
     expect(
       screen.getByRole("button", { name: "Create another cottage draft" }),
     ).toBeEnabled();
+  });
+
+  it("shows the first ready photo as the cover, with the badges ahead of it", () => {
+    const photo = (id: string, state: "pending" | "ready") => ({
+      id,
+      originalFilename: `${id}.png`,
+      mediaType: "image/png",
+      sizeBytes: 1024,
+      state,
+      updatedAt: "2026-08-17T09:00:00.000Z",
+    });
+    const pendingId = "90000000-0000-4000-8000-000000000001";
+    const firstReadyId = "90000000-0000-4000-8000-000000000002";
+    const secondReadyId = "90000000-0000-4000-8000-000000000003";
+    render(
+      <CottageProfileOverview
+        locale="en"
+        actor="owner"
+        profiles={[
+          {
+            ...profile,
+            photos: [
+              photo(pendingId, "pending"),
+              photo(firstReadyId, "ready"),
+              photo(secondReadyId, "ready"),
+            ],
+          },
+        ]}
+      />,
+    );
+
+    const cover = screen.getByRole("img", {
+      name: "Cover photo of Application Cottage",
+    });
+    expect(screen.getAllByRole("img")).toHaveLength(1);
+    expect(decodeURIComponent(cover.getAttribute("src") ?? "")).toContain(
+      `/api/cottage-profile-photos/${firstReadyId}`,
+    );
+    expect(screen.queryByText("No photos yet")).toBeNull();
+    expect(
+      screen
+        .getByText("Started in Owner Application")
+        .compareDocumentPosition(cover) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it.each([
+    ["en", "No photos yet"],
+    ["ar", "لا توجد صور بعد"],
+    ["ckb", "هێشتا وێنە نییە"],
+  ] as const)(
+    "shows the no-photos panel and no image for a profile with no ready photo in %s",
+    (locale, label) => {
+      render(
+        <CottageProfileOverview
+          locale={locale}
+          actor="owner"
+          profiles={[profile]}
+        />,
+      );
+
+      expect(screen.getByText(label)).toBeVisible();
+      expect(screen.queryByRole("img")).toBeNull();
+    },
+  );
+
+  it.each([
+    ["Application Cottage", "ar", "صورة غلاف Application Cottage"],
+    ["Application Cottage", "ckb", "وێنەی بەرگی Application Cottage"],
+    ["Cottage $& $$", "ar", "صورة غلاف Cottage $& $$"],
+    ["Cottage $& $$", "ckb", "وێنەی بەرگی Cottage $& $$"],
+  ] as const)(
+    "names the cottage %s in the cover photo alternative in %s",
+    (name, locale, alternative) => {
+      render(
+        <CottageProfileOverview
+          locale={locale}
+          actor="owner"
+          profiles={[
+            {
+              ...profile,
+              name,
+              photos: [
+                {
+                  id: "90000000-0000-4000-8000-000000000002",
+                  originalFilename: "cover.png",
+                  mediaType: "image/png",
+                  sizeBytes: 1024,
+                  state: "ready",
+                  updatedAt: "2026-08-17T09:00:00.000Z",
+                },
+              ],
+            },
+          ]}
+        />,
+      );
+
+      expect(screen.getByRole("img", { name: alternative })).toBeVisible();
+    },
+  );
+
+  it.each([
+    ["en", "From "],
+    ["ar", "ابتداءً من "],
+    ["ckb", "دەستپێک لە "],
+  ] as const)(
+    "shows the translated From Price formatted as IQD on a published profile in %s",
+    (locale, prefix) => {
+      render(
+        <CottageProfileOverview
+          locale={locale}
+          actor="owner"
+          profiles={[{ ...profile, ...published }]}
+          fromPrices={{
+            status: "loaded",
+            fromPrices: { [profile.id]: 180000 },
+          }}
+        />,
+      );
+
+      expect(
+        screen.getByText(`${prefix}${formatIqd(180000, locale)}`),
+      ).toHaveClass("cottage-profile-card-price");
+    },
+  );
+
+  it("shows no price, and no zero, where a loaded read has no price for the profile", () => {
+    const { container } = render(
+      <CottageProfileOverview
+        locale="en"
+        actor="owner"
+        profiles={[{ ...profile, ...published }]}
+        fromPrices={{ status: "loaded", fromPrices: {} }}
+      />,
+    );
+
+    expect(container.querySelector(".cottage-profile-card-price")).toBeNull();
+    expect(screen.queryByText(/IQD/)).toBeNull();
+  });
+
+  it.each([
+    ["en", "Price unavailable"],
+    ["ar", "السعر غير متاح"],
+    ["ckb", "نرخ بەردەست نییە"],
+  ] as const)(
+    "says the price is unavailable on a published profile but not a draft when the read failed in %s",
+    (locale, label) => {
+      const publishedView = render(
+        <CottageProfileOverview
+          locale={locale}
+          actor="owner"
+          profiles={[{ ...profile, ...published }]}
+          fromPrices={{ status: "unavailable" }}
+        />,
+      );
+      expect(screen.getByText(label)).toHaveClass("cottage-profile-card-price");
+      publishedView.unmount();
+
+      const { container } = render(
+        <CottageProfileOverview
+          locale={locale}
+          actor="owner"
+          profiles={[profile]}
+          fromPrices={{ status: "unavailable" }}
+        />,
+      );
+      expect(screen.queryByText(label)).toBeNull();
+      expect(container.querySelector(".cottage-profile-card-price")).toBeNull();
+    },
+  );
+
+  it("shows no price element when the list carries no price read", () => {
+    const { container } = render(
+      <CottageProfileOverview
+        locale="en"
+        actor="administrator"
+        profiles={[{ ...profile, ...published }]}
+      />,
+    );
+
+    expect(container.querySelector(".cottage-profile-card-price")).toBeNull();
   });
 
   it("announces localized feedback when draft creation is denied", async () => {

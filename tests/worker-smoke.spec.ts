@@ -29,6 +29,22 @@ test("serves the trilingual shell and health response from the Worker", async ({
     );
   }
 
+  const malformedPhoto = await request.get(
+    "/api/cottage-profile-photos/not-a-uuid",
+  );
+  const signedOutPhoto = await request.get(
+    "/api/cottage-profile-photos/40000000-0000-4000-8000-000000000024",
+  );
+  for (const response of [malformedPhoto, signedOutPhoto]) {
+    expect(response.status()).toBe(404);
+    expect(response.headers()["cache-control"]).toContain("private");
+    expect(response.headers()["cache-control"]).toContain("no-store");
+    expect(response.headers().location).toBeUndefined();
+    await expect(response.text()).resolves.toBe(
+      "Cottage Profile photo is unavailable",
+    );
+  }
+
   await page.goto("/ar");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(

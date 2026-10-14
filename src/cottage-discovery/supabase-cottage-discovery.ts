@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { cottageProfileAmenities } from "@/cottage-profile/cottage-profile";
 import type { Locale } from "@/i18n/routing";
 
+import { fromPriceIqd } from "./from-price";
 import {
   publicCottageSlugPattern,
   type CottageDiscoveryQuery,
@@ -64,6 +65,10 @@ export type CottageDiscoveryDefaultQueryResult =
   | { status: "not-found" }
   | { status: "unavailable" };
 
+export type OwnerCottageFromPricesResult =
+  | { status: "loaded"; fromPrices: Record<string, number> }
+  | { status: "unavailable" };
+
 const summaryKeys = new Set([
   "slug",
   "name",
@@ -96,6 +101,8 @@ const inventoryFullDayKeys = new Set(
 );
 const searchPageKeys = new Set(["items", "nextCursor"]);
 const searchPageSize = 12;
+const ownerFromPriceChunkSize = 100;
+const ownerFromPriceRowKeys = new Set(["profile_id", "inventory"]);
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -138,7 +145,12 @@ function amenityArray(value: unknown): value is string[] {
 }
 
 function unavailable(
-  operation: "search" | "facets" | "default-query" | "profile",
+  operation:
+    | "search"
+    | "facets"
+    | "default-query"
+    | "profile"
+    | "owner-from-prices",
   result: "provider-error" | "invalid-provider-data",
 ): { status: "unavailable" } {
   console.error("Public Cottage discovery unavailable", { operation, result });
@@ -155,7 +167,7 @@ function inventoryIdentity(
 
 function inventoryFrom(
   value: unknown,
-  query: CottageDiscoveryQuery,
+  query: Pick<CottageDiscoveryQuery, "from" | "to">,
 ): PublicCottageInventoryUnit[] | undefined {
   if (!Array.isArray(value) || value.length === 0 || value.length > 124)
     return undefined;
@@ -470,5 +482,49 @@ export class SupabaseCottageDiscovery {
     return cottage
       ? { status: "loaded", cottage }
       : unavailable("profile", "invalid-provider-data");
+  }
+
+  async ownerFromPrices(
+    profileIds: string[],
+    window: { from: string; to: string },
+  ): Promise<OwnerCottageFromPricesResult> {
+    const fromPrices: Record<string, number> = {};
+    for (
+      let start = 0;
+      start < profileIds.length;
+      start += ownerFromPriceChunkSize
+    ) {
+      const chunk = profileIds.slice(start, start + ownerFromPriceChunkSize);
+      const { data, error } = await this.client.rpc(
+        "list_owner_cottage_public_inventory",
+        {
+          target_profile_ids: chunk,
+          target_from: window.from,
+          target_to: window.to,
+        },
+      );
+      if (error) return unavailable("owner-from-prices", "provider-error");
+      if (!Array.isArray(data))
+        return unavailable("owner-from-prices", "invalid-provider-data");
+      const unseen = new Set(chunk);
+      for (const row of data) {
+        if (!exactObject(row, ownerFromPriceRowKeys))
+          return unavailable("owner-from-prices", "invalid-provider-data");
+        const { profile_id: profileId, inventory } = row as Record<
+          string,
+          unknown
+        >;
+        const units = inventoryFrom(inventory, window);
+        if (
+          typeof profileId !== "string" ||
+          !unseen.delete(profileId) ||
+          !units
+        )
+          return unavailable("owner-from-prices", "invalid-provider-data");
+        const price = fromPriceIqd(units);
+        if (price !== null) fromPrices[profileId] = price;
+      }
+    }
+    return { status: "loaded", fromPrices };
   }
 }
