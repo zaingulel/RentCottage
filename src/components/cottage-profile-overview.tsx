@@ -11,11 +11,17 @@ import type { CottageProfile } from "@/cottage-profile/cottage-profile";
 import {
   cottageProfileMessages,
   cottageProfileStatusLabel,
+  cottageProfileStatusTone,
 } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
 import { ActionFocusTarget, ActionLink } from "./interaction-controls";
 
 const idle: CottageProfileActionState = { status: "idle" };
+
+function statusBadgeClass(profile: CottageProfile) {
+  const tone = cottageProfileStatusTone(profile);
+  return tone ? `status-badge status-badge-${tone}` : "status-badge";
+}
 
 export function CottageProfileOverview({
   locale,
@@ -60,7 +66,7 @@ export function CottageProfileOverview({
         {profiles.map((profile) => (
           <article className="card cottage-profile-card" key={profile.id}>
             <div>
-              <span className="status-badge">
+              <span className={statusBadgeClass(profile)}>
                 {cottageProfileStatusLabel(locale, profile)}
               </span>
               {profile.applicationId ? (

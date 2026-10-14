@@ -86,6 +86,9 @@ describe("Cottage Profile overview", () => {
     );
 
     expect(screen.getByText("Started in Owner Application")).toBeVisible();
+    expect(screen.getByText("Started in Owner Application").className).toBe(
+      "status-badge",
+    );
     const card = screen.getByRole("article");
     expect(card.children).toHaveLength(5);
     expect(card).toHaveClass("card");
@@ -320,4 +323,51 @@ describe("Cottage Profile overview", () => {
       screen.getByRole("link", { name: "ملفات الأكواخ التالية" }),
     ).toHaveAttribute("href", "/ar/administrator/cottages?afterProfileId=next");
   });
+
+  it.each([
+    [
+      "a never-published draft",
+      neverPublishedDraft,
+      "Private draft",
+      "status-badge status-badge-draft",
+    ],
+    [
+      "never published and submitted",
+      neverPublishedSubmitted,
+      "Submitted for content approval",
+      "status-badge status-badge-review",
+    ],
+    ["abandoned", abandoned, "Abandoned", "status-badge"],
+    [
+      "published",
+      published,
+      "Published",
+      "status-badge status-badge-published",
+    ],
+    [
+      "published with unpublished changes",
+      publishedWithUnpublishedChanges,
+      "Published; unpublished changes",
+      "status-badge status-badge-published",
+    ],
+    [
+      "published with an update awaiting approval",
+      publishedUpdateAwaitingApproval,
+      "Published; update awaiting approval",
+      "status-badge status-badge-published",
+    ],
+  ] as const)(
+    "shows the dot for a Cottage Profile that is %s",
+    (_state, fields, label, badgeClass) => {
+      render(
+        <CottageProfileOverview
+          locale="en"
+          actor="owner"
+          profiles={[{ ...profile, ...fields }]}
+        />,
+      );
+
+      expect(screen.getByText(label).className).toBe(badgeClass);
+    },
+  );
 });

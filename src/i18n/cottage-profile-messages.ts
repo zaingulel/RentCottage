@@ -393,19 +393,52 @@ const cottageProfileStatusMessageKeys = {
   abandoned: "abandoned",
 } as const satisfies Record<CottageProfileStatus, keyof Copy>;
 
+type CottageProfileStatusFields = Pick<
+  CottageProfile,
+  "status" | "currentPublicationId" | "hasUnpublishedContentChange"
+>;
+
+type CottageProfileDisplayStatus =
+  | (typeof cottageProfileStatusMessageKeys)[CottageProfileStatus]
+  | "published"
+  | "publishedWithUnpublishedChanges"
+  | "publishedUpdateAwaitingApproval";
+
+function cottageProfileDisplayStatus(
+  profile: CottageProfileStatusFields,
+): CottageProfileDisplayStatus {
+  if (profile.status === "abandoned" || profile.currentPublicationId === null)
+    return cottageProfileStatusMessageKeys[profile.status];
+  if (profile.status === "submitted_for_content_approval")
+    return "publishedUpdateAwaitingApproval";
+  return profile.hasUnpublishedContentChange
+    ? "publishedWithUnpublishedChanges"
+    : "published";
+}
+
 export function cottageProfileStatusLabel(
   locale: Locale,
-  profile: Pick<
-    CottageProfile,
-    "status" | "currentPublicationId" | "hasUnpublishedContentChange"
-  >,
+  profile: CottageProfileStatusFields,
 ): string {
-  const copy = cottageProfileMessages[locale];
-  if (profile.status === "abandoned" || profile.currentPublicationId === null)
-    return copy[cottageProfileStatusMessageKeys[profile.status]];
-  if (profile.status === "submitted_for_content_approval")
-    return copy.publishedUpdateAwaitingApproval;
-  return profile.hasUnpublishedContentChange
-    ? copy.publishedWithUnpublishedChanges
-    : copy.published;
+  return cottageProfileMessages[locale][cottageProfileDisplayStatus(profile)];
+}
+
+export type CottageProfileStatusTone = "published" | "draft" | "review";
+
+const cottageProfileStatusTones = {
+  draft: "draft",
+  submitted: "review",
+  abandoned: null,
+  published: "published",
+  publishedWithUnpublishedChanges: "published",
+  publishedUpdateAwaitingApproval: "published",
+} as const satisfies Record<
+  CottageProfileDisplayStatus,
+  CottageProfileStatusTone | null
+>;
+
+export function cottageProfileStatusTone(
+  profile: CottageProfileStatusFields,
+): CottageProfileStatusTone | null {
+  return cottageProfileStatusTones[cottageProfileDisplayStatus(profile)];
 }

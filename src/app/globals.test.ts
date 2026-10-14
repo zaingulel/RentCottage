@@ -294,6 +294,15 @@ describe("stylesheet colour tokens", () => {
     );
   });
 
+  it("keeps each status dot at 3 to 1 on the status badge", () => {
+    for (const dot of [
+      "--status-published-dot",
+      "--status-draft-dot",
+      "--status-review-dot",
+    ])
+      expect(contrast(dot, "--status-neutral-bg")).toBeGreaterThanOrEqual(3);
+  });
+
   it("keeps grey and gold text at 4.5 to 1 on every surface it sits on", () => {
     const surfacesOf = {
       "--muted": [

@@ -78,6 +78,9 @@
   --status-neutral-bg: #eef3ef;
   --status-attention-bg: #fff0d7;
   --status-attention-text: #623d00;
+  --status-published-dot: #2f7d4f;
+  --status-review-dot: #3b6ea5;
+  --status-draft-dot: #b27c3e;
 
   /* Elevation */
   --elevation-contact: rgb(38 36 31 / 6%);
@@ -2717,6 +2720,36 @@ html[lang="ckb"] .result-content h2 {
   color: var(--ink);
   font-size: var(--font-size-1);
   font-weight: 700;
+}
+
+.status-badge-published,
+.status-badge-draft,
+.status-badge-review {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.status-badge-published::before,
+.status-badge-draft::before,
+.status-badge-review::before {
+  content: "";
+  flex: none;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 50%;
+}
+
+.status-badge-published::before {
+  background: var(--status-published-dot);
+}
+
+.status-badge-draft::before {
+  background: var(--status-draft-dot);
+}
+
+.status-badge-review::before {
+  background: var(--status-review-dot);
 }
 
 .empty-state {

@@ -19,8 +19,9 @@ the code keeps them.
   `:root`, on a custom property a stylesheet uses that `:root` does not declare, on a spacing or text size length
   that is neither a scale step nor listed under Tolerated literals, on a listed length that no stylesheet writes,
   on a `border-radius`, `box-shadow` or `z-index` value that is neither its token nor a tolerated literal, on text
-  in `--muted`, `--ink-accent` or `--ink-on-dark-accent` below 4.5:1 on a listed surface, on `--gold` as a text
-  colour, and on a width media query outside the list under Breakpoints.
+  in `--muted`, `--ink-accent` or `--ink-on-dark-accent` below 4.5:1 on a listed surface, on a status dot colour
+  below 3:1 on `--status-neutral-bg`, on `--gold` as a
+  text colour, and on a width media query outside the list under Breakpoints.
 - A colour or font a change needs that the block lacks is added to `:root` in the same change, named for its role
   (what it is for, not what it looks like). Two roles may share a value, each with its own token; one role never
   has two tokens.
@@ -30,7 +31,10 @@ the code keeps them.
   - A status label takes a background and text pair chosen together. `--status-approved-bg` and
     `--status-approved-text` are the pair for a good outcome: an approved application and paid or eligible
     earnings. `--status-neutral-bg` is the background of a label that is neither good nor bad, and of the status
-    badge and the status banner, which state a status in words and take no colour from it.
+    badge and the status banner, which state a status in words. `--status-published-dot`, `--status-draft-dot` and
+    `--status-review-dot` are the dot colours of the status badge's three tones; each reaches 3:1 on
+    `--status-neutral-bg`, which globals.test.ts checks, and `--status-draft-dot` is a darker gold than `--gold`
+    for that reason.
   - `--status-rejected-text` stays separate from `--error`, and `--success-text` from `--status-approved-text`: a
     label's text is chosen with its tint, and a message's text sits on whatever surface its form is on.
   - `--surface-policy` and `--surface-message-customer` stay separate: the policy box is chosen with
@@ -312,7 +316,12 @@ its own; the block it sits in sets the space around it.
   a card and keeps its `1px` `--line` border.
 - Status badge: `span.status-badge` is the compact status of one item in a list row or card. Its text is the
   translated status label, so the status never depends on colour. It is a pill on `--status-neutral-bg` with bold
-  `--ink` text at `--font-size-1`. It is never the page-level status.
+  `--ink` text at `--font-size-1`. A badge may add one tone class, which draws a `0.5rem` dot before the label,
+  `--space-2` from it and on the side the text starts: `status-badge-published` for a record Customers can see,
+  `status-badge-draft` for a private record not yet submitted, and `status-badge-review` for a submitted record
+  waiting for a decision with nothing published. The dot repeats the label and is never the only sign of the
+  status; a badge with any other status, or one that states a fact that is not a status, has no dot. It is never
+  the page-level status.
 - Rating stars: the `span.stars` beside a published review's rating is decorative and hidden from assistive technology, so the rating text carries the meaning.
 - Status banner: `p.status-banner` is the page-level status of a record page. It sits directly under the page
   title, at most one per page, and keeps `role="status"` and `aria-live="polite"`. It is a block on
