@@ -2740,6 +2740,62 @@ html[lang="ckb"] .result-content h2 {
   white-space: pre-wrap;
 }
 
+.request-rows {
+  display: grid;
+  gap: var(--space-3);
+  margin-block-start: var(--space-4);
+}
+
+.request-row {
+  display: grid;
+  grid-template-columns: 5rem 1fr auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.request-row-photo {
+  position: relative;
+  inline-size: 5rem;
+  block-size: 5rem;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--surface-placeholder);
+}
+
+.request-row-photo img {
+  object-fit: cover;
+}
+
+.request-row-facts {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.request-row-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.request-row-below {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: var(--space-4);
+}
+
+@media (max-width: 40rem) {
+  .request-row {
+    grid-template-columns: 5rem 1fr;
+  }
+
+  .request-row-actions {
+    grid-column: 1 / -1;
+  }
+}
+
 .confirmed-booking-details,
 .booking-request-progress-card,
 .booking-history {
@@ -2894,6 +2950,11 @@ html[lang="ckb"] .result-content h2 {
   background: var(--status-review-dot);
 }
 
+.status-badge-attention {
+  background: var(--status-attention-bg);
+  color: var(--status-attention-text);
+}
+
 .empty-state {
   display: grid;
   justify-items: start;
@@ -2942,6 +3003,7 @@ html[lang="ckb"] .card-title {
 
 .booking-request-decision-controls,
 .booking-request-decision-controls form,
+.request-row-below form,
 .customer-booking-request-status {
   display: grid;
   gap: var(--space-4);
@@ -2953,7 +3015,8 @@ html[lang="ckb"] .card-title {
   margin: 0;
 }
 
-.booking-request-decision-controls form label {
+.booking-request-decision-controls form label,
+.request-row-below form label {
   display: grid;
   gap: var(--space-2);
 }

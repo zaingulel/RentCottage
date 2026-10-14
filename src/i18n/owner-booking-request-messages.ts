@@ -32,6 +32,7 @@ export const ownerBookingRequestMessages: Record<
     answerUnderAMinute: string;
     answerTimeEnded: string;
     listSeparator: string;
+    viewRequest: string;
   }
 > = {
   en: {
@@ -70,6 +71,7 @@ export const ownerBookingRequestMessages: Record<
     answerUnderAMinute: "Less than a minute left to answer",
     answerTimeEnded: "The time to answer has ended",
     listSeparator: ", ",
+    viewRequest: "View request",
   },
   ar: {
     title: "طلبات الحجز قيد الانتظار",
@@ -118,6 +120,7 @@ export const ownerBookingRequestMessages: Record<
     answerUnderAMinute: "بقي أقل من دقيقة للرد",
     answerTimeEnded: "انتهى وقت الرد",
     listSeparator: "، ",
+    viewRequest: "عرض الطلب",
   },
   ckb: {
     title: "داواکارییە چاوەڕوانەکانی حجز",
@@ -153,6 +156,7 @@ export const ownerBookingRequestMessages: Record<
     answerUnderAMinute: "کەمتر لە خولەکێک ماوە بۆ وەڵامدانەوە",
     answerTimeEnded: "کاتی وەڵامدانەوە تەواو بووە",
     listSeparator: "، ",
+    viewRequest: "بینینی داواکارییەکە",
   },
 };
 

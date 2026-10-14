@@ -116,6 +116,7 @@ export default async function OwnerCottagesPage({
       <OwnerBookingRequestNotifications
         locale={locale}
         notifications={page.value.notifications}
+        waitingPresentation="row"
       />
     </main>
   );

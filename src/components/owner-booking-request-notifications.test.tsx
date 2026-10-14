@@ -328,6 +328,157 @@ describe("Owner Booking Request notifications", () => {
     expect(actOnBookingRequest).toHaveBeenCalledTimes(2);
   });
 
+  it("shows a waiting request as one row with its photo, customer, guests, cottage, Booking Period, price and time left", () => {
+    const coverMediaUrl =
+      "/api/cottage-media/70000000-0000-4000-8000-000000000747";
+    render(
+      <OwnerBookingRequestNotifications
+        locale="en"
+        notifications={[{ ...pendingNotification, coverMediaUrl }]}
+        waitingPresentation="row"
+      />,
+    );
+
+    const row = screen.getByRole("article", {
+      name: pendingNotification.bookingRequestReference,
+    });
+    expect(row).toHaveClass("card", "request-row");
+    expect(row.parentElement).toHaveClass("request-rows");
+    const photo = row.querySelector(".request-row-photo img");
+    expect(photo).toHaveAttribute("alt", "");
+    expect(decodeURIComponent(photo?.getAttribute("src") ?? "")).toContain(
+      coverMediaUrl,
+    );
+    expect(
+      within(row).getByRole("heading", {
+        level: 3,
+        name: "Ava Hassan · 4 guests",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByText(
+        "Quiet Garden · Fri, Aug 21: Evening · IQD 100,003",
+      ),
+    ).toHaveClass("card-detail");
+    expect(within(row).getByText("Answer within 3 hours")).toHaveClass(
+      "status-badge",
+      "status-badge-attention",
+    );
+    expect(within(row).getByRole("status")).toBeEmptyDOMElement();
+    expect(within(row).queryByText("Marketplace commission")).toBeNull();
+  });
+
+  it("leaves the photo frame empty when the cottage has no public photo", () => {
+    render(
+      <OwnerBookingRequestNotifications
+        locale="en"
+        notifications={[pendingNotification]}
+        waitingPresentation="row"
+      />,
+    );
+
+    const row = screen.getByRole("article", {
+      name: pendingNotification.bookingRequestReference,
+    });
+    expect(row.querySelector(".request-row-photo")).toBeEmptyDOMElement();
+  });
+
+  it("keeps a request that is not waiting as today's card beside the waiting rows", () => {
+    const processingReference = "RC-REQ-BBBBBBBBBBBBBBBB";
+    render(
+      <OwnerBookingRequestNotifications
+        locale="en"
+        notifications={[
+          pendingNotification,
+          {
+            ...ownerDisplayFixtures["capture-processing"],
+            bookingRequestReference: processingReference,
+          },
+        ]}
+        waitingPresentation="row"
+      />,
+    );
+
+    const row = screen.getByRole("article", {
+      name: pendingNotification.bookingRequestReference,
+    });
+    const card = screen.getByRole("article", { name: processingReference });
+    expect(row).toHaveClass("request-row");
+    expect(card).toHaveClass("owner-booking-request-card");
+    expect(card).not.toHaveClass("request-row");
+    expect(card.parentElement).toHaveClass("owner-booking-request-grid");
+    expect(within(card).getByText("Marketplace commission")).toBeVisible();
+  });
+
+  it("replaces the time left with the announced status once the owner decides", async () => {
+    actOnBookingRequest.mockResolvedValue({
+      status: "accepted",
+      bookingRequestReference: pendingNotification.bookingRequestReference,
+    });
+    render(
+      <OwnerBookingRequestNotifications
+        locale="en"
+        notifications={[pendingNotification]}
+        waitingPresentation="row"
+      />,
+    );
+
+    const row = screen.getByRole("article", {
+      name: pendingNotification.bookingRequestReference,
+    });
+    expect(within(row).getByText("Answer within 3 hours")).toBeVisible();
+    expect(within(row).getByRole("status")).toBeEmptyDOMElement();
+    fireEvent.click(
+      within(row).getByRole("button", { name: "Accept complete request" }),
+    );
+    await waitFor(() =>
+      expect(within(row).getByRole("status")).toHaveTextContent("Accepted"),
+    );
+    expect(within(row).queryByText("Answer within 3 hours")).toBeNull();
+    expect(within(row).queryByRole("button")).toBeNull();
+  });
+
+  it("keeps a waiting request as today's card where rows are not asked for", () => {
+    render(
+      <OwnerBookingRequestNotifications
+        locale="en"
+        notifications={[pendingNotification]}
+      />,
+    );
+
+    const card = screen.getByRole("article", {
+      name: pendingNotification.bookingRequestReference,
+    });
+    expect(card).toHaveClass("owner-booking-request-card");
+    expect(card).not.toHaveClass("request-row");
+    expect(document.querySelector(".request-rows")).toBeNull();
+    expect(within(card).getByLabelText("Decline reason")).toBeVisible();
+    expect(within(card).queryByText("Answer within 3 hours")).toBeNull();
+  });
+
+  it("links a waiting request row to its full Booking Request page", () => {
+    for (const [locale, name] of [
+      ["en", "View request"],
+      ["ar", "عرض الطلب"],
+    ] as const) {
+      const view = render(
+        <OwnerBookingRequestNotifications
+          locale={locale}
+          notifications={[pendingNotification]}
+          waitingPresentation="row"
+        />,
+      );
+      const row = screen.getByRole("article", {
+        name: pendingNotification.bookingRequestReference,
+      });
+      expect(within(row).getByRole("link", { name })).toHaveAttribute(
+        "href",
+        `/${locale}/owner/booking-requests/${pendingNotification.bookingRequestReference}`,
+      );
+      view.unmount();
+    }
+  });
+
   it.each([
     [
       "en",

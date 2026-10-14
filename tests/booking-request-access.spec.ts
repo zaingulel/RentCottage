@@ -535,11 +535,21 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await expect(ownerNotice).toBeVisible();
   await expect(ownerNotice).toContainText("Browser Customer");
   await expect(ownerNotice).not.toContainText(/provider|payment|phone|@/i);
-  await expect(ownerNotice).toContainText("Marketplace commission");
-  await expect(ownerNotice).toContainText("Expected net amount");
-  await expect(ownerNotice).toContainText("House Rules");
-  await expect(ownerNotice).not.toContainText(/terms version|policy version/i);
-  await expect(ownerNotice).toContainText("(Cottage Shift)");
+  await expect(ownerNotice).toContainText("4 guests");
+  await expect(ownerNotice).toContainText("IQD 180,000");
+  await expect(ownerNotice).toContainText(/Answer within/);
+  await ownerPage.goto(`/en/owner/booking-requests/${requestReference}`);
+  const ownerFullRequest = ownerPage.getByRole("article", {
+    name: requestReference,
+  });
+  await expect(ownerFullRequest).toContainText("Marketplace commission");
+  await expect(ownerFullRequest).toContainText("Expected net amount");
+  await expect(ownerFullRequest).toContainText("House Rules");
+  await expect(ownerFullRequest).not.toContainText(
+    /terms version|policy version/i,
+  );
+  await expect(ownerFullRequest).toContainText("(Cottage Shift)");
+  await ownerPage.goto("/en/owner/cottages");
 
   await openHeaderPanel(page, "menu");
   await page.getByRole("banner").getByRole("link", { name: "Support" }).click();
@@ -595,6 +605,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
       name: requestReference,
     });
     await arabicNotice
+      .getByRole("button", { name: "رفض", exact: true })
+      .click();
+    await arabicNotice
       .getByLabel("سبب الرفض")
       .selectOption("cottage_unavailable");
     await arabicNotice
@@ -641,6 +654,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
       page.getByText("ئاگادارکردنەوەی دۆخ", { exact: true }),
     ).toBeVisible();
   } else if (testInfo.project.name === "desktop") {
+    await ownerNotice
+      .getByRole("button", { name: "Decline", exact: true })
+      .click();
     await ownerNotice
       .getByLabel("Decline reason")
       .selectOption("cannot_accommodate_request");
