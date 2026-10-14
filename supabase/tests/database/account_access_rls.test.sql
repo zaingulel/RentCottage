@@ -288,7 +288,7 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$select user_id from public.account_names$$,
+  $$select first_name from public.account_names$$,
   '42501',
   null,
   'the service role cannot read first names'
