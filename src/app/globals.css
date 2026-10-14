@@ -48,6 +48,7 @@
   --line-panel: #d5ddd7;
   --line-action: rgb(34 64 47 / 30%);
   --line-records: #b9b9b9;
+  --tab-indicator: #b27c3e;
   --accent-policy: #386954;
 
   /* Brand tints */
@@ -473,8 +474,7 @@ input[type="file"].form-control::file-selector-button {
   border-block-end: 1px solid var(--line);
 }
 
-.owner-application-header span,
-.backoffice-navigation-area {
+.owner-application-header span {
   color: var(--ink-accent);
   font-size: var(--font-size-1);
   font-weight: 700;
@@ -485,30 +485,56 @@ input[type="file"].form-control::file-selector-button {
 .backoffice-navigation {
   width: min(100% - 2rem, 70rem);
   margin-inline: auto;
-  display: grid;
-  gap: var(--space-2);
-  padding-block: var(--space-4);
-  border-block-end: 1px solid var(--line);
+  border-image: linear-gradient(
+      to bottom,
+      var(--card) calc(100% - 1px),
+      var(--line) calc(100% - 1px)
+    )
+    fill 0 / 0 / 0 100vw;
 }
 
 .page > .backoffice-navigation {
   inline-size: auto;
-  padding-block-start: 0;
+  margin-block-start: calc(-1 * var(--space-6));
   margin-block-end: var(--space-5);
 }
 
 .backoffice-navigation-links {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+  flex-wrap: nowrap;
+  gap: var(--space-6);
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+  padding: var(--space-2);
+  margin: calc(-1 * var(--space-2));
 }
 
-.backoffice-navigation a[aria-current] {
-  border-color: var(--green);
-  background: var(--action-pressed);
-  text-decoration: underline;
-  text-decoration-thickness: 0.08em;
-  text-underline-offset: 0.2em;
+.backoffice-navigation-links::-webkit-scrollbar {
+  display: none;
+}
+
+.backoffice-navigation-tab {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding-block: var(--space-4) var(--space-3);
+  border-block-end: 3px solid transparent;
+  color: var(--muted);
+  font-size: var(--font-size-2);
+  font-weight: 700;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.backoffice-navigation-tab:hover {
+  color: var(--green);
+}
+
+.backoffice-navigation-tab[aria-current] {
+  color: var(--green);
+  border-block-end-color: var(--tab-indicator);
 }
 
 .owner-application-layout {
@@ -890,6 +916,10 @@ input[type="file"].form-control::file-selector-button {
 }
 
 @media (max-width: 40rem) {
+  .backoffice-navigation-links {
+    gap: var(--space-5);
+  }
+
   .owner-application-layout,
   .owner-application-header {
     width: min(100% - 1.25rem, 78rem);

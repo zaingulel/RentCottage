@@ -56,7 +56,9 @@ the code keeps them.
     colour so the shadow stays warm on the cream surfaces; only `--shadow-card` uses them.
   - `--gold-tint` is the one gold wash, behind a label or a page corner; a notice sits on `--surface-notice`.
     `--green-tint` is the green wash behind content; `--action-pressed` stays separate because it is a state, the
-    fill of a pressed toggle and of the current backoffice destination.
+    fill of a pressed toggle.
+  - `--tab-indicator` is the line under the current Backoffice tab. It is a darker gold than `--gold` so it reaches
+    3:1 on `--card`, and it stays separate from `--status-draft-dot` because the role differs.
 - A translucent variant of a colour is its own token written as `rgb(r g b / a%)`. `color-mix()` and relative colour
   syntax are not used: they are newer than the browsers Next.js supports (Chrome, Edge and Firefox 111, Safari
   16.4).
@@ -243,12 +245,13 @@ Anything else is a token.
   Backoffice and the Platform Administrator pages, and owns each area's list of destinations. It is a server
   component. A page renders it as the first child of `<main>`, only in a branch that has passed that page's own
   access check, names its destination with `current`, and adds `nested` on a page beneath that destination. It
-  renders `nav.backoffice-navigation`, named by its visible area label through `aria-labelledby`, with each
-  destination a secondary content-width `ActionLink`, so every link keeps the shared control height and focus
-  outline. The current destination carries `aria-current="page"`, or `aria-current="true"` on a nested page, and
-  is underlined as well as tinted, so it is never shown by colour alone. The links wrap; the block has no
-  breakpoint and no direction selector. A page renders at most one and never adds a brand link, which the site
-  header owns; a page with no access check of its own does not render it.
+  renders `nav.backoffice-navigation` as a tab bar, named through `aria-labelledby` by its area label, which is
+  visually hidden. Each destination is a tab, `a.backoffice-navigation-tab`, the bar's own pattern and not an
+  `ActionLink`. The current tab carries `aria-current="page"`, or `aria-current="true"` on a nested page, and shows
+  it with a `--tab-indicator` line under it and `--green` text, so it is never shown by colour alone. The bar is a
+  cream band that reaches both screen edges, with its tabs on one line that scrolls sideways inside the bar with a
+  hidden scrollbar and never scrolls the page. The block has no direction selector. A page renders at most one and
+  never adds a brand link, which the site header owns; a page with no access check of its own does not render it.
 - Read back and confirm: [cottage-location-fields.tsx](../src/components/cottage-location-fields.tsx) is the
   pattern for a value the interface cannot show and a mistake in which is costly. The entry is read back in words
   in a `role="status"` element named by `aria-label`, with its numbers in `<bdi dir="ltr">`; a problem is a

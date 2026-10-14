@@ -155,4 +155,32 @@ describe("BackofficeNavigation", () => {
       ),
     ).toEqual([null, null, null, null, "page", null]);
   });
+
+  it("renders each destination as a tab under a visually hidden area label", () => {
+    const { rerender } = render(
+      <BackofficeNavigation locale="en" area="owner" current="cottages" />,
+    );
+    const expectTabs = (areaLabel: string) => {
+      const navigation = screen.getByRole("navigation", { name: areaLabel });
+      expect(
+        within(navigation)
+          .getByText(areaLabel)
+          .classList.contains("visually-hidden"),
+      ).toBe(true);
+      for (const tab of within(navigation).getAllByRole("link")) {
+        expect(tab.classList.contains("backoffice-navigation-tab")).toBe(true);
+        expect(tab.classList.contains("action-secondary")).toBe(false);
+      }
+    };
+    expectTabs("Owner Backoffice");
+
+    rerender(
+      <BackofficeNavigation
+        locale="en"
+        area="administrator"
+        current="payments"
+      />,
+    );
+    expectTabs("Platform administration");
+  });
 });

@@ -1,4 +1,5 @@
-import { ActionLink } from "@/components/interaction-controls";
+import Link from "next/link";
+
 import { accessMessages } from "@/i18n/access-messages";
 import { administratorPaymentHistoryMessages } from "@/i18n/administrator-payment-history-messages";
 import { administratorQueuesMessages } from "@/i18n/administrator-queues-messages";
@@ -81,17 +82,14 @@ export function BackofficeNavigation({
       className="backoffice-navigation"
       aria-labelledby="backoffice-navigation-area"
     >
-      <span
-        id="backoffice-navigation-area"
-        className="backoffice-navigation-area"
-      >
+      <span id="backoffice-navigation-area" className="visually-hidden">
         {label}
       </span>
       <div className="backoffice-navigation-links">
         {destinations.map((destination) => (
-          <ActionLink
+          <Link
             key={destination.key}
-            kind="secondary"
+            className="backoffice-navigation-tab"
             href={destination.href}
             aria-current={
               destination.key === current
@@ -102,7 +100,7 @@ export function BackofficeNavigation({
             }
           >
             {destination.label}
-          </ActionLink>
+          </Link>
         ))}
       </div>
     </nav>
