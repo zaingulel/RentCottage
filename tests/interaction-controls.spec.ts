@@ -400,8 +400,21 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
       Number.parseFloat(validBorder),
     );
     expect(
-      await computed(restingToggle, ["color", "background-color"]),
-    ).toEqual(await computed(secondary, ["color", "background-color"]));
+      await computed(restingToggle, [
+        "color",
+        "background-color",
+        "border-top-color",
+      ]),
+    ).toEqual(
+      await computed(secondary, [
+        "color",
+        "background-color",
+        "border-top-color",
+      ]),
+    );
+    expect(await computed(secondary, ["border-top-color"])).toEqual([
+      "rgba(34, 64, 47, 0.3)",
+    ]);
     expect(await computed(disabledToggle, ["border-top-style"])).toEqual([
       "dashed",
     ]);

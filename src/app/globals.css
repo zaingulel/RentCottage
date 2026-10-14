@@ -46,6 +46,7 @@
   --surface-on-trusted: rgb(244 238 226 / 7%);
   --line-menu: rgb(34 64 47 / 28%);
   --line-panel: #d5ddd7;
+  --line-action: rgb(34 64 47 / 30%);
   --line-records: #b9b9b9;
   --accent-policy: #386954;
 
@@ -200,7 +201,7 @@ textarea {
 
 .action-secondary,
 .action-toggle {
-  border-color: var(--line);
+  border-color: var(--line-action);
   background: var(--card);
   color: var(--green);
 }

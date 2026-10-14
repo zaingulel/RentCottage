@@ -51,6 +51,7 @@ the code keeps them.
     themselves. `--ink-on-dark-soft` is the supporting paragraph there and `--ink-on-dark-muted` the small
     label.
   - `--line-panel` is the outline of a panel and of a message.
+  - `--line-action` is the outline of a secondary button and of a toggle at rest.
   - `--elevation-contact` and `--elevation-cast` are the two layers of the card shadow, tinted with the `--ink`
     colour so the shadow stays warm on the cream surfaces; only `--shadow-card` uses them.
   - `--gold-tint` is the one gold wash, behind a label or a page corner; a notice sits on `--surface-notice`.
@@ -186,7 +187,8 @@ Anything else is a token.
 - [interaction-controls.tsx](../src/components/interaction-controls.tsx) holds the shared controls:
   - `ActionButton`: a primary, secondary or toggle button (`.action`, `.action-primary`, `.action-secondary`,
     `.action-toggle`, sized by `.action-compact` or `.action-regular`). A pending button sets
-    `aria-busy` and is disabled. A toggle at rest looks like a secondary button, a pressed one carries the
+    `aria-busy` and is disabled. A secondary button has a `--line-action` outline on a `--card` fill with a
+    `--green` label. A toggle at rest looks like a secondary button, a pressed one carries the
     `--shadow-pressed` ring, and a disabled one has a dashed border.
   - `ActionLink`: a link styled as a primary, secondary or text action (`.action-link`, `.action-text`).
   - A primary or secondary `ActionButton` or `ActionLink` is as wide as its label (`.action-content`).
