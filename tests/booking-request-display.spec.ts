@@ -455,7 +455,27 @@ test("Customer Booking Request status sits in the record page column under the h
           const rowStyle = getComputedStyle(row);
           const totalStyle = getComputedStyle(total);
           const value = total.querySelector("dd")!;
+          const band = progress.querySelector(".status-banner")!;
+          const bandBox = band.getBoundingClientRect();
+          const progressStyle = getComputedStyle(progress);
           return {
+            statusBand:
+              Math.abs(
+                bandBox.top -
+                  progressBox.top -
+                  parseFloat(progressStyle.borderTopWidth),
+              ) < 1 &&
+              Math.abs(
+                bandBox.left -
+                  progressBox.left -
+                  parseFloat(progressStyle.borderLeftWidth),
+              ) < 1 &&
+              Math.abs(
+                progressBox.right -
+                  bandBox.right -
+                  parseFloat(progressStyle.borderRightWidth),
+              ) < 1 &&
+              getComputedStyle(band).borderRadius === "0px",
             fullWidth: [progressBox, detailsBox, messagesBox].every(
               (box) => Math.abs(box.width - statusBox.width) < 1,
             ),
@@ -506,6 +526,7 @@ test("Customer Booking Request status sits in the record page column under the h
         }, testInfo.project.name === "mobile"),
       )
       .toEqual({
+        statusBand: true,
         fullWidth: true,
         titleOutsideCards: true,
         separateGroups: true,
@@ -1441,6 +1462,33 @@ test("lifted public cottage keeps its hero separate and every booking option rea
                           heading.getBoundingClientRect().bottom -
                           24,
                       ) < 1)),
+              leftColumnRhythm: state.phone
+                ? Math.abs(copyBox.top - bookingBox.bottom - 48) < 1
+                : (!galleryBox ||
+                    Math.abs(factsBox.top - galleryBox.bottom - 24) < 1) &&
+                  Math.abs(copyBox.top - factsBox.bottom - 48) < 1,
+              bookingRowPadding:
+                controls[0].getBoundingClientRect().height >= 78 &&
+                controls[0]
+                  .querySelector(".booking-period-label > span")!
+                  .getBoundingClientRect().top -
+                  controls[0].getBoundingClientRect().top >=
+                  12,
+              unboxedDays: [...booking.querySelectorAll("fieldset")].every(
+                (fieldset) => {
+                  const style = getComputedStyle(fieldset);
+                  return [
+                    style.borderTopWidth,
+                    style.borderBottomWidth,
+                    style.borderLeftWidth,
+                    style.borderRightWidth,
+                    style.paddingTop,
+                    style.paddingBottom,
+                    style.paddingLeft,
+                    style.paddingRight,
+                  ].every((value) => parseFloat(value) === 0);
+                },
+              ),
               bookingAlignment: state.phone
                 ? (!galleryBox || galleryBox.bottom <= factsBox.top) &&
                   factsBox.bottom <= bookingBox.top &&
@@ -1489,6 +1537,9 @@ test("lifted public cottage keeps its hero separate and every booking option rea
         heroSize: true,
         heroClearance: true,
         noReservedGallery: true,
+        leftColumnRhythm: true,
+        bookingRowPadding: true,
+        unboxedDays: true,
         bookingAlignment: true,
         thumbnails: true,
         wholeRows: true,

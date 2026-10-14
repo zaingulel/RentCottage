@@ -324,9 +324,11 @@ Anything else is a token.
 - Optional Booking Period filters sit inside a `Disclosure`. Filter controls keep their existing `ActionButton`
   toggle pattern. Actual profile options use one native
   `fieldset`/`legend` per Service Day with `.booking-period-options` and regular `ActionButton` toggles;
-  `aria-pressed` exposes the selection. The profile's `.booking-period-list` holds full-width outlined toggle
-  rows: name over time at the inline start, price at the inline end, with the name, time and price inside the
-  same control. `aria-labelledby` retains the existing name-only accessible name; `aria-describedby` associates
+  `aria-pressed` exposes the selection. Inside `.booking-summary`, the date fieldsets have no border or
+  padding, with `--space-5` between days; their legends, disabled state and error semantics remain. The profile's
+  `.booking-period-list` holds full-width outlined toggle rows with `--space-3` block padding, `--space-4` inline
+  padding and line height `1.5`: name over time at the inline start, price at the inline end, with the name, time
+  and price inside the same control. `aria-labelledby` retains the existing name-only accessible name; `aria-describedby` associates
   time, price and explicit unavailability text. Unavailability remains in the same list item, shown only for an
   option that cannot be chosen. Pressed rows retain the shared tint, inset edge and focused pressed rings.
   Disable the fieldset and onward actions during URL navigation. Missing choices are corrected only through an
@@ -413,8 +415,11 @@ its own; the block it sits in sets the space around it.
   wrapping further rows, with `--space-3` gaps and `--space-2` at `phone`. Never truncate the published media
   array. Zero photos creates no hero, empty gallery or reserved photo gap; one photo creates only the hero.
   The desktop layout has a flexible prose column and a `23rem` booking column, `--space-7` apart and
-  `--space-5` between rows. The booking aside begins level with the thumbnails, or facts when there are no
-  thumbnails, and stays static at every width. At `tablet` the document and visual order is lead photo,
+  `--space-5` between rows. Desktop gallery and facts tracks size to their content, leaving any height from a
+  taller booking aside in the final prose track; gallery-to-facts stays `--space-5`, and facts-to-prose stays
+  `--space-7`. Without thumbnails the facts track alone sizes to its content. At `tablet` rows return to automatic
+  sizing, with `--space-7` from booking to prose. The booking aside begins level with the thumbnails, or facts
+  when there are no thumbnails, and stays static at every width. At `tablet` the document and visual order is lead photo,
   thumbnails, facts, booking, then description, amenities, rules and reviews. Ruled capacity/room facts and
   prose sit directly on parchment; description and House Rules use `--font-size-4`, green section headings use
   the section-title pattern, and amenities occupy two ruled columns. Prose is at most `36rem` wide, with
@@ -471,7 +476,10 @@ its own; the block it sits in sets the space around it.
   deadlines, notes, errors and notification details remain readable. The quote/form, its pre-live gate and
   Confirmed/Cancelled Booking compositions retain their own designs. The banner is a block on
   `--status-neutral-bg` with `--radius-card` corners, holding the status label in bold `--green`, followed by one
-  plain-language sentence in `--ink`, in a `span`, where the status has one.
+  plain-language sentence in `--ink`, in a `span`, where the status has one. In the Customer progress card it
+  instead fills the top band, with zero margin and radius, `--space-4` block and `--space-5` inline padding.
+  That outer card has no padding or gap and clips the band to its own corners; the progress list below has
+  `--space-5` padding.
 - Section heading: `h2.section-title` titles a section below the page title; the `h1` takes `page-title`. It is
   `--display` in `--green` at `--font-size-4` with line height `1.25`, and has `--space-4` below it.
 - Empty state: `div.empty-state` fills a list or record area that has nothing to show. It is a `--card` block with
