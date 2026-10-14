@@ -183,7 +183,8 @@ under the current tab is the accent colour, and the darker stripe of the "No pho
 The captures show the accepted colours.
 
 - Not measured: a screen reader's announcement, browsers other than Chromium, text resizing and text spacing, forced
-  colours, and everything listed under Not shown.
+  colours, Sorani, and the hover, error, disabled and pending states. Keyboard focus was measured with the browser's own
+  focus ring, and reflow was also measured at 320 and 720 pixels wide.
 - On the Platform Administrator cottage list at 390 pixels wide in Arabic, a tab cut by the edge of the bar shows its
   focus ring on three sides until the bar is scrolled; the first and third tabs open that way.
   [#745](https://github.com/zaingulel/RentCottage/issues/745) inherits this with the bar's opening position.
