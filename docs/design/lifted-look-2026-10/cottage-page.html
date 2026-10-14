@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock-up: cottage page</title>
+<style>
+@font-face{font-family:"Changa";font-style:normal;font-weight:500 800;font-display:swap;src:url("../../../public/fonts/changa-arabic.woff2") format("woff2");
+unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1}
+@font-face{font-family:"Changa";font-style:normal;font-weight:500 800;font-display:swap;src:url("../../../public/fonts/changa-latin-ext.woff2") format("woff2");
+unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"Changa";font-style:normal;font-weight:500 800;font-display:swap;src:url("../../../public/fonts/changa-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Karla";font-style:normal;font-weight:400 700;font-display:swap;src:url("../../../public/fonts/karla-latin-ext.woff2") format("woff2");
+unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"Karla";font-style:normal;font-weight:400 700;font-display:swap;src:url("../../../public/fonts/karla-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Almarai";font-style:normal;font-weight:400;font-display:swap;src:url("../../../public/fonts/almarai-400-arabic.woff2") format("woff2");
+unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1}
+@font-face{font-family:"Almarai";font-style:normal;font-weight:400;font-display:swap;src:url("../../../public/fonts/almarai-400-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Almarai";font-style:normal;font-weight:700;font-display:swap;src:url("../../../public/fonts/almarai-700-arabic.woff2") format("woff2");
+unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1}
+@font-face{font-family:"Almarai";font-style:normal;font-weight:700;font-display:swap;src:url("../../../public/fonts/almarai-700-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+:root{--bg:#f4eee2;--card:#fffcf5;--ink:#26241f;--muted:rgb(38 36 31/68%);--green:#22402f;--accent:#865b29;--line:rgb(34 64 47/16%);
+--lift:0 1px 2px rgb(38 36 31/6%),0 8px 24px -12px rgb(38 36 31/18%);}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Karla,Almarai,sans-serif;font-size:17px;line-height:1.5}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid #fffcf5;outline-offset:4px;box-shadow:0 0 0 2px #fffcf5,0 0 0 4px #22402f}
+
+/* Header stand-in: copies the product's solid header, every item non-interactive */
+.top{background:#fffdf7;border-block-end:1px solid var(--line)}
+.top-in{inline-size:min(71.25rem,100% - 2.25rem);margin-inline:auto;min-block-size:4.75rem;display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.brand{display:grid;gap:.25rem;color:var(--green)}
+.brand-name{font-family:Changa,sans-serif;font-weight:800;font-size:26px;line-height:1}
+.tagline{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);line-height:1.2}
+.controls{display:flex;align-items:center;gap:.75rem}
+.pill{display:inline-flex;align-items:center;gap:.5rem;min-block-size:2.75rem;padding-inline:1rem;border:1px solid rgb(34 64 47/28%);border-radius:999px;color:var(--green);font-weight:700;font-size:15px}
+.pill svg{inline-size:1.125rem;block-size:1.125rem}
+.rule{inline-size:1px;block-size:1.5rem;background:var(--line)}
+.bars{display:none;inline-size:2.75rem;padding:0;justify-content:center}
+
+/* Page */
+.page{inline-size:min(1120px,100% - 2.25rem);margin-inline:auto;padding-block-start:2rem}
+.back{display:inline-flex;align-items:center;min-block-size:2.75rem;font-weight:700;color:var(--green)}
+.heading{display:grid;gap:8px;margin-block-end:24px}
+h1{font-family:Changa,sans-serif;font-weight:700;font-size:34px;line-height:1.15;margin:0;color:var(--green)}
+.location{margin:0;color:var(--muted)}
+
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 23rem;grid-template-rows:29rem auto auto auto;column-gap:3rem;row-gap:0}
+.lead-photo{grid-column:1/-1;grid-row:1;display:block;inline-size:100%;block-size:100%;object-fit:cover;object-position:50% 62%;border-radius:14px;background:#e9dfcc}
+.thumbs{grid-column:1;grid-row:2;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-block-start:24px}
+.thumbs img{display:block;inline-size:100%;aspect-ratio:16/10;object-fit:cover;border-radius:14px;background:#e9dfcc}
+.facts{grid-column:1;grid-row:3;display:flex;flex-wrap:wrap;column-gap:3rem;row-gap:.5rem;margin:24px 0 0;padding-block:16px;border-block:1px solid var(--line)}
+.facts div{display:flex;align-items:baseline;gap:12px}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0;font-weight:700}
+
+/* Booking card: the only lifted card */
+.booking{grid-column:2;grid-row:2/5;align-self:start;margin-block-start:24px;background:var(--card);border-radius:14px;box-shadow:var(--lift);padding:24px}
+.card-title{font-family:Changa,sans-serif;font-weight:700;font-size:20px;line-height:1.25;margin:0;color:var(--green)}
+.caveat{margin:8px 0 0;color:var(--muted);font-size:15px}
+.period{border:0;margin:24px 0 0;padding:0;min-inline-size:0}
+.period legend{padding:0;font-weight:700;font-size:15px}
+.options{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.options li{margin:0;padding:0}
+.toggle{display:grid;inline-size:100%;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;text-align:start;min-block-size:2.75rem;padding:12px 16px;border:1px solid rgb(34 64 47/30%);border-radius:8px;background:var(--card);color:var(--green);font:inherit;font-weight:700;font-size:17px;cursor:pointer}
+.toggle[aria-pressed="true"]{background:rgb(34 64 47/10%);border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}
+.toggle[aria-pressed="true"]:focus-visible{box-shadow:0 0 0 2px #fffcf5,0 0 0 4px #22402f,inset 0 0 0 1px var(--green)}
+.option-label{display:grid;gap:4px}
+.price{font-size:15px;font-weight:700;white-space:nowrap}
+.time{color:var(--muted);font-size:15px;font-weight:400}
+.actions{display:grid;gap:12px;margin-block-start:24px}
+.action{display:flex;align-items:center;justify-content:center;min-block-size:2.75rem;padding-inline:1rem;border-radius:8px;font-weight:700;text-align:center}
+.action.primary{background:var(--green);color:#fff}
+.action.secondary{border:1px solid rgb(34 64 47/30%);color:var(--green)}
+
+/* Facts and prose: quiet on parchment */
+.sections{grid-column:1;grid-row:4;display:grid;gap:3rem;max-inline-size:36rem;margin-block-start:2.5rem}
+.sections section{display:grid;gap:12px}
+.lead{margin:0;font-size:20px;line-height:1.6}
+h2.section-title{font-family:Changa,sans-serif;font-weight:700;font-size:20px;line-height:1.25;margin:0;color:var(--green)}
+.amenities{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:2rem}
+.amenities li{padding-block:8px;border-block-end:1px solid var(--line)}
+.sections p{margin:0;font-size:20px}
+.reviews{display:inline-flex;align-items:center;min-block-size:2.75rem;font-weight:700;color:var(--green);text-decoration:underline;text-underline-offset:.2em}
+
+.note{inline-size:min(1120px,100% - 2.25rem);margin:3rem auto 0;padding-block:3rem;border-block-start:1px solid var(--line);color:var(--muted);font-size:15px}
+.note p{margin:0;max-inline-size:40rem}
+
+@media (max-width:47.5rem){
+ .layout{grid-template-columns:minmax(0,1fr);grid-template-rows:none}
+ .lead-photo,.thumbs,.facts,.booking,.sections{grid-column:auto;grid-row:auto}
+ .lead-photo{aspect-ratio:16/10;block-size:auto}
+}
+@media (max-width:40rem){
+ h1{font-size:26px}
+ .tagline,.rule,.account{display:none}
+ .brand-name{font-size:20px}
+ .bars{display:inline-flex}
+ .thumbs{gap:8px}
+ .facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:1rem}
+ .facts div{display:grid;gap:2px}
+ .booking{padding:16px}
+}
+</style>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <span class="brand"><span class="brand-name" data-t="brand">RentCottage</span><span class="tagline" data-t="tag">Countryside homes of Iraq</span></span>
+  <span class="controls">
+    <span class="pill"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></svg><span data-t="lang">English</span></span>
+    <span class="rule" aria-hidden="true"></span>
+    <span class="pill bars"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span>
+    <span class="pill account" data-t="signin">Sign in</span>
+    <span class="pill account" data-t="list">List your cottage</span>
+    <span class="pill account" data-t="support">Support</span>
+  </span>
+</div></header>
+<main class="page">
+  <a class="back" href="#" data-t="back">Back to results</a>
+  <div class="heading">
+    <h1 data-t="name">Garden House, Shaqlawa</h1>
+    <p class="location" data-t="loc">Approximate location: Shaqlawa, Erbil</p>
+  </div>
+  <div class="layout">
+    <img class="lead-photo" src="../../../public/uploads/cottage-garden.png" alt="Garden House, Shaqlawa 1" data-alt="a1">
+    <div class="thumbs">
+      <img src="../../../public/uploads/interior-living.png" alt="Garden House, Shaqlawa 2" data-alt="a2">
+      <img src="../../../public/uploads/interior-bedroom.png" alt="Garden House, Shaqlawa 3" data-alt="a3">
+      <img src="../../../public/uploads/detail-tea.png" alt="Garden House, Shaqlawa 4" data-alt="a4">
+    </div>
+    <dl class="facts">
+      <div><dt data-t="cap">Capacity</dt><dd data-t="capv">8 guests</dd></div>
+      <div><dt data-t="rooms">Bedrooms and bathrooms</dt><dd><bdi dir="ltr">3 / 2</bdi></dd></div>
+    </dl>
+    <aside class="booking" aria-labelledby="booking-title">
+      <h2 class="card-title" id="booking-title" data-t="bt">Choose your Booking Period</h2>
+      <p class="caveat" data-t="fee">Prices are per option. The exact quote includes the Booking Service Fee.</p>
+      <fieldset class="period">
+        <legend data-t="day">Fri, Oct 23</legend>
+        <ul class="options">
+          <li><button class="toggle" type="button" aria-pressed="false" aria-describedby="prototype-note"><span class="option-label"><span data-t="o1">Morning</span><span class="time"><bdi dir="ltr">09:00–15:00</bdi></span></span><bdi class="price" dir="ltr">IQD 180,000</bdi></button></li>
+          <li><button class="toggle" type="button" aria-pressed="false" aria-describedby="prototype-note"><span class="option-label"><span data-t="o2">Evening</span><span class="time"><bdi dir="ltr">17:00–23:00</bdi></span></span><bdi class="price" dir="ltr">IQD 190,000</bdi></button></li>
+          <li><button class="toggle" type="button" aria-pressed="true" aria-describedby="prototype-note"><span class="option-label"><span data-t="o3">Full-day bundle</span><span class="time"><bdi dir="ltr">09:00–23:00</bdi></span></span><bdi class="price" dir="ltr">IQD 250,000</bdi></button></li>
+        </ul>
+      </fieldset>
+      <div class="actions">
+        <a class="action primary" href="#" data-t="quote">Get exact quote</a>
+        <a class="action secondary" href="#" data-t="msg">Message this cottage</a>
+      </div>
+    </aside>
+    <div class="sections">
+      <p class="lead" data-t="desc">A walled garden house on the edge of Shaqlawa, shaded by date palms and a reed-roofed veranda. The main room opens onto the garden, where floor cushions and low tables seat a family for tea. The three bedrooms keep to their own quiet side of the house.</p>
+      <section aria-labelledby="amenities-title">
+        <h2 class="section-title" id="amenities-title" data-t="am">Amenities</h2>
+        <ul class="amenities">
+          <li data-t="am1">Garden</li>
+          <li data-t="am2">Parking</li>
+          <li data-t="am3">Air conditioning</li>
+          <li data-t="am4">Wi-Fi</li>
+          <li data-t="am5">Outdoor seating</li>
+        </ul>
+      </section>
+      <section aria-labelledby="rules-title">
+        <h2 class="section-title" id="rules-title" data-t="hr">House Rules</h2>
+        <p data-t="rules">No smoking indoors. Music stays low after 10 PM. Please take your rubbish with you when you leave.</p>
+      </section>
+      <a class="reviews" href="#" data-t="rev">Read customer reviews</a>
+    </div>
+  </div>
+</main>
+<footer class="note"><p id="prototype-note" data-t="note">Mock-up for #754. The cottage, its photographs, prices and text are invented samples. The bar at the top stands in for the site header, which is unchanged. Booking controls are illustrative.</p></footer>
+<script>
+const ar={brand:"ريف كوتج",tag:"بيوت الريف العراقي",lang:"العربية",signin:"تسجيل الدخول",list:"أدرج كوخك",support:"الدعم",
+back:"العودة إلى النتائج",name:"بيت الحديقة، شقلاوة",loc:"الموقع التقريبي: شقلاوة, أربيل",cap:"السعة",capv:"8 ضيوف",rooms:"غرف النوم والحمامات",
+bt:"اختر فترة الحجز",fee:"الأسعار لكل خيار. يشمل عرض السعر الدقيق رسوم خدمة الحجز.",day:"الجمعة، 23 تشرين الأول",
+o1:"الفترة الصباحية",o2:"الفترة المسائية",o3:"اليوم الكامل",quote:"عرض السعر الدقيق",msg:"مراسلة هذا البيت",
+desc:"بيت بحديقة مسوّرة على أطراف شقلاوة، تظلّله أشجار النخيل وسقيفة من القصب. تنفتح الغرفة الرئيسية على الحديقة، حيث تتّسع الوسائد الأرضية والطاولات المنخفضة لجلسة شاي عائلية. وتحظى غرف النوم الثلاث بجانبها الهادئ من البيت.",
+am:"المرافق",am1:"حديقة",am2:"موقف سيارات",am3:"تكييف",am4:"واي فاي",am5:"جلسة خارجية",
+hr:"قواعد البيت",rules:"التدخين ممنوع داخل البيت. يُرجى خفض صوت الموسيقى بعد العاشرة مساءً. يُرجى أخذ النفايات معكم عند المغادرة.",
+rev:"قراءة تقييمات العملاء",note:"نموذج تصميم للمهمة #754. البيت وصوره وأسعاره ونصوصه عينات خيالية. الشريط العلوي بديل عن رأس الموقع، وهو دون تغيير. عناصر الحجز للتوضيح فقط.",
+a1:"بيت الحديقة، شقلاوة 1",a2:"بيت الحديقة، شقلاوة 2",a3:"بيت الحديقة، شقلاوة 3",a4:"بيت الحديقة، شقلاوة 4"};
+if(new URLSearchParams(location.search).has("ar")){
+  document.documentElement.lang="ar";document.documentElement.dir="rtl";document.title="نموذج: صفحة البيت";
+  document.querySelectorAll("[data-t]").forEach(e=>{e.textContent=ar[e.dataset.t]});
+  document.querySelectorAll("[data-alt]").forEach(e=>{e.alt=ar[e.dataset.alt]});
+}
+</script>
+</body>
+</html>

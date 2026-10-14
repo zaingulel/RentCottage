@@ -201,7 +201,9 @@ Anything else is a token.
   - A primary or secondary `ActionButton` or `ActionLink` is as wide as its label (`.action-content`).
     `width="full"` (`.action-full`) is the one exception, the form-column action: a button that submits a form or
     closes a panel fills the column or grid track its fields or facts sit in. An action inside a card in a list or
-    grid is never full width.
+    grid stays content-width except for View cottage in a Search result footer at the `phone` breakpoint.
+    Customer status Withdraw and the separate Messages action also fill their footers at `phone`; Withdraw is
+    content-width at the desktop inline end, while recovery keeps its full-width treatment.
   - `FormControl`: an input, select or textarea with `.form-control`, which shows `aria-invalid` as an error
     border.
   - `FormControl` with `type="date"` is the date field. It keeps the platform's date picker; the date text and the
@@ -322,13 +324,19 @@ Anything else is a token.
 - Optional Booking Period filters sit inside a `Disclosure`. Filter controls keep their existing `ActionButton`
   toggle pattern. Actual profile options use one native
   `fieldset`/`legend` per Service Day with `.booking-period-options` and regular `ActionButton` toggles;
-  `aria-pressed` exposes the selection. Disable the fieldset and onward actions during URL navigation.
-  Missing choices are corrected only through an explicit `ActionButton`; changed availability uses
-  `ActionFeedback`. Results reuse `.result-shifts` inside named `.result-service-day` groups. Each option there is a
-  row of two aligned lines: its name over its time at the start edge, and its price over its availability text at
-  the end edge, with a selected filter's `span.status-badge` on its own line under the row. The picker on the
-  cottage page uses the same row, and shows the state text only on an option that cannot be chosen. Times use
-  `<bdi dir="ltr">` in every locale.
+  `aria-pressed` exposes the selection. The profile's `.booking-period-list` holds full-width outlined toggle
+  rows: name over time at the inline start, price at the inline end, with the name, time and price inside the
+  same control. `aria-labelledby` retains the existing name-only accessible name; `aria-describedby` associates
+  time, price and explicit unavailability text. Unavailability remains in the same list item, shown only for an
+  option that cannot be chosen. Pressed rows retain the shared tint, inset edge and focused pressed rings.
+  Disable the fieldset and onward actions during URL navigation. Missing choices are corrected only through an
+  explicit `ActionButton`; changed availability uses `ActionFeedback`. Results reuse `.result-shifts` inside
+  named `.result-service-day` groups. Each option there is a row of two aligned lines: its name over its time at
+  the start edge, and its price over its availability text at the end edge, with a selected filter's
+  `span.status-badge` on its own line under the row. Results show a decorative availability dot beside the
+  explicit word, in `--success-text` when available and `--muted` otherwise; it never carries the state alone.
+  Times use `<bdi dir="ltr">` in every locale. Loading, stale selection, missing periods, disabled actions,
+  cross-midnight times and unavailable prices retain their existing meanings.
 - Progress steps: `BookingRequestProgress` in
   [booking-request-progress.tsx](../src/components/booking-request-progress.tsx) renders an
   `ol.booking-request-progress` with `role="list"`, named by `aria-label`, with one `li` per step carrying
@@ -337,6 +345,12 @@ Anything else is a token.
   not-started steps, so no state is conveyed by colour alone. The Customer Booking Request status page shows the
   steps, and a Customer's Confirmed Booking page shows them all completed inside `.booking-request-progress-card`
   above the Confirmed Booking details. States are derived by `customerBookingRequestProgress` and never stored.
+  Inside Customer status `.customer-booking-request-progress`, the status sentence and progress share one lifted
+  card. Its four columns remain horizontal at `phone`, with wrapping names at `--font-size-2` and state text at
+  `--font-size-1`. The neutral connector track is 6px thick and turns `--gold` only after a completed step;
+  markers and state text remain authoritative for current, upcoming, stopped and action-required states.
+  The track is centred on the marker using `--booking-progress-marker`; owner and Confirmed Booking progress
+  retain their own layouts.
 - Results paging: `nav.results-paging`, named by `aria-label`, follows a paged list of results and holds only
   secondary content-width `ActionLink`s at the inline end: one back to the first results on a continued page, then
   one to the next results when more exist. Paging continues from the last result shown, so it has no page numbers
@@ -366,9 +380,9 @@ its own; the block it sits in sets the space around it.
   record. The label is in `--muted` and sits in a column beside its value, with `--space-3` between them and
   `--space-4` between facts; at the `phone` breakpoint the label stacks above its value. A value with several
   lines puts each in a `span`. A fact list never carries the record's status. The search summary on results,
-  `section.search-summary`, flows its facts in columns at least `18rem` wide, with `--space-3` between rows and
-  `--space-5` between columns, so they share a line on desktop and stack in one column on a phone; the fact list in
-  a result row is at `--font-size-2` with `--space-1` between facts.
+  `section.search-summary`, is a ruled flex-wrapping strip with wrapping facts, `--space-3` between rows and
+  `--space-5` between columns; long facts and filters remain readable. The fact list in a result row is at
+  `--font-size-2` with `--space-1` between facts.
 - List row: `ul.list-rows` shows a list of a person's records, one `li` per record. Each is a bordered row, with a
   `1px` `--line` border, `--radius-card` corners and `--space-3` between rows. A row has exactly one link,
   `a.list-row-title`, which holds only the record's name in bold, spans the row's width and is at least `2.75rem`
@@ -376,14 +390,37 @@ its own; the block it sits in sets the space around it.
   `--font-size-2`, holds plain text, a reference in `bdi`, a status badge and a date in `time`, and wraps. Further blocks of the
   same record follow inside the `li`.
 - Card: `article.card` presents one record among several in a grid or list on a page that uses the Page template.
-  It is a `--card` surface with `--radius-card` corners and the `--shadow-card` elevation shadow. It shows no
+  The same `.card` surface also applies to the public cottage booking aside and the Customer Booking Request
+  status/progress, reference/details and separate Messages groups. It is a `--card` surface with `--radius-card` corners and the `--shadow-card` elevation shadow. It shows no
   border: its `1px` border is `transparent`, so the card keeps an edge where the browser forces colours and removes
   shadows. It sets no padding and no layout; the block that uses it does. Its text has three tiers: `card-title` on
   the record's heading, in `--display` at weight 700 in `--ink` at `--font-size-4`, with line height `1.25` and
   `1.4` in Sorani; `card-detail` for the line that places or describes the record, in `--muted` at
   `--font-size-2`; and `card-small-print` for counts and other secondary facts, in `--muted` at `--font-size-1`.
   The cottage list card, `.cottage-profile-card`, uses the pattern and adds the Cottage card rules below. A
-  panel, notice, list row or empty state is not a card and keeps its `1px` `--line` border.
+  panel, notice, list row or empty state outside those named groups is not a card and keeps its `1px` `--line`
+  border.
+- Search result: each result uses the card surface with an `18rem` photo beside its details, moving above them at
+  `tablet`. Without a photo, omit the empty frame and use the full detail width. The detail header places its
+  overview at the inline start and From Price at the inline end, in `--display`, `--green` and `--font-size-5`,
+  with its qualifying note retained. At `phone` use the order overview, price, Service Days, footer, with the
+  price start-aligned. Each Service Day has three option columns, stacking at `tablet`; a historical fourth
+  option wraps to the next row, and additional days remain. The fee note and View cottage share a ruled footer
+  after all days, stacking with a full-width action at `phone`. Matched amenities, filters and paging remain.
+- Public cottage page: the first published photo spans the page column in `.profile-main-image`, `29rem` high
+  on desktop and `16 / 10` at `tablet`, cropped at `50% 62%`, with `--space-5` clear space below. Remaining
+  photos in `.profile-gallery` use `16 / 10` frames with `--radius-card` corners, in order across three columns,
+  wrapping further rows, with `--space-3` gaps and `--space-2` at `phone`. Never truncate the published media
+  array. Zero photos creates no hero, empty gallery or reserved photo gap; one photo creates only the hero.
+  The desktop layout has a flexible prose column and a `23rem` booking column, `--space-7` apart and
+  `--space-5` between rows. The booking aside begins level with the thumbnails, or facts when there are no
+  thumbnails, and stays static at every width. At `tablet` the document and visual order is lead photo,
+  thumbnails, facts, booking, then description, amenities, rules and reviews. Ruled capacity/room facts and
+  prose sit directly on parchment; description and House Rules use `--font-size-4`, green section headings use
+  the section-title pattern, and amenities occupy two ruled columns. Prose is at most `36rem` wide, with
+  `--space-7` between facts and prose and between prose sections. The booking card has `--space-5` padding,
+  `--space-4` at `phone`, a green heading, the existing fee note and full-width quote/message actions. Keep every
+  existing loading, stale-selection, missing-period, disabled, cross-midnight and price-unavailable state.
 - Cottage card: a cottage list card has five rows held in a subgrid so cards in a row align: cover, title, detail,
   small print, actions. The card grid fills its row with empty columns, so a lone card keeps its column width.
   The cover runs edge to edge at `16 / 10`, cropped with `object-fit: cover`, on `--surface-placeholder` while
@@ -424,8 +461,15 @@ its own; the block it sits in sets the space around it.
   left, so the colour only repeats them. It is never the page-level status. Over a cottage card's cover it is
   unchanged and stays opaque, so its contrast never depends on the photo.
 - Rating stars: the `span.stars` beside a published review's rating is decorative and hidden from assistive technology, so the rating text carries the meaning.
-- Status banner: `p.status-banner` is the page-level status of a record page. It sits directly under the page
-  title, at most one per page, and keeps `role="status"` and `aria-live="polite"`. It is a block on
+- Status banner: `p.status-banner` is the page-level status of a record page. It follows the page title, at most
+  one per page, and keeps `role="status"` and `aria-live="polite"`. Customer Booking Request status places the
+  title on parchment above an unboxed `--space-5` stack: status/progress in one lifted group, reference/all facts
+  in a second, and Messages/action in a third. There is no photograph: the reference stands alone and Cottage
+  is the first fact. The details group has `--space-5` padding, a rule between reference and facts, and Customer
+  Total between two rules with its value in `--display`. Its action footer aligns to the inline end; Messages
+  is a `--space-5`-padded heading/action row with errors spanning both columns, stacking at `phone`. All
+  deadlines, notes, errors and notification details remain readable. The quote/form, its pre-live gate and
+  Confirmed/Cancelled Booking compositions retain their own designs. The banner is a block on
   `--status-neutral-bg` with `--radius-card` corners, holding the status label in bold `--green`, followed by one
   plain-language sentence in `--ink`, in a `span`, where the status has one.
 - Section heading: `h2.section-title` titles a section below the page title; the `h1` takes `page-title`. It is
