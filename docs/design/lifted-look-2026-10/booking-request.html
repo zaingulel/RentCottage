@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock-up: Booking Request status</title>
+<style>
+@font-face{font-family:"Changa";font-style:normal;font-weight:500 800;font-display:swap;src:url("../../../public/fonts/changa-arabic.woff2") format("woff2");
+unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1}
+@font-face{font-family:"Changa";font-style:normal;font-weight:500 800;font-display:swap;src:url("../../../public/fonts/changa-latin-ext.woff2") format("woff2");
+unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"Changa";font-style:normal;font-weight:500 800;font-display:swap;src:url("../../../public/fonts/changa-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Karla";font-style:normal;font-weight:400 700;font-display:swap;src:url("../../../public/fonts/karla-latin-ext.woff2") format("woff2");
+unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"Karla";font-style:normal;font-weight:400 700;font-display:swap;src:url("../../../public/fonts/karla-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Almarai";font-style:normal;font-weight:400;font-display:swap;src:url("../../../public/fonts/almarai-400-arabic.woff2") format("woff2");
+unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1}
+@font-face{font-family:"Almarai";font-style:normal;font-weight:400;font-display:swap;src:url("../../../public/fonts/almarai-400-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Almarai";font-style:normal;font-weight:700;font-display:swap;src:url("../../../public/fonts/almarai-700-arabic.woff2") format("woff2");
+unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1}
+@font-face{font-family:"Almarai";font-style:normal;font-weight:700;font-display:swap;src:url("../../../public/fonts/almarai-700-latin.woff2") format("woff2");
+unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+:root{--bg:#f4eee2;--card:#fffcf5;--ink:#26241f;--muted:rgb(38 36 31/66%);--green:#22402f;--gold:#c68a45;--accent:#865b29;--line:rgb(34 64 47/12%);
+--lift:0 1px 2px rgb(38 36 31/6%),0 8px 24px -12px rgb(38 36 31/18%);--lift-hover:0 2px 4px rgb(38 36 31/8%),0 18px 36px -16px rgb(38 36 31/28%);}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Karla,Almarai,sans-serif;font-size:16px;line-height:1.5}
+a{color:inherit;text-decoration:none}
+.top{background:var(--card);border-bottom:1px solid var(--line)}
+.top-in,.wrap{width:min(1120px,calc(100% - 2rem));margin-inline:auto}
+.top-in{display:flex;align-items:center;justify-content:space-between;padding:.85rem 0}
+.brand{font-family:Changa,sans-serif;font-weight:800;font-size:1.35rem;color:var(--green);line-height:1}
+.brand small{display:block;font-family:Karla,Almarai,sans-serif;font-size:.62rem;letter-spacing:.14em;color:var(--accent);font-weight:700;margin-top:.25rem}
+.who{display:flex;align-items:center;gap:.6rem;font-weight:700;font-size:.9rem}
+.avatar{width:2.25rem;height:2.25rem;border-radius:50%;background:var(--green);color:#fff;display:grid;place-items:center;font-family:Changa,sans-serif}
+.head{display:flex;justify-content:space-between;align-items:end;gap:1rem;padding:2.5rem 0 1.5rem;flex-wrap:wrap}
+h1{font-family:Changa,sans-serif;font-weight:700;font-size:2.125rem;line-height:1.15;margin:0;color:var(--green)}
+.btn{display:inline-flex;align-items:center;gap:.5rem;background:var(--green);color:#fff;font-weight:700;border-radius:.5rem;padding:.7rem 1.1rem;font-size:.95rem;box-shadow:var(--lift)}
+.btn.ghost{background:transparent;color:var(--green);box-shadow:none;border:1.5px solid rgb(34 64 47/30%)}
+footer{height:4rem}
+.card-title{font-family:Changa,sans-serif;font-weight:700;font-size:1.25rem;line-height:1.25;margin:0;color:var(--ink)}
+.wrap.rec{width:min(760px,calc(100% - 2rem))}
+.stack{display:grid;gap:1.5rem}
+.card{background:var(--card);border-radius:.875rem;box-shadow:var(--lift);overflow:hidden}
+.band{background:#eef3ef;padding:1rem 1.25rem}
+.band p{margin:0;max-inline-size:40rem}
+.band b{color:var(--green)}
+.progress{display:grid;grid-template-columns:repeat(4,1fr);margin:0;padding:1.25rem;list-style:none}
+.progress li{position:relative;display:grid;align-content:start;justify-items:start;gap:.25rem;padding-inline-end:.5rem}
+.progress li:not(:last-child)::after{content:"";position:absolute;inset-block-start:calc(1rem - .1875rem);inset-inline:2.5rem .5rem;block-size:.375rem;border-radius:999px;background:rgb(34 64 47/10%)}
+.progress li.done:not(:last-child)::after{background:var(--gold)}
+.mk{inline-size:2rem;block-size:2rem;border-radius:50%;display:grid;place-items:center;font-family:Changa,sans-serif;font-weight:700;font-size:.95rem;margin-block-end:.25rem}
+.done .mk{background:var(--green);color:var(--card)}
+.cur .mk{border:2px solid var(--green);color:var(--green)}
+.up .mk{border:1.5px solid rgb(34 64 47/30%);color:var(--muted)}
+.step{font-size:.85rem;line-height:1.3}
+.up .step{color:var(--muted)}
+.cur .step{font-weight:700}
+.now{font-size:.85rem;font-weight:700;color:var(--accent);line-height:1.3}
+.sr{position:absolute;inline-size:1px;block-size:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.detail{padding:1.25rem}
+.dhead{display:grid;grid-template-columns:5rem 1fr;gap:1rem;align-items:center;padding-block-end:1.25rem;border-block-end:1px solid var(--line)}
+.thumb{inline-size:5rem;block-size:5rem;border-radius:.625rem;background:#e9dfcc center/cover}
+.ref{display:block;color:var(--muted);font-size:.9rem}
+.facts{margin:0;padding-block:1.25rem;display:grid;gap:1rem;border-block-end:1px solid var(--line)}
+.facts>div{display:grid;grid-template-columns:13rem 1fr;column-gap:12px;align-items:baseline}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0}
+.facts .total{padding-block:.75rem;border-block:1px solid var(--line)}
+.facts .total dd{font-family:Changa,sans-serif;font-weight:700;font-size:1.25rem;color:var(--green)}
+.dfoot{display:flex;justify-content:flex-end;padding-block-start:1.25rem}
+.msg{padding:1rem 1.25rem;display:grid;grid-template-columns:1fr auto;gap:1rem;align-items:center}
+@media (max-width:40rem){
+ h1{font-size:1.625rem}.head{padding:1.5rem 0 1rem}.who span{display:none}
+ .thumb{inline-size:4rem;block-size:4rem}.dhead{grid-template-columns:4rem 1fr}
+ .facts>div{grid-template-columns:1fr;row-gap:.15rem}
+ .dfoot .btn,.msg .btn{flex:1;justify-content:center}
+ .msg{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="top"><div class="top-in">
+  <div class="brand"><span data-t="brand">RentCottage</span><small data-t="tag">COUNTRYSIDE HOMES OF IRAQ</small></div>
+  <div class="who"><span data-t="name">Sara Ahmed</span><div class="avatar" data-t="ini">S</div></div>
+</div></div>
+<main class="wrap rec">
+  <div class="head"><h1 data-t="h1">Booking Request status</h1></div>
+  <div class="stack">
+    <section class="card">
+      <div class="band"><p role="status"><b data-t="st">Pending</b> <span data-t="ss">Waiting for the Cottage Owner to accept or decline this request. The booking is not confirmed yet.</span></p></div>
+      <span class="sr" id="plabel" data-t="pl">Booking Request progress</span>
+      <ol class="progress" role="list" aria-labelledby="plabel">
+        <li class="done"><span class="mk">✓</span><span class="step" data-t="s1">Requested</span></li>
+        <li class="cur" aria-current="step"><span class="mk">2</span><span class="step" data-t="s2">Owner decision</span><span class="now" data-t="now">In progress</span></li>
+        <li class="up"><span class="mk">3</span><span class="step" data-t="s3">Payment</span></li>
+        <li class="up"><span class="mk">4</span><span class="step" data-t="s4">Confirmed</span></li>
+      </ol>
+    </section>
+    <section class="card detail">
+      <div class="dhead">
+        <div class="thumb" style="background-image:url(../../../public/uploads/cottage-garden.png)"></div>
+        <div><h2 class="card-title" data-t="c">Garden House, Shaqlawa</h2><span class="ref"><bdi>RC-REQ-7F3A9C21D4E8B605</bdi></span></div>
+      </div>
+      <dl class="facts">
+        <div><dt data-t="f1">Booking Period</dt><dd data-t="v1">Oct 23, 2026, 9:00 AM – Oct 23, 2026, 11:00 PM</dd></div>
+        <div><dt data-t="f2">Party size</dt><dd>6</dd></div>
+        <div><dt data-t="f3">Booking Price</dt><dd><bdi>IQD 250,000</bdi></dd></div>
+        <div><dt data-t="f4">Service fee</dt><dd><bdi>IQD 5,000</bdi></dd></div>
+        <div class="total"><dt data-t="f5">Customer Total</dt><dd><bdi>IQD 255,000</bdi></dd></div>
+        <div><dt data-t="f6">Owner response deadline</dt><dd data-t="v6">Oct 14, 2026, 2:12 PM</dd></div>
+      </dl>
+      <div class="dfoot"><a class="btn ghost" href="#" data-t="wd">Withdraw pending request</a></div>
+    </section>
+    <section class="card msg">
+      <h2 class="card-title" data-t="m">Messages</h2>
+      <a class="btn ghost" href="#" data-t="mo">Open conversation</a>
+    </section>
+  </div>
+</main>
+<footer></footer>
+<script>
+const ar={brand:"ريف كوتج",tag:"بيوت الريف العراقي",name:"سارة أحمد",ini:"س",h1:"حالة طلب الحجز",st:"قيد الانتظار",ss:"بانتظار قبول مالك البيت لهذا الطلب أو رفضه. الحجز غير مؤكد بعد.",pl:"تقدّم طلب الحجز",s1:"تم الطلب",s2:"قرار المالك",s3:"الدفع",s4:"تم التأكيد",now:"قيد التنفيذ",c:"بيت الحديقة، شقلاوة",f1:"فترة الحجز",v1:"23‏/10‏/2026، 9:00 ص – 23‏/10‏/2026، 11:00 م",f2:"عدد أفراد المجموعة",f3:"سعر الحجز",f4:"رسوم الخدمة",f5:"إجمالي العميل",f6:"موعد رد المالك",v6:"14‏/10‏/2026، 2:12 م",wd:"سحب الطلب قيد الانتظار",m:"الرسائل",mo:"فتح المحادثة"};
+if(location.search.includes("ar")){document.documentElement.lang="ar";document.documentElement.dir="rtl";document.querySelectorAll("[data-t]").forEach(e=>{const v=ar[e.dataset.t];if(v)e.textContent=v})}
+</script>
+</body></html>
