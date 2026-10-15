@@ -1689,7 +1689,8 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
         releaseScripts = resolve;
       });
       const staticScript = (url: URL) =>
-        url.pathname.startsWith("/_next/static/") && url.pathname.endsWith(".js");
+        url.pathname.startsWith("/_next/static/") &&
+        url.pathname.endsWith(".js");
       await page.route(staticScript, async (route) => {
         await scriptsReleased;
         await route.continue();
