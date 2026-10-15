@@ -486,6 +486,54 @@ test("a verified Customer double-submit creates one Pending request and one mini
   const progress = page.getByRole("list", { name: "Booking Request progress" });
   await expect(progress).toBeVisible();
   await expect(page.getByText("IQD 185,000", { exact: true })).toBeVisible();
+  await expect(page.getByText(requestReference, { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Cottage", { exact: true }).locator("..").locator("dd"),
+  ).toHaveText(cottageName);
+  await expect(
+    page
+      .getByText("Customer Total", { exact: true })
+      .locator("..")
+      .locator("dd"),
+  ).toHaveText("IQD 185,000");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const footer = document.querySelector(
+          ".customer-booking-request-actions",
+        );
+        const withdraw = footer?.querySelector("button");
+        const messages = document.querySelector(".customer-request-messages");
+        const row = messages?.querySelector(".request-follow-up");
+        const heading = row?.querySelector("h2");
+        const action = row?.querySelector("button");
+        if (!footer || !withdraw || !messages || !row || !heading || !action)
+          throw new Error("Pending request actions are missing");
+        const footerBox = footer.getBoundingClientRect();
+        const withdrawBox = withdraw.getBoundingClientRect();
+        const headingBox = heading.getBoundingClientRect();
+        const actionBox = action.getBoundingClientRect();
+        const rowStyle = getComputedStyle(row);
+        const phone = innerWidth <= 640;
+        return {
+          withdrawWidth: phone
+            ? Math.abs(withdrawBox.width - footerBox.width) < 1
+            : withdrawBox.width < footerBox.width / 2 &&
+              Math.abs(withdrawBox.right - footerBox.right) < 1,
+          messagesRow: phone
+            ? actionBox.top >= headingBox.bottom &&
+              Math.abs(
+                actionBox.width -
+                  (row.clientWidth -
+                    parseFloat(rowStyle.paddingInlineStart) -
+                    parseFloat(rowStyle.paddingInlineEnd)),
+              ) < 1
+            : actionBox.left >= headingBox.right,
+          liftedMessages: getComputedStyle(messages).boxShadow !== "none",
+        };
+      }),
+    )
+    .toEqual({ withdrawWidth: true, messagesRow: true, liftedMessages: true });
   await expect(progress.getByRole("listitem")).toHaveCount(4);
   await expect(
     progress.getByRole("listitem").filter({ hasText: "Owner decision" }),
@@ -504,6 +552,15 @@ test("a verified Customer double-submit creates one Pending request and one mini
     path: test.info().outputPath("progress-ar.png"),
     fullPage: true,
   });
+  await page.goto(`/ckb/booking-requests/${requestReference}`);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "دۆخی داواکاری حجز",
+  );
+  const soraniProgress = page.getByRole("list", {
+    name: "پێشکەوتنی داواکاری حجز",
+  });
+  await expect(soraniProgress).toBeVisible();
+  await expect(page.getByText(requestReference, { exact: true })).toBeVisible();
   await page.goto(`/en/booking-requests/${requestReference}`);
   const ownerContext = await browser.newContext({
     baseURL: new URL(page.url()).origin,

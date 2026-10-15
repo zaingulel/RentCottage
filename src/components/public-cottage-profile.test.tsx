@@ -73,13 +73,21 @@ describe("PublicCottageProfileView", () => {
     expect(rows[0].querySelector("script")).toBeNull();
     expect(rows[0]).toHaveTextContent("09:00–15:00");
     expect(rows[0].querySelector("bdi")).toHaveAttribute("dir", "ltr");
-    expect(within(rows[0]).getByText("IQD 60,000").tagName).toBe("B");
+    expect(within(rows[0]).getByText("IQD 60,000")).toBeVisible();
+    expect(
+      within(rows[0]).getByRole("button", {
+        name: '<script>alert("period")</script>',
+      }),
+    ).toHaveAccessibleDescription("09:00–15:00 IQD 60,000");
     expect(
       within(sidebar).getByRole("group", { name: "Wed, Sep 23" }),
     ).toBeVisible();
     expect(rows[1]).toHaveTextContent(
       "Full-day bundle09:00–23:00Price unavailableUnavailable",
     );
+    expect(
+      within(rows[1]).getByRole("button", { name: "Full-day bundle" }),
+    ).toHaveAccessibleDescription("09:00–23:00 Price unavailable Unavailable");
     expect(within(sidebar).queryByText("Total price")).toBeNull();
     expect(
       within(sidebar).getByRole("button", { name: "Get exact quote" }),
@@ -102,6 +110,58 @@ describe("PublicCottageProfileView", () => {
       "/en/results?from=2026-09-22&to=2026-09-23&guests=4",
     );
     expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
+  it("preserves ordered public photos and literal content for zero one and many photos", () => {
+    const media = [
+      "/uploads/cottage-garden.png",
+      "/uploads/interior-living.png",
+      "/uploads/interior-bedroom.png",
+      "/uploads/detail-tea.png",
+      "/uploads/cottage-river.png",
+      "/uploads/cottage-hills.png",
+    ];
+    const name = '<img src=x onerror=alert("name")>';
+    const description = '<script>alert("description")</script>';
+    const houseRules = '<svg onload=alert("rules")>';
+    for (const count of [0, 1, 6]) {
+      const { container, unmount } = render(
+        <PublicCottageProfileView
+          locale="en"
+          query={query}
+          resultsQueryString=""
+          result={{
+            status: "loaded",
+            cottage: {
+              ...cottage,
+              mediaUrls: media.slice(0, count),
+              name,
+              description,
+              houseRules,
+            },
+          }}
+        />,
+      );
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(name);
+      expect(screen.getByText(description)).toBeVisible();
+      expect(screen.getByText(houseRules)).toBeVisible();
+      const images = screen.queryAllByRole("img");
+      expect(images.map((image) => image.getAttribute("alt"))).toEqual(
+        media.slice(0, count).map((_, index) => `${name} ${index + 1}`),
+      );
+      expect(
+        images.map((image) => {
+          const url = new URL(
+            image.getAttribute("src")!,
+            "https://example.test",
+          );
+          return url.searchParams.get("url") ?? url.pathname;
+        }),
+      ).toEqual(media.slice(0, count));
+      expect(container.querySelector("script, svg")).toBeNull();
+      expect(container.querySelectorAll("img")).toHaveLength(count);
+      unmount();
+    }
   });
 
   it.each([

@@ -154,7 +154,7 @@ export default async function CustomerBookingRequestPage({
         request={details.request}
         focusSuccessorId="customer-booking-request-detail"
       />
-      {messaging}
+      <div className="card customer-request-messages">{messaging}</div>
       {notices}
     </main>
   );

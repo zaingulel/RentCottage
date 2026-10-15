@@ -267,9 +267,11 @@ describe("CottageBookingPeriodPicker", () => {
       />,
     );
     const day = screen.getByRole("group", { name: "Sun, Jan 13" });
-    await user.click(
-      within(day).getByRole("button", { name: "Full-day bundle" }),
-    );
+    const fullDay = within(day).getByRole("button", {
+      name: "Full-day bundle",
+    });
+    expect(fullDay).toHaveAccessibleName("Full-day bundle");
+    await user.click(within(fullDay).getByText("08:00–23:00"));
     expect(replace).toHaveBeenLastCalledWith(
       "/en/cottages/garden-house?from=2030-01-12&to=2030-01-13&selection=2030-01-12%3Ashift%3A1&selection=2030-01-13%3Afull-day" +
         suffix,
@@ -281,7 +283,9 @@ describe("CottageBookingPeriodPicker", () => {
     expect(
       within(day).getByRole("button", { name: "Full-day bundle" }),
     ).toHaveAttribute("aria-pressed", "true");
-    await user.click(within(day).getByRole("button", { name: "Evening" }));
+    const evening = within(day).getByRole("button", { name: "Evening" });
+    expect(evening).toHaveAccessibleName("Evening");
+    await user.click(within(evening).getByText("IQD 90,000"));
     expect(replace).toHaveBeenLastCalledWith(
       "/en/cottages/garden-house?from=2030-01-12&to=2030-01-13&selection=2030-01-12%3Ashift%3A1&selection=2030-01-13%3Ashift%3A2" +
         suffix,

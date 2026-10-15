@@ -246,43 +246,45 @@ export function PublicCottageResults({
               cottage.amenities.includes(amenity),
             );
             return (
-              <article key={cottage.slug}>
-                <div className="result-image">
-                  {cottage.mediaUrls[0] ? (
+              <article className="card" key={cottage.slug}>
+                {cottage.mediaUrls[0] ? (
+                  <div className="result-image">
                     <Image
                       src={cottage.mediaUrls[0]}
                       alt={cottage.name}
                       fill
-                      sizes="(min-width: 40rem) 18rem, 100vw"
+                      sizes="(max-width: 47.5rem) calc(100vw - 36px), 18rem"
                     />
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
                 <div className="result-content">
-                  <h2>{cottage.name}</h2>
-                  <p>
-                    {messages.location}: {cottage.approximateLocation},{" "}
-                    {cottage.governorate}
-                  </p>
-                  <dl className="fact-list">
-                    <div>
-                      <dt>{messages.capacity}</dt>
-                      <dd>
-                        {cottage.capacity} {messages.capacityGuests}
-                      </dd>
-                    </div>
-                    {matchedAmenities.length > 0 ? (
+                  <div className="result-overview">
+                    <h2 className="card-title">{cottage.name}</h2>
+                    <p>
+                      {messages.location}: {cottage.approximateLocation},{" "}
+                      {cottage.governorate}
+                    </p>
+                    <dl className="fact-list">
                       <div>
-                        <dt>{messages.matchedAmenities}</dt>
+                        <dt>{messages.capacity}</dt>
                         <dd>
-                          {matchedAmenities.map((amenity) => (
-                            <span key={amenity}>
-                              {publicCottageAmenityName(locale, amenity)}
-                            </span>
-                          ))}
+                          {cottage.capacity} {messages.capacityGuests}
                         </dd>
                       </div>
-                    ) : null}
-                  </dl>
+                      {matchedAmenities.length > 0 ? (
+                        <div>
+                          <dt>{messages.matchedAmenities}</dt>
+                          <dd>
+                            {matchedAmenities.map((amenity) => (
+                              <span key={amenity}>
+                                {publicCottageAmenityName(locale, amenity)}
+                              </span>
+                            ))}
+                          </dd>
+                        </div>
+                      ) : null}
+                    </dl>
+                  </div>
                   <div className="result-price">
                     {fromPrice === null ? (
                       <p className="result-from-price">{messages.noPrice}</p>
@@ -295,70 +297,78 @@ export function PublicCottageResults({
                       </>
                     )}
                   </div>
-                  <p>{messages.prices}</p>
-                  {[
-                    ...new Set(
-                      cottage.inventory.map((unit) => unit.serviceDay),
-                    ),
-                  ].map((day) => (
-                    <section
-                      className="result-service-day"
-                      key={day}
-                      aria-label={formatServiceDay(day, locale)}
-                    >
-                      <h3>{formatServiceDay(day, locale)}</h3>
-                      <ul className="result-shifts">
-                        {cottage.inventory
-                          .filter((unit) => unit.serviceDay === day)
-                          .map((unit) => (
-                            <li key={`${unit.kind}-${unit.position ?? "full"}`}>
-                              <span>
-                                {unit.kind === "full-day"
-                                  ? messages.fullDay
-                                  : unit.name}
-                              </span>
-                              <span>
-                                <bdi dir="ltr">
-                                  {unit.startTime}–{unit.endTime}
-                                </bdi>
-                                {(unit.endTime < unit.startTime ||
-                                  (unit.kind === "full-day" &&
-                                    unit.endTime === unit.startTime)) && (
-                                  <> {messages.nextDay}</>
-                                )}
-                              </span>
-                              <b>
-                                {unit.priceIqd === null
-                                  ? messages.noPrice
-                                  : formatIqd(unit.priceIqd, locale)}
-                              </b>
-                              <span>
-                                {unit.available
-                                  ? messages.available
-                                  : messages.unavailableOption}
-                              </span>
-                              {query.selections.some(
-                                (selection) =>
-                                  selection.serviceDay === day &&
-                                  selection.kind === unit.kind &&
-                                  (selection.kind === "full-day" ||
-                                    selection.position === unit.position),
-                              ) && (
-                                <span className="status-badge">
-                                  {messages.selected}
+                  <div className="result-days">
+                    {[
+                      ...new Set(
+                        cottage.inventory.map((unit) => unit.serviceDay),
+                      ),
+                    ].map((day) => (
+                      <section
+                        className="result-service-day"
+                        key={day}
+                        aria-label={formatServiceDay(day, locale)}
+                      >
+                        <h3>{formatServiceDay(day, locale)}</h3>
+                        <ul className="result-shifts">
+                          {cottage.inventory
+                            .filter((unit) => unit.serviceDay === day)
+                            .map((unit) => (
+                              <li
+                                key={`${unit.kind}-${unit.position ?? "full"}`}
+                              >
+                                <span>
+                                  {unit.kind === "full-day"
+                                    ? messages.fullDay
+                                    : unit.name}
                                 </span>
-                              )}
-                            </li>
-                          ))}
-                      </ul>
-                    </section>
-                  ))}
-                  <ActionLink
-                    kind="primary"
-                    href={`/${locale}/cottages/${cottage.slug}?${serializeCottageResultsQuery(query, after)}`}
-                  >
-                    {messages.view}
-                  </ActionLink>
+                                <span>
+                                  <bdi dir="ltr">
+                                    {unit.startTime}–{unit.endTime}
+                                  </bdi>
+                                  {(unit.endTime < unit.startTime ||
+                                    (unit.kind === "full-day" &&
+                                      unit.endTime === unit.startTime)) && (
+                                    <> {messages.nextDay}</>
+                                  )}
+                                </span>
+                                <b>
+                                  {unit.priceIqd === null
+                                    ? messages.noPrice
+                                    : formatIqd(unit.priceIqd, locale)}
+                                </b>
+                                <span
+                                  className={`result-availability${unit.available ? " result-availability-available" : ""}`}
+                                >
+                                  {unit.available
+                                    ? messages.available
+                                    : messages.unavailableOption}
+                                </span>
+                                {query.selections.some(
+                                  (selection) =>
+                                    selection.serviceDay === day &&
+                                    selection.kind === unit.kind &&
+                                    (selection.kind === "full-day" ||
+                                      selection.position === unit.position),
+                                ) && (
+                                  <span className="status-badge">
+                                    {messages.selected}
+                                  </span>
+                                )}
+                              </li>
+                            ))}
+                        </ul>
+                      </section>
+                    ))}
+                  </div>
+                  <div className="result-footer">
+                    <p>{messages.prices}</p>
+                    <ActionLink
+                      kind="primary"
+                      href={`/${locale}/cottages/${cottage.slug}?${serializeCottageResultsQuery(query, after)}`}
+                    >
+                      {messages.view}
+                    </ActionLink>
+                  </div>
                 </div>
               </article>
             );

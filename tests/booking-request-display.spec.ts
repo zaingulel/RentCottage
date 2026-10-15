@@ -2,11 +2,19 @@ import { bookingRequestPaymentRecoveryMessages } from "../src/i18n/booking-reque
 import { ownerBookingRequestMessages } from "../src/i18n/owner-booking-request-messages";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { build } from "esbuild";
+import { imageConfigDefault } from "next/dist/shared/lib/image-config.js";
+import nextConfig from "../next.config";
 
 import { readApplicationStylesheet } from "./fixtures/application-stylesheet";
 
 declare global {
   interface Window {
+    renderPublicCottageDisplay: (input: {
+      screen: "results" | "profile";
+      locale: "en" | "ar" | "ckb";
+      photoCount: 0 | 1 | 4 | 6;
+      longContent?: boolean;
+    }) => void;
     renderBookingRequestDisplay: (input: {
       locale: "en" | "ar" | "ckb";
       role: "customer" | "owner";
@@ -44,7 +52,15 @@ async function mountBookingRequestDisplay(
     platform: "browser",
     target: "es2022",
     jsx: "automatic",
-    define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
+    alias: { "next/image": "next/dist/esm/shared/lib/image-external.js" },
+    define: {
+      "process.env.NODE_ENV": '"production"',
+      "process.env": "{}",
+      "process.env.__NEXT_IMAGE_OPTS": JSON.stringify({
+        ...imageConfigDefault,
+        ...nextConfig.images,
+      }),
+    },
     plugins: [
       {
         name: "replace-booking-request-server-action",
@@ -56,7 +72,8 @@ async function mountBookingRequestDisplay(
           pluginBuild.onLoad(
             { filter: /.*/, namespace: "router-fixture" },
             () => ({
-              contents: "export const useRouter = () => ({ refresh() {} });",
+              contents:
+                "export const useRouter = () => ({ refresh() {}, replace() {} });",
               loader: "ts",
             }),
           );
@@ -81,7 +98,7 @@ async function mountBookingRequestDisplay(
   });
   await page.goto("/api/health");
   await page.setContent(
-    '<meta name="viewport" content="width=device-width, initial-scale=1"><main id="fixture-root"></main>',
+    '<meta name="viewport" content="width=device-width, initial-scale=1"><div id="fixture-root"></div>',
   );
   await page.addStyleTag({ content: await readApplicationStylesheet() });
   await page.addScriptTag({ path: bundlePath });
@@ -196,6 +213,12 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
                       ? locale.paymentRequired
                       : locale.confirmed,
         );
+        const requestButtons =
+          role === "customer"
+            ? page
+                .locator(".customer-booking-request-status")
+                .getByRole("button")
+            : page.getByRole("button");
         if (status.startsWith("payment-correction-")) {
           await expect(page.getByRole("status")).toContainText(
             locale.unconfirmed,
@@ -205,7 +228,7 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
             status === "payment-correction-quarantined"
           )
             await expect(page.getByRole("status")).toContainText(locale.held);
-          await expect(page.getByRole("button")).toHaveCount(0);
+          await expect(requestButtons).toHaveCount(0);
           if (status !== "payment-correction-expired")
             await expect(page.getByRole("status")).not.toContainText(
               locale.refunded,
@@ -243,14 +266,14 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
             String(digit.charCodeAt(0) - (digit <= "٩" ? 0x660 : 0x6f0)),
           );
           expect(westernDigits).toContain("12:20");
-          await expect(page.getByRole("button")).toHaveCount(0);
+          await expect(requestButtons).toHaveCount(0);
         } else {
           await expect(
             page.getByText(locale.paymentDeadline, { exact: true }),
           ).toHaveCount(0);
         }
         await expect(page.getByRole("status")).toBeVisible();
-        await expect(page.getByRole("button")).toHaveCount(0);
+        await expect(requestButtons).toHaveCount(0);
         await page.evaluate(() => document.fonts.ready);
         const dimensions = await page.evaluate(() => {
           const card = document.querySelector("article, section");
@@ -283,10 +306,12 @@ test("real Customer and Cottage Owner payment states stay semantic and within th
         await expect(
           page.getByText(copy.processing, { exact: true }),
         ).toBeVisible();
-        await expect(page.getByRole("button")).toHaveCount(0);
+        await expect(
+          page.locator(".customer-booking-request-status").getByRole("button"),
+        ).toHaveCount(0);
       } else
         await expect(
-          page.getByRole("button", {
+          page.locator(".customer-booking-request-status").getByRole("button", {
             name: recovery === "available" ? copy.action : copy.retry,
           }),
         ).toBeVisible();
@@ -346,7 +371,7 @@ test("Customer Booking Request status sits in the record page column under the h
     const measured = await page.evaluate(() => {
       const column = document.querySelector("main.page");
       const card = column?.querySelector(".customer-booking-request-status");
-      const followUp = column?.querySelector(".request-follow-up");
+      const followUp = column?.querySelector(".customer-request-messages");
       if (!column || !card || !followUp)
         throw new Error("Booking Request record page column is missing");
       const columnBox = column.getBoundingClientRect();
@@ -379,6 +404,138 @@ test("Customer Booking Request status sits in the record page column under the h
     expect(measured.followUpWidth).toBeCloseTo(columnWidth, 0);
     expect(measured.cardTop - measured.columnTop).toBeCloseTo(32, 0);
     expect(measured.document).toBeLessThanOrEqual(measured.available);
+    await expect(
+      page.locator(".customer-booking-request-status > .card"),
+    ).toHaveCount(2);
+    await expect(
+      page.getByText("RC-REQ-AAAAAAAAAAAAAAAA", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("img")).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate((phone) => {
+          const status = document.querySelector(
+            ".customer-booking-request-status",
+          );
+          const title = status?.querySelector("h1");
+          const progress = status?.querySelector(
+            ".customer-booking-request-progress",
+          );
+          const details = status?.querySelector(
+            ".customer-booking-request-details",
+          );
+          const total = details?.querySelector(
+            ".customer-booking-request-total",
+          );
+          const messages = document.querySelector(".customer-request-messages");
+          const row = messages?.querySelector(".request-follow-up");
+          const heading = row?.querySelector("h2");
+          const action = row?.querySelector("button");
+          if (
+            !status ||
+            !title ||
+            !progress ||
+            !details ||
+            !total ||
+            !messages ||
+            !row ||
+            !heading ||
+            !action
+          )
+            throw new Error("Customer status composition is missing");
+          const statusBox = status.getBoundingClientRect();
+          const progressBox = progress.getBoundingClientRect();
+          const detailsBox = details.getBoundingClientRect();
+          const messagesBox = messages.getBoundingClientRect();
+          const headingBox = heading.getBoundingClientRect();
+          const actionBox = action.getBoundingClientRect();
+          const markers = [
+            ...progress.querySelectorAll(".booking-request-progress-marker"),
+          ].map((node) => node.getBoundingClientRect());
+          const rowStyle = getComputedStyle(row);
+          const totalStyle = getComputedStyle(total);
+          const value = total.querySelector("dd")!;
+          const band = progress.querySelector(".status-banner")!;
+          const bandBox = band.getBoundingClientRect();
+          const progressStyle = getComputedStyle(progress);
+          return {
+            statusBand:
+              Math.abs(
+                bandBox.top -
+                  progressBox.top -
+                  parseFloat(progressStyle.borderTopWidth),
+              ) < 1 &&
+              Math.abs(
+                bandBox.left -
+                  progressBox.left -
+                  parseFloat(progressStyle.borderLeftWidth),
+              ) < 1 &&
+              Math.abs(
+                progressBox.right -
+                  bandBox.right -
+                  parseFloat(progressStyle.borderRightWidth),
+              ) < 1 &&
+              getComputedStyle(band).borderRadius === "0px",
+            fullWidth: [progressBox, detailsBox, messagesBox].every(
+              (box) => Math.abs(box.width - statusBox.width) < 1,
+            ),
+            titleOutsideCards:
+              title.closest(".card") === null &&
+              title.getBoundingClientRect().bottom <= progressBox.top,
+            separateGroups:
+              progressBox.bottom <= detailsBox.top &&
+              detailsBox.bottom <= messagesBox.top &&
+              [progress, details, messages].every(
+                (node) => getComputedStyle(node).boxShadow !== "none",
+              ),
+            totalBetweenRules:
+              parseFloat(totalStyle.borderBlockStartWidth) >= 1 &&
+              parseFloat(totalStyle.borderBlockEndWidth) >= 1 &&
+              getComputedStyle(value).fontFamily.includes("Changa"),
+            horizontalProgress:
+              markers.length === 4 &&
+              markers.every((box) => Math.abs(box.top - markers[0].top) < 1) &&
+              markers.every(
+                (box, index) =>
+                  index === 0 ||
+                  (document.documentElement.dir === "rtl"
+                    ? box.right <= markers[index - 1].left
+                    : box.left >= markers[index - 1].right),
+              ),
+            readableProgress: [
+              ...progress.querySelectorAll(".booking-request-progress-name"),
+            ].every((node) => node.scrollWidth <= node.clientWidth + 1),
+            messagesRow: phone
+              ? actionBox.top >= headingBox.bottom &&
+                Math.abs(
+                  actionBox.width -
+                    (row.clientWidth -
+                      parseFloat(rowStyle.paddingInlineStart) -
+                      parseFloat(rowStyle.paddingInlineEnd)),
+                ) < 1
+              : document.documentElement.dir === "rtl"
+                ? actionBox.right <= headingBox.left
+                : actionBox.left >= headingBox.right,
+            noOverflow:
+              document.documentElement.scrollWidth <=
+                document.documentElement.clientWidth &&
+              [progress, details, messages].every(
+                (node) => node.scrollWidth <= node.clientWidth,
+              ),
+          };
+        }, testInfo.project.name === "mobile"),
+      )
+      .toEqual({
+        statusBand: true,
+        fullWidth: true,
+        titleOutsideCards: true,
+        separateGroups: true,
+        totalBetweenRules: true,
+        horizontalProgress: true,
+        readableProgress: true,
+        messagesRow: true,
+        noOverflow: true,
+      });
   }
 });
 
@@ -887,5 +1044,582 @@ test("a waiting request row sits on one line on desktop and stacks with its two 
         expect(actionsMiddle).toBeLessThan(measured.facts.bottom);
       }
     }).toPass();
+  }
+});
+
+test("lifted public results retain readable options and responsive hierarchy in every language", async ({
+  page,
+}, testInfo) => {
+  const phone = testInfo.project.name === "mobile";
+  if (phone) await page.setViewportSize({ width: 390, height: 844 });
+  await mountBookingRequestDisplay(page, testInfo);
+
+  for (const input of [
+    {
+      locale: "en",
+      title: "Available cottages",
+      noPrice: "Price unavailable",
+      unavailable: "Unavailable",
+      selected: "Selected filter",
+      view: "View cottage",
+      photoCount: 1,
+      longContent: false,
+    },
+    {
+      locale: "ar",
+      title: "البيوت المتاحة",
+      noPrice: "السعر غير متاح",
+      unavailable: "غير متاح",
+      selected: "مرشح محدد",
+      view: "اعرض البيت",
+      photoCount: 1,
+      longContent: false,
+    },
+    {
+      locale: "ckb",
+      title: "کۆتێجە بەردەستەکان",
+      noPrice: "نرخ بەردەست نییە",
+      unavailable: "بەردەست نییە",
+      selected: "پاڵاوتەی دیاریکراو",
+      view: "کۆتێجەکە ببینە",
+      photoCount: 1,
+      longContent: false,
+    },
+    {
+      locale: "ckb",
+      title: "کۆتێجە بەردەستەکان",
+      noPrice: "نرخ بەردەست نییە",
+      unavailable: "بەردەست نییە",
+      selected: "پاڵاوتەی دیاریکراو",
+      view: "کۆتێجەکە ببینە",
+      photoCount: 0,
+      longContent: true,
+    },
+  ] as const) {
+    await page.evaluate((state) => window.renderPublicCottageDisplay(state), {
+      screen: "results" as const,
+      locale: input.locale,
+      photoCount: input.photoCount,
+      longContent: input.longContent,
+    });
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      input.title,
+    );
+    await expect(page.locator("html")).toHaveAttribute(
+      "dir",
+      input.locale === "en" ? "ltr" : "rtl",
+    );
+    const card = page.getByRole("article");
+    await expect(card.getByRole("heading", { level: 2 })).toHaveText(
+      input.longContent
+        ? "کۆتێجی باخچەی خەیاڵی بۆ کۆبوونەوەی خێزان لە ناوچەی شەقڵاوە لە نێوان دارەکان و چیاکان لەگەڵ شوێنی پشوودان و دانیشتنی دەرەوە"
+        : "Fictional Garden Cottage",
+    );
+    await expect(card.getByRole("img")).toHaveCount(input.photoCount);
+    await page.evaluate(() => document.fonts.ready);
+    await expect
+      .poll(() =>
+        card
+          .getByRole("img")
+          .evaluateAll((images) =>
+            images.every(
+              (image) =>
+                image instanceof HTMLImageElement &&
+                image.complete &&
+                image.naturalWidth > 0,
+            ),
+          ),
+      )
+      .toBe(true);
+    await expect(card.getByText(input.noPrice, { exact: true })).toBeVisible();
+    for (const unavailable of await card
+      .getByText(input.unavailable, { exact: true })
+      .all())
+      await expect(unavailable).toBeVisible();
+    await expect(card.getByText(input.selected, { exact: true })).toHaveCount(
+      2,
+    );
+    for (const selected of await card
+      .getByText(input.selected, { exact: true })
+      .all())
+      await expect(selected).toBeVisible();
+    await expect(
+      card.getByRole("link", { name: input.view, exact: true }),
+    ).toBeVisible();
+    await expect(card.locator(".result-service-day")).toHaveCount(2);
+    await expect(
+      card.locator(".result-service-day").first().getByRole("listitem"),
+    ).toHaveCount(3);
+    await expect(
+      card.locator(".result-service-day").last().getByRole("listitem"),
+    ).toHaveCount(4);
+
+    await expect
+      .poll(() =>
+        card.evaluate(
+          (article, state) => {
+            const content = article.querySelector(".result-content");
+            const overview = article.querySelector(".result-overview");
+            const price = article.querySelector(".result-price");
+            const days = article.querySelector(".result-days");
+            const footer = article.querySelector(".result-footer");
+            const title = article.querySelector("h2");
+            const image = article.querySelector(".result-image");
+            const action = footer?.querySelector("a");
+            if (
+              !content ||
+              !overview ||
+              !price ||
+              !days ||
+              !footer ||
+              !title ||
+              !action
+            )
+              throw new Error("Public Search composition is missing");
+            const [
+              contentBox,
+              overviewBox,
+              priceBox,
+              daysBox,
+              footerBox,
+              titleBox,
+              actionBox,
+            ] = [content, overview, price, days, footer, title, action].map(
+              (node) => node.getBoundingClientRect(),
+            );
+            const imageBox = image?.getBoundingClientRect();
+            const dayBoxes = [
+              ...days.querySelectorAll(".result-service-day"),
+            ].map((node) => node.getBoundingClientRect());
+            const optionBoxes = [
+              ...days.querySelectorAll(".result-service-day:first-child li"),
+            ].map((node) => node.getBoundingClientRect());
+            const historicalBoxes = [
+              ...days.querySelectorAll(".result-service-day:last-child li"),
+            ].map((node) => node.getBoundingClientRect());
+            const atStart = (box: DOMRect, parent: DOMRect) =>
+              Math.abs(
+                state.rtl ? box.right - parent.right : box.left - parent.left,
+              ) < 1;
+            return {
+              photoPlacement: state.hasPhoto
+                ? !!imageBox &&
+                  (state.phone
+                    ? imageBox.bottom <= contentBox.top &&
+                      Math.abs(imageBox.width / imageBox.height - 1.6) < 0.01
+                    : Math.abs(imageBox.height - contentBox.height) < 1 &&
+                      Math.abs(imageBox.top - contentBox.top) < 1 &&
+                      (state.rtl
+                        ? imageBox.left >= contentBox.right
+                        : imageBox.right <= contentBox.left))
+                : !imageBox &&
+                  Math.abs(contentBox.width - article.clientWidth) < 1,
+              priceHierarchy: state.phone
+                ? priceBox.top >= overviewBox.bottom &&
+                  daysBox.top >= priceBox.bottom &&
+                  atStart(priceBox, overviewBox) &&
+                  atStart(
+                    price.querySelector("p")!.getBoundingClientRect(),
+                    overviewBox,
+                  )
+                : Math.abs(priceBox.top - titleBox.top) < 1 &&
+                  (state.rtl
+                    ? priceBox.right <= overviewBox.left
+                    : priceBox.left >= overviewBox.right),
+              dayColumns: state.phone
+                ? optionBoxes.every(
+                    (box, index) =>
+                      index === 0 || box.top >= optionBoxes[index - 1].bottom,
+                  )
+                : optionBoxes.every(
+                    (box) => Math.abs(box.top - optionBoxes[0].top) < 1,
+                  ) &&
+                  optionBoxes.every(
+                    (box, index) =>
+                      index === 0 ||
+                      (state.rtl
+                        ? box.right <= optionBoxes[index - 1].left
+                        : box.left >= optionBoxes[index - 1].right),
+                  ),
+              historicalRow: state.phone
+                ? historicalBoxes.every(
+                    (box, index) =>
+                      index === 0 ||
+                      box.top >= historicalBoxes[index - 1].bottom,
+                  )
+                : historicalBoxes[3].top >=
+                  Math.max(
+                    ...historicalBoxes.slice(0, 3).map((box) => box.bottom),
+                  ),
+              footerAfterDays: dayBoxes.every(
+                (box) => footerBox.top >= box.bottom,
+              ),
+              phoneAction:
+                !state.phone || Math.abs(actionBox.width - footerBox.width) < 1,
+              lifted: getComputedStyle(article).boxShadow !== "none",
+              inkTitle:
+                getComputedStyle(title).color ===
+                getComputedStyle(document.body).color,
+              fontsLoaded: document.fonts.check(
+                "700 20px Changa",
+                title.textContent ?? "",
+              ),
+              noOverflow:
+                document.documentElement.scrollWidth <=
+                  document.documentElement.clientWidth &&
+                article.scrollWidth <= article.clientWidth &&
+                [
+                  ...article.querySelectorAll("p, h2, li, dd"),
+                  ...document.querySelectorAll(
+                    ".search-summary dt, .search-summary dd",
+                  ),
+                ].every((node) => node.scrollWidth <= node.clientWidth + 1),
+            };
+          },
+          { phone, rtl: input.locale !== "en", hasPhoto: input.photoCount > 0 },
+        ),
+      )
+      .toEqual({
+        photoPlacement: true,
+        priceHierarchy: true,
+        dayColumns: true,
+        historicalRow: true,
+        footerAfterDays: true,
+        phoneAction: true,
+        lifted: true,
+        inkTitle: true,
+        fontsLoaded: true,
+        noOverflow: true,
+      });
+  }
+});
+
+test("lifted public cottage keeps its hero separate and every booking option readable in every language", async ({
+  page,
+}, testInfo) => {
+  const projectPhone = testInfo.project.name === "mobile";
+  if (projectPhone) await page.setViewportSize({ width: 390, height: 844 });
+  await mountBookingRequestDisplay(page, testInfo);
+  const media = [
+    "/uploads/cottage-garden.png",
+    "/uploads/interior-living.png",
+    "/uploads/interior-bedroom.png",
+    "/uploads/detail-tea.png",
+    "/uploads/cottage-river.png",
+    "/uploads/cottage-hills.png",
+  ];
+  for (const input of [
+    {
+      locale: "en",
+      heading: "Choose your Booking Period",
+      photoCount: 4,
+      narrow: projectPhone,
+      longContent: false,
+    },
+    {
+      locale: "ar",
+      heading: "اختر فترة الحجز",
+      photoCount: 4,
+      narrow: projectPhone,
+      longContent: false,
+    },
+    {
+      locale: "ckb",
+      heading: "ماوەی حجزەکەت هەڵبژێرە",
+      photoCount: 4,
+      narrow: projectPhone,
+      longContent: false,
+    },
+    {
+      locale: "ckb",
+      heading: "ماوەی حجزەکەت هەڵبژێرە",
+      photoCount: 0,
+      narrow: projectPhone,
+      longContent: false,
+    },
+    {
+      locale: "ckb",
+      heading: "ماوەی حجزەکەت هەڵبژێرە",
+      photoCount: 1,
+      narrow: projectPhone,
+      longContent: false,
+    },
+    {
+      locale: "ckb",
+      heading: "ماوەی حجزەکەت هەڵبژێرە",
+      photoCount: 6,
+      narrow: true,
+      longContent: true,
+    },
+  ] as const) {
+    if (input.narrow) await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate((state) => window.renderPublicCottageDisplay(state), {
+      screen: "profile" as const,
+      locale: input.locale,
+      photoCount: input.photoCount,
+      longContent: input.longContent,
+    });
+    const name = input.longContent
+      ? "کۆتێجی باخچەی خەیاڵی بۆ کۆبوونەوەی خێزان لە ناوچەی شەقڵاوە لە نێوان دارەکان و چیاکان لەگەڵ شوێنی پشوودان و دانیشتنی دەرەوە"
+      : "Fictional Garden Cottage";
+    const title = page.getByRole("heading", { level: 1 });
+    await expect(title).toHaveText(name);
+    await expect(
+      page.getByRole("heading", { name: input.heading, exact: true }),
+    ).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("lang", input.locale);
+    await expect(page.locator("html")).toHaveAttribute(
+      "dir",
+      input.locale === "en" ? "ltr" : "rtl",
+    );
+    const images = page.getByRole("img");
+    await expect(images).toHaveCount(input.photoCount);
+    await page.evaluate(() => document.fonts.ready);
+    await expect
+      .poll(() =>
+        images.evaluateAll((nodes) =>
+          nodes.every(
+            (image) =>
+              image instanceof HTMLImageElement &&
+              image.complete &&
+              image.naturalWidth > 0,
+          ),
+        ),
+      )
+      .toBe(true);
+    expect(
+      await images.evaluateAll((nodes) =>
+        nodes.map(
+          (image) =>
+            new URL(image.getAttribute("src")!, location.href).pathname,
+        ),
+      ),
+    ).toEqual(media.slice(0, input.photoCount));
+    for (let index = 0; index < input.photoCount; index++)
+      await expect(images.nth(index)).toHaveAttribute(
+        "alt",
+        `${name} ${index + 1}`,
+      );
+    await expect(page.locator(".profile-gallery")).toHaveCount(
+      input.photoCount > 1 ? 1 : 0,
+    );
+    const booking = page.getByRole("complementary");
+    await expect(booking.getByRole("group")).toHaveCount(2);
+    await expect(booking.getByRole("button", { pressed: true })).toHaveCount(2);
+    await expect(booking.locator(".booking-period-list > li")).toHaveCount(7);
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (state) => {
+            const main = document.querySelector("main.profile-page");
+            const heading = main?.querySelector(".page-heading");
+            const layout = main?.querySelector(".profile-layout");
+            const hero = main?.querySelector(".profile-main-image");
+            const gallery = main?.querySelector(".profile-gallery");
+            const facts = main?.querySelector(".profile-facts");
+            const booking = main?.querySelector(".booking-summary");
+            const copy = main?.querySelector(".profile-copy");
+            if (!main || !heading || !layout || !facts || !booking || !copy)
+              throw new Error("Public cottage composition is missing");
+            const mainBox = main.getBoundingClientRect();
+            const layoutBox = layout.getBoundingClientRect();
+            const heroBox = hero?.getBoundingClientRect();
+            const galleryBox = gallery?.getBoundingClientRect();
+            const factsBox = facts.getBoundingClientRect();
+            const bookingBox = booking.getBoundingClientRect();
+            const copyBox = copy.getBoundingClientRect();
+            const thumbnails = [
+              ...(gallery?.querySelectorAll("img") ?? []),
+            ].map((node) => node.getBoundingClientRect());
+            const controls = [
+              ...booking.querySelectorAll(
+                ".booking-period-list .action-toggle",
+              ),
+            ];
+            return {
+              heroSize:
+                state.photos === 0
+                  ? !hero
+                  : !!heroBox &&
+                    Math.abs(heroBox.width - mainBox.width) < 1 &&
+                    (state.phone
+                      ? Math.abs(heroBox.width / heroBox.height - 1.6) < 0.01
+                      : Math.abs(heroBox.height - 464) < 1),
+              heroClearance:
+                !heroBox ||
+                (state.phone
+                  ? layoutBox.top >= heroBox.bottom + 23
+                  : Math.abs(bookingBox.top - heroBox.bottom - 24) < 1),
+              noReservedGallery:
+                state.photos > 1 ||
+                (!galleryBox &&
+                  Math.abs(factsBox.top - layoutBox.top) < 1 &&
+                  (heroBox
+                    ? Math.abs(layoutBox.top - heroBox.bottom - 24) < 1
+                    : Math.abs(
+                        layoutBox.top -
+                          heading.getBoundingClientRect().bottom -
+                          24,
+                      ) < 1)),
+              leftColumnRhythm: state.phone
+                ? Math.abs(copyBox.top - bookingBox.bottom - 48) < 1
+                : (!galleryBox ||
+                    Math.abs(factsBox.top - galleryBox.bottom - 24) < 1) &&
+                  Math.abs(copyBox.top - factsBox.bottom - 48) < 1,
+              bookingRowPadding:
+                controls[0].getBoundingClientRect().height >= 78 &&
+                controls[0]
+                  .querySelector(".booking-period-label > span")!
+                  .getBoundingClientRect().top -
+                  controls[0].getBoundingClientRect().top >=
+                  12,
+              headingGap: [
+                ...booking.querySelectorAll(".booking-period-options"),
+              ].every((fieldset) => {
+                const legend = fieldset.querySelector(":scope > legend")!;
+                const firstOption = fieldset.querySelector(
+                  ".booking-period-list .action-toggle",
+                )!;
+                return (
+                  Math.abs(
+                    firstOption.getBoundingClientRect().top -
+                      legend.getBoundingClientRect().bottom -
+                      12,
+                  ) < 1
+                );
+              }),
+              unboxedDays: [...booking.querySelectorAll("fieldset")].every(
+                (fieldset) => {
+                  const style = getComputedStyle(fieldset);
+                  return [
+                    style.borderTopWidth,
+                    style.borderBottomWidth,
+                    style.borderLeftWidth,
+                    style.borderRightWidth,
+                    style.paddingTop,
+                    style.paddingBottom,
+                    style.paddingLeft,
+                    style.paddingRight,
+                  ].every((value) => parseFloat(value) === 0);
+                },
+              ),
+              bookingAlignment: state.phone
+                ? (!galleryBox || galleryBox.bottom <= factsBox.top) &&
+                  factsBox.bottom <= bookingBox.top &&
+                  bookingBox.bottom <= copyBox.top
+                : Math.abs(bookingBox.top - (galleryBox ?? factsBox).top) < 1,
+              thumbnails:
+                thumbnails.every(
+                  (box) => Math.abs(box.width / box.height - 1.6) < 0.01,
+                ) &&
+                thumbnails
+                  .slice(0, 3)
+                  .every((box) => Math.abs(box.top - thumbnails[0].top) < 1) &&
+                (thumbnails.length <= 3 ||
+                  thumbnails[3].top >= thumbnails[0].bottom),
+              wholeRows: controls.every((control) => {
+                const row = control.closest("li")!;
+                const box = control.getBoundingClientRect();
+                return (
+                  Math.abs(box.width - row.getBoundingClientRect().width) < 1 &&
+                  [...control.querySelectorAll("span, b, bdi")].every(
+                    (node) => {
+                      const child = node.getBoundingClientRect();
+                      return (
+                        child.left >= box.left &&
+                        child.right <= box.right &&
+                        child.top >= box.top &&
+                        child.bottom <= box.bottom
+                      );
+                    },
+                  )
+                );
+              }),
+              staticBooking: getComputedStyle(booking).position === "static",
+              noOverflow:
+                document.documentElement.scrollWidth <=
+                  document.documentElement.clientWidth &&
+                [...main.querySelectorAll("p, h1, h2, li, dd, button")].every(
+                  (node) => node.scrollWidth <= node.clientWidth + 1,
+                ),
+            };
+          },
+          { phone: input.narrow, photos: input.photoCount },
+        ),
+      )
+      .toEqual({
+        heroSize: true,
+        heroClearance: true,
+        noReservedGallery: true,
+        leftColumnRhythm: true,
+        bookingRowPadding: true,
+        headingGap: true,
+        unboxedDays: true,
+        bookingAlignment: true,
+        thumbnails: true,
+        wholeRows: true,
+        staticBooking: true,
+        noOverflow: true,
+      });
+
+    await title.focus();
+    await page.keyboard.press("Tab");
+    const selected = booking.getByRole("button", { pressed: true }).first();
+    await expect(selected).toBeFocused();
+    await expect
+      .poll(() =>
+        selected.evaluate((button) => {
+          const style = getComputedStyle(button);
+          const box = button.getBoundingClientRect();
+          const card = button.closest("aside")!.getBoundingClientRect();
+          const outer =
+            parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+          return (
+            button.matches(":focus-visible") &&
+            style.outlineStyle !== "none" &&
+            parseFloat(style.outlineWidth) >= 2 &&
+            (style.boxShadow.match(/rgba?\(/g)?.length ?? 0) >= 3 &&
+            style.boxShadow.includes("inset") &&
+            box.left - outer >= card.left &&
+            box.right + outer <= card.right
+          );
+        }),
+      )
+      .toBe(true);
+
+    const bookingTop = await booking.evaluate(
+      (node) => node.getBoundingClientRect().top + window.scrollY,
+    );
+    for (const fraction of [0, 0.5, 1]) {
+      await page.evaluate(
+        (part) =>
+          window.scrollTo(
+            0,
+            (document.documentElement.scrollHeight - innerHeight) * part,
+          ),
+        fraction,
+      );
+      await expect
+        .poll(() =>
+          booking.evaluate(
+            (node) => node.getBoundingClientRect().top + window.scrollY,
+          ),
+        )
+        .toBeCloseTo(bookingTop, 0);
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const hero = document
+              .querySelector(".profile-main-image")
+              ?.getBoundingClientRect();
+            const card = document
+              .querySelector(".booking-summary")!
+              .getBoundingClientRect();
+            return !hero || card.top >= hero.bottom + 23;
+          }),
+        )
+        .toBe(true);
+    }
   }
 });

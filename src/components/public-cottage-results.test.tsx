@@ -117,7 +117,7 @@ describe("PublicCottageResults", () => {
       "/en/cottages/garden-house?from=2026-09-22&to=2026-09-23&guests=4",
     );
     expect(view).toHaveClass("action-link", "action-primary", "action-content");
-    expect(card.querySelector(".result-image")).toBeInTheDocument();
+    expect(card.querySelector(".result-image")).toBeNull();
     expect(within(card).queryByRole("img")).toBeNull();
     expect(screen.queryByRole("navigation")).toBeNull();
   });
@@ -720,7 +720,7 @@ describe("PublicCottageResults", () => {
         />,
       );
       const card = screen.getByRole("article");
-      const match = card.querySelector(".result-content > dl.fact-list");
+      const match = card.querySelector(".result-overview dl.fact-list");
       expect(match).not.toBeNull();
       expect(facts(match!)).toEqual([
         ["Capacity", "5 guests"],
@@ -753,7 +753,7 @@ describe("PublicCottageResults", () => {
         facts(
           screen
             .getByRole("article")
-            .querySelector(".result-content > dl.fact-list")!,
+            .querySelector(".result-overview dl.fact-list")!,
         ),
       ).toEqual([["Capacity", "5 guests"]]);
     });
