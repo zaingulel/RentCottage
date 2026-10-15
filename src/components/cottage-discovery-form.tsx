@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import {
   marketplaceToday,
@@ -130,13 +130,15 @@ export function CottageDiscoveryForm({
   const messages = copy[locale];
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [guests, setGuests] = useState(4);
-  const [governorate, setGovernorate] = useState("");
-  const [area, setArea] = useState("");
-  const [amenities, setAmenities] = useState<string[]>([]);
   const [defaults, setDefaults] = useState<string[]>([]);
   const [selections, setSelections] = useState<Record<string, string[]>>({});
   const [invalid, setInvalid] = useState(false);
+  const syncDatesFromForm = useCallback((form: HTMLFormElement | null) => {
+    if (!form) return;
+    const data = new FormData(form);
+    setFrom(String(data.get("from") ?? ""));
+    setTo(String(data.get("to") ?? ""));
+  }, []);
   const days = useMemo(() => serviceDays(from, to), [from, to]);
   const effectiveSelection = (day: string) => selections[day] ?? defaults;
 
@@ -152,10 +154,21 @@ export function CottageDiscoveryForm({
     );
   return (
     <form
+      ref={syncDatesFromForm}
       className="retreat-search"
       onSubmit={(event) => {
         event.preventDefault();
-        const requested: CottageDiscoverySelection[] = days.flatMap((day) =>
+        const data = new FormData(event.currentTarget);
+        const from = String(data.get("from") ?? "");
+        const to = String(data.get("to") ?? "");
+        const guests = String(data.get("guests") ?? "");
+        const governorate = String(data.get("governorate") ?? "");
+        const area = String(data.get("area") ?? "");
+        const amenities = data.getAll("amenity").map(String);
+        const requested: CottageDiscoverySelection[] = serviceDays(
+          from,
+          to,
+        ).flatMap((day) =>
           effectiveSelection(day).map((selection) =>
             selection === "full-day"
               ? { serviceDay: day, kind: "full-day" as const }
@@ -170,7 +183,7 @@ export function CottageDiscoveryForm({
           from,
           to,
           selections: requested,
-          guests,
+          guests: Number(guests),
           ...(governorate.trim() ? { governorate: governorate.trim() } : {}),
           ...(area.trim() ? { area: area.trim() } : {}),
           amenities,
@@ -200,7 +213,8 @@ export function CottageDiscoveryForm({
             type="date"
             required
             min={marketplaceToday()}
-            value={from}
+            name="from"
+            defaultValue=""
             onChange={(event) => setFrom(event.target.value)}
           />
         </label>
@@ -211,7 +225,8 @@ export function CottageDiscoveryForm({
             type="date"
             required
             min={from}
-            value={to}
+            name="to"
+            defaultValue=""
             onChange={(event) => setTo(event.target.value)}
           />
         </label>
@@ -223,17 +238,13 @@ export function CottageDiscoveryForm({
             min="1"
             max="100"
             required
-            value={guests}
-            onChange={(event) => setGuests(Number(event.target.value))}
+            name="guests"
+            defaultValue={4}
           />
         </label>
         <label>
           {messages.governorate}
-          <FormControl
-            kind="select"
-            value={governorate}
-            onChange={(event) => setGovernorate(event.target.value)}
-          >
+          <FormControl kind="select" name="governorate" defaultValue="">
             <option value="">{messages.all}</option>
             {facets.governorates.map((value) => (
               <option key={value} value={value}>
@@ -244,11 +255,7 @@ export function CottageDiscoveryForm({
         </label>
         <label>
           {messages.area}
-          <FormControl
-            kind="select"
-            value={area}
-            onChange={(event) => setArea(event.target.value)}
-          >
+          <FormControl kind="select" name="area" defaultValue="">
             <option value="">{messages.all}</option>
             {facets.areas.map((value) => (
               <option key={value} value={value}>
@@ -322,14 +329,9 @@ export function CottageDiscoveryForm({
           <ChoiceControl
             key={amenity}
             kind="checkbox"
-            checked={amenities.includes(amenity)}
-            onChange={(event) =>
-              setAmenities((current) =>
-                event.target.checked
-                  ? [...current, amenity]
-                  : current.filter((item) => item !== amenity),
-              )
-            }
+            name="amenity"
+            value={amenity}
+            defaultChecked={false}
           >
             {publicCottageAmenityName(locale, amenity)}
           </ChoiceControl>

@@ -612,6 +612,242 @@ test("the choose-file button and the search form's Booking Period toggles are at
     .toBeGreaterThanOrEqual(44);
 });
 
+test("discovery preserves early native edits through hydration in every launch language", async ({
+  page,
+}, testInfo) => {
+  const bundlePath = testInfo.outputPath("discovery-hydration.js");
+  await build({
+    entryPoints: ["tests/fixtures/control-heights.browser.tsx"],
+    outfile: bundlePath,
+    bundle: true,
+    format: "iife",
+    platform: "browser",
+    target: "es2022",
+    jsx: "automatic",
+    define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
+    plugins: [
+      {
+        name: "discovery-hydration-navigation",
+        setup(pluginBuild) {
+          pluginBuild.onResolve({ filter: /^next\/navigation$/ }, (args) => ({
+            path: args.path,
+            namespace: "fixture",
+          }));
+          pluginBuild.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({
+            contents:
+              "export const useRouter = () => ({ push: (path) => window.discoveryHydration.pushes.push(path) });",
+            loader: "js",
+          }));
+        },
+      },
+    ],
+  });
+  const expected = {
+    from: "2030-01-10",
+    to: "2030-01-11",
+    guests: "7",
+    governorate: "Fictional Governorate",
+    area: "Fictional Area",
+    pool: true,
+  };
+  const locales = [
+    {
+      locale: "en",
+      direction: "ltr",
+      from: "From Service Day",
+      to: "To Service Day",
+      guests: "Guests",
+      governorate: "Governorate (optional)",
+      area: "Approximate area (optional)",
+      pool: "Pool",
+      filters: "Booking Period filters (optional)",
+      shift: "Shift 1",
+      submit: "Search available cottages",
+    },
+    {
+      locale: "ar",
+      direction: "rtl",
+      from: "من تاريخ",
+      to: "إلى تاريخ",
+      guests: "عدد الضيوف",
+      governorate: "المحافظة (اختياري)",
+      area: "المنطقة التقريبية (اختياري)",
+      pool: "مسبح",
+      filters: "مرشحات فترة الحجز (اختياري)",
+      shift: "الفترة 1",
+      submit: "ابحث عن البيوت المتاحة",
+    },
+    {
+      locale: "ckb",
+      direction: "rtl",
+      from: "لە بەرواری",
+      to: "تا بەرواری",
+      guests: "ژمارەی میوان",
+      governorate: "پارێزگا (ئارەزوومەندانە)",
+      area: "ناوچەی نزیکەیی (ئارەزوومەندانە)",
+      pool: "مەلەوانگە",
+      filters: "پاڵاوتەکانی ماوەی حجز (ئارەزوومەندانە)",
+      shift: "شیفت 1",
+      submit: "گەڕان بۆ کۆتێجی بەردەست",
+    },
+  ] as const;
+
+  for (const messages of locales) {
+    await page.goto("/api/health");
+    await page.clock.setFixedTime(new Date("2030-01-01T09:00:00Z"));
+    await page.setContent(
+      `<html lang="${messages.locale}" dir="${messages.direction}"><meta name="viewport" content="width=device-width, initial-scale=1"><main id="fixture-root" data-hydration-locale="${messages.locale}" style="padding-block-start:4rem"></main></html>`,
+    );
+    await page.addStyleTag({ content: await readApplicationStylesheet() });
+    await page.addScriptTag({ path: bundlePath });
+
+    const root = page.locator("#fixture-root");
+    const from = page.getByLabel(messages.from, { exact: true });
+    const to = page.getByLabel(messages.to, { exact: true });
+    const guests = page.getByLabel(messages.guests, { exact: true });
+    const governorate = page.getByRole("combobox", {
+      name: messages.governorate,
+      exact: true,
+    });
+    const area = page.getByRole("combobox", {
+      name: messages.area,
+      exact: true,
+    });
+    const pool = page.getByRole("checkbox", {
+      name: messages.pool,
+      exact: true,
+    });
+    const snapshot = async () => ({
+      from: await from.inputValue(),
+      to: await to.inputValue(),
+      guests: await guests.inputValue(),
+      governorate: await governorate.inputValue(),
+      area: await area.inputValue(),
+      pool: await pool.isChecked(),
+    });
+
+    await expect(root).not.toHaveAttribute("data-hydration-committed");
+    await from.fill("2030-01-10");
+    await to.fill("2030-01-11");
+    await guests.fill("7");
+    await governorate.selectOption("Fictional Governorate");
+    await area.selectOption("Fictional Area");
+    await pool.check();
+    expect(await snapshot(), `${messages.locale} before hydration`).toEqual(
+      expected,
+    );
+    await expect(root).not.toHaveAttribute("data-hydration-committed");
+
+    await page.evaluate(() => window.discoveryHydration.hydrate());
+    await expect(root).toHaveAttribute("data-hydration-committed", "true");
+    await expect(to).toHaveAttribute("min", "2030-01-10");
+    const dayGroups = root
+      .locator(".booking-period-filter")
+      .getByRole("group", { includeHidden: true });
+    await expect(dayGroups).toHaveCount(2);
+    expect(
+      await page.evaluate(() => window.discoveryHydration.recoverableErrors),
+    ).toEqual([]);
+    expect(await snapshot(), `${messages.locale} hydration committed`).toEqual(
+      expected,
+    );
+
+    await page.getByText(messages.filters, { exact: true }).click();
+    const firstShift = page
+      .getByRole("button", { name: messages.shift, exact: true })
+      .first();
+    await firstShift.click();
+    await expect(firstShift).toHaveAttribute("aria-pressed", "true");
+    expect(await snapshot(), `${messages.locale} after Shift 1`).toEqual(
+      expected,
+    );
+    expect(
+      await page.evaluate(() => window.discoveryHydration.recoverableErrors),
+    ).toEqual([]);
+
+    await page
+      .getByRole("button", { name: messages.submit, exact: true })
+      .click();
+    const pushes = await page.evaluate(() => window.discoveryHydration.pushes);
+    expect(
+      pushes,
+      `${messages.locale} normal submit reaches router`,
+    ).toHaveLength(1);
+    const url = new URL(pushes[0], page.url());
+    expect(url.pathname).toBe(`/${messages.locale}/results`);
+    expect(Array.from(url.searchParams.entries()).sort()).toEqual([
+      ["amenity", "pool"],
+      ["area", "Fictional Area"],
+      ["from", "2030-01-10"],
+      ["governorate", "Fictional Governorate"],
+      ["guests", "7"],
+      ["selection", "2030-01-10:shift:1"],
+      ["to", "2030-01-11"],
+    ]);
+
+    if (
+      (messages.locale === "en" && testInfo.project.name === "desktop") ||
+      (messages.locale === "ar" && testInfo.project.name === "mobile")
+    ) {
+      await root.locator("form").screenshot({
+        path: testInfo.outputPath(
+          `discovery-hydration-${messages.locale}-${testInfo.project.name}.png`,
+        ),
+      });
+    }
+
+    const submit = page.getByRole("button", {
+      name: messages.submit,
+      exact: true,
+    });
+    await pool.evaluate((input: HTMLInputElement) => {
+      input.value = "unsupported-amenity";
+    });
+    await submit.click();
+    await expect(page.getByRole("alert")).toHaveText(/\S/);
+    expect(
+      await page.evaluate(() => window.discoveryHydration.pushes),
+    ).toHaveLength(1);
+    await pool.evaluate((input: HTMLInputElement) => {
+      input.value = "pool";
+    });
+
+    await guests.fill("");
+    await firstShift.click();
+    await expect(firstShift).toHaveAttribute("aria-pressed", "false");
+    await expect(guests).toHaveValue("");
+    await submit.click();
+    expect(
+      await page.evaluate(() => window.discoveryHydration.pushes),
+    ).toHaveLength(1);
+
+    await guests.fill("9");
+    await from.fill("2030-01-11");
+    await governorate.selectOption("");
+    await area.selectOption("");
+    await pool.uncheck();
+    await expect(to).toHaveAttribute("min", "2030-01-11");
+    await expect(dayGroups).toHaveCount(1);
+    await expect(firstShift).toHaveAttribute("aria-pressed", "false");
+    await firstShift.click();
+    await expect(firstShift).toHaveAttribute("aria-pressed", "true");
+    await submit.click();
+    const laterPushes = await page.evaluate(
+      () => window.discoveryHydration.pushes,
+    );
+    expect(laterPushes).toHaveLength(2);
+    const laterUrl = new URL(laterPushes[1], page.url());
+    expect(laterUrl.pathname).toBe(`/${messages.locale}/results`);
+    expect(Array.from(laterUrl.searchParams.entries()).sort()).toEqual([
+      ["from", "2030-01-11"],
+      ["guests", "9"],
+      ["selection", "2030-01-11:shift:1"],
+      ["to", "2030-01-11"],
+    ]);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+});
+
 test("busy action focus preserves native blocking and explicit successors", async ({
   page,
 }, testInfo) => {
