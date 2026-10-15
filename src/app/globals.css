@@ -2582,7 +2582,7 @@ section.cottage-profile-editor {
   gap: var(--space-7);
 }
 
-.cottage-profile-editor-heading {
+section.cottage-profile-editor > .cottage-profile-editor-heading {
   display: flex;
   align-items: start;
   justify-content: space-between;

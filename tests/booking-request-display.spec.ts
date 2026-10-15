@@ -1801,7 +1801,29 @@ test("Cottage editor keeps the approved raised groups and usable controls across
           const fieldsets = [
             ...node.querySelectorAll(".cottage-profile-form > fieldset"),
           ];
+          const header = node.querySelector(".cottage-profile-editor-heading")!;
+          const title = header.querySelector("h1")!.getBoundingClientRect();
+          const badge = header.querySelector(".status-badge")!;
+          const status = badge.getBoundingClientRect();
+          const headerBox = header.getBoundingClientRect();
+          const rtl = document.documentElement.dir === "rtl";
           return {
+            headerLayout:
+              getComputedStyle(header).display === "flex" &&
+              (phone
+                ? status.left >= headerBox.left &&
+                  status.right <= headerBox.right &&
+                  (status.top >= title.bottom ||
+                    (rtl
+                      ? status.right <= title.left
+                      : status.left >= title.right))
+                : Math.abs(title.top - status.top) < 1 &&
+                  (rtl
+                    ? status.right <= title.left &&
+                      Math.abs(status.left - headerBox.left) < 1
+                    : status.left >= title.right &&
+                      Math.abs(status.right - headerBox.right) < 1)),
+            badgeInk: getComputedStyle(badge).color === "rgb(38, 36, 31)",
             lifted: fieldsets.every(
               (section) =>
                 getComputedStyle(
@@ -1835,6 +1857,8 @@ test("Cottage editor keeps the approved raised groups and usable controls across
         }, phone),
       )
       .toEqual({
+        headerLayout: true,
+        badgeInk: true,
         lifted: true,
         composition: true,
         fits: true,

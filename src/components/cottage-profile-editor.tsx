@@ -196,11 +196,11 @@ export function CottageProfileEditor({
           />
           <p>{copy.completion}</p>
         </div>
-        <p
+        <span
           className={`status-badge${cottageProfileStatusTone(profile) ? ` status-badge-${cottageProfileStatusTone(profile)}` : ""}`}
         >
           {cottageProfileStatusLabel(locale, profile)}
-        </p>
+        </span>
       </header>
       {profile.status === "abandoned" ? (
         <p className="private-location-warning" role="status">
