@@ -1649,39 +1649,107 @@ test("Customer review publishes, paginates, survives moderation audit, and disap
       new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Baghdad" }).format(at);
     const from = baghdadDate(Date.now() - 24 * 60 * 60 * 1000);
     const through = baghdadDate(Date.now());
-    await page.getByLabel("Status").selectOption("hidden");
-    await page.getByLabel("From date (Baghdad)").fill(from);
-    await page.getByLabel("Through date (Baghdad)").fill(through);
-    await page.getByRole("button", { name: "Apply filters" }).click();
-    await expect(page).toHaveURL(
-      `/en/administrator/reviews?state=hidden&from=${from}&through=${through}`,
-    );
-    const hiddenReview = await openAdministratorReview(
-      page,
-      primary.ids.bookingReference,
-    );
-    await expect(hiddenReview.getByText(original)).toBeVisible();
-    await expect(hiddenReview.getByText(reason)).toBeVisible();
-    await expect(page.getByText("Matching reviews")).toBeVisible();
-    await captureReviewFilters(page, "en");
-    for (const locale of ["ar", "ckb"] as const) {
-      await page.goto(`/${locale}/administrator/reviews`);
-      await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-      await page
-        .getByLabel(administratorRecordsMessages[locale].status)
-        .selectOption("hidden");
+    await page.addInitScript(() => {
+      type HydrationFiber = {
+        stateNode?: unknown;
+        child?: HydrationFiber | null;
+        sibling?: HydrationFiber | null;
+      };
+      Object.assign(window, {
+        __reviewFilterHydrated: false,
+        __REACT_DEVTOOLS_GLOBAL_HOOK__: {
+          supportsFiber: true,
+          inject: () => 1,
+          onCommitFiberRoot: (
+            _rendererId: number,
+            root: { current: HydrationFiber },
+          ) => {
+            // A root-shell commit can precede hydration of the filter's subtree.
+            const pending = [root.current];
+            while (pending.length) {
+              const fiber = pending.pop()!;
+              if (
+                fiber.stateNode instanceof HTMLSelectElement &&
+                fiber.stateNode.name === "state"
+              ) {
+                Object.assign(window, { __reviewFilterHydrated: true });
+                return;
+              }
+              if (fiber.child) pending.push(fiber.child);
+              if (fiber.sibling) pending.push(fiber.sibling);
+            }
+          },
+        },
+      });
+    });
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      const records = administratorRecordsMessages[locale];
+      let releaseScripts!: () => void;
+      const scriptsReleased = new Promise<void>((resolve) => {
+        releaseScripts = resolve;
+      });
+      const staticScript = (url: URL) =>
+        url.pathname.startsWith("/_next/static/") && url.pathname.endsWith(".js");
+      await page.route(staticScript, async (route) => {
+        await scriptsReleased;
+        await route.continue();
+      });
+      try {
+        await page.goto(`/${locale}/administrator/reviews`, {
+          waitUntil: "commit",
+        });
+        const status = page.getByLabel(records.status);
+        await expect(status).toHaveValue("");
+        await status.selectOption("hidden");
+        await expect(status).toHaveValue("hidden");
+        expect(
+          await page.evaluate(
+            () =>
+              (window as Window & { __reviewFilterHydrated?: boolean })
+                .__reviewFilterHydrated,
+          ),
+        ).toBe(false);
+      } finally {
+        releaseScripts();
+        await page.unrouteAll({ behavior: "wait" });
+      }
+      await page.waitForFunction(
+        () =>
+          (window as Window & { __reviewFilterHydrated?: boolean })
+            .__reviewFilterHydrated,
+      );
+      await expect(page.getByLabel(records.status)).toHaveValue("hidden");
+      await expect(page.locator("html")).toHaveAttribute(
+        "dir",
+        locale === "en" ? "ltr" : "rtl",
+      );
+      if (locale === "en") {
+        await page.getByLabel("From date (Baghdad)").fill(from);
+        await page.getByLabel("Through date (Baghdad)").fill(through);
+      }
       await page
         .getByRole("button", {
           name: administratorQueuesMessages[locale].apply,
           exact: true,
         })
         .click();
-      await expect(page).toHaveURL(/state=hidden/);
+      await expect(page).toHaveURL(
+        (url) =>
+          url.pathname === `/${locale}/administrator/reviews` &&
+          url.searchParams.get("state") === "hidden",
+      );
+      if (locale === "en") {
+        await expect(page).toHaveURL(
+          `/en/administrator/reviews?state=hidden&from=${from}&through=${through}`,
+        );
+        await expect(page.getByText("Matching reviews")).toBeVisible();
+      }
       const localizedHiddenReview = await openAdministratorReview(
         page,
         primary.ids.bookingReference,
         locale,
       );
+      await expect(localizedHiddenReview.getByText(original)).toBeVisible();
       await expect(localizedHiddenReview.getByText(reason)).toBeVisible();
       await captureReviewFilters(page, locale);
     }
