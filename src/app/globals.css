@@ -2579,35 +2579,62 @@ form.cottage-profile-editor > fieldset,
 }
 
 section.cottage-profile-editor {
-  gap: var(--space-7);
+  gap: 2.5rem;
+  padding-block-start: 2.5rem;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.page > section.cottage-profile-editor {
+  padding-block-start: var(--space-4);
 }
 
 section.cottage-profile-editor > .cottage-profile-editor-heading {
   display: flex;
-  align-items: start;
+  align-items: end;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-4);
+  padding-block-end: var(--space-5);
 }
 
-.cottage-profile-editor-heading > div {
+section.cottage-profile-editor .cottage-profile-editor-heading > div {
   display: grid;
-  gap: var(--space-2);
+  gap: 0.35rem;
   min-inline-size: 0;
-  flex: 1;
+  max-inline-size: 100%;
+  flex: 0 1 auto;
 }
 
-.cottage-profile-editor-heading p {
+section.cottage-profile-editor .page-title {
+  line-height: 1.15;
+}
+
+section.cottage-profile-editor .cottage-profile-editor-heading p {
   margin: 0;
   color: var(--muted);
 }
 
+section.cottage-profile-editor .cottage-profile-editor-heading .status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--line);
+  padding: 0.3rem 0.65rem;
+  background: var(--card);
+  font-size: 0.78rem;
+}
+
 section.cottage-profile-editor > .cottage-profile-form {
-  gap: var(--space-7);
+  gap: var(--space-4);
+}
+
+section.cottage-profile-editor > .cottage-profile-form > fieldset + fieldset {
+  margin-block-start: var(--space-5);
 }
 
 section.cottage-profile-editor > .cottage-profile-form > fieldset,
-.cottage-profile-photos {
+section.cottage-profile-editor .cottage-profile-photos {
   display: grid;
   grid-template-columns: minmax(14rem, 1fr) minmax(0, 42.5rem);
   column-gap: var(--space-7);
@@ -2618,32 +2645,45 @@ section.cottage-profile-editor > .cottage-profile-form > fieldset,
   min-inline-size: 0;
 }
 
-.cottage-profile-section-heading,
-.cottage-profile-field-card,
-.cottage-profile-location-field {
+section.cottage-profile-editor .cottage-profile-section-heading,
+section.cottage-profile-editor .cottage-profile-field-card,
+section.cottage-profile-editor .cottage-profile-location-field {
   display: grid;
   align-content: start;
   gap: var(--space-4);
   min-inline-size: 0;
 }
 
-.cottage-profile-section-heading p,
-.cottage-profile-location-field p {
+section.cottage-profile-editor .cottage-profile-section-heading {
+  gap: var(--space-2);
+}
+
+section.cottage-profile-editor .cottage-profile-section-heading p,
+section.cottage-profile-editor .cottage-profile-location-field p {
   margin: 0;
   color: var(--muted);
-  font-size: var(--font-size-2);
+  font-size: 0.85rem;
 }
 
-.cottage-profile-section-heading .section-title {
+section.cottage-profile-editor .cottage-profile-section-heading p {
+  max-inline-size: 22rem;
+}
+
+section.cottage-profile-editor .section-title {
   margin: 0;
+  font-size: 1.375rem;
   font-weight: 700;
+  line-height: 1.25;
 }
 
+html[lang="ckb"] section.cottage-profile-editor .page-title,
 html[lang="ckb"] section.cottage-profile-editor .section-title {
   line-height: 1.4;
 }
 
-.cottage-profile-section-heading .private-location-warning {
+section.cottage-profile-editor
+  .cottage-profile-section-heading
+  .private-location-warning {
   border: 0;
   padding: 0;
   background: transparent;
@@ -2651,19 +2691,49 @@ html[lang="ckb"] section.cottage-profile-editor .section-title {
   font-weight: 700;
 }
 
-.cottage-profile-field-card {
-  padding: var(--space-5);
+section.cottage-profile-editor
+  .cottage-profile-photos
+  .cottage-profile-section-heading
+  p {
+  font-size: 0.92rem;
 }
 
-.cottage-profile-location-grid {
+section.cottage-profile-editor .cottage-profile-field-card {
+  padding: 1.25rem;
+}
+
+section.cottage-profile-editor .cottage-profile-location-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-4);
   align-items: start;
 }
 
-.cottage-profile-location-field {
-  gap: var(--space-2);
+section.cottage-profile-editor .cottage-profile-location-field {
+  gap: 0.35rem;
+}
+
+section.cottage-profile-editor
+  .cottage-profile-form
+  label:where(:not(.choice-control, .exact-point-confirmation)),
+section.cottage-profile-editor .cottage-photo-upload-form label {
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+section.cottage-profile-editor .option-group > legend {
+  font-size: 0.9rem;
+}
+
+section.cottage-profile-editor .form-control {
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+section.cottage-profile-editor .choice-control,
+section.cottage-profile-editor .exact-point-confirmation {
+  font-size: 1rem;
 }
 
 section.cottage-profile-editor .cottage-profile-number-grid,
@@ -2677,43 +2747,75 @@ section.cottage-profile-editor .cottage-profile-coordinate-grid {
 
 section.cottage-profile-editor .exact-point-check {
   color: var(--muted);
-  font-size: var(--font-size-2);
+  font-size: 0.85rem;
+}
+
+section.cottage-profile-editor .action {
+  font-size: 0.95rem;
+  font-weight: 700;
 }
 
 section.cottage-profile-editor > .cottage-profile-form > .action,
-.cottage-profile-submit-form > .action,
-.cottage-photo-upload-form > .action,
+section.cottage-profile-editor .cottage-profile-submit-form > .action,
+section.cottage-profile-editor .cottage-photo-upload-form > .action,
 section.cottage-profile-editor .exact-point-fields > .action {
   justify-self: end;
 }
 
-.cottage-profile-submit-form {
+section.cottage-profile-editor .cottage-profile-submit-form {
   border-block-start: 1px solid var(--line);
   padding-block-start: var(--space-5);
 }
 
-.cottage-photo-upload-form {
+section.cottage-profile-editor .cottage-photo-upload-form {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
+  padding-block-start: 0.9rem;
 }
 
-.cottage-photo-row > div {
+section.cottage-profile-editor .cottage-profile-photos ul {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+section.cottage-profile-editor .cottage-photo-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  column-gap: 1.25rem;
+  row-gap: var(--space-4);
+  border-block-end: 1px solid var(--line);
+  padding-block: 0.9rem;
+}
+
+section.cottage-profile-editor .cottage-photo-row:first-child {
+  padding-block-start: 0;
+}
+
+section.cottage-profile-editor .cottage-photo-row > div {
+  display: grid;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
   flex: 1;
   min-inline-size: 0;
 }
 
-.cottage-photo-row > div > span {
+section.cottage-profile-editor .cottage-photo-row > div > span {
   color: var(--muted);
-  font-size: var(--font-size-2);
+  font-size: 0.85rem;
 }
 
-.cottage-photo-row > p {
+section.cottage-profile-editor .cottage-photo-row > p {
   order: 1;
   flex-basis: 100%;
   margin: 0;
 }
 
-.cottage-photo-text-action {
+section.cottage-profile-editor .cottage-photo-text-action {
   display: inline-flex;
   align-items: center;
   min-block-size: 2.75rem;
@@ -2722,10 +2824,17 @@ section.cottage-profile-editor .exact-point-fields > .action {
   padding: 0;
   color: var(--green);
   font: inherit;
+  font-size: 0.92rem;
   font-weight: 700;
   text-decoration: underline;
   overflow-wrap: anywhere;
   cursor: pointer;
+}
+
+section.cottage-profile-editor
+  input[type="file"].form-control::file-selector-button {
+  font-size: 0.92rem;
+  font-weight: 700;
 }
 
 section.cottage-profile-editor :where(p, h1, h2, strong) {
@@ -2734,31 +2843,47 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
 
 @media (max-width: 47.5rem) {
   section.cottage-profile-editor > .cottage-profile-form > fieldset,
-  .cottage-profile-photos {
+  section.cottage-profile-editor .cottage-profile-photos {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 40rem) {
-  .cottage-profile-field-card {
-    padding: var(--space-4);
+  section.cottage-profile-editor {
+    padding-block-start: var(--space-5);
   }
 
-  .cottage-profile-location-grid,
+  .page > section.cottage-profile-editor {
+    padding-block-start: 0;
+  }
+
+  section.cottage-profile-editor > .cottage-profile-editor-heading {
+    padding-block-end: var(--space-4);
+  }
+
+  section.cottage-profile-editor .cottage-profile-editor-heading > div {
+    flex-basis: 100%;
+  }
+
+  section.cottage-profile-editor .cottage-profile-location-grid,
   section.cottage-profile-editor .cottage-profile-number-grid,
-  .cottage-photo-upload-form {
+  section.cottage-profile-editor .cottage-photo-upload-form {
     grid-template-columns: minmax(0, 1fr);
   }
 
   section.cottage-profile-editor > .cottage-profile-form > .action,
-  .cottage-profile-submit-form > .action,
-  .cottage-photo-upload-form > .action,
+  section.cottage-profile-editor .cottage-profile-submit-form > .action,
+  section.cottage-profile-editor .cottage-photo-upload-form > .action,
   section.cottage-profile-editor .exact-point-fields > .action {
     inline-size: 100%;
     justify-self: stretch;
   }
 
-  .cottage-photo-row > div {
+  section.cottage-profile-editor .cottage-photo-row {
+    justify-content: start;
+  }
+
+  section.cottage-profile-editor .cottage-photo-row > div {
     flex-basis: 100%;
   }
 }
@@ -2767,13 +2892,6 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
   section.cottage-profile-editor .cottage-profile-coordinate-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-}
-
-section.cottage-profile-editor
-  .cottage-profile-form
-  label:where(:not(.choice-control)),
-.cottage-photo-upload-form label {
-  font-size: var(--font-size-2);
 }
 
 .cottage-profile-number-grid,
@@ -2804,30 +2922,6 @@ section.cottage-profile-editor
   border-inline-start: 0.3rem solid var(--gold);
   background: var(--surface-notice);
   padding: var(--space-3) var(--space-4);
-}
-
-.cottage-profile-photos ul {
-  display: grid;
-  gap: var(--space-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.cottage-photo-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  border-block-end: 1px solid var(--line);
-  padding-block: var(--space-3);
-}
-
-.cottage-photo-row > div {
-  display: grid;
-  gap: var(--space-1);
-  overflow-wrap: anywhere;
 }
 
 .cottage-profile-source-revision dl,

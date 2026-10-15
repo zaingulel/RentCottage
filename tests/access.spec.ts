@@ -583,9 +583,7 @@ async function expectCottageProfileSectionTitlesAligned(
         const rtl = document.documentElement.dir === "rtl";
         const inlineStart = (rect: DOMRect) => (rtl ? rect.right : rect.left);
         const stacked = window.matchMedia("(max-width: 47.5rem)").matches;
-        const padding = window.matchMedia("(max-width: 40rem)").matches
-          ? 16
-          : 24;
+        const padding = 20;
         return sections.map((fieldset) => {
           const heading = fieldset.querySelector(
             ":scope > .cottage-profile-section-heading",

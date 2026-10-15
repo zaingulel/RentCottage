@@ -1794,6 +1794,7 @@ test("Cottage editor keeps the approved raised groups and usable controls across
       "dir",
       locale === "en" ? "ltr" : "rtl",
     );
+    await expect(page.locator("main > .backoffice-navigation")).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
     await expect
       .poll(() =>
@@ -1807,28 +1808,185 @@ test("Cottage editor keeps the approved raised groups and usable controls across
           const badge = header.querySelector(".status-badge")!;
           const status = badge.getBoundingClientRect();
           const headerBox = header.getBoundingClientRect();
+          const subtitleBox = subtitle.getBoundingClientRect();
+          const navigation = document
+            .querySelector("main > .backoffice-navigation")!
+            .getBoundingClientRect();
           const rtl = document.documentElement.dir === "rtl";
+          const near = (value: number, expected: number) =>
+            Math.abs(value - expected) < 1;
+          const size = (element: Element) =>
+            parseFloat(getComputedStyle(element).fontSize);
+          const cards = fieldsets.map(
+            (section) => section.querySelector(".cottage-profile-field-card")!,
+          );
+          const boxes = fieldsets.map((section) =>
+            section.getBoundingClientRect(),
+          );
+          const label = cards[0].querySelector(":scope > label")!;
+          const control = label.querySelector(".form-control")!;
+          const labelBox = label.getBoundingClientRect();
+          const controlBox = control.getBoundingClientRect();
+          const location = node.querySelector(
+            ".cottage-profile-location-field",
+          )!;
+          const locationLabel = location.querySelector("label")!;
+          const hint = location.querySelector("p")!;
+          const save = node.querySelector(".cottage-profile-form > .action")!;
+          const photos = node.querySelector(".cottage-profile-photos")!;
+          const rows = [...photos.querySelectorAll(".cottage-photo-row")];
+          const photoGuidance = photos.querySelector(
+            ".cottage-profile-section-heading p",
+          )!;
+          const photoCard = photos.querySelector(
+            ".cottage-profile-field-card",
+          )!;
+          const firstRowStyle = getComputedStyle(rows[0]);
+          const nextRowStyle = getComputedStyle(rows[1]);
+          const badgeStyle = getComputedStyle(badge);
           return {
             headerLayout:
               getComputedStyle(header).display === "flex" &&
               (phone
-                ? status.left >= headerBox.left &&
-                  status.right <= headerBox.right &&
-                  (status.top >= title.bottom ||
-                    (rtl
-                      ? status.right <= title.left
-                      : status.left >= title.right))
-                : Math.abs(title.top - status.top) < 1 &&
+                ? status.top >= subtitleBox.bottom &&
+                  near(
+                    rtl
+                      ? status.right - headerBox.right
+                      : status.left - headerBox.left,
+                    0,
+                  )
+                : near(subtitleBox.bottom - status.bottom, 0) &&
                   (rtl
                     ? status.right <= title.left &&
-                      Math.abs(status.left - headerBox.left) < 1
+                      near(status.left - headerBox.left, 0)
                     : status.left >= title.right &&
-                      Math.abs(status.right - headerBox.right) < 1)),
+                      near(status.right - headerBox.right, 0))),
             subtitleStyle:
               getComputedStyle(subtitle).color === "rgba(38, 36, 31, 0.68)" &&
-              Math.abs(
-                subtitle.getBoundingClientRect().top - title.bottom - 8,
-              ) < 1,
+              near(subtitleBox.top - title.bottom, 5.6),
+            referenceRhythm: {
+              navigationToTitle: near(
+                title.top - navigation.bottom,
+                phone ? 24 : 40,
+              ),
+              headerToFields: near(
+                boxes[0].top - Math.max(subtitleBox.bottom, status.bottom),
+                phone ? 56 : 64,
+              ),
+              sectionGaps: boxes
+                .slice(1)
+                .every((box, index) => near(box.top - boxes[index].bottom, 40)),
+              saveGap: near(
+                save.getBoundingClientRect().top - boxes[2].bottom,
+                16,
+              ),
+              followingSections:
+                near(
+                  photos.getBoundingClientRect().top -
+                    node
+                      .querySelector(".cottage-profile-form")!
+                      .getBoundingClientRect().bottom,
+                  40,
+                ) &&
+                near(
+                  node
+                    .querySelector(".cottage-profile-submit-form")!
+                    .getBoundingClientRect().top -
+                    photos.getBoundingClientRect().bottom,
+                  40,
+                ),
+              cardPadding: [...cards, photoCard].every((card) =>
+                [
+                  "paddingTop",
+                  "paddingBottom",
+                  "paddingInlineStart",
+                  "paddingInlineEnd",
+                ].every((property) =>
+                  near(
+                    parseFloat(
+                      getComputedStyle(card).getPropertyValue(
+                        property.replace(
+                          /[A-Z]/g,
+                          (letter) => `-${letter.toLowerCase()}`,
+                        ),
+                      ),
+                    ),
+                    20,
+                  ),
+                ),
+              ),
+              fieldGaps:
+                near(controlBox.top - labelBox.top - 21.6, 5.6) &&
+                near(
+                  hint.getBoundingClientRect().top -
+                    locationLabel.getBoundingClientRect().bottom,
+                  5.6,
+                ),
+              typography:
+                near(size(header.querySelector("h1")!), phone ? 26 : 34) &&
+                near(
+                  parseFloat(
+                    getComputedStyle(header.querySelector("h1")!).lineHeight,
+                  ),
+                  document.documentElement.lang === "ckb"
+                    ? phone
+                      ? 36.4
+                      : 47.6
+                    : phone
+                      ? 29.9
+                      : 39.1,
+                ) &&
+                near(size(subtitle), 16) &&
+                near(size(control), 16) &&
+                getComputedStyle(control).fontWeight === "400" &&
+                near(parseFloat(getComputedStyle(control).lineHeight), 24) &&
+                near(size(label), 14.4) &&
+                near(size(hint), 13.6) &&
+                near(size(badge), 12.48) &&
+                fieldsets.every((section) =>
+                  near(size(section.querySelector("h2")!), 22),
+                ),
+              photoRhythm:
+                near(parseFloat(firstRowStyle.paddingTop), 0) &&
+                near(parseFloat(firstRowStyle.paddingBottom), 14.4) &&
+                near(parseFloat(nextRowStyle.paddingTop), 14.4) &&
+                near(parseFloat(firstRowStyle.columnGap), 20) &&
+                near(parseFloat(firstRowStyle.rowGap), 16) &&
+                near(
+                  parseFloat(
+                    getComputedStyle(photos.querySelector("ul")!).rowGap,
+                  ),
+                  0,
+                ) &&
+                near(
+                  parseFloat(
+                    getComputedStyle(
+                      photos.querySelector(".cottage-photo-upload-form")!,
+                    ).paddingTop,
+                  ),
+                  14.4,
+                ),
+              photoType:
+                near(size(rows[0].querySelector("span")!), 13.6) &&
+                near(size(photoGuidance), 14.72) &&
+                near(size(rows[0].querySelector("button")!), 14.72) &&
+                near(size(save), 15.2) &&
+                near(
+                  parseFloat(
+                    getComputedStyle(
+                      photos.querySelector('input[type="file"]')!,
+                      "::file-selector-button",
+                    ).fontSize,
+                  ),
+                  14.72,
+                ),
+              badgeSurface:
+                badgeStyle.backgroundColor === "rgb(255, 252, 245)" &&
+                near(parseFloat(badgeStyle.borderTopWidth), 1) &&
+                near(parseFloat(badgeStyle.paddingTop), 4.8) &&
+                near(parseFloat(badgeStyle.paddingInlineStart), 10.4) &&
+                near(parseFloat(badgeStyle.columnGap), 6.4),
+            },
             badgeInk: getComputedStyle(badge).color === "rgb(38, 36, 31)",
             lifted: fieldsets.every(
               (section) =>
@@ -1865,6 +2023,19 @@ test("Cottage editor keeps the approved raised groups and usable controls across
       .toEqual({
         headerLayout: true,
         subtitleStyle: true,
+        referenceRhythm: {
+          navigationToTitle: true,
+          headerToFields: true,
+          sectionGaps: true,
+          saveGap: true,
+          followingSections: true,
+          cardPadding: true,
+          fieldGaps: true,
+          typography: true,
+          photoRhythm: true,
+          photoType: true,
+          badgeSurface: true,
+        },
         badgeInk: true,
         lifted: true,
         composition: true,
