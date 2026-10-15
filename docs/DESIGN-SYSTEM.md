@@ -176,7 +176,6 @@ A stylesheet may write these as literals:
   - `section.cottage-profile-editor .cottage-profile-form label:where(:not(.choice-control, .exact-point-confirmation)), section.cottage-profile-editor .cottage-photo-upload-form label { font-size: 0.9rem }`
   - `section.cottage-profile-editor .option-group > legend { font-size: 0.9rem }`
   - `section.cottage-profile-editor .form-control { font-size: 1rem }`
-  - `section.cottage-profile-editor .choice-control, section.cottage-profile-editor .exact-point-confirmation { font-size: 1rem }`
   - `section.cottage-profile-editor .exact-point-check { font-size: 0.85rem }`
   - `section.cottage-profile-editor .action { font-size: 0.95rem }`
   - `section.cottage-profile-editor .cottage-photo-upload-form { padding-block-start: 0.9rem }`

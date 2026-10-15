@@ -2728,12 +2728,6 @@ section.cottage-profile-editor .option-group > legend {
 section.cottage-profile-editor .form-control {
   font-size: 1rem;
   font-weight: 400;
-  line-height: 1.5;
-}
-
-section.cottage-profile-editor .choice-control,
-section.cottage-profile-editor .exact-point-confirmation {
-  font-size: 1rem;
 }
 
 section.cottage-profile-editor .cottage-profile-number-grid,
