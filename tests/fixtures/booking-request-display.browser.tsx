@@ -1,5 +1,9 @@
 import { createRoot } from "react-dom/client";
 
+import { BackofficeNavigation } from "@/components/backoffice-navigation";
+import { CottageProfileOverview } from "@/components/cottage-profile-overview";
+import { SiteHeader } from "@/components/site-header";
+import type { CottageProfile } from "@/cottage-profile/cottage-profile";
 import { CustomerBookingRequestStatus } from "@/components/customer-booking-request-status";
 import { OwnerBookingRequestNotifications } from "@/components/owner-booking-request-notifications";
 import { PublicCottageProfileView } from "@/components/public-cottage-profile";
@@ -205,11 +209,13 @@ function renderPublicCottageDisplay({
   locale,
   photoCount,
   longContent,
+  withHeader = false,
 }: {
   screen: "results" | "profile";
   locale: "en" | "ar" | "ckb";
   photoCount: 0 | 1 | 4 | 6;
   longContent?: boolean;
+  withHeader?: boolean;
 }) {
   document.documentElement.lang = locale;
   document.documentElement.dir = locale === "en" ? "ltr" : "rtl";
@@ -244,27 +250,98 @@ function renderPublicCottageDisplay({
       : publicDisplayCottage.approximateLocation,
   };
   root.render(
-    screen === "profile" ? (
-      <PublicCottageProfileView
-        locale={locale}
-        result={{ status: "loaded", cottage }}
-        query={publicCottageQuery}
-        resultsQueryString={serializeCottageDiscoveryQuery(publicCottageQuery)}
-      />
-    ) : (
-      <PublicCottageResults
-        locale={locale}
-        result={{
-          status: "loaded",
-          cottages: [cottage],
-          nextAfter: "cottage-00000000000040008000000000000755",
-        }}
-        query={publicCottageQuery}
-        queryString={serializeCottageDiscoveryQuery(publicCottageQuery)}
-        after={null}
-      />
-    ),
+    <>
+      {withHeader ? (
+        <SiteHeader
+          locale={locale}
+          account={{ status: "authenticated", context: { role: "customer" } }}
+        />
+      ) : null}
+      {screen === "profile" ? (
+        <PublicCottageProfileView
+          locale={locale}
+          result={{ status: "loaded", cottage }}
+          query={publicCottageQuery}
+          resultsQueryString={serializeCottageDiscoveryQuery(
+            publicCottageQuery,
+          )}
+        />
+      ) : (
+        <PublicCottageResults
+          locale={locale}
+          result={{
+            status: "loaded",
+            cottages: [cottage],
+            nextAfter: "cottage-00000000000040008000000000000755",
+          }}
+          query={publicCottageQuery}
+          queryString={serializeCottageDiscoveryQuery(publicCottageQuery)}
+          after={null}
+        />
+      )}
+    </>,
   );
 }
 
 window.renderPublicCottageDisplay = renderPublicCottageDisplay;
+
+const overviewDisplayCottage = {
+  id: "70000000-0000-4000-8000-000000000763",
+  ownerUserId: "10000000-0000-4000-8000-000000000763",
+  applicationId: "20000000-0000-4000-8000-000000000763",
+  currentPublicationId: null,
+  status: "draft",
+  version: 1,
+  name: "Fictional Garden Cottage",
+  governorate: "Erbil",
+  approximateLocation: "Near Shaqlawa",
+  exactAddress: "Fictional private address",
+  exactLatitude: null,
+  exactLongitude: null,
+  privateDirections: "",
+  capacity: 8,
+  bedrooms: 3,
+  bathrooms: 2,
+  amenities: ["garden"],
+  sourceLanguage: "en",
+  description: "A synthetic cottage for display checks.",
+  houseRules: "Synthetic house rules.",
+  photos: [],
+  submittedSourceRevision: null,
+  hasUnpublishedContentChange: false,
+  updatedAt: "2026-08-17T09:00:00.000Z",
+} satisfies CottageProfile;
+
+window.renderCottageOverviewDisplay = ({ locale, actor }) => {
+  document.documentElement.lang = locale;
+  document.documentElement.dir = locale === "en" ? "ltr" : "rtl";
+  root.render(
+    <>
+      <SiteHeader
+        locale={locale}
+        account={{
+          status: "authenticated",
+          context:
+            actor === "owner"
+              ? { role: "cottage_owner", approvalState: "approved" }
+              : { role: "platform_administrator" },
+        }}
+      />
+      <main
+        className={
+          actor === "owner"
+            ? "results-page page"
+            : "owner-application-page cottage-profile-page"
+        }
+      >
+        <BackofficeNavigation locale={locale} area={actor} current="cottages" />
+        <CottageProfileOverview
+          locale={locale}
+          actor={actor}
+          profiles={[overviewDisplayCottage]}
+          canCreate={actor === "owner"}
+        />
+      </main>
+    </>,
+  );
+};

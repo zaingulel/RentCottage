@@ -165,6 +165,8 @@ Anything else is a token.
 
 ## Page template
 
+- Support viewports down to 320 CSS pixels. Pages fit the available inline size after any space-taking
+  scrollbar, with no 320-pixel minimum width on the page or body.
 - A page on the template puts `page` on its `<main>`, beside the class that gives the page its background and
   height (`results-page` on every page moved so far). The column is centred, leaves a `2.25rem` gutter (18 pixels on
   each side, the site header's) and starts `--space-6` (32 pixels) below the site header. It is the same at every

@@ -14,6 +14,11 @@ declare global {
       locale: "en" | "ar" | "ckb";
       photoCount: 0 | 1 | 4 | 6;
       longContent?: boolean;
+      withHeader?: boolean;
+    }) => void;
+    renderCottageOverviewDisplay: (input: {
+      locale: "en" | "ar" | "ckb";
+      actor: "owner" | "administrator";
     }) => void;
     renderBookingRequestDisplay: (input: {
       locale: "en" | "ar" | "ckb";
@@ -73,14 +78,14 @@ async function mountBookingRequestDisplay(
             { filter: /.*/, namespace: "router-fixture" },
             () => ({
               contents:
-                "export const useRouter = () => ({ refresh() {}, replace() {} });",
+                "export const useRouter = () => ({ refresh() {}, replace() {} }); export const usePathname = () => '/fixture'; export const useSearchParams = () => new URLSearchParams();",
               loader: "ts",
             }),
           );
           pluginBuild.onResolve(
             {
               filter:
-                /booking-request\/(lifecycle-actions|payment-recovery-actions)$/,
+                /(booking-request\/(lifecycle-actions|payment-recovery-actions)|cottage-profile\/actions|access\/actions)$/,
             },
             () => ({
               path: "booking-request-server-action",
@@ -89,7 +94,7 @@ async function mountBookingRequestDisplay(
           );
           pluginBuild.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({
             contents:
-              "export async function actOnBookingRequest() { throw new Error('Fixture actions are unavailable'); } export async function recoverBookingRequestPayment() { throw new Error('Fixture actions are unavailable'); }",
+              "export async function actOnBookingRequest() { throw new Error('Fixture actions are unavailable'); } export async function recoverBookingRequestPayment() { throw new Error('Fixture actions are unavailable'); } export async function createCottageProfileDraftAction() { throw new Error('Fixture actions are unavailable'); } export async function signOutAccount() { throw new Error('Fixture actions are unavailable'); }",
             loader: "ts",
           }));
         },
@@ -1621,5 +1626,138 @@ test("lifted public cottage keeps its hero separate and every booking option rea
         )
         .toBe(true);
     }
+  }
+});
+
+test("pages reflow beside a classic scrollbar at 320 pixels in every language", async ({
+  playwright,
+  baseURL,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  // Headless scrollbar hiding would invalidate the real available-width observer.
+  const browser = await playwright.chromium.launch({
+    ignoreDefaultArgs: ["--hide-scrollbars"],
+  });
+  try {
+    const context = await browser.newContext({
+      baseURL,
+      viewport: { width: 320, height: 844 },
+    });
+    const page = await context.newPage();
+    await mountBookingRequestDisplay(page, testInfo);
+    await page.addStyleTag({
+      content:
+        "html { overflow-y: scroll; } ::-webkit-scrollbar { width: 15px; }",
+    });
+
+    for (const input of [
+      {
+        locale: "en",
+        owner: "Your cottages",
+        administrator: "Private Cottage Profiles",
+        results: "Available cottages",
+        language: "Language English",
+      },
+      {
+        locale: "ar",
+        owner: "أكواخك",
+        administrator: "ملفات الأكواخ الخاصة",
+        results: "البيوت المتاحة",
+        language: "اللغة العربية",
+      },
+      {
+        locale: "ckb",
+        owner: "کۆتێجەکانت",
+        administrator: "پرۆفایلە تایبەتەکانی کۆتێج",
+        results: "کۆتێجە بەردەستەکان",
+        language: "زمان کوردی",
+      },
+    ] as const) {
+      for (const screen of ["owner", "administrator", "results"] as const) {
+        await test.step(`${input.locale} ${screen}`, async () => {
+          if (screen === "results") {
+            await page.evaluate(
+              (locale) =>
+                window.renderPublicCottageDisplay({
+                  screen: "results",
+                  locale,
+                  photoCount: 1,
+                  withHeader: true,
+                }),
+              input.locale,
+            );
+          } else {
+            await page.evaluate(
+              (state) => window.renderCottageOverviewDisplay(state),
+              {
+                locale: input.locale,
+                actor: screen,
+              },
+            );
+          }
+          await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+            input[screen],
+          );
+          await expect(
+            page.getByRole("heading", {
+              level: 2,
+              name: "Fictional Garden Cottage",
+              exact: true,
+            }),
+          ).toBeVisible();
+          await expect(page.locator("html")).toHaveAttribute(
+            "dir",
+            input.locale === "en" ? "ltr" : "rtl",
+          );
+          await page.evaluate(() => document.fonts.ready);
+          await expect
+            .poll(() =>
+              page
+                .getByRole("heading", { level: 1 })
+                .evaluate((heading) =>
+                  document.fonts.check(
+                    "700 20px Changa",
+                    heading.textContent ?? "",
+                  ),
+                ),
+            )
+            .toBe(true);
+          await expect
+            .poll(() =>
+              page.evaluate(() => ({
+                viewport: window.innerWidth,
+                available: document.documentElement.clientWidth,
+              })),
+            )
+            .toEqual({ viewport: 320, available: 305 });
+          const expectFits = () =>
+            expect
+              .poll(() =>
+                page.evaluate(
+                  () =>
+                    document.documentElement.scrollWidth -
+                    document.documentElement.clientWidth,
+                ),
+              )
+              .toBeLessThanOrEqual(0);
+          await expectFits();
+          const language = page.getByRole("button", {
+            name: input.language,
+            exact: true,
+          });
+          await language.click();
+          await expect(language).toHaveAttribute("aria-expanded", "true");
+          await expect(
+            page.getByRole("link", { name: "English", exact: true }),
+          ).toBeVisible();
+          await expectFits();
+          await language.click();
+          await expect(language).toHaveAttribute("aria-expanded", "false");
+          await expectFits();
+        });
+      }
+    }
+  } finally {
+    await browser.close();
   }
 });
