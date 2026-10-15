@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 
 import { BackofficeNavigation } from "@/components/backoffice-navigation";
+import { CottageProfileEditor } from "@/components/cottage-profile-editor";
 import { CottageProfileOverview } from "@/components/cottage-profile-overview";
 import { SiteHeader } from "@/components/site-header";
 import type { CottageProfile } from "@/cottage-profile/cottage-profile";
@@ -340,6 +341,111 @@ window.renderCottageOverviewDisplay = ({ locale, actor }) => {
           actor={actor}
           profiles={[overviewDisplayCottage]}
           canCreate={actor === "owner"}
+        />
+      </main>
+    </>,
+  );
+};
+
+window.renderCottageEditorDisplay = ({
+  locale,
+  actor,
+  state = "draft",
+  longContent = false,
+  withHeader = false,
+}) => {
+  document.documentElement.lang = locale;
+  document.documentElement.dir = locale === "en" ? "ltr" : "rtl";
+  const submitted = state === "submitted" || state === "review";
+  const editable =
+    state !== "abandoned" && (actor === "administrator" || !submitted);
+  const profile: CottageProfile = {
+    ...overviewDisplayCottage,
+    status:
+      state === "abandoned"
+        ? "abandoned"
+        : submitted
+          ? "submitted_for_content_approval"
+          : "draft",
+    name: longContent
+      ? "کۆتێجی باخچەی خەیاڵی بۆ کۆبوونەوەی خێزان لە ناوچەی شەقڵاوە لە نێوان دارەکان و چیاکان"
+      : overviewDisplayCottage.name,
+    exactLatitude: 36.408333,
+    exactLongitude: 44.385834,
+    privateDirections: "Synthetic directions to the fictional garden gate.",
+    description: longContent
+      ? "کۆتێجێکی باخچەدار بۆ کۆبوونەوەی خێزان و پشوودان لە ناوچەی شەقڵاوە. ".repeat(
+          8,
+        )
+      : overviewDisplayCottage.description,
+    photos: [
+      {
+        id: "80000000-0000-4000-8000-000000000753",
+        originalFilename:
+          "fictional-garden-<script>-photograph-with-a-long-filename-for-wrapping-and-private-photo-display-checks.jpg",
+        mediaType: "image/jpeg",
+        sizeBytes: 2048,
+        state: "ready",
+        updatedAt: overviewDisplayCottage.updatedAt,
+      },
+      {
+        id: "80000000-0000-4000-8000-000000000754",
+        originalFilename: "synthetic-pending.jpg",
+        mediaType: "image/jpeg",
+        sizeBytes: 2048,
+        state: "pending",
+        updatedAt: overviewDisplayCottage.updatedAt,
+      },
+      {
+        id: "80000000-0000-4000-8000-000000000755",
+        originalFilename: "synthetic-deletion-pending.jpg",
+        mediaType: "image/jpeg",
+        sizeBytes: 2048,
+        state: "deletion_pending",
+        updatedAt: overviewDisplayCottage.updatedAt,
+      },
+    ],
+    submittedSourceRevision: submitted
+      ? {
+          revision: 1,
+          ownerUserId: overviewDisplayCottage.ownerUserId,
+          sourceLanguage: "en",
+          description: "Preserved synthetic source description.",
+          houseRules: "Preserved synthetic House Rules.",
+          submittedAt: overviewDisplayCottage.updatedAt,
+        }
+      : null,
+  };
+  root.render(
+    <>
+      {withHeader ? (
+        <SiteHeader
+          locale={locale}
+          account={{
+            status: "authenticated",
+            context:
+              actor === "owner"
+                ? { role: "cottage_owner", approvalState: "approved" }
+                : { role: "platform_administrator" },
+          }}
+        />
+      ) : null}
+      <main
+        className={
+          actor === "owner"
+            ? "results-page page"
+            : "owner-application-page cottage-profile-page"
+        }
+      >
+        <BackofficeNavigation locale={locale} area={actor} current="cottages" />
+        <CottageProfileEditor
+          key={`${locale}:${actor}:${state}`}
+          locale={locale}
+          actor={actor}
+          profile={profile}
+          editable={editable}
+          sourceEditable={state !== "review"}
+          photoEditable={editable && state !== "review"}
         />
       </main>
     </>,

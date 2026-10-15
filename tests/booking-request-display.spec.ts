@@ -1,3 +1,4 @@
+import { cottageProfileMessages } from "../src/i18n/cottage-profile-messages";
 import { bookingRequestPaymentRecoveryMessages } from "../src/i18n/booking-request-status-messages";
 import { ownerBookingRequestMessages } from "../src/i18n/owner-booking-request-messages";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
@@ -9,6 +10,13 @@ import { readApplicationStylesheet } from "./fixtures/application-stylesheet";
 
 declare global {
   interface Window {
+    renderCottageEditorDisplay: (input: {
+      locale: "en" | "ar" | "ckb";
+      actor: "owner" | "administrator";
+      state?: "draft" | "submitted" | "review" | "abandoned";
+      longContent?: boolean;
+      withHeader?: boolean;
+    }) => void;
     renderPublicCottageDisplay: (input: {
       screen: "results" | "profile";
       locale: "en" | "ar" | "ckb";
@@ -94,7 +102,7 @@ async function mountBookingRequestDisplay(
           );
           pluginBuild.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({
             contents:
-              "export async function actOnBookingRequest() { throw new Error('Fixture actions are unavailable'); } export async function recoverBookingRequestPayment() { throw new Error('Fixture actions are unavailable'); } export async function createCottageProfileDraftAction() { throw new Error('Fixture actions are unavailable'); } export async function signOutAccount() { throw new Error('Fixture actions are unavailable'); }",
+              "export async function actOnBookingRequest() { throw new Error('Fixture actions are unavailable'); } export async function recoverBookingRequestPayment() { throw new Error('Fixture actions are unavailable'); } export async function createCottageProfileDraftAction() { throw new Error('Fixture actions are unavailable'); } export async function saveOwnerCottageProfileAction() { return { status: 'saved' }; } export async function saveAdministratorCottageProfileAction() { return { status: 'saved' }; } export async function uploadCottageProfilePhotoAction() { return { status: 'uploaded' }; } export async function deleteCottageProfilePhotoAction() { return { status: 'deleted' }; } export async function submitCottageProfileAction() { return { status: 'submitted' }; } export async function previewCottageProfilePhotoAction() { return { status: 'denied' }; } export async function signOutAccount() { throw new Error('Fixture actions are unavailable'); }",
             loader: "ts",
           }));
         },
@@ -1759,5 +1767,434 @@ test("pages reflow beside a classic scrollbar at 320 pixels in every language", 
     }
   } finally {
     await browser.close();
+  }
+});
+
+test("Cottage editor keeps the approved raised groups and usable controls across locales and widths", async ({
+  page,
+}, testInfo) => {
+  const phone = testInfo.project.name === "mobile";
+  await page.setViewportSize({ width: phone ? 390 : 1440, height: 900 });
+  await mountBookingRequestDisplay(page, testInfo);
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    const copy = cottageProfileMessages[locale];
+    await page.evaluate(
+      (locale) => window.renderCottageEditorDisplay({ locale, actor: "owner" }),
+      locale,
+    );
+    const editor = page.locator(".cottage-profile-editor");
+    await expect(editor.getByRole("heading", { level: 1 })).toHaveText(
+      copy.editorTitle,
+    );
+    await expect(
+      editor.getByLabel(copy.cottageName, { exact: true }),
+    ).toHaveValue("Fictional Garden Cottage");
+    await expect(editor.locator(".status-badge")).toHaveText(copy.draft);
+    await expect(page.locator("html")).toHaveAttribute(
+      "dir",
+      locale === "en" ? "ltr" : "rtl",
+    );
+    await expect(page.locator("main > .backoffice-navigation")).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    await expect
+      .poll(() =>
+        editor.evaluate((node, phone) => {
+          const fieldsets = [
+            ...node.querySelectorAll(".cottage-profile-form > fieldset"),
+          ];
+          const header = node.querySelector(".cottage-profile-editor-heading")!;
+          const title = header.querySelector("h1")!.getBoundingClientRect();
+          const subtitle = header.querySelector("p")!;
+          const badge = header.querySelector(".status-badge")!;
+          const status = badge.getBoundingClientRect();
+          const headerBox = header.getBoundingClientRect();
+          const subtitleBox = subtitle.getBoundingClientRect();
+          const navigation = document
+            .querySelector("main > .backoffice-navigation")!
+            .getBoundingClientRect();
+          const rtl = document.documentElement.dir === "rtl";
+          const near = (value: number, expected: number) =>
+            Math.abs(value - expected) < 1;
+          const size = (element: Element) =>
+            parseFloat(getComputedStyle(element).fontSize);
+          const cards = fieldsets.map(
+            (section) => section.querySelector(".cottage-profile-field-card")!,
+          );
+          const boxes = fieldsets.map((section) =>
+            section.getBoundingClientRect(),
+          );
+          const label = cards[0].querySelector(":scope > label")!;
+          const control = label.querySelector(".form-control")!;
+          const labelBox = label.getBoundingClientRect();
+          const controlBox = control.getBoundingClientRect();
+          const location = node.querySelector(
+            ".cottage-profile-location-field",
+          )!;
+          const locationLabel = location.querySelector("label")!;
+          const hint = location.querySelector("p")!;
+          const save = node.querySelector(".cottage-profile-form > .action")!;
+          const photos = node.querySelector(".cottage-profile-photos")!;
+          const rows = [...photos.querySelectorAll(".cottage-photo-row")];
+          const photoGuidance = photos.querySelector(
+            ".cottage-profile-section-heading p",
+          )!;
+          const photoCard = photos.querySelector(
+            ".cottage-profile-field-card",
+          )!;
+          const firstRowStyle = getComputedStyle(rows[0]);
+          const nextRowStyle = getComputedStyle(rows[1]);
+          const badgeStyle = getComputedStyle(badge);
+          return {
+            headerLayout:
+              getComputedStyle(header).display === "flex" &&
+              (phone
+                ? status.top >= subtitleBox.bottom &&
+                  near(
+                    rtl
+                      ? status.right - headerBox.right
+                      : status.left - headerBox.left,
+                    0,
+                  )
+                : near(subtitleBox.bottom - status.bottom, 0) &&
+                  (rtl
+                    ? status.right <= title.left &&
+                      near(status.left - headerBox.left, 0)
+                    : status.left >= title.right &&
+                      near(status.right - headerBox.right, 0))),
+            subtitleStyle:
+              getComputedStyle(subtitle).color === "rgba(38, 36, 31, 0.68)" &&
+              near(subtitleBox.top - title.bottom, 5.6),
+            referenceRhythm: {
+              navigationToTitle: near(
+                title.top - navigation.bottom,
+                phone ? 24 : 40,
+              ),
+              headerToFields: near(
+                boxes[0].top - Math.max(subtitleBox.bottom, status.bottom),
+                phone ? 56 : 64,
+              ),
+              sectionGaps: boxes
+                .slice(1)
+                .every((box, index) => near(box.top - boxes[index].bottom, 40)),
+              saveGap: near(
+                save.getBoundingClientRect().top - boxes[2].bottom,
+                16,
+              ),
+              followingSections:
+                near(
+                  photos.getBoundingClientRect().top -
+                    node
+                      .querySelector(".cottage-profile-form")!
+                      .getBoundingClientRect().bottom,
+                  40,
+                ) &&
+                near(
+                  node
+                    .querySelector(".cottage-profile-submit-form")!
+                    .getBoundingClientRect().top -
+                    photos.getBoundingClientRect().bottom,
+                  40,
+                ),
+              cardPadding: [...cards, photoCard].every((card) =>
+                [
+                  "paddingTop",
+                  "paddingBottom",
+                  "paddingInlineStart",
+                  "paddingInlineEnd",
+                ].every((property) =>
+                  near(
+                    parseFloat(
+                      getComputedStyle(card).getPropertyValue(
+                        property.replace(
+                          /[A-Z]/g,
+                          (letter) => `-${letter.toLowerCase()}`,
+                        ),
+                      ),
+                    ),
+                    20,
+                  ),
+                ),
+              ),
+              fieldGaps:
+                near(controlBox.top - labelBox.top - 21.6, 5.6) &&
+                near(
+                  hint.getBoundingClientRect().top -
+                    locationLabel.getBoundingClientRect().bottom,
+                  5.6,
+                ),
+              typography:
+                near(size(header.querySelector("h1")!), phone ? 26 : 34) &&
+                near(
+                  parseFloat(
+                    getComputedStyle(header.querySelector("h1")!).lineHeight,
+                  ),
+                  document.documentElement.lang === "ckb"
+                    ? phone
+                      ? 36.4
+                      : 47.6
+                    : phone
+                      ? 29.9
+                      : 39.1,
+                ) &&
+                near(size(subtitle), 16) &&
+                near(size(control), 16) &&
+                getComputedStyle(control).fontWeight === "400" &&
+                near(parseFloat(getComputedStyle(control).lineHeight), 24) &&
+                near(size(label), 14.4) &&
+                near(size(hint), 13.6) &&
+                near(size(badge), 12.48) &&
+                fieldsets.every((section) =>
+                  near(size(section.querySelector("h2")!), 22),
+                ),
+              photoRhythm:
+                near(parseFloat(firstRowStyle.paddingTop), 0) &&
+                near(parseFloat(firstRowStyle.paddingBottom), 14.4) &&
+                near(parseFloat(nextRowStyle.paddingTop), 14.4) &&
+                near(parseFloat(firstRowStyle.columnGap), 20) &&
+                near(parseFloat(firstRowStyle.rowGap), 16) &&
+                near(
+                  parseFloat(
+                    getComputedStyle(photos.querySelector("ul")!).rowGap,
+                  ),
+                  0,
+                ) &&
+                near(
+                  parseFloat(
+                    getComputedStyle(
+                      photos.querySelector(".cottage-photo-upload-form")!,
+                    ).paddingTop,
+                  ),
+                  14.4,
+                ),
+              photoType:
+                near(size(rows[0].querySelector("span")!), 13.6) &&
+                near(size(photoGuidance), 14.72) &&
+                near(size(rows[0].querySelector("button")!), 14.72) &&
+                near(size(save), 15.2) &&
+                near(
+                  parseFloat(
+                    getComputedStyle(
+                      photos.querySelector('input[type="file"]')!,
+                      "::file-selector-button",
+                    ).fontSize,
+                  ),
+                  14.72,
+                ),
+              badgeSurface:
+                badgeStyle.backgroundColor === "rgb(255, 252, 245)" &&
+                near(parseFloat(badgeStyle.borderTopWidth), 1) &&
+                near(parseFloat(badgeStyle.paddingTop), 4.8) &&
+                near(parseFloat(badgeStyle.paddingInlineStart), 10.4) &&
+                near(parseFloat(badgeStyle.columnGap), 6.4),
+            },
+            badgeInk: getComputedStyle(badge).color === "rgb(38, 36, 31)",
+            lifted: fieldsets.every(
+              (section) =>
+                getComputedStyle(
+                  section.querySelector(".cottage-profile-field-card")!,
+                ).boxShadow !== "none",
+            ),
+            composition: fieldsets.every((section) => {
+              const heading = section
+                .querySelector(".cottage-profile-section-heading")!
+                .getBoundingClientRect();
+              const card = section
+                .querySelector(".cottage-profile-field-card")!
+                .getBoundingClientRect();
+              return phone
+                ? card.top >= heading.bottom
+                : Math.abs(card.top - heading.top) < 1 &&
+                    (document.documentElement.dir === "rtl"
+                      ? card.right <= heading.left
+                      : card.left >= heading.right);
+            }),
+            fits:
+              document.documentElement.scrollWidth <=
+                document.documentElement.clientWidth &&
+              node.scrollWidth <= node.clientWidth,
+            statusReadable: (() => {
+              const badge = node.querySelector(".status-badge")!;
+              const box = badge.getBoundingClientRect();
+              return box.width > 0 && badge.scrollWidth <= badge.clientWidth;
+            })(),
+          };
+        }, phone),
+      )
+      .toEqual({
+        headerLayout: true,
+        subtitleStyle: true,
+        referenceRhythm: {
+          navigationToTitle: true,
+          headerToFields: true,
+          sectionGaps: true,
+          saveGap: true,
+          followingSections: true,
+          cardPadding: true,
+          fieldGaps: true,
+          typography: true,
+          photoRhythm: true,
+          photoType: true,
+          badgeSurface: true,
+        },
+        badgeInk: true,
+        lifted: true,
+        composition: true,
+        fits: true,
+        statusReadable: true,
+      });
+    const ready = editor.locator(".cottage-photo-row").first();
+    await expect(ready.locator("strong")).toHaveText(
+      "fictional-garden-<script>-photograph-with-a-long-filename-for-wrapping-and-private-photo-display-checks.jpg",
+    );
+    await expect(editor.locator("script")).toHaveCount(0);
+    for (const state of [copy.ready, copy.pending, copy.deletionPending])
+      await expect(
+        editor
+          .locator(".cottage-photo-row span", { hasText: state })
+          .filter({ hasText: new RegExp(`^${state}$`) }),
+      ).toHaveCount(1);
+    await expect
+      .poll(() =>
+        ready.locator("strong").evaluate((node) => {
+          const row = node.closest("li")!.getBoundingClientRect();
+          const text = node.getBoundingClientRect();
+          return (
+            text.left >= row.left &&
+            text.right <= row.right &&
+            node.scrollWidth <= node.clientWidth
+          );
+        }),
+      )
+      .toBe(true);
+    await editor
+      .getByLabel(copy.cottageName, { exact: true })
+      .fill("Edited fictional cottage");
+    await editor.getByRole("button", { name: copy.save, exact: true }).click();
+    await expect(
+      editor.getByRole("status").filter({ hasText: copy.saved }),
+    ).toBeVisible();
+    const latitude = editor.getByLabel(copy.latitude, { exact: true });
+    await latitude.fill("invalid");
+    await expect(latitude).toHaveAttribute("aria-invalid", "true");
+    await expect(latitude).toHaveAttribute(
+      "aria-describedby",
+      "cottage-profile-exact-point-check",
+    );
+    await expect(
+      editor.getByRole("status", { name: copy.pointCheck, exact: true }),
+    ).toHaveText(copy.pointDecimal);
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(latitude).toBeFocused();
+    await expect
+      .poll(() =>
+        latitude.evaluate((node) => {
+          const style = getComputedStyle(node);
+          return (
+            node.matches(":focus-visible") &&
+            style.outlineStyle !== "none" &&
+            parseFloat(style.outlineWidth) >= 2 &&
+            style.boxShadow !== "none"
+          );
+        }),
+      )
+      .toBe(true);
+    await ready
+      .getByRole("button", { name: copy.preview, exact: true })
+      .click();
+    await expect(ready.getByRole("alert")).toHaveText(copy.previewDenied);
+    await expect(ready.getByRole("link")).toHaveCount(0);
+  }
+  await page.setViewportSize({ width: 320, height: 844 });
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    await page.evaluate(
+      (locale) =>
+        window.renderCottageEditorDisplay({
+          locale,
+          actor: "owner",
+          longContent: true,
+          withHeader: true,
+        }),
+      locale,
+    );
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      cottageProfileMessages[locale].editorTitle,
+    );
+    await expect(
+      page.getByLabel(cottageProfileMessages[locale].cottageName, {
+        exact: true,
+      }),
+    ).toHaveValue(
+      "کۆتێجی باخچەی خەیاڵی بۆ کۆبوونەوەی خێزان لە ناوچەی شەقڵاوە لە نێوان دارەکان و چیاکان",
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document.documentElement.scrollWidth <=
+              document.documentElement.clientWidth &&
+            [
+              ...document.querySelectorAll(
+                ".cottage-profile-editor p, .cottage-profile-editor strong, .cottage-profile-editor button",
+              ),
+            ].every((node) => node.scrollWidth <= node.clientWidth + 1),
+        ),
+      )
+      .toBe(true);
+  }
+  for (const input of [
+    { actor: "owner", state: "submitted" },
+    { actor: "administrator", state: "review" },
+    { actor: "owner", state: "abandoned" },
+  ] as const) {
+    const copy = cottageProfileMessages.en;
+    await page.evaluate(
+      (input) => window.renderCottageEditorDisplay({ ...input, locale: "en" }),
+      input,
+    );
+    const editor = page.locator(".cottage-profile-editor");
+    await expect(editor.getByRole("heading", { level: 1 })).toHaveText(
+      copy.editorTitle,
+    );
+    await expect(
+      editor.getByLabel(copy.cottageName, { exact: true }),
+    ).toHaveValue("Fictional Garden Cottage");
+    if (input.actor === "administrator") {
+      await expect(
+        editor.getByLabel(copy.cottageName, { exact: true }),
+      ).toBeEnabled();
+      await expect(
+        editor.getByRole("button", { name: copy.save, exact: true }),
+      ).toBeVisible();
+    } else {
+      await expect(
+        editor.getByLabel(copy.cottageName, { exact: true }),
+      ).toBeDisabled();
+      await expect(
+        editor.getByRole("button", { name: copy.save, exact: true }),
+      ).toHaveCount(0);
+    }
+    await expect(
+      editor.getByRole("textbox", { name: copy.description, exact: true }),
+    ).toBeDisabled();
+    await expect(
+      editor.getByRole("button", { name: copy.deletePhoto, exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      editor.getByRole("button", { name: copy.uploadPhoto, exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      editor.getByRole("button", { name: copy.submit, exact: true }),
+    ).toHaveCount(0);
+    if (input.state !== "abandoned") {
+      const revision = editor.locator(".cottage-profile-source-revision");
+      await expect(revision).toContainText(
+        "Preserved synthetic source description.",
+      );
+      await expect(revision).toContainText("Preserved synthetic House Rules.");
+    } else
+      await expect(
+        editor.getByRole("status").filter({ hasText: copy.abandonedReadOnly }),
+      ).toBeVisible();
   }
 });

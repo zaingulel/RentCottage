@@ -50,7 +50,7 @@ the code keeps them.
     panel. `--ink-accent` text sits on them and reaches 4.5:1 on both, which globals.test.ts checks.
   - `--ink-on-dark` is the text colour on a dark surface, the green panels and buttons and the shaded hero
     photograph alike; the one exception is `--ink-on-green-bright`, the white label of the solid green buttons and
-    links that the administrator review list, the publication review and the cottage profile editor style for
+    links that the administrator review list, the publication review and the cottage profile overview style for
     themselves. `--ink-on-dark-soft` is the supporting paragraph there.
   - `--line-panel` is the outline of a panel and of a message.
   - `--line-action` is the outline of a secondary button and of a toggle at rest.
@@ -76,7 +76,7 @@ the code keeps them.
   browser text size and the pixel figures are those at the browser default. `font-size` is never set on `html`,
   which would redefine every step.
 - Every length in `margin`, `padding`, `gap` and `inset`, in any longhand or logical form, is a spacing step, and
-  every `font-size` is a text size step. A value between two steps takes the nearer one, and the larger one when it
+  every `font-size` is a text size step, except for the exact editor declarations under Tolerated literals. A value between two steps takes the nearer one, and the larger one when it
   is exactly halfway.
 - Body text is `--font-size-3`, set on `body`.
 - A fluid length is `clamp()` between two steps, and only its middle term is a viewport unit. A negative step is
@@ -86,7 +86,8 @@ the code keeps them.
   `flex-basis` and grid track sizes, including a gutter written inside one such as `calc(100% - 2.25rem)`. They are
   the dimensions of controls, images, columns and reading widths, which a seven-step spacing scale cannot express.
   New work reuses a size already in use. The approved public cottage pattern additionally permits its `29rem`
-  hero height and `36rem` prose width, as documented below; these specific sizes do not permit other new
+  hero height and `36rem` prose width, and the cottage editor pattern permits its `14rem` heading-column minimum
+  and `42.5rem` field-column maximum, as documented below; these specific sizes do not permit other new
   sizing values. A page's content width uses a token named under
   Page template.
 - A component token holds a length only when several declarations must share it. `--booking-progress-marker` is the
@@ -156,10 +157,38 @@ A stylesheet may write these as literals:
   - `.access-required-card h1 { font-size: clamp(2.2rem, 6vw, 3.5rem) }`
   - `.trusted-copy h2 { font-size: clamp(2rem, 4vw, 3rem) }`
 
-The last three bullets are the complete list of spacing and text size exceptions.
+- The owner-approved cottage editor fidelity pattern uses only these selector-specific spacing and type
+  exceptions. They apply beneath `section.cottage-profile-editor`, including its administrator rendering, and
+  never to the separate lifecycle form or shared controls:
+  - `section.cottage-profile-editor { gap: 2.5rem }`
+  - `section.cottage-profile-editor { padding-block-start: 2.5rem }`
+  - `section.cottage-profile-editor { font-size: 1rem }`
+  - `section.cottage-profile-editor .cottage-profile-editor-heading > div { gap: 0.35rem }`
+  - `section.cottage-profile-editor .cottage-profile-editor-heading .status-badge { gap: 0.4rem }`
+  - `section.cottage-profile-editor .cottage-profile-editor-heading .status-badge { padding: 0.3rem 0.65rem }`
+  - `section.cottage-profile-editor .cottage-profile-editor-heading .status-badge { font-size: 0.78rem }`
+  - `section.cottage-profile-editor .cottage-profile-section-heading p, section.cottage-profile-editor .cottage-profile-location-field p { font-size: 0.85rem }`
+  - `section.cottage-profile-editor .section-title { font-size: 1.375rem }`
+  - `section.cottage-profile-editor .cottage-profile-photos .cottage-profile-section-heading p { font-size: 0.92rem }`
+  - `section.cottage-profile-editor .cottage-profile-field-card { padding: 1.25rem }`
+  - `section.cottage-profile-editor .cottage-profile-location-field { gap: 0.35rem }`
+  - `section.cottage-profile-editor .cottage-profile-form label:where(:not(.choice-control, .exact-point-confirmation)), section.cottage-profile-editor .cottage-photo-upload-form label { gap: 0.35rem }`
+  - `section.cottage-profile-editor .cottage-profile-form label:where(:not(.choice-control, .exact-point-confirmation)), section.cottage-profile-editor .cottage-photo-upload-form label { font-size: 0.9rem }`
+  - `section.cottage-profile-editor .option-group > legend { font-size: 0.9rem }`
+  - `section.cottage-profile-editor .form-control { font-size: 1rem }`
+  - `section.cottage-profile-editor .exact-point-check { font-size: 0.85rem }`
+  - `section.cottage-profile-editor .action { font-size: 0.95rem }`
+  - `section.cottage-profile-editor .cottage-photo-upload-form { padding-block-start: 0.9rem }`
+  - `section.cottage-profile-editor .cottage-photo-row { column-gap: 1.25rem }`
+  - `section.cottage-profile-editor .cottage-photo-row { padding-block: 0.9rem }`
+  - `section.cottage-profile-editor .cottage-photo-row > div > span { font-size: 0.85rem }`
+  - `section.cottage-profile-editor .cottage-photo-text-action { font-size: 0.92rem }`
+  - `section.cottage-profile-editor input[type="file"].form-control::file-selector-button { font-size: 0.92rem }`
+
+The last four bullets are the complete list of spacing and text size exceptions.
 [globals.test.ts](../src/app/globals.test.ts) reads the backticked rule entries and token names in this section, and
 tolerates an entry's declaration only on the rule the entry names, so an entry is removed here when its declaration
-leaves that rule. New work uses a step and adds no entry.
+leaves that rule. New work uses a step and adds no entry outside this explicit editor exception.
 
 Anything else is a token.
 
@@ -398,8 +427,8 @@ its own; the block it sits in sets the space around it.
   `--font-size-2`, holds plain text, a reference in `bdi`, a status badge and a date in `time`, and wraps. Further blocks of the
   same record follow inside the `li`.
 - Card: `article.card` presents one record among several in a grid or list on a page that uses the Page template.
-  The same `.card` surface also applies to the public cottage booking aside and the Customer Booking Request
-  status/progress, reference/details and separate Messages groups. It is a `--card` surface with `--radius-card` corners and the `--shadow-card` elevation shadow. It shows no
+  The same `.card` surface also applies to the public cottage booking aside, cottage editor field groups and the
+  Customer Booking Request status/progress, reference/details and separate Messages groups. It is a `--card` surface with `--radius-card` corners and the `--shadow-card` elevation shadow. It shows no
   border: its `1px` border is `transparent`, so the card keeps an edge where the browser forces colours and removes
   shadows. It sets no padding and no layout; the block that uses it does. Its text has three tiers: `card-title` on
   the record's heading, in `--display` at weight 700 in `--ink` at `--font-size-4`, with line height `1.25` and
@@ -432,6 +461,48 @@ its own; the block it sits in sets the space around it.
   `--space-7` between facts and prose and between prose sections. The booking card has `--space-5` padding,
   `--space-4` at `phone`, a green heading, the existing fee note and full-width quote/message actions. Keep every
   existing loading, stale-selection, missing-period, disabled, cross-midnight and price-unavailable state.
+- Cottage editor: only `section.cottage-profile-editor` takes this reference-fidelity pattern. The separate
+  `form.cottage-profile-editor` lifecycle block keeps its existing styles. Navigation-to-title space is 40px
+  on desktop and 24px at `phone`: root top padding is `2.5rem`, or `--space-5` at `phone`; inside `.page` it is
+  `--space-4`, or zero at `phone`, to account for the navigation's existing 24px bottom margin. Shared page,
+  header, navigation and gutters retain their own patterns. The root has a `2.5rem` gap. Header bottom padding
+  is `--space-5`, `--space-4` at `phone`, giving 64px/56px from its content to the first section.
+  The flex header bottom-aligns its title/completion block and the status at opposite inline edges, with
+  `--space-4` between wrapped items. The text block is shrinkable, content-width and at most 100% wide, taking
+  a full row at `phone` so the badge follows completion at inline start. Title size stays 34px/26px, with
+  line height 1.15 and 1.4 in Sorani; completion follows by `0.35rem`. The editor-only page-status exception
+  uses the existing translated `status-badge` label, tone and accessible dot colours, preserving announcement
+  semantics. Its fill is `--card`, its border is `1px --line`, type is `0.78rem`, padding `0.3rem 0.65rem` and
+  dot gap `0.4rem`; the pill radius and 8px dot stay shared.
+  Each native fieldset and the photos section is an unboxed grid with `minmax(14rem, 1fr)` for heading/guidance
+  and `minmax(0, 42.5rem)` for the raised field card, `--space-7` between columns and `--space-4` between rows.
+  These two sizing literals belong only to this pattern. The form gap is `--space-4`; adjacent top-level
+  fieldsets alone add `--space-5` above, yielding 40px between sections and 16px before Save. Photos and Submit
+  follow preceding content by 40px. Every field card keeps the card radius, shadow and transparent forced-colour
+  border with `1.25rem` padding at every width and `--space-4` between fields. At `tablet` headings precede
+  cards; at `phone` short fields and numbers stack, while coordinates stay paired until `compact`.
+  Editor prose and controls use `1rem` with line height 1.5. Section headings are `1.375rem`, weight 700,
+  line height 1.25 and 1.4 in Sorani; guidance follows by `--space-2` and is at most `22rem` wide. Non-choice
+  labels and the amenities legend are bold `0.9rem`; controls follow labels by `0.35rem` and explicitly retain
+  normal weight. Choice labels and coordinate confirmation use `1rem` and preserve their existing treatment.
+  Approximate-location hints follow their field by `0.35rem`; hints, private warning, coordinate guidance and
+  file states use `0.85rem`, while photo guidance uses `0.92rem`. Supporting text is `--muted`; private guidance
+  is bold `--ink-accent` without a tinted box, while read-only warning boxes remain.
+  Save/Submit use primary `ActionButton`, Upload secondary with `size="regular"`, and device location keeps
+  its secondary control and pending state. All use bold `0.95rem` type, align at inline end on desktop and fill
+  their own column at `phone`. Preview/Delete remain native submit buttons; these editor-local text actions
+  and preview result links are green, underlined, transparent and borderless, at least `2.75rem` high, with
+  inherited focus treatment and bold `0.92rem` type. The native file-picker button also uses bold `0.92rem`.
+  Photo lists have zero gap; rows have `0.9rem` block padding, zero above the first row, `1.25rem` column gap,
+  `--space-4` row gap, a bottom hairline and full-row feedback. At `phone` filenames occupy a full row before
+  start-aligned actions. No thumbnail space is reserved. Upload follows the list's `--space-4` card gap with
+  `0.9rem` top padding, beside its field on desktop and stacked at `phone`. Submit keeps its `--line` top rule
+  and `--space-5` padding above the action. Submitted-source revision retains its bordered treatment.
+  Preserve native fieldsets, document order, values, help, feedback, action meaning and read-only semantics.
+  Existing control padding, minimum targets, 7rem textarea minimum, native file-picker and confirmation
+  treatment, two-band focus, invalid/pending/disabled states and Sorani leading remain production contracts;
+  accessible palette/dot contrast and shadow-free controls supersede decorative reference differences.
+  Normal field edges, shared chrome and the lower route blocks remain outside this pattern. Never clip focus.
 - Cottage card: a cottage list card has five rows held in a subgrid so cards in a row align: cover, title, detail,
   small print, actions. The card grid fills its row with empty columns, so a lone card keeps its column width.
   The cover runs edge to edge at `16 / 10`, cropped with `object-fit: cover`, on `--surface-placeholder` while
@@ -469,8 +540,8 @@ its own; the block it sits in sets the space around it.
   status; a badge with any other status, or one that states a fact that is not a status, has no dot. A badge that
   states the time left before a deadline, as a waiting Booking Request's does, adds `status-badge-attention`, which
   sets the `--status-attention-bg` and `--status-attention-text` pair and draws no dot: its words state the time
-  left, so the colour only repeats them. It is never the page-level status. Over a cottage card's cover it is
-  unchanged and stays opaque, so its contrast never depends on the photo.
+  left, so the colour only repeats them. It is never the page-level status, except for the compact cottage editor
+  header described above. Over a cottage card's cover it is unchanged and stays opaque, so its contrast never depends on the photo.
 - Rating stars: the `span.stars` beside a published review's rating is decorative and hidden from assistive technology, so the rating text carries the meaning.
 - Status banner: `p.status-banner` is the page-level status of a record page. It follows the page title, at most
   one per page, and keeps `role="status"` and `aria-live="polite"`. Customer Booking Request status places the
