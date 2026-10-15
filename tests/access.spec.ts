@@ -565,17 +565,6 @@ async function tabTo(page: Page, target: Locator) {
   throw new Error("Keyboard focus did not reach the expected control");
 }
 
-// The discovery form keeps a typed date only once React has attached to it,
-// which can land just after the page loads; To's minimum follows From's state.
-async function fillFromServiceDay(page: Page, day: string) {
-  const from = page.getByLabel("From Service Day");
-  const to = page.getByLabel("To Service Day");
-  await expect(async () => {
-    await from.fill(day);
-    await expect(to).toHaveAttribute("min", day, { timeout: 1_000 });
-  }).toPass();
-}
-
 async function expectCottageProfileSectionTitlesAligned(
   page: Page,
   sectionNames: readonly string[],
@@ -3144,7 +3133,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   ]);
 
   await page.goto("/en");
-  await fillFromServiceDay(page, firstDay);
+  await page.getByLabel("From Service Day").fill(firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
   await page.getByLabel("Guests", { exact: true }).fill("4");
   const optionalFilters = page
@@ -3258,7 +3247,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   }
 
   await page.goto("/en");
-  await fillFromServiceDay(page, firstDay);
+  await page.getByLabel("From Service Day").fill(firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
   await page
     .getByLabel("Approximate area (optional)")
@@ -3312,7 +3301,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(page).toHaveURL(partialResultsUrl.href);
 
   await page.goto("/en");
-  await fillFromServiceDay(page, firstDay);
+  await page.getByLabel("From Service Day").fill(firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
   await page
     .locator("summary")
@@ -3543,7 +3532,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expectPrivateValuesAbsent();
 
   await page.goto("/en");
-  await fillFromServiceDay(page, firstDay);
+  await page.getByLabel("From Service Day").fill(firstDay);
   await page.getByLabel("To Service Day").fill(secondDay);
   await page
     .locator("summary")
