@@ -624,7 +624,7 @@ test("discovery preserves early native edits through hydration in every launch l
     platform: "browser",
     target: "es2022",
     jsx: "automatic",
-    define: { "process.env.NODE_ENV": '\"production\"', "process.env": "{}" },
+    define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
     plugins: [
       {
         name: "discovery-hydration-navigation",
@@ -725,11 +725,6 @@ test("discovery preserves early native edits through hydration in every launch l
       area: await area.inputValue(),
       pool: await pool.isChecked(),
     });
-    const record = async (phase: string) => {
-      const values = await snapshot();
-      console.log(JSON.stringify({ locale: messages.locale, phase, values }));
-      return values;
-    };
 
     await expect(root).not.toHaveAttribute("data-hydration-committed");
     await from.fill("2030-01-10");
@@ -738,7 +733,9 @@ test("discovery preserves early native edits through hydration in every launch l
     await governorate.selectOption("Fictional Governorate");
     await area.selectOption("Fictional Area");
     await pool.check();
-    expect(await record("before hydration")).toEqual(expected);
+    expect(await snapshot(), `${messages.locale} before hydration`).toEqual(
+      expected,
+    );
     await expect(root).not.toHaveAttribute("data-hydration-committed");
 
     await page.evaluate(() => window.discoveryHydration.hydrate());
@@ -751,12 +748,9 @@ test("discovery preserves early native edits through hydration in every launch l
     expect(
       await page.evaluate(() => window.discoveryHydration.recoverableErrors),
     ).toEqual([]);
-    expect
-      .soft(
-        await record("hydration committed"),
-        `${messages.locale} hydration committed`,
-      )
-      .toEqual(expected);
+    expect(await snapshot(), `${messages.locale} hydration committed`).toEqual(
+      expected,
+    );
 
     await page.getByText(messages.filters, { exact: true }).click();
     const firstShift = page
@@ -764,9 +758,9 @@ test("discovery preserves early native edits through hydration in every launch l
       .first();
     await firstShift.click();
     await expect(firstShift).toHaveAttribute("aria-pressed", "true");
-    expect
-      .soft(await record("after Shift 1"), `${messages.locale} after Shift 1`)
-      .toEqual(expected);
+    expect(await snapshot(), `${messages.locale} after Shift 1`).toEqual(
+      expected,
+    );
     expect(
       await page.evaluate(() => window.discoveryHydration.recoverableErrors),
     ).toEqual([]);
@@ -775,16 +769,13 @@ test("discovery preserves early native edits through hydration in every launch l
       .getByRole("button", { name: messages.submit, exact: true })
       .click();
     const pushes = await page.evaluate(() => window.discoveryHydration.pushes);
-    console.log(
-      JSON.stringify({ locale: messages.locale, phase: "submitted", pushes }),
-    );
-    expect
-      .soft(pushes, `${messages.locale} normal submit reaches router`)
-      .toHaveLength(1);
-    if (pushes.length !== 1) continue;
+    expect(
+      pushes,
+      `${messages.locale} normal submit reaches router`,
+    ).toHaveLength(1);
     const url = new URL(pushes[0], page.url());
-    expect.soft(url.pathname).toBe(`/${messages.locale}/results`);
-    expect.soft(Array.from(url.searchParams.entries()).sort()).toEqual([
+    expect(url.pathname).toBe(`/${messages.locale}/results`);
+    expect(Array.from(url.searchParams.entries()).sort()).toEqual([
       ["amenity", "pool"],
       ["area", "Fictional Area"],
       ["from", "2030-01-10"],
@@ -843,13 +834,6 @@ test("discovery preserves early native edits through hydration in every launch l
     await submit.click();
     const laterPushes = await page.evaluate(
       () => window.discoveryHydration.pushes,
-    );
-    console.log(
-      JSON.stringify({
-        locale: messages.locale,
-        phase: "later edits submitted",
-        pushes: laterPushes,
-      }),
     );
     expect(laterPushes).toHaveLength(2);
     const laterUrl = new URL(laterPushes[1], page.url());
