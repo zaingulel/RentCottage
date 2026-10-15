@@ -696,7 +696,7 @@ test("discovery preserves early native edits through hydration in every launch l
     await page.goto("/api/health");
     await page.clock.setFixedTime(new Date("2030-01-01T09:00:00Z"));
     await page.setContent(
-      `<html lang="${messages.locale}" dir="${messages.direction}"><meta name="viewport" content="width=device-width, initial-scale=1"><main id="fixture-root" data-hydration-locale="${messages.locale}"></main></html>`,
+      `<html lang="${messages.locale}" dir="${messages.direction}"><meta name="viewport" content="width=device-width, initial-scale=1"><main id="fixture-root" data-hydration-locale="${messages.locale}" style="padding-block-start:4rem"></main></html>`,
     );
     await page.addStyleTag({ content: await readApplicationStylesheet() });
     await page.addScriptTag({ path: bundlePath });
