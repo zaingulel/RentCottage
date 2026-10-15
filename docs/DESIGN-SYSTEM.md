@@ -50,7 +50,7 @@ the code keeps them.
     panel. `--ink-accent` text sits on them and reaches 4.5:1 on both, which globals.test.ts checks.
   - `--ink-on-dark` is the text colour on a dark surface, the green panels and buttons and the shaded hero
     photograph alike; the one exception is `--ink-on-green-bright`, the white label of the solid green buttons and
-    links that the administrator review list, the publication review and the cottage profile editor style for
+    links that the administrator review list, the publication review and the cottage profile overview style for
     themselves. `--ink-on-dark-soft` is the supporting paragraph there.
   - `--line-panel` is the outline of a panel and of a message.
   - `--line-action` is the outline of a secondary button and of a toggle at rest.
@@ -86,7 +86,8 @@ the code keeps them.
   `flex-basis` and grid track sizes, including a gutter written inside one such as `calc(100% - 2.25rem)`. They are
   the dimensions of controls, images, columns and reading widths, which a seven-step spacing scale cannot express.
   New work reuses a size already in use. The approved public cottage pattern additionally permits its `29rem`
-  hero height and `36rem` prose width, as documented below; these specific sizes do not permit other new
+  hero height and `36rem` prose width, and the cottage editor pattern permits its `14rem` heading-column minimum
+  and `42.5rem` field-column maximum, as documented below; these specific sizes do not permit other new
   sizing values. A page's content width uses a token named under
   Page template.
 - A component token holds a length only when several declarations must share it. `--booking-progress-marker` is the
@@ -398,8 +399,8 @@ its own; the block it sits in sets the space around it.
   `--font-size-2`, holds plain text, a reference in `bdi`, a status badge and a date in `time`, and wraps. Further blocks of the
   same record follow inside the `li`.
 - Card: `article.card` presents one record among several in a grid or list on a page that uses the Page template.
-  The same `.card` surface also applies to the public cottage booking aside and the Customer Booking Request
-  status/progress, reference/details and separate Messages groups. It is a `--card` surface with `--radius-card` corners and the `--shadow-card` elevation shadow. It shows no
+  The same `.card` surface also applies to the public cottage booking aside, cottage editor field groups and the
+  Customer Booking Request status/progress, reference/details and separate Messages groups. It is a `--card` surface with `--radius-card` corners and the `--shadow-card` elevation shadow. It shows no
   border: its `1px` border is `transparent`, so the card keeps an edge where the browser forces colours and removes
   shadows. It sets no padding and no layout; the block that uses it does. Its text has three tiers: `card-title` on
   the record's heading, in `--display` at weight 700 in `--ink` at `--font-size-4`, with line height `1.25` and
@@ -432,6 +433,25 @@ its own; the block it sits in sets the space around it.
   `--space-7` between facts and prose and between prose sections. The booking card has `--space-5` padding,
   `--space-4` at `phone`, a green heading, the existing fee note and full-width quote/message actions. Keep every
   existing loading, stale-selection, missing-period, disabled, cross-midnight and price-unavailable state.
+- Cottage editor: the title and completion text sit at inline start, with the translated status at inline end,
+  wrapping naturally. This editor-only compact page-status exception uses `status-badge` and its existing status
+  tone, preserving the label and announcement semantics. Each native fieldset, and the photos section, is an
+  unboxed grid with `minmax(14rem, 1fr)` for heading/guidance and `minmax(0, 42.5rem)` for the raised field card,
+  `--space-7` between columns and sections and `--space-4` between rows. These two sizing literals belong only
+  to this pattern. The `.card` field group has `--space-5` padding, `--space-4` at `phone`, and `--space-4`
+  between fields. At `tablet` headings precede cards; at `phone` public short fields and numbers stack, while
+  coordinates stay paired until `compact`. Section titles use the section-heading type with weight 700 and
+  line height 1.4 in Sorani. Labels are bold `--font-size-2`; guidance, hints and file states are `--font-size-2`
+  in `--muted`. Private guidance is bold `--ink-accent` without a tinted box; read-only warnings retain theirs.
+  Save and Submit use primary `ActionButton`, Upload uses secondary with `size="regular"`, and device location keeps
+  its existing secondary control and pending state. They align at inline end on desktop and fill their own
+  column at `phone`. Preview/Delete remain native submit buttons; these editor-local text actions and preview
+  result links are green underlined text, transparent and borderless, at least `2.75rem` high, with inherited
+  focus treatment. This adds no shared text-button kind. Photo rows show wrapping filename/state and actions,
+  a bottom hairline and full-row feedback; at `phone` actions follow the filename. Upload follows the rows,
+  alongside its field on desktop and stacked at `phone`. No thumbnail space is reserved. Submit follows a
+  `--line` top rule with `--space-5` above its action. Submitted-source revision retains its bordered treatment.
+  Preserve native fieldsets, document order, values, help, feedback and read-only semantics; never clip focus.
 - Cottage card: a cottage list card has five rows held in a subgrid so cards in a row align: cover, title, detail,
   small print, actions. The card grid fills its row with empty columns, so a lone card keeps its column width.
   The cover runs edge to edge at `16 / 10`, cropped with `object-fit: cover`, on `--surface-placeholder` while
@@ -469,8 +489,8 @@ its own; the block it sits in sets the space around it.
   status; a badge with any other status, or one that states a fact that is not a status, has no dot. A badge that
   states the time left before a deadline, as a waiting Booking Request's does, adds `status-badge-attention`, which
   sets the `--status-attention-bg` and `--status-attention-text` pair and draws no dot: its words state the time
-  left, so the colour only repeats them. It is never the page-level status. Over a cottage card's cover it is
-  unchanged and stays opaque, so its contrast never depends on the photo.
+  left, so the colour only repeats them. It is never the page-level status, except for the compact cottage editor
+  header described above. Over a cottage card's cover it is unchanged and stays opaque, so its contrast never depends on the photo.
 - Rating stars: the `span.stars` beside a published review's rating is decorative and hidden from assistive technology, so the rating text carries the meaning.
 - Status banner: `p.status-banner` is the page-level status of a record page. It follows the page title, at most
   one per page, and keeps `role="status"` and `aria-live="polite"`. Customer Booking Request status places the

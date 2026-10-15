@@ -2070,8 +2070,6 @@ html[lang="ckb"] .booking-summary h2 {
   margin-block-end: 0;
 }
 
-.cottage-profile-form > fieldset > .section-title,
-.cottage-profile-photos > .section-title,
 .cottage-profile-source-revision > .section-title,
 .cottage-shift-schedule-editor > .section-title,
 .cottage-pricing-availability-editor > .section-title,
@@ -2126,8 +2124,7 @@ html[lang="ckb"] .booking-summary h2 {
   }
 }
 
-.cottage-profile-form > fieldset,
-.cottage-profile-photos,
+form.cottage-profile-editor > fieldset,
 .cottage-profile-source-revision,
 .cottage-shift-schedule-editor,
 .cottage-pricing-availability-editor {
@@ -2304,7 +2301,7 @@ html[lang="ckb"] .booking-summary h2 {
 }
 
 .cottage-profile-overview button,
-.cottage-profile-editor button {
+form.cottage-profile-editor button {
   min-block-size: 2.75rem;
   border: 1px solid var(--green);
   border-radius: var(--radius-control);
@@ -2318,35 +2315,21 @@ html[lang="ckb"] .booking-summary h2 {
   cursor: pointer;
 }
 
-.cottage-profile-editor button:disabled {
+form.cottage-profile-editor button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 
-.cottage-profile-form > button,
-.cottage-profile-form > fieldset > button,
-.cottage-photo-upload-form button,
-.cottage-profile-submit-form button {
+form.cottage-profile-editor > fieldset > button {
   inline-size: auto;
   justify-self: end;
-}
-
-.cottage-profile-form > button,
-.cottage-profile-form > fieldset > button,
-.cottage-photo-upload-form button {
   background: transparent;
   color: var(--green);
 }
 
-.cottage-photo-row a {
-  color: var(--green);
-  font-weight: 700;
-}
-
 .cottage-profile-form,
-.cottage-profile-form > fieldset,
+form.cottage-profile-editor > fieldset,
 .exact-point-fields,
-.cottage-profile-photos,
 .cottage-profile-source-revision,
 .cottage-photo-upload-form,
 .cottage-profile-submit-form {
@@ -2595,6 +2578,201 @@ html[lang="ckb"] .booking-summary h2 {
   padding-block-start: var(--space-5);
 }
 
+section.cottage-profile-editor {
+  gap: var(--space-7);
+}
+
+.cottage-profile-editor-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.cottage-profile-editor-heading > div {
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.cottage-profile-editor-heading p {
+  margin: 0;
+}
+
+section.cottage-profile-editor > .cottage-profile-form {
+  gap: var(--space-7);
+}
+
+section.cottage-profile-editor > .cottage-profile-form > fieldset,
+.cottage-profile-photos {
+  display: grid;
+  grid-template-columns: minmax(14rem, 1fr) minmax(0, 42.5rem);
+  column-gap: var(--space-7);
+  row-gap: var(--space-4);
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.cottage-profile-section-heading,
+.cottage-profile-field-card,
+.cottage-profile-location-field {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
+.cottage-profile-section-heading p,
+.cottage-profile-location-field p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-size-2);
+}
+
+.cottage-profile-section-heading .section-title {
+  margin: 0;
+  font-weight: 700;
+}
+
+html[lang="ckb"] section.cottage-profile-editor .section-title {
+  line-height: 1.4;
+}
+
+.cottage-profile-section-heading .private-location-warning {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ink-accent);
+  font-weight: 700;
+}
+
+.cottage-profile-field-card {
+  padding: var(--space-5);
+}
+
+.cottage-profile-location-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.cottage-profile-location-field {
+  gap: var(--space-2);
+}
+
+section.cottage-profile-editor .cottage-profile-number-grid,
+section.cottage-profile-editor .cottage-profile-coordinate-grid {
+  gap: var(--space-4);
+}
+
+section.cottage-profile-editor .cottage-profile-coordinate-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+section.cottage-profile-editor .exact-point-check {
+  color: var(--muted);
+  font-size: var(--font-size-2);
+}
+
+section.cottage-profile-editor > .cottage-profile-form > .action,
+.cottage-profile-submit-form > .action,
+.cottage-photo-upload-form > .action,
+section.cottage-profile-editor .exact-point-fields > .action {
+  justify-self: end;
+}
+
+.cottage-profile-submit-form {
+  border-block-start: 1px solid var(--line);
+  padding-block-start: var(--space-5);
+}
+
+.cottage-photo-upload-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.cottage-photo-row > div {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.cottage-photo-row > div > span {
+  color: var(--muted);
+  font-size: var(--font-size-2);
+}
+
+.cottage-photo-row > p {
+  order: 1;
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.cottage-photo-text-action {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2.75rem;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--green);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+section.cottage-profile-editor :where(p, h1, h2, strong) {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 47.5rem) {
+  section.cottage-profile-editor > .cottage-profile-form > fieldset,
+  .cottage-profile-photos {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 40rem) {
+  .cottage-profile-field-card {
+    padding: var(--space-4);
+  }
+
+  .cottage-profile-location-grid,
+  section.cottage-profile-editor .cottage-profile-number-grid,
+  .cottage-photo-upload-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  section.cottage-profile-editor > .cottage-profile-form > .action,
+  .cottage-profile-submit-form > .action,
+  .cottage-photo-upload-form > .action,
+  section.cottage-profile-editor .exact-point-fields > .action {
+    inline-size: 100%;
+    justify-self: stretch;
+  }
+
+  .cottage-photo-row > div {
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 24rem) {
+  section.cottage-profile-editor .cottage-profile-coordinate-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+section.cottage-profile-editor
+  .cottage-profile-form
+  label:where(:not(.choice-control)),
+.cottage-photo-upload-form label {
+  font-size: var(--font-size-2);
+}
+
 .cottage-profile-number-grid,
 .cottage-profile-coordinate-grid {
   display: grid;
@@ -2639,7 +2817,7 @@ html[lang="ckb"] .booking-summary h2 {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  border-block: 1px solid var(--line);
+  border-block-end: 1px solid var(--line);
   padding-block: var(--space-3);
 }
 
@@ -2666,17 +2844,9 @@ html[lang="ckb"] .booking-summary h2 {
     grid-template-columns: 1fr;
   }
 
-  .cottage-profile-form > button,
-  .cottage-profile-form > fieldset > button,
-  .cottage-photo-upload-form button,
-  .cottage-profile-submit-form button {
+  form.cottage-profile-editor > fieldset > button {
     inline-size: 100%;
     justify-self: stretch;
-  }
-
-  .cottage-photo-row {
-    align-items: stretch;
-    flex-direction: column;
   }
 
   .cottage-shift-grid {
