@@ -16,7 +16,7 @@ import type {
 import { administratorQueuesMessages } from "@/i18n/administrator-queues-messages";
 import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
 import { customerReviewMessages } from "@/i18n/customer-review-messages";
-import { formatIraqDateTime } from "@/i18n/format";
+import { formatInteger, formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 
 import recordStyles from "./administrator-records.module.css";
@@ -256,10 +256,9 @@ function ReviewFilterForm({
 }) {
   const copy = customerReviewMessages[locale];
   const records = administratorRecordsMessages[locale];
-  const number = new Intl.NumberFormat(locale);
   const base = `/${locale}/administrator/reviews`;
   const count = (state: "unhidden" | "hidden") =>
-    stateCounts ? ` (${number.format(stateCounts[state])})` : "";
+    stateCounts ? ` (${formatInteger(stateCounts[state], locale)})` : "";
   return (
     <form
       key={`${filters.state}|${filters.from}|${filters.through}`}
@@ -398,7 +397,7 @@ export function CustomerReviewModeration({
       />
       <p className={recordStyles.total}>
         {copy.matchingTotal}:{" "}
-        <strong>{new Intl.NumberFormat(locale).format(result.total)}</strong>
+        <strong>{formatInteger(result.total, locale)}</strong>
       </p>
       {result.items.length === 0 ? (
         <p>
