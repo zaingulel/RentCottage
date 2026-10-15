@@ -2591,12 +2591,15 @@ section.cottage-profile-editor > .cottage-profile-editor-heading {
 }
 
 .cottage-profile-editor-heading > div {
+  display: grid;
+  gap: var(--space-2);
   min-inline-size: 0;
   flex: 1;
 }
 
 .cottage-profile-editor-heading p {
   margin: 0;
+  color: var(--muted);
 }
 
 section.cottage-profile-editor > .cottage-profile-form {

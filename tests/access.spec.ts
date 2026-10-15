@@ -569,53 +569,65 @@ async function expectCottageProfileSectionTitlesAligned(
   page: Page,
   sectionNames: readonly string[],
 ) {
+  const editor = page.locator("section.cottage-profile-editor");
   for (const sectionName of sectionNames) {
     await expect(
-      page.getByRole("group", { name: sectionName, exact: true }),
+      editor.getByRole("group", { name: sectionName, exact: true }),
     ).toBeVisible();
   }
-
-  const positions = await page
-    .locator(".cottage-profile-form > fieldset")
-    .evaluateAll((fieldsets) => {
-      const direction = document.documentElement.dir;
-      const inlineStart = (rect: DOMRect) =>
-        direction === "rtl" ? rect.right : rect.left;
-      const textRect = (element: Element) => {
-        const text = [...element.childNodes].find(
-          (node) =>
-            node.nodeType === Node.TEXT_NODE && node.textContent?.trim(),
-        );
-        if (!text) throw new Error("Expected visible section-title text");
-        const range = document.createRange();
-        range.selectNodeContents(text);
-        return range.getBoundingClientRect();
-      };
-
-      return fieldsets.map((fieldset) => {
-        const titleId = fieldset.getAttribute("aria-labelledby");
-        const title = titleId ? document.getElementById(titleId) : null;
-        const firstLabel = fieldset.querySelector(":scope > label");
-        if (!title || !firstLabel) {
-          throw new Error(
-            "Expected each Cottage Profile section to have a title and label",
+  const fieldsets = editor.locator(":scope > .cottage-profile-form > fieldset");
+  await expect(fieldsets).toHaveCount(sectionNames.length);
+  await expect
+    .poll(() =>
+      fieldsets.evaluateAll((sections) => {
+        const rtl = document.documentElement.dir === "rtl";
+        const inlineStart = (rect: DOMRect) => (rtl ? rect.right : rect.left);
+        const stacked = window.matchMedia("(max-width: 47.5rem)").matches;
+        const padding = window.matchMedia("(max-width: 40rem)").matches
+          ? 16
+          : 24;
+        return sections.map((fieldset) => {
+          const heading = fieldset.querySelector(
+            ":scope > .cottage-profile-section-heading",
           );
-        }
-        const titleRect = textRect(title);
-        return {
-          inlineOffset: Math.abs(
-            inlineStart(titleRect) - inlineStart(textRect(firstLabel)),
-          ),
-          blockOffset: titleRect.top - fieldset.getBoundingClientRect().top,
-        };
-      });
-    });
-
-  expect(positions).toHaveLength(sectionNames.length);
-  for (const position of positions) {
-    expect(position.inlineOffset).toBeLessThanOrEqual(0.5);
-    expect(position.blockOffset).toBeGreaterThanOrEqual(1);
-  }
+          const card = fieldset.querySelector(
+            ":scope > .cottage-profile-field-card.card",
+          );
+          const titleId = fieldset.getAttribute("aria-labelledby");
+          const title = titleId ? document.getElementById(titleId) : null;
+          const firstLabel = card?.querySelector(":scope > label");
+          if (
+            !heading ||
+            !card ||
+            !title ||
+            !heading.contains(title) ||
+            !firstLabel
+          )
+            return false;
+          const headingRect = heading.getBoundingClientRect();
+          const cardRect = card.getBoundingClientRect();
+          const labelRect = firstLabel.getBoundingClientRect();
+          const labelInset = Math.abs(
+            inlineStart(labelRect) - inlineStart(cardRect),
+          );
+          return (
+            (stacked
+              ? cardRect.top >= headingRect.bottom &&
+                Math.abs(inlineStart(headingRect) - inlineStart(cardRect)) <=
+                  0.5
+              : Math.abs(headingRect.top - cardRect.top) <= 0.5 &&
+                (rtl
+                  ? cardRect.right <= headingRect.left
+                  : cardRect.left >= headingRect.right)) &&
+            Math.abs(labelInset - padding - 1) <= 0.5 &&
+            Math.abs(labelRect.top - cardRect.top - padding - 1) <= 0.5 &&
+            labelRect.left >= cardRect.left &&
+            labelRect.right <= cardRect.right
+          );
+        });
+      }),
+    )
+    .toEqual(sectionNames.map(() => true));
 }
 
 async function expectCottageProfileActionHierarchy(
@@ -623,9 +635,15 @@ async function expectCottageProfileActionHierarchy(
   actionNames: readonly [string, string, string],
   projectName: string,
 ) {
+  const editor = page.locator("section.cottage-profile-editor");
+  for (const name of actionNames) {
+    await expect(
+      editor.getByRole("button", { name, exact: true }),
+    ).toBeVisible();
+  }
   const metrics = await Promise.all(
     actionNames.map((name) =>
-      page.getByRole("button", { name, exact: true }).evaluate((button) => {
+      editor.getByRole("button", { name, exact: true }).evaluate((button) => {
         const parent = button.parentElement;
         if (!parent) throw new Error("Cottage Profile action has no parent");
         const style = getComputedStyle(button);
@@ -656,16 +674,15 @@ async function expectCottageProfileActionHierarchy(
     }
   }
   const [save, upload, submit] = metrics;
-  expect(save.backgroundColor).toBe("rgba(0, 0, 0, 0)");
-  expect(save.backgroundColor).toBe(upload.backgroundColor);
-  expect(save.color).toBe(upload.color);
-  for (const secondary of [save, upload]) {
-    expect(secondary.borderStyle).toBe("solid");
-    expect(secondary.borderWidth).toBeGreaterThanOrEqual(1);
-    expect(secondary.borderColor).toBe(secondary.color);
+  for (const primary of [save, submit]) {
+    expect(primary.backgroundColor).toBe("rgb(34, 64, 47)");
+    expect(primary.color).toBe("rgb(247, 241, 225)");
   }
-  expect(submit.backgroundColor).toBe(save.color);
-  expect(submit.color).not.toBe(submit.backgroundColor);
+  expect(upload.backgroundColor).toBe("rgb(255, 252, 245)");
+  expect(upload.color).toBe("rgb(34, 64, 47)");
+  expect(upload.borderStyle).toBe("solid");
+  expect(upload.borderWidth).toBeGreaterThanOrEqual(1);
+  expect(upload.borderColor).toBe("rgba(34, 64, 47, 0.3)");
 }
 
 function documentActionFor(card: Locator, copy: BrowserApplicationFixture) {

@@ -1803,6 +1803,7 @@ test("Cottage editor keeps the approved raised groups and usable controls across
           ];
           const header = node.querySelector(".cottage-profile-editor-heading")!;
           const title = header.querySelector("h1")!.getBoundingClientRect();
+          const subtitle = header.querySelector("p")!;
           const badge = header.querySelector(".status-badge")!;
           const status = badge.getBoundingClientRect();
           const headerBox = header.getBoundingClientRect();
@@ -1823,6 +1824,11 @@ test("Cottage editor keeps the approved raised groups and usable controls across
                       Math.abs(status.left - headerBox.left) < 1
                     : status.left >= title.right &&
                       Math.abs(status.right - headerBox.right) < 1)),
+            subtitleStyle:
+              getComputedStyle(subtitle).color === "rgba(38, 36, 31, 0.68)" &&
+              Math.abs(
+                subtitle.getBoundingClientRect().top - title.bottom - 8,
+              ) < 1,
             badgeInk: getComputedStyle(badge).color === "rgb(38, 36, 31)",
             lifted: fieldsets.every(
               (section) =>
@@ -1858,6 +1864,7 @@ test("Cottage editor keeps the approved raised groups and usable controls across
       )
       .toEqual({
         headerLayout: true,
+        subtitleStyle: true,
         badgeInk: true,
         lifted: true,
         composition: true,

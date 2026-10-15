@@ -496,6 +496,13 @@ export function cottageProfileStatusTone(
   return cottageProfileStatusTones[cottageProfileDisplayStatus(profile)];
 }
 
+export function cottageProfileStatusBadgeClass(
+  profile: CottageProfileStatusFields,
+): string {
+  const tone = cottageProfileStatusTone(profile);
+  return tone ? `status-badge status-badge-${tone}` : "status-badge";
+}
+
 export function cottageProfileCounts(
   profiles: readonly CottageProfileStatusFields[],
 ): { published: number; drafts: number } {

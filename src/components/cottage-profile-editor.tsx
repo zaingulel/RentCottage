@@ -20,7 +20,7 @@ import {
 import {
   cottageProfileMessages,
   cottageProfileStatusLabel,
-  cottageProfileStatusTone,
+  cottageProfileStatusBadgeClass,
 } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
 import {
@@ -196,9 +196,7 @@ export function CottageProfileEditor({
           />
           <p>{copy.completion}</p>
         </div>
-        <span
-          className={`status-badge${cottageProfileStatusTone(profile) ? ` status-badge-${cottageProfileStatusTone(profile)}` : ""}`}
-        >
+        <span className={cottageProfileStatusBadgeClass(profile)}>
           {cottageProfileStatusLabel(locale, profile)}
         </span>
       </header>
