@@ -16,7 +16,7 @@ what a build must prove, and [Enforced or instructed](AI-WORKFLOW-enforcement.md
 | Review | One fresh review of the final tree, repairs, and a security review when the trust perimeter widens | Nothing: review is instructed |
 | Deliver | A draft pull request, an external review where the tier requires it and the repository has turned that add-on on, and checks on the merge result; or, for a change the repository's own gate admits whole, a push straight to `main` | A pull request that is not a draft is refused, and so is an unsafe force push; [the head of `scripts/lib/unsafe-git.mjs`](../scripts/lib/unsafe-git.mjs) lists the exact forms |
 | Merge | On the pull request route, the platform merges once the required checks are green, squashed, with the branch deleted | A merge command other than the platform's auto-merge is refused, and the branch rules require the checks |
-| After merge | The issue is confirmed closed, the card moves to Done, servers and containers are stopped, and the worktree is removed and local `main` advances where that is provably safe | Nothing: closeout is instructed |
+| After merge | The issue is confirmed closed, the card moves to Done, servers are stopped, the job's containers, scratch, worktree and branch are removed by one command where its checks pass, and local `main` advances where that is provably safe | The cleanup command retains whatever its checks or git hold back; that it runs is instructed |
 
 ## How it works
 
@@ -115,13 +115,14 @@ whose every path qualifies skips the pull request, is pushed straight to `main`,
   [`docs/SWEEP-TRIAGE.md`](SWEEP-TRIAGE.md).
 - **Closeout.** The moment the merge lands, the same session confirms it, moves the card, updates local `main`, and
   removes the branch and worktree. Local `main` advances only by a provably safe fast-forward, and a checkout that is
-  dirty, active or uncertain is preserved. Servers and containers bound to the worktree are stopped, and the job's own
-  disposable scratch is removed; when removal cannot be proven safe the worktree is kept and the reason reported. A
-  leftover the session finds, another job's artifact or one it cannot prove it created, is investigated to a
-  conclusion and the owner is told the outcome. `AGENTS.md` owns the authority to delete one, and its limits, under
-  "Owner gates"; the `closeout` skill owns what a leftover is and what each outcome allows under "Leftover rule", and
-  the steps. Rulings the owner made during the session go to the issue or the document that owns the topic, never to a
-  new document.
+  dirty, active or uncertain is preserved. One command, `scripts/closeout-cleanup.mjs`, removes the job's containers,
+  its named scratch, its worktree and its branch, retaining with the reason whatever a check or a refusal holds back
+  and never forcing a removal; the session keeps the judgment of what is its own scratch and stops any server the
+  command finds serving the worktree. A leftover the session finds, another job's artifact or one it cannot prove it
+  created, is investigated to a conclusion and the owner is told the outcome. `AGENTS.md` owns the authority to delete
+  one, and its limits, under "Owner gates"; the `closeout` skill owns what a leftover is and what each outcome allows
+  under "Leftover rule", and the steps. Rulings the owner made during the session go to the issue or the document that
+  owns the topic, never to a new document.
 
 ## Where the rules live
 
@@ -172,4 +173,5 @@ whose every path qualifies skips the pull request, is pushed straight to `main`,
 - `.github/pull_request_template.md`: the pull request body the owner reads.
 - `scripts/run-log.mjs`: the logger every check runs through.
 - `scripts/merge-watch.mjs`: the one waiting command after the merge is queued.
+- `scripts/closeout-cleanup.mjs`: the one cleanup command closeout runs after the merge.
 - `scripts/gates/pre-push-main`: the repository's own gate for the direct route, where it supplies one.

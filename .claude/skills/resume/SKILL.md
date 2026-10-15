@@ -295,10 +295,13 @@ branch. Two issues may run in parallel only when their files are disjoint.
   dispatch, and the pull request body records which seat reviewed the plan and that the repository runs Claude Code
   alone, so the Sol extra-high plan review does not apply; in a repository that runs Codex alone its own Codex seat
   reviews, as a Codex session dispatches it.
+  A Claude session's pass to the Codex seat is a cross-family pass and waits on the authorization section 6 reads;
+  where the owner declines, the Claude `plan-reviewer` seat reviews by that section's fallback dispatch and the body
+  records that cross-family review was not authorized, so the Sol extra-high plan review was not met.
 - Every plan follows `docs/CODING-STANDARDS.md`, the session's own short plan for a card without an architect
   included, because a builder cannot change a plan once it arrives.
-- A plan with a user-facing change, the session's own short plan included, reads `docs/DESIGN-SYSTEM.md` first: it
-  owns the tokens and component patterns the plan builds to.
+- Where the project has a user interface, a plan with a user-facing change, the session's own short plan included, reads
+  `docs/DESIGN-SYSTEM.md` first: it owns the tokens and component patterns the plan builds to.
 - A plan for a change to how the interface looks, the architect's or the session's own short plan, is written with
   the vendored `frontend-design` skill. The planner reads `.agents/skills/frontend-design/SKILL.md` beside
   `docs/DESIGN-SYSTEM.md` and writes the visual direction into the plan under the heading `Visual direction`: every
@@ -386,7 +389,8 @@ branch. Two issues may run in parallel only when their files are disjoint.
   no authorisation; only the push does. Commit green work before any stop, handoff, replan or split proposal as
   well, so nothing green waits uncommitted in the worktree.
 - Wrap every executed check in `node scripts/run-log.mjs <label words> -- <command>` (plain unquoted label,
-  then a bare `--`) so the exit code is recorded by a script, not asserted: focused tests, the one executed mutation per behaviour (red, restore, green), lint,
+  then a bare `--`) so the exit code is recorded by a script, not asserted: focused tests, the discrimination
+  evidence `docs/TESTING-STRATEGY.md` selects, lint,
   and the convergence checks `docs/TESTING-STRATEGY.md` names. The log lives at `.claude/worklog/<branch>.md`.
   On every agent-initiated rerun, supply a nonblank diagnosed reason through `RUN_LOG_RERUN_REASON`; for example,
   `RUN_LOG_RERUN_REASON='Changed the failing assertion' node scripts/run-log.mjs focused -- npm run lint`.
@@ -500,6 +504,18 @@ branch. Two issues may run in parallel only when their files are disjoint.
     this family's own seat, in a fresh context, and the pull request body records which family reviewed, that the
     repository runs that runtime alone, and that the cross-family gate therefore does not apply. That recording is the
     whole of the route: a single-family review the body does not declare is a skip.
+    **Cross-family authorization.** A pass sent to the other family, the plan review of "4. Plan" included, gives that
+    family's provider the code it reads, the diff, the plan and the card with its comments, so it runs only on the
+    owner's authorization. Read it on the fetched `main` with the two commands "4. Plan" uses for plan approval: it is
+    recorded only where the file is one JSON object holding `"crossFamilyReview": true`. No settings file, no such
+    key, or a `runtimes` list naming both without it records none; a command that fails, a file that is not one JSON
+    object or any other value leaves it unknown, which is never recorded, and the owner is told what the commands
+    printed. Where it is recorded the pass runs with no owner question. Where it is not, nothing goes to the other
+    family until the owner answers one plain-language question saying what the pass would share and that adding
+    `"crossFamilyReview": true` to the settings file records the authorization for later jobs. A yes covers this job's
+    cross-family passes; a no runs the same charter on this family's own seat, and the pull request body records that
+    cross-family review was not authorized and the cross-family gate therefore not met. The authorization is no push
+    authorisation or other approval and answers no permission prompt of either runtime or the operating system.
   - **`sign-off`: cross-family review, then the external review where the add-on is on.** A change that is both hard
     to undo and wide in reach: the same cross-family pass, its unavailability route included, then, in a repository
     that has turned the external review add-on on, the external review on the draft in section 8. In a repository with

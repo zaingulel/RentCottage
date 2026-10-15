@@ -17,6 +17,9 @@ export default defineConfig([
     rules: {
       ...js.configs.recommended.rules,
 
+      // Standalone Node programs do not use React Hooks.
+      "react-hooks/rules-of-hooks": "off",
+
       // `catch {}` is used deliberately throughout to swallow expected errors.
       "no-empty": ["error", { allowEmptyCatch: true }],
 

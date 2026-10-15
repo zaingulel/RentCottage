@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import {
   addedNetworkTokens, contentOnlyMarkdownDifference, hiddenDestinationShapes, markupDifference, outOfScope, parseContentOnlyMarkdown, parseMayEdit, renderedDestinations,
-  tokenMatches, treeGrepArgs, treeGrepCandidates,
+  treeVouches,
 } from './sweep-scope.mjs';
 
 class GitFailure extends Error {
@@ -12,6 +12,19 @@ class GitFailure extends Error {
     super(message);
     this.status = status;
   }
+}
+
+// Whether the tree at `ref` in the checkout at `cwd` vouches for `text`: the one question the check, its corpus
+// and its tests ask of a tree. `git grep` exits 0 on a hit and 1 on none; any other status is a search that did
+// not complete, a git failure rather than nothing found.
+export function knownInTree(text, ref, cwd) {
+  return treeVouches(text, ref, (args) => {
+    const found = spawnSync('git', args, { cwd, encoding: 'utf8' });
+    if (found.status !== 0 && found.status !== 1) {
+      throw new GitFailure(found.status ?? 1, `sweep-scope: git grep failed: ${found.stderr.trim()}`);
+    }
+    return found.stdout;
+  });
 }
 
 export function evaluateSweepScope(base, head, cwd) {
@@ -57,25 +70,10 @@ export function evaluateSweepScope(base, head, cwd) {
       failures.push(`${path} is not in the may-edit column of docs/DOC-SWEEP.md at ${at}`);
     }
 
-    // Whether the base tree vouches for one destination or token. A fixed-string hit is only a candidate
-    // line: `tokenMatches` settles whether the tree carries it whole or merely inside a longer one.
-    // `--null` separates git's `<rev>:<path>` prefix from the line itself.
-    function knownInTree(text) {
-      const treeLines = [];
-      for (const candidate of treeGrepCandidates(text)) {
-        const found = spawnSync('git', treeGrepArgs(candidate, base), { cwd, encoding: 'utf8' });
-        if (found.status !== 0 && found.status !== 1) {
-          throw new GitFailure(found.status ?? 1, `sweep-scope: git grep failed: ${found.stderr.trim()}`);
-        }
-        for (const line of found.stdout.split('\n').filter(Boolean)) treeLines.push(line.slice(line.indexOf('\0') + 1));
-      }
-      return tokenMatches(text, treeLines);
-    }
-
     // `--text`: a NUL, or any byte that makes git guess binary, would otherwise hide every added line from both halves.
     const tokens = addedNetworkTokens(git('diff', '--text', from, head));
     for (const token of tokens) {
-      if (!knownInTree(token)) {
+      if (!knownInTree(token, base, cwd)) {
         failures.push(`${token} is added by this diff and is not a whole token anywhere in the tree at ${at}`);
       }
     }
@@ -134,7 +132,7 @@ export function evaluateSweepScope(base, head, cwd) {
         if (rendered.has(record.text)) continue;
         rendered.add(record.text);
         newlyRendered.push(record);
-        if (!knownInTree(record.text)) {
+        if (!knownInTree(record.text, base, cwd)) {
           failures.push(`${path}: the newly rendered destination ${shown(record)} is not a whole token anywhere in the tree at ${at}`);
         }
       }

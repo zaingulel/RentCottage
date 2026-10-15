@@ -133,7 +133,7 @@ a claim that work is next is checked against the board.
 | If you want to know | Read |
 |---|---|
 | What the owner decides, and when | [The map](#the-map) above, then [`AGENTS.md`](../AGENTS.md) under "Owner gates" |
-| How Claude Code and Codex share one workflow, and what changes on Windows | [Two runtimes, one contract](AI-WORKFLOW-runtimes.md) |
+| How Claude Code and Codex share one workflow, what the factory carries, what setup chooses and what stays personal, and what changes on Windows | [Two runtimes, one contract](AI-WORKFLOW-runtimes.md) |
 | Who does what, and how work is handed from one agent to another | [The seats](AI-WORKFLOW-seats.md) |
 | How a card becomes a merged commit | [The life of one change](AI-WORKFLOW-job.md) |
 | How planned work is tracked, and how the board toolkit serves another board | [The board](AI-WORKFLOW-board.md) |
@@ -159,7 +159,7 @@ Review: tier=sign-off rounds=7 raised=16 fixed=13 dismissed=2 deferred=1
 
 | Field | Value |
 |---|---|
-| `tier` | `document`, `code` or `sign-off`: the review tier the `resume` skill chose from the two questions: the session's own review, the cross-family review, or the cross-family review, followed by the external review where the repository has turned that add-on on. A change whose parts answer the two questions differently carries the tier of its heaviest part, and the one review covers the whole change at that tier. A pass run on the writing family's seat because the other family was unavailable keeps its tier; the pull request body declares the substitution. A pass run on the repository's one family, because its settings file names one runtime, keeps its tier the same way; the body declares that too |
+| `tier` | `document`, `code` or `sign-off`: the review tier the `resume` skill chose from the two questions: the session's own review, the cross-family review, or the cross-family review, followed by the external review where the repository has turned that add-on on. A change whose parts answer the two questions differently carries the tier of its heaviest part, and the one review covers the whole change at that tier. A pass run on the writing family's seat because the other family was unavailable keeps its tier; the pull request body declares the substitution. A pass run on the repository's one family, because its settings file names one runtime, keeps its tier the same way; the body declares that too. A pass run on this family's own seat because the owner did not authorize cross-family review keeps its tier the same way; the body declares that too |
 | `rounds` | Reviewer passes over the tree, at least 1: the fresh review, each pass scoped to a repair, each `security-reviewer` pass, and each external review of a commit count one each; a pass counts once it records its verdict, zero findings included |
 | `raised` | Findings reported across every round, the external review's included, a finding reported more than once counted once; in a self-review, the findings the session records in the Review section. A candidate the reviewer discarded itself is not one |
 | `fixed` | Raised findings repaired in this pull request |

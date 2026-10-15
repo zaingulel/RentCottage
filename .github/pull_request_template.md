@@ -13,11 +13,11 @@ Closes #
 - **Before:**
   **After:**
 
-<!-- Then paste the lines `node scripts/run-log.mjs` wrote for this branch, as the script wrote them: focused tests, the executed mutation (red then green), lint, and the convergence checks the testing strategy names. Each line carries the real exit code and the `head=` and `tree=` state it ran against. -->
+<!-- Then paste the lines `node scripts/run-log.mjs` wrote for this branch, as the script wrote them: focused tests, the discrimination proof selected by docs/TESTING-STRATEGY.md, lint, and the convergence checks the testing strategy names. Each line carries the real exit code and the `head=` and `tree=` state it ran against. Name the selected route in the table: qualifying ordinary pre-fix red/unchanged-test green, required mutation red/restored green, or the strategy's declared alternative. -->
 
-| Claim | Construction mode | Focused test | Mutation | Result |
+| Claim | Construction mode | Focused test | Discrimination proof | Result |
 |---|---|---|---|---|
-| | | | red → green | |
+| | | | | |
 
 <!-- When a receipt above counts for a head other than the one it ran on, record it on these three lines as the resume skill's Receipt reuse rule says under "8. Deliver", once for each head such receipts ran on. When every receipt ran on the current head, write `none` after `Carried from:` and remove the other two lines, keeping `Changed paths:` with what was found whenever a path the testing strategy does not cover was investigated. -->
 Carried from:
