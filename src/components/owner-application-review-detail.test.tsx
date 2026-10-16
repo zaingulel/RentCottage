@@ -64,7 +64,6 @@ describe("Owner Application review detail", () => {
 
     const reasons = screen.getAllByRole("textbox", {
       name: "Reason",
-      exact: true,
     });
     expect(reasons).toHaveLength(3);
     for (const [name, controls] of [
@@ -96,12 +95,11 @@ describe("Owner Application review detail", () => {
     expect(fields.tagName).toBe("FIELDSET");
     expect(documents.tagName).toBe("FIELDSET");
     await user.click(
-      within(fields).getByRole("checkbox", { name: "Legal name", exact: true }),
+      within(fields).getByRole("checkbox", { name: "Legal name" }),
     );
     await user.click(
       within(documents).getByRole("checkbox", {
         name: "Identity evidence",
-        exact: true,
       }),
     );
     await user.type(reasons[0], "Please update the identity evidence.");
