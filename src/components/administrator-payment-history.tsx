@@ -3,6 +3,7 @@ import {
   administratorPaymentHistoryCodeMessages,
   administratorPaymentHistoryMessages,
 } from "@/i18n/administrator-payment-history-messages";
+import { formatFilsAsIqd } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 import styles from "./administrator-payment-history.module.css";
 
@@ -20,16 +21,6 @@ function localizedCode(locale: Locale, code: string) {
     string
   >;
   return messages[code] ?? messages["unclassified-evidence"];
-}
-
-function formatAmountFils(value: string) {
-  const fils = BigInt(value);
-  const dinars = fils / 1000n;
-  const remainder = (fils % 1000n)
-    .toString()
-    .padStart(3, "0")
-    .replace(/0+$/, "");
-  return remainder ? `${dinars}.${remainder}` : dinars.toString();
 }
 
 export function AdministratorPaymentHistoryView({
@@ -283,8 +274,9 @@ export function AdministratorPaymentHistoryView({
                     <div>
                       <dt>{copy.amount}</dt>
                       <dd>
-                        <bdi>{formatAmountFils(event.amountFils)}</bdi>{" "}
-                        {event.currency}
+                        <bdi dir="ltr">
+                          {formatFilsAsIqd(BigInt(event.amountFils), locale)}
+                        </bdi>
                       </dd>
                     </div>
                   ) : null}

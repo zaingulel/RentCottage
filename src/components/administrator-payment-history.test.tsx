@@ -88,7 +88,11 @@ it("renders ordered support evidence and distinct clocks accessibly in English",
   expect(within(events[0]).getByText("Indeterminate")).toBeVisible();
   expect(within(events[1]).getByText("Succeeded")).toBeVisible();
   expect(within(events[0]).getByText("Amount").parentElement).toHaveTextContent(
-    "105000 IQD",
+    "IQD 105,000",
+  );
+  expect(within(events[0]).getByText("IQD 105,000")).toHaveAttribute(
+    "dir",
+    "ltr",
   );
   expect(
     within(events[0]).queryByText("105000000 IQD"),
@@ -111,6 +115,9 @@ it.each(["ar", "ckb"] as const)(
       "RC-REQ-0000000000000137",
     );
     expect(screen.getByRole("heading", { level: 1 })).toBeVisible();
+    const amount = locale === "ar" ? "IQD 105,000" : "IQD ١٠٥٬٠٠٠";
+    expect(screen.getByText(amount)).toBeVisible();
+    expect(screen.getByText(amount)).toHaveAttribute("dir", "ltr");
     const rendered = container.textContent ?? "";
     expect(rendered).not.toMatch(
       /physical-attempt|capture|succeeded|unclassified-evidence|reference-unavailable/,
@@ -146,9 +153,9 @@ it("explains an absent payment state instead of rendering an ambiguous dash", ()
 });
 
 it.each([
-  ["1", "0.001 IQD"],
-  ["105000001", "105000.001 IQD"],
-  ["9223372036854775807", "9223372036854775.807 IQD"],
+  ["1", "IQD 0.001"],
+  ["105000001", "IQD 105,000.001"],
+  ["9223372036854775807", "IQD 9,223,372,036,854,775.807"],
 ])(
   "renders %s fils exactly without floating point rounding",
   (amountFils, expected) => {
@@ -161,6 +168,7 @@ it.each([
     expect(screen.getByText("Amount").parentElement).toHaveTextContent(
       expected,
     );
+    expect(screen.getByText(expected)).toHaveAttribute("dir", "ltr");
   },
 );
 
