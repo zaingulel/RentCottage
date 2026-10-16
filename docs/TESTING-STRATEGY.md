@@ -53,9 +53,9 @@ change takes every row it touches.
 - Run each new or strengthened test by its full title; zero matches is failed verification. Invoke fail-loud
   scripts directly so their own exit status is authoritative. **Grouped focused evidence** may run related
   tests for one claim in one focused command, selecting each intended test by its full title. Verify every
-  intended test’s completed outcome from the actual command output; missing, skipped, unavailable or unfinished
+  intended test's completed outcome from the actual command output; missing, skipped, unavailable or unfinished
   observations follow the incomplete-execution rule below. Paste run-log receipt lines unchanged; any summary
-  is additional explanation. Grouping preserves the [construction mode](#construction-modes)’s sequence and the
+  is additional explanation. Grouping preserves the [construction mode](#construction-modes)'s sequence and the
   one-mutation-per-behaviour rule above.
 - Locate browser controls by accessible name or meaningful scope. A viewport assertion starts with a
   starting-state guard and uses a retrying assertion, never a fixed wait. Name the authoritative clock at every
