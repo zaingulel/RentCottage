@@ -14,7 +14,7 @@
 //   if a newer copy of the shared workflow admits this, undo the edit, run the sync that installs that copy, then make the edit again
 //
 //  1. The file is a regular file reached through no symlinked directory, read without following a symlink,
-//     holding one JSON object with the keys `version` and `seats` and, optionally, `runtimes`, `planApproval`, `greptile` and `docSweep`.
+//     holding one JSON object with the keys `version` and `seats` and, optionally, `runtimes`, `planApproval`, `greptile`, `docSweep` and `crossFamilyReview`.
 //     `version` is exactly 1; any other version is refused as unsupported by this copy, with the recovery. Another
 //     key is refused with the recovery.
 //  2. `seats` is an object whose only keys are `claude` and `codex`, each an object from seat name to an object of
@@ -46,8 +46,12 @@
 //     paths, which a tree installs only where the value is `true`.
 // 12. `docSweep`, when present, is `true` or `false`; with no key, as with `true`, the documentation sweep is on.
 //     Anything else is refused. The sync and the manifest check act on the value.
+// 13. `crossFamilyReview`, when present, is `true`, and only where both runtimes are present; with no key no
+//     cross-family review is authorized. Anything else is refused. No sync or check acts on the value. `fabraik init`
+//     writes it only on a yes to its disclosure, and the session reads it, as the `resume` skill says under
+//     "6. Verify and review".
 //
-// The JSON half of rule 1, the list half of rule 9 and rules 10, 11 and 12 are readSettingsHeader (runtimes.mjs), which
+// The JSON half of rule 1, the list half of rule 9 and rules 10, 11, 12 and 13 are readSettingsHeader (runtimes.mjs), which
 // parseSettings calls; rules 2, 4, 5 and the seat half of rule 9 are parseSettings and seatsByPath; 6 is
 // substituteSeatSettings; 7 is overrideProblems. The file half of rule 1, rule 3 and rule 8 belong to the sync.
 
@@ -106,7 +110,7 @@ function readSeats(seats, label, fromFile, runtimes) {
   return byPath;
 }
 
-/** Parse the settings file's text into the runtimes present, whether the Greptile add-on is on, whether the documentation sweep is on, and a Map from seat path to that seat's values. Throws a refusal naming `label`. */
+/** Parse the settings file's text, or undefined for a tree with no settings file, into the runtimes present, whether the Greptile add-on is on, whether the documentation sweep is on, and a Map from seat path to that seat's values. Throws a refusal naming `label`. */
 export function parseSettings(text, label) {
   const { settings, runtimes, greptile, docSweep } = readSettingsHeader(text, label);
   return { runtimes, greptile, docSweep, seats: readSeats(settings.seats, label, true, runtimes) };

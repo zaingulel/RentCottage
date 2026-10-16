@@ -2,17 +2,17 @@
 // adopter, the render of an adopter's seat settings, the lag check against the canonical main, and the CLI.
 // Run: node --test scripts/lib/factory-sync.test.mjs   (or `npm run test:scripts`)
 //
-// Price tag: every tree is a real temporary directory; each sync test builds and commits two small git
-// repositories, and the CLI tests spawn git and node a handful of times. No network: the sync tests inject the
-// source's fetch of origin main, which is proven on its own against a local bare origin; the two --from wire tests
+// Price tag: every tree is a real temporary directory; sync tests copy one privately built pair of small git
+// repositories into independent directories, and the CLI tests spawn git and node a handful of times. No network:
+// the sync tests inject the source's fetch of origin main, proven on its own against a local bare origin; the two --from wire tests
 // run one with GIT_ALLOW_PROTOCOL=file, so its fetch fails, and one with GIT_SSH_COMMAND serving the source from its
 // own repository, so its fetch succeeds; and the --check wire tests put a fake gh first on the PATH. Retire this file
 // with scripts/lib/factory-sync.mjs.
 
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import {
+import childProcess, { spawnSync } from 'node:child_process';
+import fileSystem, {
   chmodSync,
   copyFileSync,
   cpSync,
@@ -29,10 +29,11 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkLag, checkManifestPath, computeEntries, fetchMain, readManifest, renderSettings, syncInto, verifyManifest } from './factory-sync.mjs';
+import { checkLag, checkManifestPath, computeEntries, fetchMain, readManifest, recordIndexModes, renderSettings, syncInto, verifyManifest } from './factory-sync.mjs';
 import { gitExecutable } from './posix-shell.mjs';
 import { presentRuntimes } from './runtimes.mjs';
 
@@ -496,14 +497,19 @@ test('ANTI-REGRESSION: a seat setting changed without the settings file naming i
 
 const absentFor = (runtime) => `absent (the settings file names no ${runtime} runtime)`;
 
+// A tree holding docs/a.txt and a manifest that lists it after `entries`, none of which the tree holds; `settings` is
+// written as its settings file, and left out writes none.
+function featureTree(t, entries, settings) {
+  const root = mkdtempSync(join(tmpdir(), 'factory-sync-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  put(root, 'docs/a.txt', 'hello\n');
+  writeManifest(root, [...entries, { path: 'docs/a.txt', sha256: HELLO_SHA256 }]);
+  if (settings !== undefined) put(root, SETTINGS, JSON.stringify(settings));
+  return root;
+}
+
 test('ANTI-REGRESSION: a tree that names one runtime verifies without the other\'s files, refuses anything at their paths, and still refuses a missing or changed file of its own', (t) => {
-  const tree = () => {
-    const root = mkdtempSync(join(tmpdir(), 'factory-sync-'));
-    t.after(() => rmSync(root, { recursive: true, force: true }));
-    put(root, 'docs/a.txt', 'hello\n');
-    writeManifest(root, [...SEAT_ENTRIES, { path: 'docs/a.txt', sha256: HELLO_SHA256 }]);
-    return root;
-  };
+  const tree = () => featureTree(t, SEAT_ENTRIES);
   const claude = { name: 'claude', path: CLAUDE_SEAT, shared: CLAUDE_SHARED, sharedSha256: CLAUDE_SHARED_SHA256, other: CLAUDE_OVERRIDDEN, otherSha256: CLAUDE_OVERRIDDEN_SHA256 };
   const codex = { name: 'codex', path: CODEX_SEAT, shared: CODEX_SHARED, sharedSha256: CODEX_SHARED_SHA256, other: CODEX_OVERRIDDEN, otherSha256: CODEX_OVERRIDDEN_SHA256 };
 
@@ -565,15 +571,7 @@ const GREPTILE_ON = { version: 1, seats: {}, greptile: true };
 const GREPTILE_OFF = { version: 1, seats: {}, greptile: false };
 
 test('ANTI-REGRESSION: a tree that does not turn the Greptile add-on on verifies without its files and refuses anything at their paths, and a tree that turns it on still refuses a missing or changed add-on file', (t) => {
-  // settings left out writes no settings file.
-  const tree = (settings) => {
-    const root = mkdtempSync(join(tmpdir(), 'factory-sync-'));
-    t.after(() => rmSync(root, { recursive: true, force: true }));
-    put(root, 'docs/a.txt', 'hello\n');
-    writeManifest(root, [...GREPTILE_FILES.map(([path, , sha256]) => ({ path, sha256 })), { path: 'docs/a.txt', sha256: HELLO_SHA256 }]);
-    if (settings !== undefined) put(root, SETTINGS, JSON.stringify(settings));
-    return root;
-  };
+  const tree = (settings) => featureTree(t, GREPTILE_FILES.map(([path, , sha256]) => ({ path, sha256 })), settings);
 
   for (const [name, settings] of [
     ['no settings file', undefined],
@@ -631,15 +629,7 @@ const SWEEP_ON = { version: 1, seats: {}, docSweep: true };
 const SWEEP_OFF = { version: 1, seats: {}, docSweep: false };
 
 test('ANTI-REGRESSION: a tree that turns the documentation sweep off verifies without its files and refuses anything at their paths, and a tree that does not turn it off still refuses a missing or changed sweep file', (t) => {
-  // settings left out writes no settings file.
-  const tree = (settings) => {
-    const root = mkdtempSync(join(tmpdir(), 'factory-sync-'));
-    t.after(() => rmSync(root, { recursive: true, force: true }));
-    put(root, 'docs/a.txt', 'hello\n');
-    writeManifest(root, [...SWEEP_PATHS.map((path) => ({ path, sha256: HELLO_SHA256 })), { path: 'docs/a.txt', sha256: HELLO_SHA256 }]);
-    if (settings !== undefined) put(root, SETTINGS, JSON.stringify(settings));
-    return root;
-  };
+  const tree = (settings) => featureTree(t, SWEEP_PATHS.map((path) => ({ path, sha256: HELLO_SHA256 })), settings);
 
   const off = tree(SWEEP_OFF);
   assert.deepEqual(verifyManifest(off), [], 'the sweep off: none of its files');
@@ -677,6 +667,39 @@ test('ANTI-REGRESSION: a tree that turns the documentation sweep off verifies wi
     [{ path: SWEEP_PATHS[0], expected: SWEEP_OFF_CAUSE, actual: HELLO_SHA256 }],
     'codex alone, the sweep off: the sweep is the cause at a sweep file',
   );
+});
+
+test('verifyManifest judges a tree by the settings it is handed, and by its own settings file when handed none', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'factory-sync-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const everyInstall = 'docs/a.txt';
+  const codexPath = '.codex/rules/example.rules';
+  const sweepPath = SWEEP_PATHS[0];
+  const manifest = {
+    entries: [everyInstall, codexPath, sweepPath].map((path) => ({ path, sha256: HELLO_SHA256 })),
+  };
+  const handed = JSON.stringify({ version: 1, runtimes: ['claude'], seats: {}, docSweep: false });
+
+  assert.throws(
+    () => verifyManifest(root, manifest, { runtimes: ['claude'], greptile: false, docSweep: false, overrides: new Map() }),
+    /is not valid JSON/,
+    'settings reach the check only as settings-file text: an object a caller built is refused',
+  );
+  assert.deepEqual(
+    verifyManifest(root, manifest, handed),
+    [{ path: everyInstall, expected: HELLO_SHA256, actual: 'missing' }],
+    'handed settings that leave out the codex and sweep entries: only the every-install entry is missing',
+  );
+  assert.deepEqual(
+    verifyManifest(root, manifest).map(({ path, actual }) => [path, actual]),
+    [everyInstall, codexPath, sweepPath].map((path) => [path, 'missing']),
+    'handed none, the tree has no settings file and installs all three',
+  );
+
+  put(root, codexPath, 'hello\n');
+  const [absent, ...rest] = verifyManifest(root, manifest, handed).filter(({ path }) => path === codexPath);
+  assert.deepEqual(rest, []);
+  assert.deepEqual(absent, { path: codexPath, expected: absentFor('codex'), actual: HELLO_SHA256 });
 });
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'factory-sync.mjs');
@@ -760,9 +783,11 @@ const CANONICAL_URL = `https://github.com/${CANONICAL}`;
 const ADOPTER_URL = 'https://github.com/example-owner/adopter';
 const MANIFEST = '.agents/factory-manifest.json';
 const GIT_ISOLATION = ['-c', 'user.name=Factory Test', '-c', 'user.email=factory@example.com', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null'];
+let syncFixtureSeed;
 
 function git(root, ...args) {
-  const run = spawnSync('git', ['-C', root, ...GIT_ISOLATION, ...args], { encoding: 'utf8' });
+  const seed = syncFixtureSeed !== undefined && (root === join(syncFixtureSeed, 'source') || root === join(syncFixtureSeed, 'target'));
+  const run = spawnSync('git', ['-C', root, ...GIT_ISOLATION, ...(seed ? ['-c', 'maintenance.auto=false'] : []), ...args], { encoding: 'utf8' });
   assert.equal(run.status, 0, `git ${args.join(' ')}: ${run.stderr}`);
   return run.stdout.trim();
 }
@@ -808,12 +833,10 @@ function recordSource(source, entries) {
   commitAll(source);
 }
 
-// A canonical source on main with a region, a plain file and an executable file; an adopter target
-// whose committed manifest names the canonical, whose shared file is a symlink to a file outside it, and whose
+// The private baseline: a canonical source on main with a region, a plain file and an executable file; an adopter
+// target whose committed manifest names the canonical, whose shared file is a symlink to a file outside it, and whose
 // script is not yet executable; and that outside directory.
-function syncFixture(t) {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), 'factory-sync-into-')));
-  t.after(() => rmSync(base, { recursive: true, force: true }));
+function createSyncFixture(base) {
   const [source, target, outside] = ['source', 'target', 'outside'].map((name) => join(base, name));
   put(outside, 'secret.txt', 'outside\n');
 
@@ -834,7 +857,21 @@ function syncFixture(t) {
   put(target, 'scripts/run.sh', '#!/bin/sh\necho v1\n');
   put(target, MANIFEST, JSON.stringify({ canonical: CANONICAL, entries: [] }));
   commitAll(target);
+}
 
+after(() => {
+  if (syncFixtureSeed) rmSync(syncFixtureSeed, { recursive: true, force: true });
+});
+
+function syncFixture(t) {
+  if (!syncFixtureSeed) {
+    syncFixtureSeed = realpathSync(mkdtempSync(join(tmpdir(), 'factory-sync-seed-')));
+    createSyncFixture(syncFixtureSeed);
+  }
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'factory-sync-into-')));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  cpSync(syncFixtureSeed, base, { recursive: true, verbatimSymlinks: true });
+  const [source, target, outside] = ['source', 'target', 'outside'].map((name) => join(base, name));
   const fetchMain = (root) => git(root, 'rev-parse', 'refs/heads/main');
   return { source, target, outside, sync: (options) => syncInto({ source, target, fetchMain, ...options }) };
 }
@@ -859,6 +896,101 @@ function snapshot(root) {
   return tree;
 }
 
+test('sync fixtures isolate copied worktrees, Git state and outside paths', (t) => {
+  const traceDirectory = realpathSync(mkdtempSync(join(tmpdir(), 'factory-sync-trace-')));
+  t.after(() => rmSync(traceDirectory, { recursive: true, force: true }));
+  const tracePath = join(traceDirectory, 'events.jsonl');
+  const a = withEnv({
+    GIT_TRACE2_EVENT: tracePath,
+    GIT_CONFIG_COUNT: '2',
+    GIT_CONFIG_KEY_0: 'maintenance.auto',
+    GIT_CONFIG_VALUE_0: 'true',
+    GIT_CONFIG_KEY_1: 'maintenance.autoDetach',
+    GIT_CONFIG_VALUE_1: 'false',
+    GIT_CONFIG_PARAMETERS: '',
+  }, () => syncFixture(t));
+  let nativeTrace;
+  try {
+    nativeTrace = readFileSync(tracePath, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+  } catch {
+    assert.fail('native Git trace must contain valid JSON records');
+  }
+  for (const name of ['source', 'target']) {
+    const root = join(syncFixtureSeed, name);
+    assert.ok(nativeTrace.some(({ event, argv }) => event === 'start'
+      && argv[argv.indexOf('-C') + 1] === root && argv.includes('commit')),
+    'native Git trace must include both seed commits');
+  }
+  assert.ok(!nativeTrace.some(({ event, argv }) => event === 'child_start'
+    && argv.includes('maintenance') && argv.includes('run')),
+  'seed construction must not launch automatic maintenance');
+  const b = syncFixture(t);
+  const assertBaseline = (fixture) => {
+    assert.equal(readFileSync(join(fixture.source, 'docs/a.txt'), 'utf8'), 'hello v2\n');
+    assert.equal(readFileSync(join(fixture.source, 'scripts/run.sh'), 'utf8'), '#!/bin/sh\necho v2\n');
+    assert.equal(readFileSync(join(fixture.target, 'scripts/run.sh'), 'utf8'), '#!/bin/sh\necho v1\n');
+    assert.equal(readFileSync(join(fixture.outside, 'secret.txt'), 'utf8'), 'outside\n');
+    assert.equal(readFileSync(join(fixture.target, 'docs/a.txt'), 'utf8'), 'outside\n');
+    if (FILE_SYMLINKS) {
+      assert.ok(lstatSync(join(fixture.target, 'docs/a.txt')).isSymbolicLink());
+      assert.equal(readlinkSync(join(fixture.target, 'docs/a.txt')).replaceAll('\\', '/'), '../../outside/secret.txt');
+    } else {
+      assert.ok(lstatSync(join(fixture.target, 'docs/a.txt')).isFile());
+    }
+    assert.equal(indexMode(fixture.source, 'scripts/run.sh'), '100755');
+    assert.equal(indexMode(fixture.target, 'scripts/run.sh'), '100644');
+    assert.equal(git(fixture.source, 'remote', 'get-url', 'origin'), 'https://github.com/example-owner/example-repo');
+    assert.equal(git(fixture.target, 'remote', 'get-url', 'origin'), 'https://github.com/example-owner/adopter');
+    assert.equal(git(fixture.source, 'symbolic-ref', 'HEAD'), 'refs/heads/main');
+    assert.equal(git(fixture.target, 'symbolic-ref', 'HEAD'), 'refs/heads/main');
+  };
+  const gitBytes = (root) => {
+    const head = git(root, 'rev-parse', 'HEAD');
+    const object = `objects/${head.slice(0, 2)}/${head.slice(2)}`;
+    return Object.fromEntries(['HEAD', 'config', 'index', 'refs/heads/main', object]
+      .map((path) => [path, readFileSync(join(root, '.git', path))]));
+  };
+  assertBaseline(b);
+  const treesBefore = [snapshot(b.source), snapshot(b.target), snapshot(b.outside)];
+  const gitBefore = [gitBytes(b.source), gitBytes(b.target)];
+
+  if (FILE_SYMLINKS) {
+    assert.ok(lstatSync(join(a.target, 'docs/a.txt')).isSymbolicLink());
+    writeFileSync(join(a.target, 'docs/a.txt'), 'A-only outside\n');
+    assert.equal(readFileSync(join(a.outside, 'secret.txt'), 'utf8'), 'A-only outside\n');
+    assert.equal(readFileSync(join(b.outside, 'secret.txt'), 'utf8'), 'outside\n');
+  } else {
+    assert.ok(lstatSync(join(a.target, 'docs/a.txt')).isFile());
+    assert.equal(readFileSync(join(a.target, 'docs/a.txt'), 'utf8'), 'outside\n');
+    writeFileSync(join(a.target, 'docs/a.txt'), 'A-only shared file\n');
+    assert.equal(readFileSync(join(a.outside, 'secret.txt'), 'utf8'), 'outside\n');
+  }
+  writeFileSync(join(a.source, 'docs/a.txt'), 'contaminated source\n');
+  writeFileSync(join(a.source, 'scripts/run.sh'), 'contaminated source script\n');
+  writeFileSync(join(a.target, 'scripts/run.sh'), 'contaminated target script\n');
+  writeFileSync(join(a.target, 'AGENTS.md'), 'contaminated target manual\n');
+  writeFileSync(join(a.outside, 'secret.txt'), 'contaminated outside\n');
+  for (const root of [a.source, a.target]) {
+    const head = git(root, 'rev-parse', 'HEAD');
+    const object = join(root, '.git', 'objects', head.slice(0, 2), head.slice(2));
+    chmodSync(object, 0o644);
+    writeFileSync(object, 'corrupt object\n');
+    for (const path of ['HEAD', 'config', 'index', 'refs/heads/main']) {
+      writeFileSync(join(root, '.git', path), 'corrupt metadata\n');
+    }
+  }
+
+  assert.deepEqual([snapshot(b.source), snapshot(b.target), snapshot(b.outside)], treesBefore);
+  assert.deepEqual([gitBytes(b.source), gitBytes(b.target)], gitBefore);
+  const c = syncFixture(t);
+  assertBaseline(c);
+  assert.deepEqual([snapshot(c.source), snapshot(c.target), snapshot(c.outside)], treesBefore);
+  assert.deepEqual([gitBytes(c.source), gitBytes(c.target)], gitBefore);
+  for (const root of [b.source, b.target, c.source, c.target]) {
+    assert.equal(git(root, 'status', '--porcelain'), '', 'an independent copied repository must remain clean');
+  }
+});
+
 function assertRefused(fixture, cause, options) {
   const before = [snapshot(fixture.target), snapshot(fixture.outside)];
   assert.throws(() => fixture.sync(options), cause);
@@ -870,6 +1002,37 @@ function listInTarget(fixture, entries) {
   put(fixture.target, MANIFEST, JSON.stringify({ canonical: CANONICAL, entries }));
   commitAll(fixture.target);
 }
+
+for (const mark of ['skip-worktree', 'assume-unchanged']) {
+  test(`ANTI-REGRESSION: a sync refuses ${mark === 'assume-unchanged' ? 'an' : 'a'} ${mark} installed path before writing anything`, (t) => {
+    const fixture = syncFixture(t);
+    const path = 'scripts/run.sh';
+    assert.ok(lstatSync(join(fixture.target, path)).isFile(), 'the marked installed path must be a committed regular file');
+    git(fixture.target, 'update-index', `--${mark}`, '--', path);
+    put(fixture.target, path, 'local edit\n');
+    assert.equal(git(fixture.target, 'status', '--porcelain'), '', 'the mark must hide the local edit from git status');
+    assertRefused(fixture, (error) => {
+      assert.equal(error.message, `${path}: the target's index marks it skip-worktree or assume-unchanged, which hides it from git status, so the sync cannot prove it clean; clear both marks with git update-index --no-skip-worktree -- ${path} and git update-index --no-assume-unchanged -- ${path}, commit or restore whatever git status then shows there, then sync`);
+      return true;
+    });
+  });
+}
+
+test('ANTI-REGRESSION: a sync refuses a marked manifest before writing anything', (t) => {
+  const fixture = syncFixture(t);
+  const saved = readFileSync(join(fixture.target, MANIFEST), 'utf8');
+  for (const mark of ['skip-worktree', 'assume-unchanged']) {
+    git(fixture.target, 'update-index', `--${mark}`, '--', MANIFEST);
+    put(fixture.target, MANIFEST, `${saved}local edit\n`);
+    assert.equal(git(fixture.target, 'status', '--porcelain'), '', 'the mark must hide the corrupt working-tree manifest from git status');
+    assertRefused(fixture, (error) => {
+      assert.equal(error.message, `${MANIFEST}: the target's index marks it skip-worktree or assume-unchanged, which hides it from git status, so the sync cannot prove it clean; clear both marks with git update-index --no-skip-worktree -- ${MANIFEST} and git update-index --no-assume-unchanged -- ${MANIFEST}, commit or restore whatever git status then shows there, then sync`);
+      return true;
+    });
+    put(fixture.target, MANIFEST, saved);
+    git(fixture.target, 'update-index', `--no-${mark}`, '--', MANIFEST);
+  }
+});
 
 test('a sync writes every shared file and region into the adopter and records the source commit', (t) => {
   const fixture = syncFixture(t);
@@ -1074,6 +1237,13 @@ const REVIEWER_SHIPPED =
 const bothRuntimesFixture = (t) =>
   seatSyncFixture(t, { [ORACLE_MD]: claudeSeat('oracle', 'fable', 'high', 90), [REVIEWER_TOML]: codexSeat('reviewer', 'gpt-6-luna', 'medium') });
 
+// The manifest text a sync must leave in the target: every entry of the source's, those at `paths` among them.
+function recordedManifest(fixture, paths) {
+  const { canonical, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
+  assert.deepEqual(entries.map(({ path }) => path), ['AGENTS.md', 'docs/a.txt', 'scripts/run.sh', ...paths]);
+  return `${JSON.stringify({ canonical, syncedFrom: git(fixture.source, 'rev-parse', 'HEAD'), entries }, null, 2)}\n`;
+}
+
 test('a sync into a target that names one runtime writes only that runtime\'s files, records every entry, and verifies clean', (t) => {
   for (const [runtime, written, shipped, leftOut] of [
     ['claude', ORACLE_MD, ORACLE_SHIPPED, REVIEWER_TOML],
@@ -1088,10 +1258,7 @@ test('a sync into a target that names one runtime writes only that runtime\'s fi
     assert.equal(readFileSync(at(written), 'utf8'), shipped, runtime);
     assert.equal(readFileSync(at('docs/a.txt'), 'utf8'), 'hello v2\n', runtime);
     assert.equal(existsSync(at(leftOut)), false, `${leftOut} belongs to a runtime the target does not name`);
-    const { canonical, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
-    assert.deepEqual(entries.map(({ path }) => path), ['AGENTS.md', 'docs/a.txt', 'scripts/run.sh', ORACLE_MD, REVIEWER_TOML]);
-    const syncedFrom = git(fixture.source, 'rev-parse', 'HEAD');
-    assert.equal(readFileSync(at(MANIFEST), 'utf8'), `${JSON.stringify({ canonical, syncedFrom, entries }, null, 2)}\n`, runtime);
+    assert.equal(readFileSync(at(MANIFEST), 'utf8'), recordedManifest(fixture, [ORACLE_MD, REVIEWER_TOML]), runtime);
     assert.deepEqual(verifyManifest(fixture.target), [], runtime);
   }
 });
@@ -1100,13 +1267,6 @@ test('a sync into a target that names one runtime writes only that runtime\'s fi
 const greptileFixture = (t) => seatSyncFixture(t, Object.fromEntries(GREPTILE_FILES.map(([path, text]) => [path, text])));
 
 test('a sync into a target that does not turn the Greptile add-on on writes none of its files, records every entry, and verifies clean', (t) => {
-  // The manifest text a sync must leave in the target: every entry of the source's, the add-on's among them.
-  const recorded = (fixture) => {
-    const { canonical, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
-    assert.deepEqual(entries.map(({ path }) => path), ['AGENTS.md', 'docs/a.txt', 'scripts/run.sh', ...GREPTILE_PATHS]);
-    return `${JSON.stringify({ canonical, syncedFrom: git(fixture.source, 'rev-parse', 'HEAD'), entries }, null, 2)}\n`;
-  };
-
   for (const [name, settings] of [
     ['no settings file', null],
     ['greptile false', GREPTILE_OFF],
@@ -1119,7 +1279,7 @@ test('a sync into a target that does not turn the Greptile add-on on writes none
 
     assert.equal(readFileSync(at('docs/a.txt'), 'utf8'), 'hello v2\n', name);
     for (const path of GREPTILE_PATHS) assert.equal(existsSync(at(path)), false, `${name}: ${path} belongs to an add-on the target does not turn on`);
-    assert.equal(readFileSync(at(MANIFEST), 'utf8'), recorded(fixture), name);
+    assert.equal(readFileSync(at(MANIFEST), 'utf8'), recordedManifest(fixture, GREPTILE_PATHS), name);
     assert.deepEqual(verifyManifest(fixture.target), [], name);
   }
 
@@ -1130,7 +1290,7 @@ test('a sync into a target that does not turn the Greptile add-on on writes none
   assert.deepEqual(fixture.sync(), { files: 5, regions: 1, removed: [], omitted: 0 });
 
   for (const [path, text] of GREPTILE_FILES) assert.equal(readFileSync(at(path), 'utf8'), text, path);
-  assert.equal(readFileSync(at(MANIFEST), 'utf8'), recorded(fixture));
+  assert.equal(readFileSync(at(MANIFEST), 'utf8'), recordedManifest(fixture, GREPTILE_PATHS));
   assert.deepEqual(verifyManifest(fixture.target), []);
 });
 
@@ -1138,13 +1298,6 @@ test('a sync into a target that does not turn the Greptile add-on on writes none
 const sweepFixture = (t) => seatSyncFixture(t, Object.fromEntries(SWEEP_PATHS.map((path) => [path, 'hello\n'])));
 
 test('a sync into a target that turns the documentation sweep off writes none of its files, records every entry, and verifies clean', (t) => {
-  // The manifest text a sync must leave in the target: every entry of the source's, the sweep's among them.
-  const recorded = (fixture) => {
-    const { canonical, entries } = JSON.parse(readFileSync(join(fixture.source, MANIFEST), 'utf8'));
-    assert.deepEqual(entries.map(({ path }) => path), ['AGENTS.md', 'docs/a.txt', 'scripts/run.sh', ...SWEEP_PATHS]);
-    return `${JSON.stringify({ canonical, syncedFrom: git(fixture.source, 'rev-parse', 'HEAD'), entries }, null, 2)}\n`;
-  };
-
   const off = sweepFixture(t);
   const atOff = (path) => join(off.target, path);
   put(off.target, SETTINGS, JSON.stringify(SWEEP_OFF));
@@ -1153,7 +1306,7 @@ test('a sync into a target that turns the documentation sweep off writes none of
 
   assert.equal(readFileSync(atOff('docs/a.txt'), 'utf8'), 'hello v2\n');
   for (const path of SWEEP_PATHS) assert.equal(existsSync(atOff(path)), false, `${path} belongs to the sweep the target turns off`);
-  assert.equal(readFileSync(atOff(MANIFEST), 'utf8'), recorded(off));
+  assert.equal(readFileSync(atOff(MANIFEST), 'utf8'), recordedManifest(off, SWEEP_PATHS));
   assert.deepEqual(verifyManifest(off.target), []);
 
   const fixture = sweepFixture(t);
@@ -1162,7 +1315,7 @@ test('a sync into a target that turns the documentation sweep off writes none of
   assert.deepEqual(fixture.sync(), { files: 8, regions: 1, removed: [], omitted: 0 }, 'no settings file');
 
   for (const path of SWEEP_PATHS) assert.equal(readFileSync(at(path), 'utf8'), 'hello\n', path);
-  assert.equal(readFileSync(at(MANIFEST), 'utf8'), recorded(fixture));
+  assert.equal(readFileSync(at(MANIFEST), 'utf8'), recordedManifest(fixture, SWEEP_PATHS));
   assert.deepEqual(verifyManifest(fixture.target), []);
 });
 
@@ -1841,11 +1994,218 @@ test('a sync gives each file its committed mode, whatever the mode in the source
 
 test('a target that does not honour file modes gets each file\'s committed mode in its index', (t) => {
   const fixture = syncFixture(t);
+  const outsideBefore = snapshot(fixture.outside);
+  const files = [
+    { path: 'docs/a.txt', bytes: 'hello v2\n', mode: '100644' },
+    { path: 'scripts/run.sh', bytes: '#!/bin/sh\necho v2\n', mode: '100755' },
+  ];
   git(fixture.target, 'config', 'core.fileMode', 'false');
-  assert.equal(indexMode(fixture.target, 'scripts/run.sh'), '100644', 'the target must start with its script not executable in its index');
+  git(fixture.target, 'config', 'core.symlinks', 'false');
+  for (const { path } of files) {
+    rmSync(join(fixture.target, path));
+    put(fixture.target, path, '../../outside/secret.txt');
+    const blob = git(fixture.target, 'hash-object', '-w', '--', path);
+    git(fixture.target, 'update-index', '--add', '--cacheinfo', `120000,${blob},${path}`);
+  }
+  commitAll(fixture.target);
+  for (const { path } of files) {
+    assert.ok(lstatSync(join(fixture.target, path)).isFile());
+    assert.equal(indexMode(fixture.target, path), '120000');
+  }
+  assert.equal(git(fixture.target, 'status', '--porcelain'), '', 'the committed link pointers must start clean');
+
   fixture.sync();
-  assert.equal(indexMode(fixture.target, 'scripts/run.sh'), '100755');
-  assert.equal(indexMode(fixture.target, 'docs/a.txt'), '100644');
+
+  for (const { path, bytes, mode } of files) {
+    assert.ok(lstatSync(join(fixture.target, path)).isFile());
+    assert.equal(readFileSync(join(fixture.target, path), 'utf8'), bytes);
+    const indexed = spawnSync('git', ['-C', fixture.target, ...GIT_ISOLATION, 'show', `:${path}`], { encoding: 'utf8' });
+    assert.equal(indexed.status, 0, indexed.stderr);
+    assert.equal(indexed.stdout, bytes);
+    assert.equal(indexMode(fixture.target, path), mode);
+  }
+  assert.deepEqual(snapshot(fixture.outside), outsideBefore);
+  assert.equal(git(fixture.target, 'config', 'core.fileMode'), 'false');
+  assert.equal(git(fixture.target, 'config', 'core.symlinks'), 'false');
+});
+
+test('recordIndexModes preserves filtered bytes and refuses unsafe input before staging', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'factory-index-filter-'));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const root = join(base, 'repository');
+  const outside = join(base, 'outside');
+  repository(root, ADOPTER_URL);
+  put(outside, 'secret.txt', 'outside\n');
+  const outsideBefore = snapshot(outside);
+  const entries = [
+    { path: 'data/run.sh', executable: true },
+    { path: 'data/literal,[é];.txt' },
+  ];
+  for (const { path } of entries) put(root, path, 'working\r\n');
+  put(root, '.gitattributes', 'data/** filter=index-clean text eol=lf\n');
+  put(root, '.git/index-clean.cjs', "if (process.argv[2] === 'fail') process.exit(1);\nprocess.stdout.write(require('node:fs').readFileSync(0, 'utf8').replace('working', 'staged'));\n");
+  git(root, 'config', 'core.fileMode', 'false');
+  git(root, 'config', 'core.autocrlf', 'false');
+  git(root, 'config', 'filter.index-clean.clean', 'node .git/index-clean.cjs');
+  git(root, 'config', 'filter.index-clean.required', 'true');
+  const diskBefore = snapshot(root);
+
+  recordIndexModes(root, entries);
+
+  assert.deepEqual(snapshot(root), diskBefore, 'staging converted blobs must not rewrite working files');
+  assert.deepEqual(snapshot(outside), outsideBefore);
+  for (const [i, { path }] of entries.entries()) {
+    assert.equal(readFileSync(join(root, path), 'utf8'), 'working\r\n');
+    const indexed = spawnSync('git', ['-C', root, ...GIT_ISOLATION, 'show', `:${path}`], { encoding: 'utf8' });
+    assert.equal(indexed.status, 0, indexed.stderr);
+    assert.equal(indexed.stdout, 'staged\n', 'clean filter and text attributes must both affect the indexed bytes');
+    assert.equal(indexMode(root, path), i === 0 ? '100755' : '100644');
+  }
+  const indexBefore = readFileSync(join(root, '.git', 'index'));
+  const nativeSpawn = childProcess.spawnSync;
+  const calls = [];
+  let malformed = false;
+  const wrapped = t.mock.method(childProcess, 'spawnSync', (command, args, options) => {
+    calls.push(args);
+    if (malformed && args.includes('hash-object')) return { status: 0, stdout: 'not-an-object-id\n', stderr: '' };
+    return nativeSpawn(command, args, options);
+  });
+  syncBuiltinESMExports();
+  try {
+    const refused = (input) => {
+      const before = snapshot(root);
+      calls.length = 0;
+      assert.throws(() => recordIndexModes(root, input), /cannot record/);
+      assert.equal(calls.some((args) => args.includes('update-index')), false, 'refused input must never reach index mutation');
+      assert.deepEqual(readFileSync(join(root, '.git', 'index')), indexBefore, 'refusal must preserve the actual index bytes');
+      assert.deepEqual(snapshot(root), before);
+      assert.deepEqual(snapshot(outside), outsideBefore);
+    };
+    git(root, 'config', 'filter.index-clean.clean', 'node .git/index-clean.cjs fail');
+    refused(entries);
+    assert.ok(calls.some((args) => args.includes('hash-object')), 'required filter failure must reach native Git');
+    git(root, 'config', 'filter.index-clean.clean', 'node .git/index-clean.cjs');
+
+    mkdirSync(join(root, 'data', 'unsafe'));
+    refused([entries[0], { path: 'data/unsafe' }]);
+    assert.equal(calls.some((args) => args.includes('hash-object')), false, 'every leaf must be checked before hashing');
+    rmSync(join(root, 'data', 'unsafe'), { recursive: true });
+    if (FILE_SYMLINKS) {
+      symlinkSync(join(outside, 'secret.txt'), join(root, 'data', 'unsafe'), 'file');
+      refused([entries[0], { path: 'data/unsafe' }]);
+      assert.equal(calls.some((args) => args.includes('hash-object')), false, 'a symlink leaf must not be followed for hashing');
+      rmSync(join(root, 'data', 'unsafe'));
+    } else {
+      t.diagnostic('file-symlink refusal branch unavailable: Windows requires Developer Mode or administrator rights');
+    }
+    malformed = true;
+    refused(entries);
+    assert.equal(calls.filter((args) => args.includes('hash-object')).length, 1, 'one malformed successful hash reply must be refused');
+  } finally {
+    wrapped.mock.restore();
+    syncBuiltinESMExports();
+  }
+});
+
+test('recordIndexModes bounds Git arguments and preserves conflicting index entries', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'factory-index-conflict-'));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const root = join(base, 'repository');
+  repository(root, ADOPTER_URL);
+  git(root, 'config', 'core.fileMode', 'false');
+  put(root, 'parent/child.txt', 'indexed child\n');
+  git(root, 'add', '--', 'parent/child.txt');
+  rmSync(join(root, 'parent'), { recursive: true });
+  put(root, 'parent', 'regular parent\n');
+  const indexBefore = readFileSync(join(root, '.git', 'index'));
+  const diskBefore = snapshot(root);
+
+  assert.throws(() => recordIndexModes(root, [{ path: 'parent', executable: true }]), /cannot record parent as executable/);
+
+  assert.deepEqual(readFileSync(join(root, '.git', 'index')), indexBefore, 'native parent/child conflict must preserve the actual index bytes');
+  assert.equal(git(root, 'show', ':parent/child.txt'), 'indexed child');
+  assert.deepEqual(snapshot(root), diskBefore);
+
+  const syntheticRoot = join(tmpdir(), 'factory index bounded synthetic');
+  const entries = Array.from({ length: 100 }, (_, i) => ({
+    path: `${Array.from({ length: 5 }, (_, n) => `section ${n} ${'x'.repeat(120)}`).join('/')}/file ${i} ${'é'.repeat(160)}.txt`,
+    executable: i < 50,
+  }));
+  const leaves = new Set(entries.map(({ path }) => join(syntheticRoot, path)));
+  const calls = [];
+  const nativeLstat = fileSystem.lstatSync;
+  const nativeSpawn = childProcess.spawnSync;
+  const statMock = t.mock.method(fileSystem, 'lstatSync', (full, ...args) => {
+    if (leaves.has(full)) return { isFile: () => true };
+    if (typeof full === 'string' && full.startsWith(syntheticRoot)) {
+      return { isDirectory: () => true, isSymbolicLink: () => false };
+    }
+    return nativeLstat(full, ...args);
+  });
+  const spawnMock = t.mock.method(childProcess, 'spawnSync', (command, args, options) => {
+    if (command !== 'git') return nativeSpawn(command, args, options);
+    if (args.includes('--local-env-vars')) return { status: 0, stdout: 'GIT_DIR\nGIT_WORK_TREE\nGIT_INDEX_FILE\n', stderr: '' };
+    assert.equal(args[1], syntheticRoot);
+    assert.notEqual(options.windowsVerbatimArguments, true);
+    assert.equal(options.argv0, undefined);
+    calls.push([command, ...args]);
+    if (args.includes('config')) return { status: 0, stdout: 'false\n', stderr: '' };
+    if (args.includes('hash-object')) {
+      const paths = args.slice(args.indexOf('--') + 1);
+      return { status: 0, stdout: paths.map(() => 'a'.repeat(40)).join('\n') + '\n', stderr: '' };
+    }
+    assert.ok(args.includes('update-index'), 'only index-recording commands are expected');
+    return { status: 0, stdout: '', stderr: '' };
+  });
+  // Actual libuv Windows quoting, rather than the writer's conservative upper bound:
+  // https://github.com/libuv/libuv/blob/v1.x/src/win/process.c#L422-L487
+  const quoted = (argument) => {
+    if (argument === '') return '""';
+    if (!/[ \t"]/.test(argument)) return argument;
+    const escaped = argument.replace(/(\\*)"/g, (_, slashes) => `${slashes}${slashes}\\"`);
+    return `"${escaped.replace(/\\+$/, (slashes) => slashes + slashes)}"`;
+  };
+  const commandLength = (argv) => argv.map(quoted).join(' ').length + 1;
+  syncBuiltinESMExports();
+  try {
+    recordIndexModes(syntheticRoot, entries);
+    const hashes = calls.filter((argv) => argv.includes('hash-object'));
+    const indexes = calls.filter((argv) => argv.includes('update-index'));
+    assert.ok(hashes.length > 1 && indexes.length > 1, 'long paths must require multiple native batches');
+    for (const argv of calls) assert.ok(commandLength(argv) <= 30000, 'actual quoted whole command must fit the fixed UTF-16 budget');
+    const hashedPaths = hashes.flatMap((argv) => argv.slice(argv.indexOf('--') + 1));
+    assert.deepEqual(hashedPaths.sort(), entries.map(({ path }) => path).sort(), 'each handwritten path must be hashed exactly once');
+    const indexedPaths = [];
+    const expectedModes = new Map(entries.map(({ path, executable }) => [path, executable ? '100755' : '100644']));
+    for (const argv of indexes) {
+      const units = argv.slice(argv.indexOf('update-index') + 2);
+      assert.equal(units.length % 2, 0, 'cacheinfo option and record must stay together');
+      for (let i = 0; i < units.length; i += 2) {
+        assert.equal(units[i], '--cacheinfo');
+        const match = units[i + 1].match(/^(100644|100755),([a-f0-9]{40}),(.+)$/);
+        assert.ok(match, 'native comma-delimited cacheinfo record required');
+        assert.equal(match[1], expectedModes.get(match[3]));
+        assert.equal(match[2], 'a'.repeat(40));
+        indexedPaths.push(match[3]);
+      }
+    }
+    assert.deepEqual(indexedPaths.sort(), entries.map(({ path }) => path).sort(), 'each handwritten path must be indexed exactly once');
+    const firstIndex = calls.findIndex((argv) => argv.includes('update-index'));
+    assert.equal(calls.slice(firstIndex).some((argv) => argv.includes('hash-object')), false, 'all hashing must precede any index mutation');
+    t.diagnostic(`Synthetic hash batches=${hashes.length}, index batches=${indexes.length}, maximum quoted UTF-16 units=${Math.max(...calls.map(commandLength))}`);
+
+    const overlong = 'x'.repeat(31000);
+    leaves.add(join(syntheticRoot, overlong));
+    assert.ok(commandLength(['git', '-C', syntheticRoot, 'hash-object', '-w', '--', overlong]) > 30000);
+    calls.length = 0;
+    assert.throws(() => recordIndexModes(syntheticRoot, [{ path: overlong }]), /cannot record/);
+    assert.equal(calls.some((argv) => argv.includes('hash-object') || argv.includes('update-index')), false, 'an indivisible overlong command must refuse before hashing or staging');
+  } finally {
+    statMock.mock.restore();
+    spawnMock.mock.restore();
+    syncBuiltinESMExports();
+  }
+
 });
 
 test('a source commit whose file mode differs from its manifest is refused, naming the path', (t) => {
@@ -2024,8 +2384,10 @@ test('--from prints what it wrote and each retired file it removed, and exits 0'
     env: { ...process.env, ...SERVED_BY_ITSELF },
   });
   assert.equal(run.status, 0, run.stderr);
+  const expectedSource = process.platform === 'win32' ? realpathSync.native(fixture.source) : fixture.source;
+  const expectedTarget = process.platform === 'win32' ? realpathSync.native(fixture.target) : fixture.target;
   assert.deepEqual(run.stdout.split('\n'), [
-    `factory-sync: wrote 2 files and 1 regions from ${fixture.source} into ${fixture.target}`,
+    `factory-sync: wrote 2 files and 1 regions from ${expectedSource} into ${expectedTarget}`,
     'factory-sync: removed 1 retired files',
     '  retired.sh',
     '',
@@ -2043,8 +2405,10 @@ test('--from prints how many entries it left out', (t) => {
     env: { ...process.env, ...SERVED_BY_ITSELF },
   });
   assert.equal(run.status, 0, run.stderr);
+  const expectedSource = process.platform === 'win32' ? realpathSync.native(fixture.source) : fixture.source;
+  const expectedTarget = process.platform === 'win32' ? realpathSync.native(fixture.target) : fixture.target;
   assert.deepEqual(run.stdout.split('\n'), [
-    `factory-sync: wrote 3 files and 1 regions from ${fixture.source} into ${fixture.target}`,
+    `factory-sync: wrote 3 files and 1 regions from ${expectedSource} into ${expectedTarget}`,
     'factory-sync: left out 1 entries the settings file leaves out',
     'factory-sync: removed 0 retired files',
     '',

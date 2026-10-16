@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
@@ -6,16 +7,29 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { gitEnvironment, MANIFEST_PATH, readManifest, regionText, verifyManifest } from './factory-sync.mjs';
-import { greptileOn, installs, isGreptilePath, presentRuntimes, SEATS, SETTINGS_PATH, sweepOmits, sweepOn } from './runtimes.mjs';
+import { leftOutCause, needNotResolveCause, readSettingsHeader, SEATS, SETTINGS_PATH, treeSettings } from './runtimes.mjs';
 import { blockReason } from './unsafe-git.mjs';
+import { MANUAL_LIMIT, productTailShapeProblem, profileShapeProblem } from './repository-shape.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const PRESENT = presentRuntimes(ROOT);
-const GREPTILE = greptileOn(ROOT);
-const SWEEP = sweepOn(ROOT);
+const SETTINGS = treeSettings(ROOT);
+const PRESENT = SETTINGS.runtimes;
 const without = (runtime) => !PRESENT.includes(runtime) && `the settings file names no ${runtime} runtime`;
 const RESUME = readFileSync(resolve(ROOT, '.agents/skills/resume/SKILL.md'), 'utf8');
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Pins the independently reviewed workflow, including its job-level branch condition.
+// Recurring cost: one file read and hash; update only after configuration review.
+test('ANTI-REGRESSION: the sweep scope workflow retains its reviewed job gate and execution configuration', {
+  skip: !SETTINGS.docSweep && 'the settings file turns the documentation sweep off',
+}, () => {
+  const workflow = readFileSync(resolve(ROOT, '.github/workflows/sweep-scope.yml'));
+  assert.equal(
+    createHash('sha256').update(workflow).digest('hex'),
+    '256e3ac07f68913623556f6303c63b052e6f16638ac1892cddbd769ed76d1967',
+    'the sweep workflow changed: independently review its configuration before updating this fixed oracle',
+  );
+});
 
 // Independent oracle for the resume skill's parallel-slice route: Git runs its commands verbatim. Recurring cost: one
 // disposable repository and about fifteen Git subprocesses. Remove if builders no longer run parallel slices.
@@ -115,7 +129,7 @@ test('Git permits job branch deletion only after its linked worktree is removed'
     assert.notEqual(refused.status, 0, 'Git must refuse to delete a branch checked out in a linked worktree');
     assert.match(`${refused.stdout}\n${refused.stderr}`, /checked out|worktree/i);
 
-    const normalizedWorktree = realpathSync(worktree);
+    const normalizedWorktree = process.platform === 'win32' ? realpathSync.native(worktree) : realpathSync(worktree);
     // Git for Windows prints worktree paths with forward slashes.
     const listedWorktree = process.platform === 'win32' ? normalizedWorktree.replaceAll('\\', '/') : normalizedWorktree;
     const worktreeEntry = new RegExp(`^worktree ${escapeRegExp(listedWorktree)}$`, 'm');
@@ -141,7 +155,7 @@ test('every worktree status read in closeout also lists ignored files', () => {
   const closeout = readFileSync(resolve(ROOT, '.agents/skills/closeout/SKILL.md'), 'utf8').replace(/\s+/g, ' ');
   const statusReads = [...closeout.matchAll(/`([^`]*)`/g)].map(match => match[1]).filter(span => span.includes('status --porcelain'));
 
-  assert.ok(statusReads.length >= 2, 'closeout must read worktree status for a leftover worktree and for the job worktree');
+  assert.ok(statusReads.length >= 1, 'closeout must read worktree status for a leftover worktree');
   assert.deepEqual(
     statusReads,
     statusReads.map(() => 'git -C <path> status --porcelain --untracked-files=normal --ignored=matching'),
@@ -400,14 +414,6 @@ test("the cross-review skill does not copy the reviewer seat's model or effort v
   }
 });
 
-const sectionOf = (text, heading) =>
-  text.match(new RegExp(`^## ${heading}\\n([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, 'm'))[1];
-const tableRowNames = (sectionText) => sectionText
-  .split('\n')
-  .filter((line) => line.startsWith('|'))
-  .slice(2)
-  .map((line) => line.split('|')[1].trim());
-
 test('AGENTS.md carries one shared workflow region followed by the product headings and the Surfaces table', () => {
   const manual = readFileSync(resolve(ROOT, 'AGENTS.md'), 'utf8');
   const start = '<!-- factory-shared:start -->';
@@ -419,21 +425,10 @@ test('AGENTS.md carries one shared workflow region followed by the product headi
   assert.ok(startAt < endAt, 'the shared-region start marker must precede its end marker');
 
   const product = manual.slice(endAt);
-  const headings = ['Product', 'Hard constraints', 'Architecture seams', 'Surfaces'];
-  assert.deepEqual(
-    [...product.matchAll(/^## (.*)$/gm)].map((match) => match[1]),
-    headings,
-    `the shared region must be followed by exactly the product headings ${headings.join(', ')}, in order`,
-  );
+  const shapeFault = productTailShapeProblem(product);
+  assert.equal(shapeFault, undefined, shapeFault);
 
-  const rows = ['plan-first', 'owner-directed', 'sign-off', 'security review', 'hard to undo', 'wide reach'];
-  assert.deepEqual(
-    tableRowNames(sectionOf(product, 'Surfaces')),
-    rows,
-    `## Surfaces must carry exactly the rows ${rows.join(', ')}, in order`,
-  );
-
-  const surfaces = sectionOf(product, 'Surfaces').split('\n');
+  const surfaces = product.slice(product.search(/^## Surfaces$/m)).split('\n');
   assert.ok(
     surfaces.find((line) => /^\d+\. /.test(line))?.startsWith('1. '),
     'the standing security guarantees must start with a numbered item 1.',
@@ -445,23 +440,13 @@ test('AGENTS.md carries one shared workflow region followed by the product headi
     assert.ok(existsSync(resolve(ROOT, target)), `the security review row links ${target}, which does not exist`);
   }
 
-  assert.ok(Buffer.byteLength(manual) < 32768, 'AGENTS.md must stay under the 32 KiB Codex read cap');
+  assert.ok(Buffer.byteLength(manual) < MANUAL_LIMIT, `AGENTS.md must stay under the ${MANUAL_LIMIT} byte Codex read cap`);
 });
 
 test('the profile file carries its four headings and the Conventions table', () => {
   const profile = readFileSync(resolve(ROOT, '.agents/REPOSITORY.md'), 'utf8');
-  const headings = ['Product', 'Architecture seams', 'Grounding', 'Conventions'];
-  assert.deepEqual(
-    [...profile.matchAll(/^## (.*)$/gm)].map((match) => match[1]),
-    headings,
-    `.agents/REPOSITORY.md must carry exactly the headings ${headings.join(', ')}, in order`,
-  );
-  const rows = ['generated artifacts', 'visual verification', 'fixtures', 'documentation routines'];
-  assert.deepEqual(
-    tableRowNames(sectionOf(profile, 'Conventions')),
-    rows,
-    `## Conventions in .agents/REPOSITORY.md must carry exactly the rows ${rows.join(', ')}, in order`,
-  );
+  const shapeFault = profileShapeProblem(profile);
+  assert.equal(shapeFault, undefined, shapeFault);
 });
 
 const FIXED_PRODUCT_DOCUMENTS = [
@@ -475,10 +460,24 @@ const FIXED_PRODUCT_DOCUMENTS = [
   'docs/SWEEP-TRIAGE.md',
   '.agents/REPOSITORY.md',
 ];
+const requiredDocuments = (settings) => FIXED_PRODUCT_DOCUMENTS.filter((path) => needNotResolveCause(settings, path) === null);
 
 test('the fixed product documents exist', () => {
-  const missing = FIXED_PRODUCT_DOCUMENTS.filter((path) => !sweepOmits(SWEEP, path) && !existsSync(resolve(ROOT, path)));
+  const missing = requiredDocuments(SETTINGS).filter((path) => !existsSync(resolve(ROOT, path)));
   assert.deepEqual(missing, [], `the shared workflow points at these fixed product documents, which are missing: ${missing.join(', ')}`);
+});
+
+test('ANTI-REGRESSION: a tree that turns the documentation sweep off need not hold the two sweep manuals, and must still hold every other fixed product document', () => {
+  const settings = readSettingsHeader('{"version":1,"seats":{},"docSweep":false}', SETTINGS_PATH);
+  assert.deepEqual(requiredDocuments(settings), [
+    'GLOSSARY.md',
+    'docs/README.md',
+    'docs/CODING-STANDARDS.md',
+    'docs/TESTING-STRATEGY.md',
+    'docs/DESIGN-SYSTEM.md',
+    'docs/ISSUE-TRACKER.md',
+    '.agents/REPOSITORY.md',
+  ]);
 });
 
 // Runs the real prepare script in a fresh repository holding a copy of package.json. The environment drops git's
@@ -827,6 +826,9 @@ const VENDORED_SKILLS = new Set(
 );
 const vendoredCopy = (path) =>
   path.startsWith('.agents/upstream/') || VENDORED_SKILLS.has(/^\.(?:agents|claude)\/skills\/([^/]+)\//.exec(path)?.[1]);
+// The entries the path scan reads: those a tree with these settings installs. Vendored skills and their copies are
+// replaced whole and never edited in place, so the scan skips them.
+const scannedEntries = (settings, entries) => entries.filter(({ path }) => !vendoredCopy(path) && leftOutCause(settings, path) === null);
 
 // Paths outside the manifest that shared code or prose names in every adopter, each with the reason it may.
 const ADOPTER_PATHS = {
@@ -838,7 +840,8 @@ const ADOPTER_PATHS = {
   'scripts/doc-lint.mjs': 'the doc lint command every adopter runs',
   'scripts/lib/doc-lint.mjs': 'the doc lint core the shared citation and link scans run beside',
   'scripts/lib/doc-lint.test.mjs': 'the doc lint core\'s own test, which every adopter carries with the doc lint',
-  '.codex/rules/playwright.rules': 'the Codex rule that prompts before a browser run, which every adopter carries',
+  '.codex/rules/playwright.rules':
+    'the Codex rule that prompts before a browser run, which a repository with a web interface that runs Codex supplies',
   'scripts/gates/': 'optional product hook point, checked for presence',
   'scripts/gates/stop': 'optional product hook point, checked for presence',
   'scripts/gates/pre-commit': 'optional product hook point, checked for presence',
@@ -876,10 +879,8 @@ test('no shared file names a path only this repository has', () => {
   ]);
 
   const hits = [];
-  for (const entry of entries) {
+  for (const entry of scannedEntries(SETTINGS, entries)) {
     const { path } = entry;
-    // Vendored skills and their copies are replaced whole and never edited in place, so this scan skips them.
-    if (vendoredCopy(path) || !installs(PRESENT, path) || (!GREPTILE && isGreptilePath(path)) || sweepOmits(SWEEP, path)) continue;
     let text = readFileSync(resolve(ROOT, path), 'utf8');
     if ('region' in entry) text = regionText(text, path);
     const joined = [...text.matchAll(JOINED_LITERALS)].map(([, run]) =>
@@ -905,5 +906,13 @@ test('no shared file names a path only this repository has', () => {
     hits,
     [],
     'shared files name paths only this repository has; move each such check into a product-owned test the manifest does not list, or name the path neutrally (a placeholder, a glob, or a path no adopter has)',
+  );
+});
+
+test('ANTI-REGRESSION: the path scan reads no file of the Greptile add-on in a tree that does not turn it on, and still reads every other entry', () => {
+  const settings = readSettingsHeader('{"version":1,"seats":{},"greptile":false}', SETTINGS_PATH);
+  assert.deepEqual(
+    scannedEntries(settings, [{ path: '.greptile/config.json' }, { path: 'docs/README.md' }]).map(({ path }) => path),
+    ['docs/README.md'],
   );
 });

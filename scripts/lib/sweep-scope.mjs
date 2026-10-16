@@ -264,25 +264,23 @@ const decodeAmpersands = (text) => text.split('&amp;').join('&');
 // The spellings of `text` a fixed-string search of the tree must look for before anything can vouch
 // for it. Case is not one of them: the search folds case itself, while the extractor never does,
 // because its output is searched for literally.
-export function treeGrepCandidates(text) {
+function treeGrepCandidates(text) {
   const decoded = decodeAmpersands(text);
   return [...new Set([text, decoded, decoded.split('&').join('&amp;')])];
 }
 
-// The whole `git grep` argument vector, after `git`, that searches one tree for one candidate
-// spelling. One builder, so the check and its tests cannot search different trees. The guard's own
-// sources are excluded: they are a list of destinations that must not be trusted, spelled out as whole
-// extractor tokens, so they are not evidence that the repository points anywhere. They are excluded in
-// whatever folder they sit, so a repository that keeps a second copy of them does not vouch through the
-// copy. Test code is excluded for the same reason, because a negative fixture names hosts precisely so
-// they can be refused; Rust keeps its tests inline, so the whole crate is excluded and a real host named
-// only in Rust fails closed. `**/` matches the root directory as well as every subdirectory. Every
-// pathspec spells its magic out, so `GIT_GLOB_PATHSPECS` and `GIT_NOGLOB_PATHSPECS` cannot change what
-// is excluded, while `GIT_LITERAL_PATHSPECS` would make every pathspec literal, so the search would
-// match nothing and the check would refuse: it fails closed. The search runs at the base commit, so a
-// pull request cannot widen or narrow it. A pathspec that excludes nothing is not an error, so this is
-// safe in any tree.
-export function treeGrepArgs(candidate, ref) {
+// The whole `git grep` argument vector, after `git`, that searches one tree for one candidate spelling. The
+// guard's own sources are excluded: they are a list of destinations that must not be trusted, spelled out as
+// whole extractor tokens, so they are not evidence that the repository points anywhere. They are excluded in
+// whatever folder they sit, so a repository that keeps a second copy of them does not vouch through the copy.
+// Test code is excluded for the same reason, because a negative fixture names hosts precisely so they can be
+// refused; Rust keeps its tests inline, so the whole crate is excluded and a real host named only in Rust
+// fails closed. `**/` matches the root directory as well as every subdirectory. Every pathspec spells its
+// magic out, so `GIT_GLOB_PATHSPECS` and `GIT_NOGLOB_PATHSPECS` cannot change what is excluded, while
+// `GIT_LITERAL_PATHSPECS` would make every pathspec literal, so the search would match nothing and the check
+// would refuse: it fails closed. The search runs at the base commit, so a pull request cannot widen or narrow
+// it. A pathspec that excludes nothing is not an error, so this is safe in any tree.
+function treeGrepArgs(candidate, ref) {
   return ['grep', '--ignore-case', '--fixed-strings', '--null', '-e', candidate, ref,
     '--', ':(exclude,glob)**/scripts/lib/sweep-scope*', ':(exclude,glob)**/scripts/sweep-scope-check.mjs',
     ':(exclude,glob)src-tauri/**', ':(exclude,glob)tests/**', ':(exclude,glob)**/*.test.*'];
@@ -301,7 +299,7 @@ function tokenHost(token) {
 // vouch for `https://support.example.co` and `https://app.example.app` for `https://app`. The tree
 // vouches only when `text` is exactly a token the extractor produces from one of those lines, or, when
 // `text` is a bare host by shape, a label-boundary suffix of such a token's host.
-export function tokenMatches(text, treeLines) {
+function tokenMatches(text, treeLines) {
   const wanted = decodeAmpersands(text.toLowerCase());
   const tokens = networkTokens(treeLines).map((token) => decodeAmpersands(token.toLowerCase()));
   if (tokens.includes(wanted)) return true;
@@ -312,6 +310,18 @@ export function tokenMatches(text, treeLines) {
     const host = tokenHost(token);
     return host === wanted || host.endsWith(`.${wanted}`);
   });
+}
+
+// Whether the tree at `ref` vouches for `text`. `grep` runs one `git grep` argument vector and returns its
+// output, throwing when the search did not complete. A fixed-string hit is only a candidate line:
+// `tokenMatches` settles whether the tree carries `text` whole or merely inside a longer token. `--null`
+// separates git's `<rev>:<path>` prefix from the line itself.
+export function treeVouches(text, ref, grep) {
+  const treeLines = [];
+  for (const candidate of treeGrepCandidates(text)) {
+    for (const line of grep(treeGrepArgs(candidate, ref)).split('\n').filter(Boolean)) treeLines.push(line.slice(line.indexOf('\0') + 1));
+  }
+  return tokenMatches(text, treeLines);
 }
 
 // A destination is a span of one added line that GitHub resolves as a URL, and only five positions

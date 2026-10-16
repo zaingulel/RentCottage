@@ -35,6 +35,7 @@ CLAUDE.md
 scripts/board.mjs
 scripts/board-add.mjs
 scripts/board-move.mjs
+scripts/closeout-cleanup.mjs
 scripts/factory-sync.mjs
 scripts/run-log.mjs
 scripts/sweep-scope-check.mjs
@@ -58,6 +59,8 @@ scripts/lib/check-agents.mjs
 scripts/lib/check-agents.test.mjs
 scripts/lib/checkout-context.mjs
 scripts/lib/checkout-context.test.mjs
+scripts/lib/closeout-cleanup.mjs
+scripts/lib/closeout-cleanup.test.mjs
 scripts/lib/cli-flags.mjs
 scripts/lib/cli-flags.test.mjs
 scripts/lib/codex-hook-adapters.mjs
@@ -67,6 +70,7 @@ scripts/lib/doc-lint-citations.mjs
 scripts/lib/doc-lint-citations.test.mjs
 scripts/lib/doc-lint-links.mjs
 scripts/lib/doc-lint-links.test.mjs
+scripts/lib/doc-lint-verdict.mjs
 scripts/lib/factory-sync.mjs
 scripts/lib/factory-sync.test.mjs
 scripts/lib/fake-gh.mjs
@@ -80,6 +84,7 @@ scripts/lib/posix-shell.mjs
 scripts/lib/posix-shell.test.mjs
 scripts/lib/precommit.test.mjs
 scripts/lib/prepush.test.mjs
+scripts/lib/repository-shape.mjs
 scripts/lib/run-log.test.mjs
 scripts/lib/runtimes.mjs
 scripts/lib/runtimes.test.mjs
