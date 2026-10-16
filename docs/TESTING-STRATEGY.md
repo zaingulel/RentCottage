@@ -45,31 +45,48 @@ change takes every row it touches.
   both through `scripts/run-log.mjs`. Do not repeat it per assertion, input, edge case or repair. `preservation`
   claims invent none.
 - A security, privacy, authorization or money-changing invariant needs a named anti-regression test in the same
-  change.
+  change. This named test, the executed mutation above and the applicable
+  [change-type row](#evidence-by-change-type) form the **protected-invariant floor**. The test-only-repair row
+  excludes removal or weakening of these assertions.
 - Schema, policy, constraint, trigger, concurrency and migration claims need real disposable PostgreSQL evidence;
   Worker claims need the Workers runtime; a Node.js test proves neither.
 - Run each new or strengthened test by its full title; zero matches is failed verification. Invoke fail-loud
-  scripts directly so their own exit status is authoritative.
+  scripts directly so their own exit status is authoritative. **Grouped focused evidence** may run related
+  tests for one claim in one focused command, selecting each intended test by its full title. Verify every
+  intended test's completed outcome from the actual command output; missing, skipped, unavailable or unfinished
+  observations follow the incomplete-execution rule below. Paste run-log receipt lines unchanged; any summary
+  is additional explanation. Grouping preserves the [construction mode](#construction-modes)'s sequence and the
+  one-mutation-per-behaviour rule above.
 - Locate browser controls by accessible name or meaningful scope. A viewport assertion starts with a
   starting-state guard and uses a retrying assertion, never a fixed wait. Name the authoritative clock at every
   time boundary and align fixtures and assertions to it.
 - Diagnose a browser or automated-judge failure as a possible oracle defect (selector, wording, timing, stale
   artifact) before treating it as an implementation defect. A runner's automatic retry does not erase the
-  original failure; report it with the final result. A missing, skipped or unavailable required observation is
-  never a pass.
-- Take pass, failure and skip counts from completed command results, skips separate from passes. Command output
-  is authoritative; prose is interpretation.
+  original failure; report it with the final result.
+- **Incomplete execution** means a required observation is missing, skipped, unavailable or unfinished. Report
+  completed results separately from outstanding observations and their causes; incomplete evidence cannot verify
+  the claim. Take pass, failure and skip counts only from completed command results, skips separate from passes.
+  Command output is authoritative; prose is interpretation.
 
 ## Construction modes
 
-Each coherent claim receives exactly one mode. Subject matter sets the minimum mode; change shape cannot lower
-that floor.
+Each coherent claim receives exactly one mode. The **local subject floor** combines every applicable
+[change-type row](#evidence-by-change-type), including real PostgreSQL, Workers and independent evidence classes,
+with the subject-determined minimum mode below. Change shape, ordinary pre-fix red and grouped focused evidence
+cannot lower this floor or the [protected-invariant floor](#rules-every-change-follows).
 
 | Mode | Admission and obligation |
 |---|---|
 | `strict-tdd` | A reproducible defect, or a changed security or domain invariant whose failure would be high consequence. A failing proof at the public seam precedes the implementation, and the same evidence returns green after the change. |
 | `evidence-required` | Any other new or changed behaviour or policy. The construction order is flexible, but the change lands with an executed regression proof that fails when the behaviour is broken and passes when restored. |
 | `preservation` | Mechanical changes and refactors with no changed behaviour and an unchanged protected contract. Existing evidence protects the named contract; no new test or mutation is created. |
+
+**Discrimination proof** is evidence that rejects the claimed wrong behaviour, selected by the mode and the
+declared alternative below. **Ordinary pre-fix red / unchanged-test green** means the same test fails before
+the fix and passes unchanged after it. This establishes test-first sequencing for `strict-tdd`; it never
+substitutes for the [executed mutation](#rules-every-change-follows) here. Report the actual logged mutation red
+and restored green runs as the required mutation proof. The declared alternative below and `preservation`
+exemption remain applicable.
 
 A refactor may move a rule that no existing test observes: breaking that rule in the unchanged code leaves every
 existing test green, so existing evidence does not protect the contract. The missing observer then lands first,
@@ -81,7 +98,7 @@ and a change that alters the rule takes the mode its subject matter sets.
 
 A documentation or agent-instruction change has no executable observer for its meaning. One that changes what a
 reader must do is `evidence-required`: `npm run lint:docs` is its mechanical check, and the fresh review of the
-final tree is the named alternative to the executed mutation. One that only rewords is `preservation`, and
+final tree is the **declared alternative** to the executed mutation. One that only rewords is `preservation`, and
 `npm run lint:docs` staying green is its protected contract.
 
 The architect names the mode and observer per claim; the session owns the executed mutation and the convergence
@@ -101,7 +118,9 @@ downgrade it. An asserted-but-unexecuted mutation is a review finding.
 - Validate each new database observer query at the disposable database seam before an expensive journey: qualify
   ambiguous columns and assert row cardinality.
 - Keep an expensive fixture alive across related assertions only when isolation is proven and a failure still
-  identifies the broken claim; construction-asserting evidence keeps fresh fixtures, per
+  identifies the broken claim, with semantic equivalence demonstrated. **Construction-asserting fixtures** make
+  creation or preparation itself part of the claim; **origin-sensitive fixtures** make how or where the fixture
+  was produced matter beyond its final contents. Both require fresh fixtures at the observed seam, per
   [Test economics](CODING-STANDARDS.md#test-economics) in CODING-STANDARDS.md.
 - Each local run of `npm run verify:access`, alone or inside `npm run verify`, takes one of two places on the
   machine and starts its own disposable project there, with its own database, containers, ports and temporary
