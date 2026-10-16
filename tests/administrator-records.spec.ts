@@ -254,6 +254,96 @@ test("an administrator discovers accounts and approval records with authoritativ
       path: capture,
       contentType: "image/png",
     });
+    const measurements = await page.evaluate(() => ({
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      document: {
+        width: document.documentElement.scrollWidth,
+        height: document.documentElement.scrollHeight,
+        clientWidth: document.documentElement.clientWidth,
+        clientHeight: document.documentElement.clientHeight,
+      },
+      elements: [...document.querySelectorAll("body *")].flatMap(
+        (element, index) => {
+          const bounds = element.getBoundingClientRect();
+          const interactive = element.matches(
+            'a[href], button, input, select, textarea, summary, label, [tabindex], [contenteditable="true"], [role="button"], [role="link"]',
+          );
+          const directText = [...element.childNodes].some(
+            (node) =>
+              node.nodeType === Node.TEXT_NODE &&
+              /\S/.test(node.nodeValue ?? ""),
+          );
+          if (
+            (!interactive && !directText) ||
+            !element.checkVisibility({
+              checkOpacity: true,
+              checkVisibilityCSS: true,
+            }) ||
+            bounds.width === 0 ||
+            bounds.height === 0
+          )
+            return [];
+          const style = getComputedStyle(element);
+          const ancestors = [];
+          for (
+            let ancestor = element.parentElement;
+            ancestor;
+            ancestor = ancestor.parentElement
+          ) {
+            const background = getComputedStyle(ancestor);
+            ancestors.push({
+              tag: ancestor.localName,
+              id: ancestor.id,
+              backgroundColor: background.backgroundColor,
+              backgroundImage:
+                background.backgroundImage === "none" ? "none" : "present",
+              opacity: background.opacity,
+            });
+          }
+          return [
+            {
+              index,
+              tag: element.localName,
+              id: element.id,
+              className: element.getAttribute("class"),
+              role: element.getAttribute("role"),
+              type: element.getAttribute("type"),
+              ariaLabel: element.getAttribute("aria-label"),
+              ariaLabelledby: element.getAttribute("aria-labelledby"),
+              ariaDescribedby: element.getAttribute("aria-describedby"),
+              labelIds:
+                element instanceof HTMLInputElement ||
+                element instanceof HTMLButtonElement ||
+                element instanceof HTMLSelectElement ||
+                element instanceof HTMLTextAreaElement
+                  ? [...(element.labels ?? [])].map((label) => label.id)
+                  : [],
+              interactive,
+              directText,
+              active: document.activeElement === element,
+              focusVisible: element.matches(":focus-visible"),
+              bounds: bounds.toJSON(),
+              color: style.color,
+              backgroundColor: style.backgroundColor,
+              backgroundImage:
+                style.backgroundImage === "none" ? "none" : "present",
+              fontSize: style.fontSize,
+              fontWeight: style.fontWeight,
+              outlineStyle: style.outlineStyle,
+              outlineColor: style.outlineColor,
+              outlineWidth: style.outlineWidth,
+              outlineOffset: style.outlineOffset,
+              opacity: style.opacity,
+              ancestors,
+            },
+          ];
+        },
+      ),
+    }));
+    await testInfo.attach("563-before-after-landing-en-1440.json", {
+      body: JSON.stringify(measurements, null, 2),
+      contentType: "application/json",
+    });
   }
   await page.getByRole("link", { name: "Records" }).click();
   await expect(
@@ -324,21 +414,176 @@ test("an administrator discovers accounts and approval records with authoritativ
     ) {
       const viewport = page.viewportSize()!;
       const width = testInfo.project.name === "mobile" ? 390 : 1440;
-      if (testInfo.project.name === "mobile")
-        await page.setViewportSize({ width: 390, height: 844 });
-      await page.evaluate(() => document.fonts.ready);
-      await expect(
-        page.getByRole("link", { name: "Fictional Historic Snapshot" }),
-      ).toBeVisible();
-      const name = `563-before-after-records-${locale}-${width}`;
-      const capture = testInfo.outputPath(`${name}.png`);
-      await page.screenshot({ path: capture, fullPage: true });
-      await testInfo.attach(name, {
-        path: capture,
-        contentType: "image/png",
-      });
-      if (testInfo.project.name === "mobile")
-        await page.setViewportSize(viewport);
+      try {
+        if (testInfo.project.name === "mobile")
+          await page.setViewportSize({ width: 390, height: 844 });
+        await page.evaluate(() => document.fonts.ready);
+        await expect(
+          page.getByRole("link", { name: "Fictional Historic Snapshot" }),
+        ).toBeVisible();
+        const name = `563-before-after-records-${locale}-${width}`;
+        const capture = testInfo.outputPath(`${name}.png`);
+        await page.screenshot({ path: capture, fullPage: true });
+        await testInfo.attach(name, {
+          path: capture,
+          contentType: "image/png",
+        });
+        const measurements = await page.evaluate(() => ({
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          document: {
+            width: document.documentElement.scrollWidth,
+            height: document.documentElement.scrollHeight,
+            clientWidth: document.documentElement.clientWidth,
+            clientHeight: document.documentElement.clientHeight,
+          },
+          elements: [...document.querySelectorAll("body *")].flatMap(
+            (element, index) => {
+              const bounds = element.getBoundingClientRect();
+              const interactive = element.matches(
+                'a[href], button, input, select, textarea, summary, label, [tabindex], [contenteditable="true"], [role="button"], [role="link"]',
+              );
+              const directText = [...element.childNodes].some(
+                (node) =>
+                  node.nodeType === Node.TEXT_NODE &&
+                  /\S/.test(node.nodeValue ?? ""),
+              );
+              if (
+                (!interactive && !directText) ||
+                !element.checkVisibility({
+                  checkOpacity: true,
+                  checkVisibilityCSS: true,
+                }) ||
+                bounds.width === 0 ||
+                bounds.height === 0
+              )
+                return [];
+              const style = getComputedStyle(element);
+              const ancestors = [];
+              for (
+                let ancestor = element.parentElement;
+                ancestor;
+                ancestor = ancestor.parentElement
+              ) {
+                const background = getComputedStyle(ancestor);
+                ancestors.push({
+                  tag: ancestor.localName,
+                  id: ancestor.id,
+                  backgroundColor: background.backgroundColor,
+                  backgroundImage:
+                    background.backgroundImage === "none" ? "none" : "present",
+                  opacity: background.opacity,
+                });
+              }
+              return [
+                {
+                  index,
+                  tag: element.localName,
+                  id: element.id,
+                  className: element.getAttribute("class"),
+                  role: element.getAttribute("role"),
+                  type: element.getAttribute("type"),
+                  ariaLabel: element.getAttribute("aria-label"),
+                  ariaLabelledby: element.getAttribute("aria-labelledby"),
+                  ariaDescribedby: element.getAttribute("aria-describedby"),
+                  labelIds:
+                    element instanceof HTMLInputElement ||
+                    element instanceof HTMLButtonElement ||
+                    element instanceof HTMLSelectElement ||
+                    element instanceof HTMLTextAreaElement
+                      ? [...(element.labels ?? [])].map((label) => label.id)
+                      : [],
+                  interactive,
+                  directText,
+                  active: document.activeElement === element,
+                  focusVisible: element.matches(":focus-visible"),
+                  bounds: bounds.toJSON(),
+                  color: style.color,
+                  backgroundColor: style.backgroundColor,
+                  backgroundImage:
+                    style.backgroundImage === "none" ? "none" : "present",
+                  fontSize: style.fontSize,
+                  fontWeight: style.fontWeight,
+                  outlineStyle: style.outlineStyle,
+                  outlineColor: style.outlineColor,
+                  outlineWidth: style.outlineWidth,
+                  outlineOffset: style.outlineOffset,
+                  opacity: style.opacity,
+                  ancestors,
+                },
+              ];
+            },
+          ),
+        }));
+        await testInfo.attach(`${name}.json`, {
+          body: JSON.stringify(measurements, null, 2),
+          contentType: "application/json",
+        });
+        if (testInfo.project.name === "mobile") {
+          await page.setViewportSize({ width: 320, height: 844 });
+          const reflow = await page.evaluate(async () => {
+            await document.fonts.ready;
+            await new Promise<void>((resolve) =>
+              requestAnimationFrame(() => resolve()),
+            );
+            return {
+              innerWidth: window.innerWidth,
+              document: {
+                clientWidth: document.documentElement.clientWidth,
+                scrollWidth: document.documentElement.scrollWidth,
+                language: document.documentElement.lang,
+                direction: document.documentElement.dir,
+              },
+              elements: [
+                ...document.querySelectorAll(
+                  "header, header *, nav, nav *, main, main *",
+                ),
+              ].flatMap((element, index) => {
+                const bounds = element.getBoundingClientRect();
+                if (
+                  !element.checkVisibility({
+                    checkOpacity: true,
+                    checkVisibilityCSS: true,
+                  }) ||
+                  bounds.width === 0 ||
+                  bounds.height === 0
+                )
+                  return [];
+                const style = getComputedStyle(element);
+                return [
+                  {
+                    index,
+                    tag: element.localName,
+                    id: element.id,
+                    className: element.getAttribute("class"),
+                    role: element.getAttribute("role"),
+                    bounds: bounds.toJSON(),
+                    clientWidth: element.clientWidth,
+                    scrollWidth: element.scrollWidth,
+                    overflowX: style.overflowX,
+                    overflowY: style.overflowY,
+                    whiteSpace: style.whiteSpace,
+                    overflowWrap: style.overflowWrap,
+                    wordBreak: style.wordBreak,
+                    textOverflow: style.textOverflow,
+                    fontSize: style.fontSize,
+                    outsideViewport:
+                      bounds.left < 0 ||
+                      bounds.right > document.documentElement.clientWidth,
+                    scrollOverflow: element.scrollWidth > element.clientWidth,
+                  },
+                ];
+              }),
+            };
+          });
+          await testInfo.attach(`${name}-reflow-320.json`, {
+            body: JSON.stringify(reflow, null, 2),
+            contentType: "application/json",
+          });
+        }
+      } finally {
+        if (testInfo.project.name === "mobile")
+          await page.setViewportSize(viewport);
+      }
     }
     expect(
       await page.evaluate(
@@ -447,24 +692,180 @@ test("an administrator discovers accounts and approval records with authoritativ
   ).toBe(reviewDocumentId);
   if (testInfo.project.name === "mobile") {
     const viewport = page.viewportSize()!;
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(
-      `/ar/administrator/owner-applications/${reviewApplicationId}`,
-    );
-    await expect(
-      page.getByText(fixture.reviewLegalName, { exact: true }),
-    ).toBeVisible();
-    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-    await page.evaluate(() => document.fonts.ready);
-    const capture = testInfo.outputPath(
-      "563-before-after-owner-application-ar-390.png",
-    );
-    await page.screenshot({ path: capture, fullPage: true });
-    await testInfo.attach("563-before-after-owner-application-ar-390", {
-      path: capture,
-      contentType: "image/png",
-    });
-    await page.setViewportSize(viewport);
+    try {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(
+        `/ar/administrator/owner-applications/${reviewApplicationId}`,
+      );
+      await expect(
+        page.getByText(fixture.reviewLegalName, { exact: true }),
+      ).toBeVisible();
+      await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+      await page.evaluate(() => document.fonts.ready);
+      const capture = testInfo.outputPath(
+        "563-before-after-owner-application-ar-390.png",
+      );
+      await page.screenshot({ path: capture, fullPage: true });
+      await testInfo.attach("563-before-after-owner-application-ar-390", {
+        path: capture,
+        contentType: "image/png",
+      });
+      const measurements = await page.evaluate(() => ({
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        document: {
+          width: document.documentElement.scrollWidth,
+          height: document.documentElement.scrollHeight,
+          clientWidth: document.documentElement.clientWidth,
+          clientHeight: document.documentElement.clientHeight,
+        },
+        elements: [...document.querySelectorAll("body *")].flatMap(
+          (element, index) => {
+            const bounds = element.getBoundingClientRect();
+            const interactive = element.matches(
+              'a[href], button, input, select, textarea, summary, label, [tabindex], [contenteditable="true"], [role="button"], [role="link"]',
+            );
+            const directText = [...element.childNodes].some(
+              (node) =>
+                node.nodeType === Node.TEXT_NODE &&
+                /\S/.test(node.nodeValue ?? ""),
+            );
+            if (
+              (!interactive && !directText) ||
+              !element.checkVisibility({
+                checkOpacity: true,
+                checkVisibilityCSS: true,
+              }) ||
+              bounds.width === 0 ||
+              bounds.height === 0
+            )
+              return [];
+            const style = getComputedStyle(element);
+            const ancestors = [];
+            for (
+              let ancestor = element.parentElement;
+              ancestor;
+              ancestor = ancestor.parentElement
+            ) {
+              const background = getComputedStyle(ancestor);
+              ancestors.push({
+                tag: ancestor.localName,
+                id: ancestor.id,
+                backgroundColor: background.backgroundColor,
+                backgroundImage:
+                  background.backgroundImage === "none" ? "none" : "present",
+                opacity: background.opacity,
+              });
+            }
+            return [
+              {
+                index,
+                tag: element.localName,
+                id: element.id,
+                className: element.getAttribute("class"),
+                role: element.getAttribute("role"),
+                type: element.getAttribute("type"),
+                ariaLabel: element.getAttribute("aria-label"),
+                ariaLabelledby: element.getAttribute("aria-labelledby"),
+                ariaDescribedby: element.getAttribute("aria-describedby"),
+                labelIds:
+                  element instanceof HTMLInputElement ||
+                  element instanceof HTMLButtonElement ||
+                  element instanceof HTMLSelectElement ||
+                  element instanceof HTMLTextAreaElement
+                    ? [...(element.labels ?? [])].map((label) => label.id)
+                    : [],
+                interactive,
+                directText,
+                active: document.activeElement === element,
+                focusVisible: element.matches(":focus-visible"),
+                bounds: bounds.toJSON(),
+                color: style.color,
+                backgroundColor: style.backgroundColor,
+                backgroundImage:
+                  style.backgroundImage === "none" ? "none" : "present",
+                fontSize: style.fontSize,
+                fontWeight: style.fontWeight,
+                outlineStyle: style.outlineStyle,
+                outlineColor: style.outlineColor,
+                outlineWidth: style.outlineWidth,
+                outlineOffset: style.outlineOffset,
+                opacity: style.opacity,
+                ancestors,
+              },
+            ];
+          },
+        ),
+      }));
+      await testInfo.attach("563-before-after-owner-application-ar-390.json", {
+        body: JSON.stringify(measurements, null, 2),
+        contentType: "application/json",
+      });
+      await page.setViewportSize({ width: 320, height: 844 });
+      const reflow = await page.evaluate(async () => {
+        await document.fonts.ready;
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => resolve()),
+        );
+        return {
+          innerWidth: window.innerWidth,
+          document: {
+            clientWidth: document.documentElement.clientWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            language: document.documentElement.lang,
+            direction: document.documentElement.dir,
+          },
+          elements: [
+            ...document.querySelectorAll(
+              "header, header *, nav, nav *, main, main *",
+            ),
+          ].flatMap((element, index) => {
+            const bounds = element.getBoundingClientRect();
+            if (
+              !element.checkVisibility({
+                checkOpacity: true,
+                checkVisibilityCSS: true,
+              }) ||
+              bounds.width === 0 ||
+              bounds.height === 0
+            )
+              return [];
+            const style = getComputedStyle(element);
+            return [
+              {
+                index,
+                tag: element.localName,
+                id: element.id,
+                className: element.getAttribute("class"),
+                role: element.getAttribute("role"),
+                bounds: bounds.toJSON(),
+                clientWidth: element.clientWidth,
+                scrollWidth: element.scrollWidth,
+                overflowX: style.overflowX,
+                overflowY: style.overflowY,
+                whiteSpace: style.whiteSpace,
+                overflowWrap: style.overflowWrap,
+                wordBreak: style.wordBreak,
+                textOverflow: style.textOverflow,
+                fontSize: style.fontSize,
+                outsideViewport:
+                  bounds.left < 0 ||
+                  bounds.right > document.documentElement.clientWidth,
+                scrollOverflow: element.scrollWidth > element.clientWidth,
+              },
+            ];
+          }),
+        };
+      });
+      await testInfo.attach(
+        "563-before-after-owner-application-ar-390-reflow-320.json",
+        {
+          body: JSON.stringify(reflow, null, 2),
+          contentType: "application/json",
+        },
+      );
+    } finally {
+      await page.setViewportSize(viewport);
+    }
     await page.goto(
       `/en/administrator/owner-applications/${reviewApplicationId}`,
     );
