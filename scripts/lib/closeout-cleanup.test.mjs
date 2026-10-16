@@ -4,14 +4,15 @@
 // In-process cases run `main` with a fake `run` that answers only the command's own argument vectors over small
 // temporary trees; the runner proofs start real processes, and the CLI proofs run the command against real git.
 //
-// Recurring cost: in-process cases over small temporary trees, milliseconds each; three runner proofs and two CLI
-// runs with a real git fixture, about a second. Remove with the command.
+// Recurring cost: small in-process native-observation cases, representative real-Git CLI fixtures and one live
+// Unix listener. No daemon, image or network service is started. Remove with the cleanup boundary.
 
 import { spawnSync } from 'node:child_process';
 import {
-  existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createServer } from 'node:net';
 import { delimiter, dirname, join, parse } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -25,11 +26,47 @@ const GIT = { command: 'git', env: { GIT_TERMINAL_PROMPT: '0' } };
 const HEAD = '1'.repeat(40);
 const reply = (status, stdout = '', stderr = '') => ({ status, stdout, stderr });
 
+const PROOF_HOST = 'unix:///tmp/proof.sock';
+const PROOF_SS = 'u_str LISTEN 0 4096 /tmp/proof.sock 700 * 0 users:(("dockerd",pid=71,fd=3)) <-> ino:90 dev:0/5 peers:\n';
+const PROOF_STAT = [
+  '100:90:0:5:socket', '10:700:0:10:socket',
+  '40:1000:0:40:regular empty file', '40:1000:0:40:regular empty file',
+  '50:2:0:50:directory', '50:2:0:50:directory',
+  '60:80:0:60:regular file', '60:80:0:60:regular file', '',
+].join('\n');
+const PROOF_VECTORS = {
+  readlink: ['-e', '--', '/tmp/proof.sock'],
+  sh: ['-c', 'command -v dockerd'],
+  ss: ['-H', '-xlnpe', 'src', '/tmp/proof.sock'],
+  stat: ['-L', '-c', '%d:%i:%Hd:%Ld:%F', '--', '/tmp/proof.sock', '/proc/71/fd/3',
+    '/proc/self/ns/mnt', '/proc/71/ns/mnt', '/', '/proc/71/root', '/usr/bin/dockerd', '/proc/71/exe'],
+};
+const PROOF_REPLIES = {
+  readlink: reply(0, '/tmp/proof.sock\n'), sh: reply(0, '/usr/bin/dockerd\n'),
+  ss: reply(0, PROOF_SS), stat: reply(0, PROOF_STAT),
+};
+
+// Fake Docker selection is synchronous and cannot inherit or permanently alter the caller's selection.
+function withoutDockerSelection(invoke) {
+  const names = ['DOCKER_HOST', 'DOCKER_CONTEXT'];
+  const original = names.map((name) => process.env[name]);
+  try {
+    for (const name of names) delete process.env[name];
+    return invoke();
+  } finally {
+    for (const [index, name] of names.entries()) {
+      if (original[index] === undefined) delete process.env[name];
+      else process.env[name] = original[index];
+    }
+  }
+}
+
 // A job worktree at <root>/wt on job/23 beside a main checkout at <root>/main, and a fake `run` answering only the
 // command's argument vectors from `state`: `docker` or `lsof` set to null is not installed, and any other call is
 // recorded in `unexpected` and answers status 99. The fake worktree removal deletes the directory, as git does;
 // `tracked` lists each worktree's tracked paths, `lsof.open` the files processes hold and `processes` the ps rows.
 function scenario(t) {
+  const capturedPath = { ...process.env }.PATH;
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'closeout-cleanup-')));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const mainDir = join(root, 'main');
@@ -41,11 +78,13 @@ function scenario(t) {
     branch: true,
     status: '',
     docker: { containers: [], vanished: [] },
+    native: {},
     lsof: { listeners: [], open: [] },
     tracked: {},
     processes: [{ pid: 1, ppid: 0, args: '/sbin/init splash' }],
   };
   const calls = [];
+  const executions = [];
   const unexpected = [];
   const answer = (name, args, options) => {
     const key = args.join(' ');
@@ -53,7 +92,10 @@ function scenario(t) {
       assert.equal(options.env, GIT.env, `git ran without the seam's environment: ${key}`);
       if (key === 'worktree list --porcelain -z') return state.worktreeList ?? reply(0, worktreeListing(state.records));
       if (key === 'rev-parse --verify --quiet refs/heads/job/23') return state.branch ? reply(0, `${HEAD}\n`) : reply(1);
-      if (key === `-C ${worktree} status --porcelain -z --untracked-files=normal --ignored=matching`) return reply(0, state.status);
+      if (key === `-C ${worktree} status --porcelain -z --untracked-files=normal --ignored=matching`) {
+        state.onStatus?.();
+        return reply(0, state.status);
+      }
       if (args.length === 7 && args[0] === '--literal-pathspecs' && args[1] === '-C' &&
         state.records.some(({ path }) => path === args[2]) && args.slice(3, 6).join(' ') === 'ls-files -z --') {
         const listed = (state.tracked[args[2]] ?? []).filter((path) => path === args[6] || path.startsWith(`${args[6]}/`));
@@ -63,6 +105,7 @@ function scenario(t) {
         if (state.removeRefusal) return reply(128, '', state.removeRefusal);
         rmSync(worktree, { recursive: true });
         state.records = state.records.filter((record) => record.path !== worktree);
+        state.onWorktreeRemoved?.();
         return reply(0);
       }
       if (key === 'branch -d job/23') {
@@ -71,8 +114,24 @@ function scenario(t) {
         return reply(0, 'Deleted branch job/23 (was 1111111).\n');
       }
     }
-    if (name === 'docker' && state.docker) return dockerAnswer(state.docker, args);
-    if (name === 'docker' && key === 'container ls --all --quiet --no-trunc') return { absent: true };
+    if (name === 'docker') {
+      assert.equal(options.env.DOCKER_HOST, undefined);
+      assert.equal(options.env.DOCKER_CONTEXT, undefined);
+      if (key === 'context inspect --format {{json .Endpoints.docker}}') {
+        if (!state.docker) return { absent: true };
+        return typeof state.metadata === 'function' ? state.metadata() : state.metadata ?? reply(0, JSON.stringify({ Host: PROOF_HOST }));
+      }
+      assert.deepEqual(args.slice(0, 2), ['--host', PROOF_HOST]);
+      const result = dockerAnswer(state.docker, args.slice(2));
+      state.onDocker?.(args.slice(2));
+      return result;
+    }
+    if (name in PROOF_VECTORS) {
+      assert.deepEqual(args, PROOF_VECTORS[name]);
+      assert.deepEqual(options.env, { ...(capturedPath === undefined ? {} : { PATH: capturedPath }), LC_ALL: 'C' });
+      const result = state.native[name] ?? PROOF_REPLIES[name];
+      return typeof result === 'function' ? result() : result;
+    }
     if (name === 'lsof' && state.lsof) {
       const { listeners } = state.lsof;
       if (key === '-nP -iTCP -sTCP:LISTEN -Fpc') {
@@ -84,10 +143,11 @@ function scenario(t) {
       }
       const target = lsofTarget(args);
       if (target) {
-        if (state.lsof.l3) return state.lsof.l3;
+        const raw = !state.lsof.l3Target || state.lsof.l3Target === target;
+        if (raw && state.lsof.l3) return state.lsof.l3;
         const rows = state.lsof.open.filter(({ name: open }) => open === target || open.startsWith(`${target}/`));
         const fields = rows.map(({ pid, command, name: open }) => `p${pid}\nc${command}\nf3\nn${open}\n`).join('');
-        return reply(rows.length ? 0 : 1, fields, state.lsof.l3Stderr ?? '');
+        return reply(rows.length ? 0 : 1, fields, raw ? state.lsof.l3Stderr ?? '' : '');
       }
     }
     if (name === 'lsof' && (key === '-nP -iTCP -sTCP:LISTEN -Fpc' || lsofTarget(args))) return { absent: true };
@@ -101,6 +161,7 @@ function scenario(t) {
   const run = (command, args, options = {}) => {
     const name = parse(command).name;
     calls.push([name, ...args]);
+    executions.push({ command, args, env: options.env });
     const result = answer(name, args, options);
     if (result) return result;
     unexpected.push([name, ...args]);
@@ -110,13 +171,13 @@ function scenario(t) {
     const out = [];
     const err = [];
     const output = { log: (line) => out.push(line), error: (line) => err.push(line) };
-    const exitCode = await main(args, {
+    const exitCode = withoutDockerSelection(() => main(args, {
       output, run, platform: 'linux', cwd: mainDir, home: root, pid: process.pid,
       scriptPath: join(mainDir, 'scripts', 'closeout-cleanup.mjs'), git: GIT, ...seams,
-    });
+    }));
     return { exitCode, out, err };
   };
-  return { root, mainDir, worktree, state, calls, unexpected, cleanup };
+  return { root, mainDir, worktree, state, calls, executions, unexpected, cleanup };
 }
 
 // The path of an in-use lookup, `lsof -nP -Fpcfn [-x f +D] <path>`, when `-x f +D` is given exactly for a directory.
@@ -245,7 +306,9 @@ test('docker not installed skips containers and still removes the worktree and t
 const ID_A = 'a'.repeat(64);
 const ID_B = 'b'.repeat(64);
 const ID_C = 'c'.repeat(64);
-const dockerCalls = (s, verb) => s.calls.filter(([name, first]) => name === 'docker' && first === verb);
+const dockerCalls = (s, verb) => s.calls
+  .filter(([name, flag, host, first]) => name === 'docker' && flag === '--host' && host === PROOF_HOST && first === verb)
+  .map(([name, , , ...args]) => [name, ...args]);
 
 test('a container bound below the worktree is stopped and removed, then the worktree and the branch', { skip: SKIP_POSIX }, async (t) => {
   const s = scenario(t);
@@ -414,6 +477,12 @@ function assertWorktreeRetained(s, result, reason) {
   assert.deepEqual(s.unexpected, []);
 }
 
+function assertWorktreeNotRemoved(s) {
+  assert.equal(s.state.branch, true);
+  assert.deepEqual(s.calls.filter(([name, ...args]) => name === 'git' &&
+    (args[0] === 'branch' || args[0] === 'worktree' && args[1] === 'remove')), []);
+}
+
 // lsof's warnings for file systems it cannot stat, as lsof 4.99.7 prints them.
 const LSOF_WARNINGS = [
   "lsof: WARNING: can't stat() nsfs file system /run/docker/netns/default",
@@ -422,6 +491,77 @@ const LSOF_WARNINGS = [
   '      Output information may be incomplete.',
   '',
 ].join('\n');
+
+test('a non-listening process using the worktree retains it and the branch', { skip: SKIP_POSIX }, async (t) => {
+  for (const use of ['open file', 'working directory', 'arguments']) {
+    const s = scenario(t);
+    let reason;
+    if (use === 'open file') {
+      const path = placeFile(join(s.worktree, 'logs', 'output.log'));
+      s.state.lsof.open = [{ pid: 31337, command: 'tail', name: path }];
+      reason = 'pid 31337 (tail) uses it';
+    } else if (use === 'working directory') {
+      s.state.lsof.l3 = reply(0, `p4242\ncbash\nfcwd\nn${s.worktree}\n`);
+      reason = 'pid 4242 (bash) uses it';
+    } else {
+      s.state.processes.push({ pid: 5150, ppid: 1, args: `node ${s.worktree}/worker.js --secret=private` });
+      reason = 'pid 5150 names it in its arguments';
+    }
+    assertWorktreeRetained(s, await s.cleanup(['23'], { pid: 4242 }), reason);
+    assertWorktreeNotRemoved(s);
+  }
+});
+
+test('unavailable worktree use observations retain it and the branch', { skip: SKIP_POSIX }, async (t) => {
+  for (const observation of ['directory lookup timeout', 'absent ps']) {
+    const s = scenario(t);
+    let reason;
+    if (observation === 'directory lookup timeout') {
+      s.state.lsof.l3Target = s.worktree;
+      s.state.lsof.l3 = { failed: 'ETIMEDOUT' };
+      reason = 'lsof failed: ETIMEDOUT';
+    } else {
+      s.state.ps = { absent: true };
+      reason = 'no process check: ps is not installed';
+    }
+    assertWorktreeRetained(s, await s.cleanup(), reason);
+    assertWorktreeNotRemoved(s);
+  }
+});
+
+test('malformed worktree use observations retain it and the branch', { skip: SKIP_POSIX }, async (t) => {
+  for (const observation of ['unexpected lsof field', 'unreadable ps row']) {
+    const s = scenario(t);
+    let reason;
+    if (observation === 'unexpected lsof field') {
+      s.state.lsof.l3Target = s.worktree;
+      s.state.lsof.l3 = reply(0, `p4242\ncvim\nf3\ntREG\nn${s.worktree}/notes.md\n`);
+      reason = 'lsof printed a field it was not asked for';
+    } else {
+      s.state.ps = reply(0, 'unreadable process row --secret=private\n');
+      reason = 'ps printed a row that could not be read';
+    }
+    assertWorktreeRetained(s, await s.cleanup(), reason);
+    assertWorktreeNotRemoved(s);
+  }
+});
+
+test('only the cleanup process and its ancestors naming the worktree allow cleanup', { skip: SKIP_POSIX }, async (t) => {
+  const s = scenario(t);
+  s.state.processes = [
+    { pid: 1, ppid: 0, args: '/sbin/init splash' },
+    { pid: 4100, ppid: 1, args: `bash -c node ${s.worktree}/scripts/closeout-cleanup.mjs 23` },
+    { pid: 4242, ppid: 4100, args: `node ${s.worktree}/scripts/closeout-cleanup.mjs 23` },
+  ];
+  assert.deepEqual(await s.cleanup(['23'], { pid: 4242 }), {
+    exitCode: 0,
+    out: [...jobRemoved(s), 'closeout-cleanup: 2 removed, 0 retained'],
+    err: [],
+  });
+  assert.equal(existsSync(s.worktree), false);
+  assert.equal(s.state.branch, false);
+  assert.deepEqual(s.unexpected, []);
+});
 
 test('a server listening from inside the worktree retains it and the branch', { skip: SKIP_POSIX }, async (t) => {
   const s = scenario(t);
@@ -746,6 +886,7 @@ test('an lsof row whose name lsof escaped still retains the scratch target', { s
   const s = scenario(t);
   const target = dirname(placeFile(join(s.root, 'résumé', 'report.log')));
   // lsof prints a name's non-ASCII bytes as \xNN escapes, so the name it prints differs from the path it matched.
+  s.state.lsof.l3Target = target;
   s.state.lsof.l3 = reply(0, `p4242\ncless\nf3\nn${s.root}/r\\xc3\\xa9sum\\xc3\\xa9/report.log\n`);
   assertScratchRetained(s, await s.cleanup(['23', '--scratch', target]), target, 'pid 4242 (less) uses it');
 });
@@ -754,6 +895,7 @@ test('an lsof warning on the mount holding the scratch target retains it', { ski
   const s = scenario(t);
   const target = dirname(placeFile(join(s.root, 'scratch', 'out', 'log.txt')));
   const mount = join(s.root, 'scratch');
+  s.state.lsof.l3Target = target;
   s.state.lsof.l3Stderr = `lsof: WARNING: can't stat() overlay file system ${mount}\n      Output information may be incomplete.\n`;
   assertScratchRetained(s, await s.cleanup(['23', '--scratch', target]), target, `lookup incomplete: lsof could not stat the file system at ${mount}`);
 });
@@ -763,6 +905,7 @@ test('an lsof warning on a mount below the scratch directory retains it', { skip
   const target = dirname(placeFile(join(s.root, 'scratch', 'out', 'log.txt')));
   const mount = join(target, 'cache');
   mkdirSync(mount);
+  s.state.lsof.l3Target = target;
   s.state.lsof.l3Stderr = `lsof: WARNING: can't stat() fuse.sshfs file system ${mount}\n      Output information may be incomplete.\n`;
   assertScratchRetained(s, await s.cleanup(['23', '--scratch', target]), target, `lookup incomplete: lsof could not stat the file system at ${mount}`);
 });
@@ -770,6 +913,7 @@ test('an lsof warning on a mount below the scratch directory retains it', { skip
 test('an lsof warning on an unrelated mount is ignored and the scratch target removed', { skip: SKIP_POSIX }, async (t) => {
   const s = scenario(t);
   const target = dirname(placeFile(join(s.root, 'scratch', 'out', 'log.txt')));
+  s.state.lsof.l3Target = target;
   s.state.lsof.l3Stderr = LSOF_WARNINGS;
   assert.deepEqual(await s.cleanup(['23', '--scratch', target]), {
     exitCode: 0,
@@ -783,6 +927,7 @@ test('an lsof warning on an unrelated mount is ignored and the scratch target re
 test('unrecognised lsof stderr retains the scratch target', { skip: SKIP_POSIX }, async (t) => {
   const s = scenario(t);
   const target = placeFile(join(s.root, 'scratch', 'notes.md'));
+  s.state.lsof.l3Target = target;
   s.state.lsof.l3Stderr = `lsof: status error on ${target}: Permission denied\n`;
   assertScratchRetained(s, await s.cleanup(['23', '--scratch', target]), target, `lsof reported: lsof: status error on ${target}: Permission denied`);
 });
@@ -790,6 +935,7 @@ test('unrecognised lsof stderr retains the scratch target', { skip: SKIP_POSIX }
 test('an lsof field the command did not ask for retains the scratch target', { skip: SKIP_POSIX }, async (t) => {
   const s = scenario(t);
   const target = placeFile(join(s.root, 'scratch', 'notes.md'));
+  s.state.lsof.l3Target = target;
   s.state.lsof.l3 = reply(0, `p4242\ncvim\nf3\ntREG\nn${target}\n`);
   assertScratchRetained(s, await s.cleanup(['23', '--scratch', target]), target, 'lsof printed a field it was not asked for');
 });
@@ -819,7 +965,20 @@ test('a ps run exiting non-zero with empty output retains the scratch target', {
   const s = scenario(t);
   const target = placeFile(join(s.root, 'scratch', 'notes.md'));
   s.state.ps = reply(1);
-  assertScratchRetained(s, await s.cleanup(['23', '--scratch', target]), target, 'ps failed: exit status 1');
+  assert.deepEqual(await s.cleanup(['23', '--scratch', target]), {
+    exitCode: 4,
+    out: [
+      `retained scratch ${target}: ps failed: exit status 1`,
+      `retained worktree ${s.worktree}: ps failed: exit status 1`,
+      'retained branch job/23: its worktree is retained',
+      'closeout-cleanup: 0 removed, 3 retained',
+    ],
+    err: [],
+  });
+  assert.ok(existsSync(target));
+  assert.ok(existsSync(s.worktree));
+  assertWorktreeNotRemoved(s);
+  assert.deepEqual(s.unexpected, []);
 });
 
 test('a scratch target replaced during the checks is retained', { skip: SKIP_POSIX }, async (t) => {
@@ -959,16 +1118,25 @@ test('a check of several paths reports each on its own line and exits 4 when one
 
 const CLI = fileURLToPath(new URL('../closeout-cleanup.mjs', import.meta.url));
 const DAEMON_DOWN = 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?';
-const DOCKER_EMPTY = '[ "$*" = "container ls --all --quiet --no-trunc" ] && exit 0\necho "unexpected docker call: $*" >&2\nexit 99\n';
-const DOCKER_DOWN = `echo '${DAEMON_DOWN}' >&2\nexit 1\n`;
+const DOCKER_LOCAL = `
+if [ "$*" = 'context inspect --format {{json .Endpoints.docker}}' ]; then
+  printf '%s\\n' '{"Host":"unix:///tmp/proof.sock","SkipTLSVerify":false}'
+  exit 0
+fi
+[ -z "\${DOCKER_HOST+x}" ] && [ -z "\${DOCKER_CONTEXT+x}" ] || exit 98
+[ "$1" = '--host' ] && [ "$2" = 'unix:///tmp/proof.sock' ] || exit 97
+shift 2
+`;
+const DOCKER_EMPTY = `${DOCKER_LOCAL}[ "$*" = "container ls --all --quiet --no-trunc" ] && exit 0\necho "unexpected docker call: $*" >&2\nexit 99\n`;
+const DOCKER_DOWN = `${DOCKER_LOCAL}echo '${DAEMON_DOWN}' >&2\nexit 1\n`;
 // lsof prints nothing and exits 1 when nothing matches; any other call prints a line the command retains on.
-const LSOF_FAKE = 'case "$*" in\n  "-nP -iTCP -sTCP:LISTEN -Fpc"|"-nP -Fpcfn /"*) exit 1 ;;\nesac\necho "unexpected lsof call: $*" >&2\nexit 1\n';
+const LSOF_FAKE = 'case "$*" in\n  "-nP -iTCP -sTCP:LISTEN -Fpc"|"-nP -Fpcfn /"*|"-nP -Fpcfn -x f +D /"*) exit 1 ;;\nesac\necho "unexpected lsof call: $*" >&2\nexit 1\n';
 const PS_FAKE = '[ "$*" = "-ww -A -o pid= -o ppid= -o args=" ] || exit 99\necho \'      1       0 /sbin/init splash\'\n';
 
 // A real repository with job/23 checked out in a linked worktree that holds an ignored node_modules, an outside
 // scratch file, sh fakes for docker, lsof and ps first on PATH, and GIT_DIR naming a decoy repository the command's
 // git calls must not read.
-function cliFixture(t, docker) {
+function cliFixture(t, docker, overrides = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'closeout-cleanup-cli-')));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const repository = join(root, 'repository');
@@ -1000,19 +1168,25 @@ function cliFixture(t, docker) {
   const scratch = placeFile(join(root, 'scratch', 'notes.md'));
   const bin = join(root, 'bin');
   mkdirSync(bin);
-  for (const [name, body] of [['docker', docker], ['lsof', LSOF_FAKE], ['ps', PS_FAKE]]) {
+  const dockerLog = join(root, 'docker.log');
+  for (const [name, body] of [['docker', `printf '%s\\n' "$*" >> "$FIXTURE_DOCKER_LOG"\n${docker}`], ['lsof', LSOF_FAKE], ['ps', PS_FAKE],
+    ...Object.entries(PROOF_VECTORS).map(([name, args]) => [name,
+      `[ "$*" = '${args.join(' ')}' ] || exit 96\nprintf '%s' '${PROOF_REPLIES[name].stdout}'\n`])]) {
     writeFileSync(join(bin, name), `#!/bin/sh\n${body}`, { mode: 0o755 });
   }
-  const cleanup = () => spawnSync(process.execPath, [CLI, '23', '--scratch', scratch, '--regenerated', 'node_modules'], {
+  const cleanup = (extraEnv = {}) => spawnSync(process.execPath, [CLI, '23', '--scratch', scratch, '--regenerated', 'node_modules'], {
     cwd: repository,
     encoding: 'utf8',
-    env: { ...env, PATH: `${bin}${delimiter}${env.PATH}`, GIT_DIR: join(root, 'decoy', '.git') },
+    env: { ...env, PATH: `${bin}${delimiter}${env.PATH}`, GIT_DIR: join(root, 'decoy', '.git'),
+      FIXTURE_DOCKER_LOG: dockerLog, DOCKER_HOST: '', DOCKER_CONTEXT: '', DOCKER_CONFIG: join(root, 'docker-config'), ...overrides, ...extraEnv },
   });
   const branchStatus = () => git(['-C', repository, 'rev-parse', '--verify', '--quiet', 'refs/heads/job/23']).status;
-  return { worktree, scratch, cleanup, branchStatus };
+  const registered = () => git(['-C', repository, 'worktree', 'list', '--porcelain']).stdout.includes(`worktree ${worktree}\n`);
+  const dockerCalls = () => readFileSync(dockerLog, 'utf8').trim().split('\n');
+  return { worktree, scratch, cleanup, branchStatus, registered, dockerCalls };
 }
 
-test('the CLI removes an outside scratch file, the worktree with its regenerated directory and the branch through real git', { skip: SKIP_POSIX }, (t) => {
+test('the CLI removes an outside scratch file, the worktree with its regenerated directory and the branch through real git', { skip: process.platform !== 'linux' && 'Docker-present CLI proof requires native Linux' }, (t) => {
   const f = cliFixture(t, DOCKER_EMPTY);
   const run = f.cleanup();
   assert.equal(run.stderr, '');
@@ -1026,7 +1200,7 @@ test('the CLI removes an outside scratch file, the worktree with its regenerated
   assert.equal(f.branchStatus(), 1);
 });
 
-test('the CLI retains every target when the docker daemon is unreachable', { skip: SKIP_POSIX }, (t) => {
+test('the CLI retains every target when the docker daemon is unreachable', { skip: process.platform !== 'linux' && 'Docker-present CLI proof requires native Linux' }, (t) => {
   const f = cliFixture(t, DOCKER_DOWN);
   const run = f.cleanup();
   assert.equal(run.stderr, '');
@@ -1040,4 +1214,397 @@ test('the CLI retains every target when the docker daemon is unreachable', { ski
   assert.ok(existsSync(f.scratch));
   assert.ok(existsSync(join(f.worktree, 'node_modules', 'left-pad', 'index.js')));
   assert.equal(f.branchStatus(), 0);
+});
+
+const REMOTE_DOCKER = `
+if [ "$*" = 'context inspect --format {{json .Endpoints.docker}}' ]; then
+  [ "\${DOCKER_HOST-}" = "$FIXTURE_EXPECT_HOST" ] && [ "\${DOCKER_CONTEXT-}" = "$FIXTURE_EXPECT_CONTEXT" ] || exit 98
+  printf '%s\\n' '{"Host":"ssh://fixture-remote.invalid"}'
+  exit 0
+fi
+# Retain exact old vectors so an explicit-selection regression still reaches the wrong cleanup.
+if [ "$*" = '--host ssh://fixture-remote.invalid context inspect --format {{json .Endpoints.docker}}' ]; then
+  printf '%s\\n' '{"Host":"ssh://fixture-remote.invalid"}'
+  exit 0
+fi
+if [ "$*" = '--context fixture-local context inspect --format {{json .Endpoints.docker}}' ]; then
+  printf '%s\\n' '{"Host":"unix:///tmp/proof.sock"}'
+  exit 0
+fi
+if [ "$1" = "--host" ]; then shift 2; fi
+case "$*" in
+  'container ls --all --quiet --no-trunc') printf '%s\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ;;
+  'inspect --type container --format {{json .}} aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    printf '%s\n' "$FIXTURE_RECORD" ;;
+  'stop aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'|'rm aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') exit 0 ;;
+  *) echo "unexpected docker call: $*" >&2; exit 99 ;;
+esac
+`;
+
+test('ANTI-REGRESSION: the CLI retains every target when a remote Docker bind matches the local worktree path', { skip: SKIP_POSIX }, async (t) => {
+  for (const [name, environment] of [
+    ['host-selected SSH', { DOCKER_HOST: 'ssh://fixture-remote.invalid' }],
+    ['both host and context selectors', { DOCKER_HOST: 'ssh://fixture-remote.invalid', DOCKER_CONTEXT: 'fixture-local' }],
+    ['saved remote context', { DOCKER_HOST: undefined, DOCKER_CONTEXT: undefined }],
+  ]) {
+    await t.test(name, (t) => {
+      const f = cliFixture(t, REMOTE_DOCKER, {
+        ...environment, FIXTURE_EXPECT_HOST: environment.DOCKER_HOST ?? '', FIXTURE_EXPECT_CONTEXT: environment.DOCKER_CONTEXT ?? '',
+      });
+      // This real path is the remote daemon's bind spelling, never authority over the local worktree.
+      const record = containerRecord('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', {
+        running: true, mounts: [bindMount(f.worktree)],
+      });
+      const run = f.cleanup({ FIXTURE_RECORD: JSON.stringify(record) });
+      const calls = f.dockerCalls();
+      assert.deepEqual({
+        exit: run.status, destructive: calls.filter((call) => /^(?:--host \S+ )?(?:stop|rm) /.test(call)),
+        scratch: existsSync(f.scratch), ignored: existsSync(join(f.worktree, 'node_modules', 'left-pad', 'index.js')),
+        registered: f.registered(), branch: f.branchStatus(),
+      }, { exit: 4, destructive: [], scratch: true, ignored: true, registered: true, branch: 0 });
+      assert.match(run.stdout, /Docker filesystem relationship is unverifiable: unsupported endpoint/);
+      assert.equal(run.stderr, '');
+      assert.doesNotMatch(run.stdout, /fixture-remote|ssh:\/\//);
+      assert.deepEqual(calls, ['context inspect --format {{json .Endpoints.docker}}']);
+    });
+  }
+});
+
+test('Docker filesystem proof rejects incomplete, ambiguous or mismatched native observations', async (t) => {
+  const cases = [];
+  for (const name of ['readlink', 'sh', 'ss', 'stat']) {
+    for (const [kind, result] of [
+      ['absent', { absent: true }], ['failed execution', { failed: 'EACCES' }],
+      ['nonzero', reply(1)], ['stderr', reply(0, PROOF_REPLIES[name].stdout, 'fixture warning')],
+    ]) cases.push([`${name} ${kind}`, (s) => { s.state.native[name] = result; }]);
+  }
+  for (const [name, result] of [
+    ['failed context inspection', reply(1)], ['failed context execution', { failed: 'EACCES' }],
+    ['context stderr', reply(0, '{"Host":"unix:///tmp/proof.sock"}', 'warning')],
+    ['malformed JSON', reply(0, '{')], ['array metadata', reply(0, '[]')],
+    ['null metadata', reply(0, 'null')], ['missing Host', reply(0, '{}')],
+    ['non-string Host', reply(0, '{"Host":3}')], ['empty Host', reply(0, '{"Host":""}')],
+    ['control-bearing Host', reply(0, JSON.stringify({ Host: 'unix:///tmp/proof.sock\n' }))],
+    ['credential-bearing remote endpoint', reply(0, '{"Host":"ssh://user:fixture-secret@remote.invalid"}')],
+    ['TCP endpoint', reply(0, '{"Host":"tcp://127.0.0.1:2375"}')],
+    ['abstract socket', reply(0, '{"Host":"unix://@abstract"}')],
+    ['unnormalized socket', reply(0, '{"Host":"unix:///tmp/../proof.sock"}')],
+    ['unsupported socket spelling', reply(0, '{"Host":"unix:///tmp/proof socket"}')],
+  ]) cases.push([name, (s) => { s.state.metadata = result; }]);
+  for (const [name, stdout] of [
+    ['missing listener', ''], ['duplicate listener', PROOF_SS + PROOF_SS],
+    ['duplicate owner', PROOF_SS.replace('fd=3))', 'fd=3),("dockerd",pid=72,fd=4))')],
+    ['missing owner', PROOF_SS.replace('users:(("dockerd",pid=71,fd=3)) ', '')],
+    ['wrong local address', PROOF_SS.replace('/tmp/proof.sock', '/tmp/other.sock')],
+    ['trailing field', PROOF_SS.replace('peers:', 'peers: extra:1')],
+    ['truncated listener', PROOF_SS.slice(0, -1)],
+    ['zero kernel inode', PROOF_SS.replace('700 *', '0 *')],
+    ['zero filesystem inode', PROOF_SS.replace('ino:90', 'ino:0')],
+    ['zero PID', PROOF_SS.replace('pid=71', 'pid=0')],
+    ['oversized PID', PROOF_SS.replace('pid=71', 'pid=2147483648')],
+    ['negative FD', PROOF_SS.replace('fd=3', 'fd=-1')],
+    ['oversized FD', PROOF_SS.replace('fd=3', 'fd=2147483648')],
+    ['duplicate identity', PROOF_SS.replace('peers:', 'ino:90 peers:')],
+  ]) cases.push([name, (s) => { s.state.native.ss = reply(0, stdout); }]);
+  for (const [name, stdout] of [
+    ['partial stat', PROOF_STAT.split('\n').slice(0, 7).join('\n') + '\n'],
+    ['truncated stat', PROOF_STAT.slice(0, -1)],
+    ['filesystem socket inode mismatch', PROOF_STAT.replace('100:90:', '100:91:')],
+    ['filesystem socket device mismatch', PROOF_STAT.replace('100:90:0:5', '100:90:0:6')],
+    ['descriptor kernel-inode mismatch', PROOF_STAT.replace('10:700:', '10:90:')],
+    ['proxy named dockerd with different executed binary', PROOF_STAT.replace(/60:80:0:60:regular file\n$/, '60:81:0:60:regular file\n')],
+    ['different mount namespace', PROOF_STAT.replace('40:1000:', '40:1001:')],
+    ['different root', PROOF_STAT.replace('50:2:', '50:3:')],
+    ['wrong socket type', PROOF_STAT.replace('100:90:0:5:socket', '100:90:0:5:directory')],
+    ['unknown stat type', PROOF_STAT.replace('regular empty file', 'mystery')],
+    ['unsafe stat integer', PROOF_STAT.replace('100:90:', '100:-90:')],
+  ]) cases.push([name, (s) => { s.state.native.stat = reply(0, stdout); }]);
+  cases.push(['unresolved canonical path', (s) => { s.state.native.readlink = reply(0, '/tmp/../proof.sock\n'); }]);
+  cases.push(['multiple canonical paths', (s) => { s.state.native.readlink = reply(0, '/tmp/proof.sock\n/tmp/other.sock\n'); }]);
+  cases.push(['relative daemon executable', (s) => { s.state.native.sh = reply(0, 'dockerd\n'); }]);
+  cases.push(['Darwin Docker-present refusal', () => {}, { platform: 'darwin' }]);
+  for (const [name, configure, seams] of cases) {
+    await t.test(name, async (t) => {
+      const s = scenario(t);
+      const target = placeFile(join(s.root, 'scratch', 'proof.txt'));
+      s.state.docker.containers = [containerRecord(ID_A, { running: true, mounts: [bindMount(s.worktree)] })];
+      configure(s);
+      const result = await s.cleanup(['23', '--scratch', target], seams);
+      assert.equal(result.exitCode, 4);
+      assert.match(result.out.join('\n'), /Docker filesystem relationship is unverifiable/);
+      assert.doesNotMatch(result.out.join('\n'), /fixture-secret|remote\.invalid|fixture warning/);
+      assert.ok(existsSync(target));
+      assert.ok(existsSync(s.worktree));
+      assertWorktreeNotRemoved(s);
+      assert.deepEqual([...dockerCalls(s, 'stop'), ...dockerCalls(s, 'rm')], []);
+      assert.deepEqual(s.unexpected, []);
+    });
+  }
+});
+
+test('Docker cleanup pins its endpoint after selection', async (t) => {
+  const s = scenario(t);
+  const capturedPath = { ...process.env }.PATH;
+  let selections = 0;
+  s.state.metadata = () => reply(0, JSON.stringify({ Host: ++selections === 1 ? PROOF_HOST : 'ssh://changed.invalid' }));
+  s.state.docker.containers = [containerRecord(ID_A, { running: true, mounts: [bindMount(s.worktree)] })];
+  const result = await s.cleanup();
+  assert.equal(result.exitCode, 0);
+  assert.equal(selections, 1);
+  const actions = s.executions.filter(({ command, args }) => command === 'docker' && args[0] !== 'context');
+  assert.deepEqual(actions.map(({ args }) => args), [
+    ['--host', PROOF_HOST, 'container', 'ls', '--all', '--quiet', '--no-trunc'],
+    ['--host', PROOF_HOST, 'inspect', '--type', 'container', '--format', '{{json .}}', ID_A],
+    ['--host', PROOF_HOST, 'stop', ID_A], ['--host', PROOF_HOST, 'rm', ID_A],
+  ]);
+  for (const { env } of actions) {
+    assert.equal(env.DOCKER_CONTEXT, undefined);
+    assert.equal(env.DOCKER_HOST, undefined);
+    assert.equal(env.DOCKER_CONFIG, process.env.DOCKER_CONFIG);
+    assert.equal(env.PATH, capturedPath);
+  }
+  assert.deepEqual(s.unexpected, []);
+});
+
+test('Docker cleanup retains remaining targets when filesystem proof changes', async (t) => {
+  await t.test('after a verified stop', async (t) => {
+    const s = scenario(t);
+    const scratch = placeFile(join(s.root, 'scratch', 'proof.txt'));
+    s.state.docker.containers = [
+      containerRecord(ID_A, { running: true, mounts: [bindMount(s.worktree)] }),
+      containerRecord(ID_B, { running: true, mounts: [bindMount(s.mainDir)] }),
+    ];
+    s.state.onDocker = ([verb]) => {
+      if (verb === 'stop') s.state.native.ss = reply(0, PROOF_SS.replace('700 *', '701 *'));
+    };
+    const result = await s.cleanup(['23', '--scratch', scratch]);
+    assert.equal(result.exitCode, 4);
+    assert.equal(dockerCalls(s, 'stop').length, 1);
+    assert.deepEqual(dockerCalls(s, 'rm'), []);
+    assert.equal(s.state.docker.containers[0].State.Running, false);
+    assert.equal(s.state.docker.containers[1].State.Running, true);
+    const reason = 'Docker filesystem relationship is unverifiable: native identity changed or became unreadable';
+    assert.deepEqual(result.out.filter((line) => line.startsWith('retained container ')), [
+      `retained container aaaaaaaaaaaa: ${reason}`,
+    ]);
+    assert.doesNotMatch(result.out.join('\n'), /bbbbbbbbbbbb/);
+    assert.equal(result.out.at(-1), 'closeout-cleanup: 0 removed, 4 retained');
+    assert.deepEqual(result.out.filter((line) => line.startsWith('unverifiable remaining container relationships:')), [
+      `unverifiable remaining container relationships: ${reason}`,
+    ]);
+    assert.ok(existsSync(scratch));
+    assert.ok(existsSync(s.worktree));
+    assertWorktreeNotRemoved(s);
+    assert.match(result.out.join('\n'), /native identity changed/);
+    assert.doesNotMatch(result.out.join('\n'), /removed container|removed scratch|removed worktree|removed branch/);
+    assert.deepEqual(s.unexpected, []);
+  });
+  for (const boundary of ['scratch use check', 'worktree use check', 'worktree status', 'branch deletion']) {
+    await t.test(boundary, async (t) => {
+      const s = scenario(t);
+      const scratch = placeFile(join(s.root, 'scratch', 'proof.txt'));
+      const change = () => { s.state.native.stat = reply(0, PROOF_STAT.replace('50:2:', '50:3:')); };
+      if (boundary.includes('use check')) s.state.onPs = change;
+      if (boundary === 'worktree status') s.state.onStatus = change;
+      if (boundary === 'branch deletion') s.state.onWorktreeRemoved = change;
+      const result = await s.cleanup(boundary === 'scratch use check' ? ['23', '--scratch', scratch] : ['23']);
+      assert.equal(result.exitCode, 4);
+      assert.match(result.out.join('\n'), /native identity changed/);
+      assert.equal(s.state.branch, true);
+      if (boundary === 'scratch use check') assert.ok(existsSync(scratch));
+      if (boundary === 'branch deletion') {
+        assert.equal(existsSync(s.worktree), false);
+        assert.ok(result.out.includes(`removed worktree ${s.worktree}`));
+      } else assertWorktreeNotRemoved(s);
+      assert.deepEqual(s.unexpected, []);
+    });
+  }
+});
+
+test('check mode reports an unverified Docker filesystem relationship', async (t) => {
+  const s = scenario(t);
+  const target = placeFile(join(s.root, 'scratch', 'proof.txt'));
+  s.state.native.stat = reply(0, PROOF_STAT.replace('50:2:', '50:3:'));
+  const result = await s.cleanup(['--check', target]);
+  assert.equal(result.exitCode, 4);
+  assert.match(result.out[0], /^unverifiable path .*Docker filesystem relationship is unverifiable/);
+  assert.equal(result.out.at(-1), SUMMARY(0, 0, 0, 1));
+  assert.ok(existsSync(target));
+  assertNothingChanged(s);
+});
+
+test('the CLI removes verified-local Docker containers and job targets through real git', { skip: process.platform !== 'linux' && 'Docker-present CLI proof requires native Linux' }, (t) => {
+  const f = cliFixture(t, `${DOCKER_LOCAL}${REMOTE_DOCKER.slice(REMOTE_DOCKER.indexOf('case "$*"'))}`);
+  const record = containerRecord('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', {
+    running: true, mounts: [bindMount(f.worktree)],
+  });
+  const result = f.cleanup({ FIXTURE_RECORD: JSON.stringify(record) });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.stderr, '');
+  assert.equal(result.stdout, [
+    'removed container aaaaaaaaaaaa', `removed scratch ${f.scratch}`, `removed worktree ${f.worktree}`,
+    'removed branch job/23', 'closeout-cleanup: 4 removed, 0 retained', '',
+  ].join('\n'));
+  assert.deepEqual(f.dockerCalls().filter((call) => / (?:stop|rm) /.test(call)), [
+    '--host unix:///tmp/proof.sock stop aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    '--host unix:///tmp/proof.sock rm aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  ]);
+  assert.equal(existsSync(f.scratch), false);
+  assert.equal(existsSync(f.worktree), false);
+  assert.equal(f.registered(), false);
+  assert.equal(f.branchStatus(), 1);
+});
+
+test('native Linux socket observations bind a listener to its descriptor and filesystem view', { skip: process.platform !== 'linux' && 'native socket observations require Linux' }, async (t) => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'closeout-cleanup-native-')));
+  const directory = join(root, 'real');
+  const alias = join(root, 'alias');
+  mkdirSync(directory);
+  symlinkSync('real', alias, 'dir');
+  const socket = join(alias, 'proof.sock');
+  const canonicalSocket = join(directory, 'proof.sock');
+  const target = placeFile(join(root, 'scratch.txt'));
+  const server = createServer();
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve); });
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    rmSync(root, { recursive: true, force: true });
+  });
+  let executable = process.execPath;
+  const observations = [];
+  const run = (command, args, options) => {
+    if (command === 'docker') {
+      if (args.join(' ') === 'context inspect --format {{json .Endpoints.docker}}') return reply(0, JSON.stringify({ Host: `unix://${socket}` }));
+      assert.deepEqual(args, ['--host', `unix://${canonicalSocket}`, 'container', 'ls', '--all', '--quiet', '--no-trunc']);
+      return reply(0);
+    }
+    if (command === 'sh') {
+      assert.deepEqual(args, ['-c', 'command -v dockerd']);
+      return reply(0, `${executable}\n`);
+    }
+    if (command === 'lsof') return reply(1);
+    if (command === 'ps') return reply(0, '1 0 /sbin/init\n');
+    const result = runCommand(command, args, options);
+    observations.push({ command, args, result });
+    return result;
+  };
+  const invoke = () => {
+    const out = [];
+    const err = [];
+    const exitCode = withoutDockerSelection(() => main(['--check', target], {
+      run, platform: 'linux', output: { log: (line) => out.push(line), error: (line) => err.push(line) },
+    }));
+    return { exitCode, out, err };
+  };
+  const positive = invoke();
+  const unavailable = observations.find(({ result }) => result.absent || result.failed || result.status !== 0 || result.stderr);
+  if (unavailable) {
+    t.skip(`native ${unavailable.command} tools/permissions unavailable`);
+    return;
+  }
+  // Missing ownership is a permission limit; a different complete native shape must fail visibly, never skip.
+  if (observations.some(({ command, result }) => command === 'ss' && result.stdout !== '' && !result.stdout.includes('users:'))) {
+    t.skip('native socket ownership unavailable');
+    return;
+  }
+  assert.deepEqual(positive, { exitCode: 0, out: [`unused path ${target}`, SUMMARY(1, 0, 0, 0)], err: [] },
+    JSON.stringify(observations.map(({ command, result }) => ({
+      command, status: result.status, absent: result.absent, failed: result.failed,
+      stdoutFirst2048: result.stdout?.slice(0, 2048), stderrFirst512: result.stderr?.slice(0, 512),
+    }))));
+  for (const { args } of observations.filter(({ command }) => command === 'ss')) {
+    assert.deepEqual(args, ['-H', '-xlnpe', '(', 'src', socket, 'or', 'src', canonicalSocket, ')']);
+  }
+  assert.ok(observations.some(({ command }) => command === 'stat'));
+  const positiveStats = observations.filter(({ command }) => command === 'stat').length;
+  executable = '/bin/sh';
+  const negative = invoke();
+  assert.equal(negative.exitCode, 4);
+  assert.match(negative.out[0], /^unverifiable path .*Docker filesystem relationship is unverifiable/);
+  assert.ok(observations.filter(({ command }) => command === 'stat').length > positiveStats);
+  assert.ok(existsSync(target));
+});
+
+
+test('ANTI-REGRESSION: optional socket shutdown markers never replace filesystem identity', async (t) => {
+  for (const [name, marker, admitted, foreignDescriptor] of [
+    ['absent marker', '', true, false],
+    ['bidirectional marker', '<->', true, false],
+    ['left marker', '<--', true, false],
+    ['right marker', '-->', true, false],
+    ['closed marker', '---', true, false],
+    ['unknown marker', '<?>', false, false],
+    ['absent marker with foreign descriptor', '', false, true],
+  ]) {
+    await t.test(name, async (t) => {
+      const s = scenario(t);
+      const scratch = placeFile(join(s.root, 'scratch', 'proof.txt'));
+      s.state.docker.containers = [containerRecord(ID_A, { running: true, mounts: [bindMount(s.worktree)] })];
+      s.state.native.ss = reply(0, PROOF_SS.replace('<-> ', marker ? `${marker} ` : ''));
+      if (foreignDescriptor) {
+        s.state.native.stat = reply(0, PROOF_STAT.replace('10:700:0:10:socket', '10:701:0:10:socket'));
+      }
+      const result = await s.cleanup(['23', '--scratch', scratch]);
+      assert.deepEqual(result.err, []);
+      if (admitted) {
+        assert.equal(result.exitCode, 0);
+        assert.deepEqual(dockerCalls(s, 'stop'), [['docker', 'stop', ID_A]]);
+        assert.deepEqual(dockerCalls(s, 'rm'), [['docker', 'rm', ID_A]]);
+        assert.equal(existsSync(scratch), false);
+        assert.equal(existsSync(s.worktree), false);
+        assert.equal(s.state.branch, false);
+      } else {
+        assert.equal(result.exitCode, 4);
+        assert.match(result.out.join('\n'), /Docker filesystem relationship is unverifiable/);
+        assert.deepEqual([...dockerCalls(s, 'stop'), ...dockerCalls(s, 'rm')], []);
+        assert.ok(existsSync(scratch));
+        assert.ok(existsSync(s.worktree));
+        assertWorktreeNotRemoved(s);
+      }
+      assert.deepEqual(s.unexpected, []);
+    });
+  }
+});
+
+
+test('ANTI-REGRESSION: Docker socket device encodings preserve filesystem identity', async (t) => {
+  for (const [name, printedDevice, socketRow, admitted] of [
+    ['hosted physical device', '0/2049', '2049:95390:8:1:socket', true],
+    ['high minor bit', '1/2048', '1050624:95390:8:256:socket', true],
+    ['full 32-bit boundary', '4095/1048575', '4294967295:95390:4095:1048575:socket', true],
+    ['foreign major', '0/2049', '2305:95390:9:1:socket', false],
+    ['foreign minor', '0/2049', '2050:95390:8:2:socket', false],
+    ['printed major overflow', '4096/2049', '2049:95390:8:1:socket', false],
+    ['printed minor overflow', '0/1050625', '2049:95390:8:1:socket', false],
+  ]) {
+    await t.test(name, async (t) => {
+      const s = scenario(t);
+      const scratch = placeFile(join(s.root, 'scratch', 'proof.txt'));
+      s.state.docker.containers = [containerRecord(ID_A, { running: true, mounts: [bindMount(s.worktree)] })];
+      s.state.native.ss = reply(0, PROOF_SS.replace('700 *', '17069 *')
+        .replace('ino:90', 'ino:95390').replace('dev:0/5', `dev:${printedDevice}`));
+      s.state.native.stat = reply(0, PROOF_STAT.replace('100:90:0:5:socket', socketRow)
+        .replace('10:700:0:10:socket', '9:17069:0:9:socket'));
+      const result = await s.cleanup(['23', '--scratch', scratch]);
+      assert.deepEqual(result.err, []);
+      assert.deepEqual(s.unexpected, []);
+      if (admitted) {
+        assert.equal(result.exitCode, 0, result.out.join('\n'));
+        assert.deepEqual(dockerCalls(s, 'stop'), [['docker', 'stop', ID_A]]);
+        assert.deepEqual(dockerCalls(s, 'rm'), [['docker', 'rm', ID_A]]);
+        assert.ok(s.calls.findIndex(([name, , , verb]) => name === 'docker' && verb === 'stop') <
+          s.calls.findIndex(([name, , , verb]) => name === 'docker' && verb === 'rm'));
+        assert.equal(existsSync(scratch), false);
+        assert.equal(existsSync(s.worktree), false);
+        assert.equal(s.state.branch, false);
+      } else {
+        assert.equal(result.exitCode, 4);
+        assert.match(result.out.join('\n'), /Docker filesystem relationship is unverifiable/);
+        assert.deepEqual([...dockerCalls(s, 'stop'), ...dockerCalls(s, 'rm')], []);
+        assert.ok(existsSync(scratch));
+        assert.ok(existsSync(s.worktree));
+        assertWorktreeNotRemoved(s);
+      }
+    });
+  }
 });

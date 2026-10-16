@@ -1,6 +1,6 @@
 {
   "canonical": "zaingulel/fabraik",
-  "syncedFrom": "3b8f6c27c71a759fce4019050c29138fa5980618",
+  "syncedFrom": "a85a57268f91c89b7f748f10e872c6ad5fb2028b",
   "entries": [
     {
       "path": ".agents/skills/accessibility-review/SKILL.md",
@@ -8,7 +8,7 @@
     },
     {
       "path": ".agents/skills/closeout/SKILL.md",
-      "sha256": "dc44bb9fdae2f571e6f3cf486b2a4c9bf1743e36c4e3018bd86187d56f7ca09e"
+      "sha256": "39017face8e488a34104fc37d2aff12dea14fecd3145c59f45de16bbc99145f0"
     },
     {
       "path": ".agents/skills/codebase-design/DEEPENING.md",
@@ -428,7 +428,7 @@
     },
     {
       "path": ".claude/skills/closeout/SKILL.md",
-      "sha256": "dc44bb9fdae2f571e6f3cf486b2a4c9bf1743e36c4e3018bd86187d56f7ca09e"
+      "sha256": "39017face8e488a34104fc37d2aff12dea14fecd3145c59f45de16bbc99145f0"
     },
     {
       "path": ".claude/skills/codebase-design/DEEPENING.md",
@@ -728,7 +728,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW-job.md",
-      "sha256": "5b0b4237755748346d350a6f41e326d01ce7e3280ac0d5fb0b586483c2ee95e2"
+      "sha256": "7ff03d362fd5e81c27fa443baf0aae6716d9508bc4076b946ad6d6a7ed259909"
     },
     {
       "path": "docs/AI-WORKFLOW-runtimes.md",
@@ -837,11 +837,11 @@
     },
     {
       "path": "scripts/lib/closeout-cleanup.mjs",
-      "sha256": "74bcf486f1b7f1ca345dd60c823b7cc7375c6c6db1229404e310235d8c0f6790"
+      "sha256": "7ae062b76760aaf8c0b8920c7f5c0803f3429e5842ba3f38fbaec0c7572bf470"
     },
     {
       "path": "scripts/lib/closeout-cleanup.test.mjs",
-      "sha256": "07973c73e48276ad63ea02c3e3bd7bf5691b3a6f7551a59a4c8c6503caa6ad7d"
+      "sha256": "102978975474a0a92fd498c0fe02d995feee5bb61e51af4c249b6ee04acaeeb4"
     },
     {
       "path": "scripts/lib/codex-hook-adapters.mjs",
@@ -869,11 +869,11 @@
     },
     {
       "path": "scripts/lib/doc-lint-links.test.mjs",
-      "sha256": "8d53c46ad8f4b2f08ec170b69eeaa6e6c42d673c6dd753ed8621aa8482e0471b"
+      "sha256": "072a0cf1ab3f1b3581f0d17d897510bc27c8f87d5fe05f2c84c641591b9116cc"
     },
     {
       "path": "scripts/lib/doc-lint-verdict.mjs",
-      "sha256": "18323b099c8d9c63b01ea3ed3b3071a0a898f9869a1aa32f3f7656ba99ae2245"
+      "sha256": "372bec0aecfcd737d764e6950e8cd377ac525baee5d78d9cde66de680b612a5d"
     },
     {
       "path": "scripts/lib/factory-sync.mjs",
@@ -881,7 +881,7 @@
     },
     {
       "path": "scripts/lib/factory-sync.test.mjs",
-      "sha256": "e7467fd94c051c00e59ef38233a3099ae5e579b4d2ed7c24d191b2c3f27be4e5"
+      "sha256": "767bad95f06b0934f6fa8166b57654100b8baaec08da85c72a15eef9438ef7e1"
     },
     {
       "path": "scripts/lib/fake-gh.mjs",
