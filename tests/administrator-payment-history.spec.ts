@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as OTPAuth from "otpauth";
 
@@ -348,8 +348,12 @@ test("AAL2 support sees ordered redacted history in every launch language", asyn
             },
           ),
         }));
+        const measurementPath = testInfo.outputPath(
+          "563-before-after-payment-history-ar-390.json",
+        );
+        writeFileSync(measurementPath, JSON.stringify(measurements, null, 2));
         await testInfo.attach("563-before-after-payment-history-ar-390.json", {
-          body: JSON.stringify(measurements, null, 2),
+          path: measurementPath,
           contentType: "application/json",
         });
         await page.setViewportSize({ width: 320, height: 844 });
@@ -408,10 +412,14 @@ test("AAL2 support sees ordered redacted history in every launch language", asyn
             }),
           };
         });
+        const reflowPath = testInfo.outputPath(
+          "563-before-after-payment-history-ar-390-reflow-320.json",
+        );
+        writeFileSync(reflowPath, JSON.stringify(reflow, null, 2));
         await testInfo.attach(
           "563-before-after-payment-history-ar-390-reflow-320.json",
           {
-            body: JSON.stringify(reflow, null, 2),
+            path: reflowPath,
             contentType: "application/json",
           },
         );
