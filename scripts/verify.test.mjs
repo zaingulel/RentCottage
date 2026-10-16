@@ -45,6 +45,21 @@ const explicitNodeWorkflowEntries = [
   ".claude/hooks/test-output-filter-run.mjs",
 ];
 
+const reviewedWorkflowPaths = [
+  ".prettierignore",
+  "eslint.config.mjs",
+  "scripts/closeout-cleanup.mjs",
+  "scripts/lib/closeout-cleanup.mjs",
+  "scripts/lib/closeout-cleanup.test.mjs",
+  "scripts/lib/codex-hooks-windows.test.mjs",
+  "scripts/lib/doc-lint-verdict.mjs",
+  "scripts/lib/repository-shape.mjs",
+  "scripts/lib/runtimes.mjs",
+  "scripts/lib/runtimes.test.mjs",
+  "scripts/lib/seat-settings.mjs",
+  "scripts/lib/seat-settings.test.mjs",
+];
+
 const currentRegularAgentDefinitions = globSync(
   [
     ".agents/skills/*/SKILL.md",
@@ -93,7 +108,7 @@ it.each(explicitNodeWorkflowEntries)(
       browser: false,
       database: false,
       bookingConcurrency: false,
-      reason: `only approved workflow or prose changed: ${path}`,
+      reason: `only baseline evidence selected: ${path}`,
     });
     for (const [oldMode, newMode, status] of [
       ["000000", "100755", "A"],
@@ -992,6 +1007,38 @@ describe("repository verification command", () => {
     full: { browser: true, database: true, bookingConcurrency: true },
   };
 
+  it("classifies reviewed workflow inputs", () => {
+    for (const path of reviewedWorkflowPaths) {
+      for (const [oldMode, newMode, status] of [
+        ["000000", "100644", "A"],
+        ["100644", "100644", "M"],
+        ["100644", "000000", "D"],
+      ]) {
+        expect(
+          classifyChanges([{ path, oldMode, newMode, status }]),
+          `${path} ${status}`,
+        ).toMatchObject(routes.baseline);
+      }
+      for (const [oldMode, newMode, status] of [
+        ["000000", "100755", "A"],
+        ["100644", "100755", "M"],
+        ["100755", "100644", "M"],
+        ["000000", "120000", "A"],
+        ["100644", "100644", "T"],
+      ]) {
+        expect(
+          classifyChanges([{ path, oldMode, newMode, status }]),
+          `${path} ${oldMode} ${newMode} ${status}`,
+        ).toMatchObject({
+          browser: true,
+          database: true,
+          bookingConcurrency:
+            path !== ".prettierignore" && path !== "eslint.config.mjs",
+        });
+      }
+    }
+  });
+
   it("routes the approved Supabase vendor prose without admitting executable or unknown vendor inputs", () => {
     const prosePaths = [
       ".agents/upstream/supabase-agent-skills/LICENSE",
@@ -1316,7 +1363,7 @@ describe("repository verification command", () => {
     ["the dependency lockfile", ["package-lock.json"], "full"],
     ["a dependency file", ["package.json"], "full"],
     ["root git ignore", [".gitignore"], "full without concurrency"],
-    ["root Prettier ignore", [".prettierignore"], "full without concurrency"],
+    ["root Prettier ignore", [".prettierignore"], "baseline"],
     ["root Prettier config", [".prettierrc.json"], "full without concurrency"],
     ["the selector itself", ["scripts/verify.mjs"], "full"],
     ["the selector tests", ["scripts/verify.test.mjs"], "full"],
@@ -1841,6 +1888,10 @@ describe("repository verification command", () => {
     git(code, ["merge", "--no-ff", codeSource]);
     const docs = createRepository();
     const docsBase = git(docs, ["rev-parse", "HEAD"]);
+    for (const path of reviewedWorkflowPaths) {
+      write(docs, path, "reviewed workflow input\n");
+    }
+    git(docs, ["add", "--", ...reviewedWorkflowPaths]);
     const docsSource = commit(docs, "AGENTS.md", "source instructions\n");
     git(docs, ["switch", "main"]);
     git(docs, ["merge", "--no-ff", docsSource]);
@@ -1986,6 +2037,46 @@ describe("repository verification command", () => {
     const local = await runVerification(docs, { args: ["--browser"] });
     expect(local.status).toBe(0);
     expect(local.calls).toEqual([]);
+  }, 30_000);
+
+  it("keeps full hosted evidence for mixed workflow changes", async () => {
+    for (const path of [
+      "src/booking-request/booking-request-policy.ts",
+      "supabase/config.toml",
+      "package-lock.json",
+      "scripts/verify.mjs",
+      "scripts/lib/access-browser-fixtures.mjs",
+      ".github/workflows/ci.yml",
+    ]) {
+      const repository = createRepository();
+      const base = git(repository, ["rev-parse", "HEAD"]);
+      write(repository, ".prettierignore", "reviewed workflow input\n");
+      git(repository, ["add", "--", ".prettierignore"]);
+      const contents =
+        path === "package-lock.json"
+          ? `${readFileSync(join(repository, path), "utf8")}\n`
+          : "mixed workflow input\n";
+      const source = commit(repository, path, contents);
+      git(repository, ["switch", "main"]);
+      git(repository, ["merge", "--no-ff", source]);
+
+      for (const mode of [undefined, "--database", "--browser"]) {
+        const result = await runVerification(repository, {
+          args: mode ? [mode] : [],
+          environment: {
+            GITHUB_ACTIONS: "true",
+            VERIFY_BASE_SHA: base,
+            VERIFY_SOURCE_SHA: source,
+          },
+        });
+
+        expect(result.status, `${path} ${mode ?? "default"}`).toBe(0);
+        expect(
+          result.calls.map(([command, args]) => [command, args]),
+          `${path} ${mode ?? "default"}`,
+        ).toEqual(requiredCiSteps(mode));
+      }
+    }
   }, 30_000);
 
   it.each([undefined, "--database", "--browser"])(

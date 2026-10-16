@@ -136,6 +136,8 @@ const accessCommandContracts = {
 };
 
 const baselineOnlyPaths = new Set([
+  ".prettierignore",
+  "eslint.config.mjs",
   ".github/pull_request_template.md",
   "AGENTS.md",
   ".agents/REPOSITORY.md",
@@ -160,6 +162,7 @@ const baselineOnlyPaths = new Set([
   "scripts/board.mjs",
   "scripts/board-add.mjs",
   "scripts/board-move.mjs",
+  "scripts/closeout-cleanup.mjs",
   "scripts/factory-sync.mjs",
   "scripts/merge-watch.mjs",
   "scripts/lib/merge-watch.mjs",
@@ -183,6 +186,8 @@ const baselineOnlyPaths = new Set([
   "scripts/lib/checkout-context.test.mjs",
   "scripts/lib/cli-flags.mjs",
   "scripts/lib/cli-flags.test.mjs",
+  "scripts/lib/closeout-cleanup.mjs",
+  "scripts/lib/closeout-cleanup.test.mjs",
   "scripts/lib/fake-gh.mjs",
   "scripts/lib/gh-exec.mjs",
   "scripts/lib/gh-exec.test.mjs",
@@ -193,6 +198,7 @@ const baselineOnlyPaths = new Set([
   "scripts/lib/codex-hook-adapters.mjs",
   "scripts/lib/codex-hook-adapters.test.mjs",
   "scripts/lib/codex-browser-policy.test.mjs",
+  "scripts/lib/codex-hooks-windows.test.mjs",
   "scripts/lib/product-manual.test.mjs",
   "scripts/lib/factory-sync.mjs",
   "scripts/lib/factory-sync.test.mjs",
@@ -201,6 +207,11 @@ const baselineOnlyPaths = new Set([
   "scripts/lib/precommit.test.mjs",
   "scripts/lib/prepush.test.mjs",
   "scripts/lib/settings-policy.test.mjs",
+  "scripts/lib/repository-shape.mjs",
+  "scripts/lib/runtimes.mjs",
+  "scripts/lib/runtimes.test.mjs",
+  "scripts/lib/seat-settings.mjs",
+  "scripts/lib/seat-settings.test.mjs",
   "scripts/lib/sweep-scope-corpus.mjs",
   "scripts/lib/sweep-scope-evaluate.mjs",
   "scripts/lib/sweep-scope.mjs",
@@ -214,6 +225,7 @@ const baselineOnlyPaths = new Set([
   "scripts/lib/workflow-contract.test.mjs",
   "scripts/lib/doc-lint.mjs",
   "scripts/lib/doc-lint.test.mjs",
+  "scripts/lib/doc-lint-verdict.mjs",
   "scripts/lib/doc-lint-links.mjs",
   "scripts/lib/doc-lint-links.test.mjs",
   "scripts/lib/doc-lint-citations.mjs",
@@ -338,11 +350,9 @@ const fullEvidencePaths = new Set([
   ".gitattributes",
   ".gitignore",
   ".nvmrc",
-  ".prettierignore",
   ".prettierrc.json",
   "cloudflare-env.d.ts",
   "custom-worker.ts",
-  "eslint.config.mjs",
   "next-env.d.ts",
   "next.config.ts",
   "open-next.config.ts",
@@ -636,7 +646,7 @@ export function classifyChanges(changes) {
     reason:
       selected.length > 0
         ? `changed paths select ${selected.join(" and ")} evidence: ${paths}`
-        : `only approved workflow or prose changed: ${paths}`,
+        : `only baseline evidence selected: ${paths}`,
   };
 }
 

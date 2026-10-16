@@ -232,7 +232,10 @@ proof modes keep their existing worker and retry settings.
 A TypeScript product change selects the baseline route; a database object the database group; a booking or payment
 Integrity Core object or concurrency program adds the booking and payment concurrency programs; presentation,
 Worker and Playwright paths the browser group; an unlisted path stops the run until it is listed in
-`scripts/verify.mjs`. Regular non-executable prose from the approved `supabase-agent-skills` vendor uses the
+`scripts/verify.mjs`. The router's approved baseline-only class includes documentation, workflow instructions,
+reviewed workflow helpers, `.prettierignore` and `eslint.config.mjs`. Its hosted exemption is limited to that class;
+local product-source baseline routing does not exempt a product change from hosted database and browser checks.
+Regular non-executable prose from the approved `supabase-agent-skills` vendor uses the
 existing upstream prose baseline route; executable, symlink and file-type changes still select full evidence.
 Deletion of the exact retired `.claude/templates/builder-handoff.md` (git history) path selects full evidence; other
 regular files under that retired directory remain unlisted.
@@ -246,14 +249,14 @@ against the merge result once the pull request leaves draft. The database matrix
 the browser matrix runs two Next.js shards, two Worker file groups, the scheduled checks and the shell smoke checks.
 Each Worker group lists and executes its selected files without native sharding.
 The required `test` check passes only when the baseline and every matrix portion succeed. The database and browser
-matrices select every check, except for a change touching only documentation or workflow instructions, where they
+matrices select every check, except for a change confined to the router's approved baseline-only class, where they
 run nothing. For the `resume` skill's deliver step, the hosted `test` check therefore runs the full local check,
-`npm run verify`: the same baseline steps, and, unless the change touches only documentation or workflow
-instructions, every database and browser check, which is at least the groups a local run selects from the same
-changed paths, on a rebased head as on any other. For a change touching only documentation or workflow instructions
+`npm run verify`: the same baseline steps, and, unless the change is confined to the router's approved
+baseline-only class, every database and browser check, which is at least the groups a local run selects from the same
+changed paths, on a rebased head as on any other. For a change confined to that approved baseline-only class
 both run the baseline alone. Of the checks in the table below, the hosted `test` check runs the baseline for every
 change, and the database group, the booking and payment concurrency programs and the browser group for every change
-that is not documentation or workflow instructions alone, whichever local command wrote the receipt; no hosted job
+outside that approved baseline-only class, whichever local command wrote the receipt; no hosted job
 runs `npm run lint:docs`, which reruns locally on a new head. A change `scripts/gates/pre-push-main` admits whole
 takes the direct route to `main`, where no hosted check runs;
 [the repository profile](../.agents/REPOSITORY.md#product) says which paths qualify. The hosted preview is smoked
@@ -275,7 +278,8 @@ that path alone, and a change to the router's rules lands with the matching chan
 | `npm run lint:docs`, in a job that changes documentation or agent instruction | `npm run lint:docs` | Any path: it resolves every cited path and link against the whole tracked tree |
 
 The router's rules are read in its own order, and the first that matches a path decides it. A path it lists as
-baseline-only, the Markdown, Word, HTML and image files under `docs/` among them, and a test file under `src/`
+baseline-only, `.prettierignore`, `eslint.config.mjs` and the Markdown, Word, HTML and image files under `docs/`
+among them, and a test file under `src/`
 (`*.test.ts` or `*.test.tsx`) are decided first and rerun no database, concurrency or browser check; neither do the
 product-logic directories under `src/` it keeps on the baseline route. A full-route path is a file the router lists
 by name as requiring full evidence, `supabase/config.toml` among them, an example environment file, or a path under
@@ -304,7 +308,7 @@ Receipt reuse rule sets; where the full local check's route did not run it, ther
 is owed, because no path of the job selects that check. Where the kept receipt is the full local check's, the pull
 request body's `Carried receipts:` line names the command that receipt records and the checks carried under it,
 never the command of a row that did not run; a full local check that ran the baseline alone, as one does for a job
-of documentation or workflow instructions alone, carries nothing once the baseline has run again.
+confined to the router's approved baseline-only class, carries nothing once the baseline has run again.
 
 A test-only repair takes its row under Evidence by change type first: the repaired test runs by its full title.
 The table then settles the convergence checks as for any other commit, so the baseline and the group that runs a
