@@ -935,13 +935,13 @@ test("an administrator discovers accounts and approval records with authoritativ
       await expect.soft
         .poll(async () => {
           const fields = await Promise.all(
-            [copy.kind, copy.query, copy.status, copy.from, copy.through].map(
-              (label) =>
-                page
-                  .getByLabel(label, { exact: true })
-                  .locator("..")
-                  .boundingBox(),
-            ),
+            [
+              page.getByRole("combobox", { name: copy.kind, exact: true }),
+              page.getByLabel(copy.query, { exact: true }),
+              page.getByRole("combobox", { name: copy.status, exact: true }),
+              page.getByLabel(copy.from, { exact: true }),
+              page.getByLabel(copy.through, { exact: true }),
+            ].map((control) => control.locator("..").boundingBox()),
           );
           const actions = await page
             .getByRole("button", { name: copy.search, exact: true })
