@@ -51,9 +51,12 @@ change takes every row it touches.
 - Schema, policy, constraint, trigger, concurrency and migration claims need real disposable PostgreSQL evidence;
   Worker claims need the Workers runtime; a Node.js test proves neither.
 - Run each new or strengthened test by its full title; zero matches is failed verification. Invoke fail-loud
-  scripts directly so their own exit status is authoritative. **Grouped focused evidence** may summarise related
-  receipts together, while retaining each test's outcome and the [construction mode](#construction-modes)'s
-  sequence. Grouping changes neither title-matched execution nor the one-mutation-per-behaviour rule above.
+  scripts directly so their own exit status is authoritative. **Grouped focused evidence** may run related
+  tests for one claim in one focused command, selecting each intended test by its full title. Verify every
+  intended test’s completed outcome from the actual command output; missing, skipped, unavailable or unfinished
+  observations follow the incomplete-execution rule below. Paste run-log receipt lines unchanged; any summary
+  is additional explanation. Grouping preserves the [construction mode](#construction-modes)’s sequence and the
+  one-mutation-per-behaviour rule above.
 - Locate browser controls by accessible name or meaningful scope. A viewport assertion starts with a
   starting-state guard and uses a retrying assertion, never a fixed wait. Name the authoritative clock at every
   time boundary and align fixtures and assertions to it.
@@ -79,10 +82,10 @@ cannot lower this floor or the [protected-invariant floor](#rules-every-change-f
 | `preservation` | Mechanical changes and refactors with no changed behaviour and an unchanged protected contract. Existing evidence protects the named contract; no new test or mutation is created. |
 
 **Discrimination proof** is evidence that rejects the claimed wrong behaviour, selected by the mode and the
-documentation alternative below. **Ordinary pre-fix red / unchanged-test green** means the same test fails before
+declared alternative below. **Ordinary pre-fix red / unchanged-test green** means the same test fails before
 the fix and passes unchanged after it. This establishes test-first sequencing for `strict-tdd`; it never
 substitutes for the [executed mutation](#rules-every-change-follows) here. Report the actual logged mutation red
-and restored green runs as the required mutation proof. The documentation alternative below and `preservation`
+and restored green runs as the required mutation proof. The declared alternative below and `preservation`
 exemption remain applicable.
 
 A refactor may move a rule that no existing test observes: breaking that rule in the unchanged code leaves every
@@ -95,7 +98,7 @@ and a change that alters the rule takes the mode its subject matter sets.
 
 A documentation or agent-instruction change has no executable observer for its meaning. One that changes what a
 reader must do is `evidence-required`: `npm run lint:docs` is its mechanical check, and the fresh review of the
-final tree is the named alternative to the executed mutation. One that only rewords is `preservation`, and
+final tree is the **declared alternative** to the executed mutation. One that only rewords is `preservation`, and
 `npm run lint:docs` staying green is its protected contract.
 
 The architect names the mode and observer per claim; the session owns the executed mutation and the convergence
