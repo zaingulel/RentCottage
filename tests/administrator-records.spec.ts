@@ -980,18 +980,61 @@ test("an administrator discovers accounts and approval records with authoritativ
     }
     if (testInfo.project.name === "mobile") {
       await expect.soft
-        .poll(
-          () =>
-            page
-              .locator("form input, form select, form button")
-              .evaluateAll((controls) =>
-                controls.every((control) => {
-                  const bounds = control.getBoundingClientRect();
-                  return bounds.left >= 0 && bounds.right <= window.innerWidth;
-                }),
-              ),
-          `${locale} records fields fit the phone viewport`,
-        )
+        .poll(async () => {
+          const controls = [
+            page.getByRole("combobox", { name: copy.kind, exact: true }),
+            query,
+            page.getByRole("combobox", { name: copy.status, exact: true }),
+            page.getByLabel(copy.from, { exact: true }),
+            page.getByLabel(copy.through, { exact: true }),
+            page.getByRole("button", { name: copy.search, exact: true }),
+          ];
+          const boxes = await Promise.all(
+            controls.map((control, index) =>
+              control.locator(index === 1 ? "../.." : "..").boundingBox(),
+            ),
+          );
+          const form = await controls[0]
+            .locator("../..")
+            .evaluate((element) => {
+              const bounds = element.getBoundingClientRect();
+              const style = getComputedStyle(element);
+              const left =
+                bounds.left +
+                parseFloat(style.borderLeftWidth) +
+                parseFloat(style.paddingLeft);
+              const right =
+                bounds.right -
+                parseFloat(style.borderRightWidth) -
+                parseFloat(style.paddingRight);
+              return {
+                left,
+                right,
+                width: right - left,
+                viewport: window.innerWidth,
+              };
+            });
+          const first = boxes[0];
+          if (!first) return false;
+          return boxes.every((box, index) => {
+            const previous = boxes[index - 1];
+            return (
+              box !== null &&
+              box.width > 0 &&
+              box.height > 0 &&
+              box.x >= 0 &&
+              box.x + box.width <= form.viewport &&
+              Math.abs(box.x - first.x) <= 1 &&
+              Math.abs(box.x + box.width - first.x - first.width) <= 1 &&
+              Math.abs(box.width - first.width) <= 1 &&
+              Math.abs(box.x - form.left) <= 1 &&
+              Math.abs(box.x + box.width - form.right) <= 1 &&
+              Math.abs(box.width - form.width) <= 1 &&
+              (index === 0 ||
+                (previous !== null && box.y >= previous.y + previous.height))
+            );
+          });
+        }, `${locale} records filters fill one phone column in document order`)
         .toBe(true);
     }
     await expect.soft(query).toHaveAccessibleDescription(copy.applicationHint);

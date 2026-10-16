@@ -13,7 +13,6 @@ export const administratorPaymentHistoryMessages = {
     providerRequest: "Provider request",
     movementReference: "Movement reference",
     title: "Payment support history",
-    eyebrow: "Platform Administrator",
     lookupLabel: "Booking Request reference",
     lookupAction: "View payment history",
     accessRequired:
@@ -56,7 +55,6 @@ export const administratorPaymentHistoryMessages = {
     providerRequest: "طلب المزود",
     movementReference: "مرجع الحركة",
     title: "سجل دعم الدفع",
-    eyebrow: "مسؤول المنصة",
     lookupLabel: "مرجع طلب الحجز",
     lookupAction: "عرض سجل الدفع",
     accessRequired: "يلزم مستوى ضمان المصادقة 2 لعرض سجل دعم الدفع.",
@@ -97,7 +95,6 @@ export const administratorPaymentHistoryMessages = {
     providerRequest: "داواکاری دابینکەر",
     movementReference: "ژمارەی ئاماژەی جووڵە",
     title: "مێژووی پشتگیری پارەدان",
-    eyebrow: "بەڕێوەبەری پلاتفۆرم",
     lookupLabel: "ژمارەی داواکاری حجز",
     lookupAction: "مێژووی پارەدان ببینە",
     accessRequired: "بۆ بینینی مێژووی پشتگیری پارەدان ئاستی دڵنیایی ٢ پێویستە.",

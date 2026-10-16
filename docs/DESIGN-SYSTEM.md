@@ -444,8 +444,7 @@ its own; the block it sits in sets the space around it.
   the first row, from/through/actions on the second. The customer kind leaves the status slot empty. At `phone`,
   filters follow document order in one column. Complete query guidance wraps in a paragraph below its field,
   associated through `aria-describedby` alongside any existing error association. Records results use two equal
-  columns, one at `phone`; title links start-align even when wrapping. Review filters reuse the base filter
-  treatment with a separate grid modifier so records slot positions do not apply to them.
+  columns, one at `phone`; title links start-align even when wrapping. Review filters use the base filter grid; records-specific columns and slot positions belong only to `.recordsFilters` and its descendants.
 - Search result: each result uses the card surface with an `18rem` photo beside its details, moving above them at
   `tablet`. Without a photo, omit the empty frame and use the full detail width. The detail header places its
   overview at the inline start and From Price at the inline end, in `--display`, `--green` and `--font-size-5`,

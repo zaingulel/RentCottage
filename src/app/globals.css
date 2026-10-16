@@ -1972,13 +1972,6 @@ html[lang="ckb"] .booking-summary h2 {
   gap: var(--space-4);
 }
 
-.administrator-review-detail .review-action-card > fieldset:not(.option-group) {
-  display: grid;
-  gap: var(--space-2);
-  border: 0;
-  padding: 0;
-}
-
 .administrator-review-detail .review-action-card > label,
 .administrator-review-detail
   .review-action-card
@@ -2005,10 +1998,6 @@ html[lang="ckb"] .booking-summary h2 {
 .application-status-approved {
   background: var(--status-approved-bg);
   color: var(--status-approved-text);
-}
-
-.cottage-profile-page {
-  min-height: 100vh;
 }
 
 .cottage-profile-overview,
@@ -4548,14 +4537,13 @@ a:focus-visible,
   list-style: none;
 }
 
-.administrator-review-detail .fact-list > div {
-  min-inline-size: 0;
-  grid-template-columns: minmax(8rem, 0.4fr) minmax(0, 1fr);
-}
-
 .administrator-review-detail .review-action-card > fieldset:not(.option-group) {
+  display: grid;
+  gap: var(--space-2);
   min-inline-size: 0;
   margin: 0;
+  border: 0;
+  padding: 0;
 }
 
 .administrator-messaging {
@@ -4607,9 +4595,5 @@ a:focus-visible,
   .administrator-review-detail .review-action-card,
   .administrator-moderation-list {
     gap: var(--space-4);
-  }
-
-  .administrator-review-detail .fact-list > div {
-    grid-template-columns: minmax(0, 1fr);
   }
 }

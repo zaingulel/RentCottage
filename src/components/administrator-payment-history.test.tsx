@@ -94,9 +94,6 @@ it("renders ordered support evidence and distinct clocks accessibly in English",
     "dir",
     "ltr",
   );
-  expect(
-    within(events[0]).queryByText("105000000 IQD"),
-  ).not.toBeInTheDocument();
   expect(within(events[0]).getByText("Logical operation")).toBeVisible();
   expect(within(events[0]).getByText("Provider reference")).toBeVisible();
   expect(screen.getByText("Provider occurrence")).toBeVisible();

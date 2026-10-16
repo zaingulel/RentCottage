@@ -136,19 +136,8 @@
   margin: 0;
 }
 
-.recordsContent :global(.fact-list) > div {
-  min-inline-size: 0;
-  grid-template-columns: minmax(8rem, 0.4fr) minmax(0, 1fr);
-}
-
-.reviewFilters {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-}
-
 @media (max-width: 40rem) {
-  .recordsList,
-  .reviewFilters,
-  .recordsContent :global(.fact-list) > div {
+  .recordsList {
     grid-template-columns: minmax(0, 1fr);
   }
 

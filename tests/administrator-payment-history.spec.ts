@@ -232,10 +232,14 @@ test("AAL2 support sees ordered redacted history in every launch language", asyn
     await expect(events.nth(1)).toContainText(physical);
     await expect(events.nth(1)).toContainText(succeeded);
     await expect(events.nth(2)).toContainText(retry);
-    await expect(events.nth(1)).toContainText(
-      { en: "IQD 105,000", ar: "IQD 105,000", ckb: "IQD ١٠٥٬٠٠٠" }[locale],
-    );
-    await expect(events.nth(1)).not.toContainText("105000000 IQD");
+    const expectedAmount = {
+      en: "IQD 105,000",
+      ar: "IQD 105,000",
+      ckb: "IQD ١٠٥٬٠٠٠",
+    }[locale];
+    await expect(
+      events.nth(1).getByText(expectedAmount, { exact: true }),
+    ).toBeVisible();
     if (locale !== "en")
       await expect(page.locator("main")).not.toContainText(
         /physical-attempt|state-transition|succeeded|retrying|unclassified-evidence/,

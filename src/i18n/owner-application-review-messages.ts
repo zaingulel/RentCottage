@@ -3,7 +3,6 @@ import type { Locale } from "./routing";
 export const ownerApplicationReviewMessages: Record<
   Locale,
   {
-    eyebrow: string;
     title: string;
     intro: string;
     accessRequired: string;
@@ -25,7 +24,6 @@ export const ownerApplicationReviewMessages: Record<
   }
 > = {
   en: {
-    eyebrow: "Administrator review",
     title: "Submitted Owner Applications",
     intro:
       "Open a 60-second secure link only when you need to inspect source evidence. Every access is attributed and recorded.",
@@ -49,7 +47,6 @@ export const ownerApplicationReviewMessages: Record<
     nextPage: "Next applications",
   },
   ar: {
-    eyebrow: "مراجعة المسؤول",
     title: "طلبات المالك المرسلة",
     intro:
       "أنشئ رابطاً آمناً لمدة 60 ثانية فقط عند الحاجة لمراجعة الدليل الأصلي. يُنسب كل وصول ويُسجّل.",
@@ -73,7 +70,6 @@ export const ownerApplicationReviewMessages: Record<
     nextPage: "الطلبات التالية",
   },
   ckb: {
-    eyebrow: "پێداچوونەوەی بەڕێوەبەر",
     title: "داواکارییە نێردراوەکانی خاوەن",
     intro:
       "تەنها کاتێک پێویستە بەڵگەی سەرچاوە ببینیت بەستەری پارێزراوی 60 چرکەیی دروست بکە. هەموو دەستگەیشتنێک بە ناوی ئەو کەسەی ئەنجامی دەدات تۆمار دەکرێت.",

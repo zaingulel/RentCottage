@@ -264,7 +264,7 @@ function ReviewFilterForm({
       key={`${filters.state}|${filters.from}|${filters.through}`}
       action={base}
       method="get"
-      className={`${recordStyles.filters} ${recordStyles.reviewFilters}`}
+      className={recordStyles.filters}
     >
       <label>
         <span>{records.status}</span>

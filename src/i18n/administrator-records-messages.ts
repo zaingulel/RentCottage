@@ -1,7 +1,6 @@
 export const administratorRecordsMessages = {
   en: {
     title: "Marketplace records",
-    eyebrow: "Platform Administrator",
     intro:
       "Find accounts, Owner Applications, cottages, and content approval history.",
     records: "Records",
@@ -87,7 +86,6 @@ export const administratorRecordsMessages = {
   },
   ar: {
     title: "سجلات السوق",
-    eyebrow: "مسؤول المنصة",
     intro: "ابحث عن الحسابات وطلبات المالك والبيوت وسجل الموافقات على المحتوى.",
     records: "السجلات",
     applicationsQueue: "طلبات المالك المعلقة",
@@ -175,7 +173,6 @@ export const administratorRecordsMessages = {
   },
   ckb: {
     title: "تۆمارەکانی بازاڕ",
-    eyebrow: "بەڕێوەبەری پلاتفۆرم",
     intro:
       "هەژمارەکان، داواکارییەکانی خاوەن، ماڵەکان و مێژووی پەسەندکردنی ناوەڕۆک بدۆزەوە.",
     records: "تۆمارەکان",
