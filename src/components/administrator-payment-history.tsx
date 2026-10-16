@@ -42,37 +42,40 @@ export function AdministratorPaymentHistoryView({
   const copy = administratorPaymentHistoryMessages[locale];
   return (
     <section className={styles.history} aria-labelledby="payment-history-title">
-      <div className={styles.heading}>
-        <div>
-          <p>{copy.simulated}</p>
-          <h1 id="payment-history-title">{copy.title}</h1>
-        </div>
-        <bdi>{history.bookingRequestReference}</bdi>
-      </div>
+      <header className="page-heading">
+        <h1 className="page-title" id="payment-history-title">
+          {copy.title}
+        </h1>
+        <bdi className={styles.reference}>
+          {history.bookingRequestReference}
+        </bdi>
+        <p>{copy.simulated}</p>
+      </header>
       {history.historyCoverage === "retained-evidence-only" ? (
-        <p className={styles.card} role="note">
+        <p className={styles.notice} role="note">
           {copy.coverage}
         </p>
       ) : null}
-      <section className={styles.card} aria-labelledby="payment-current-title">
-        <h2 id="payment-current-title">{copy.current}</h2>
-        <dl>
-          <div>
-            <dt>{copy.request}</dt>
-            <dd>
-              <bdi>{localizedCode(locale, history.current.requestStatus)}</bdi>
-            </dd>
-          </div>
-          <div>
-            <dt>{copy.payment}</dt>
-            <dd>
-              <bdi>
-                {history.current.paymentStatus
-                  ? localizedCode(locale, history.current.paymentStatus)
-                  : copy.notRecorded}
-              </bdi>
-            </dd>
-          </div>
+      <section
+        className={`card ${styles.current}`}
+        aria-labelledby="payment-current-title"
+      >
+        <h2 className="section-title" id="payment-current-title">
+          {copy.current}
+        </h2>
+        <p className={styles.currentStatus}>
+          <span>{copy.request}:</span>{" "}
+          <bdi>{localizedCode(locale, history.current.requestStatus)}</bdi>
+        </p>
+        <p className={styles.currentStatus}>
+          <span>{copy.payment}:</span>{" "}
+          <bdi>
+            {history.current.paymentStatus
+              ? localizedCode(locale, history.current.paymentStatus)
+              : copy.notRecorded}
+          </bdi>
+        </p>
+        <dl className="fact-list">
           {history.current.paymentRequiredDeadline ? (
             <div>
               <dt>{copy.deadline}</dt>
@@ -102,17 +105,19 @@ export function AdministratorPaymentHistoryView({
         </dl>
       </section>
       <section aria-labelledby="payment-events-title">
-        <h2 id="payment-events-title">{copy.history}</h2>
+        <h2 className="section-title" id="payment-events-title">
+          {copy.history}
+        </h2>
         <p>{copy.timeZone}</p>
         {history.events.length ? (
           <ol className={styles.events}>
             {history.events.map((event) => (
-              <li key={event.id}>
+              <li key={event.id} className={`card ${styles.event}`}>
                 <div className={styles.eventTitle}>
-                  <strong>
+                  <h3 className="card-title">
                     <bdi>{localizedCode(locale, event.kind)}</bdi>
-                  </strong>
-                  <span>
+                  </h3>
+                  <span className="status-badge">
                     <bdi>
                       {localizedCode(
                         locale,
@@ -121,19 +126,23 @@ export function AdministratorPaymentHistoryView({
                     </bdi>
                   </span>
                 </div>
-                {event.operationKind ? (
-                  <p>
-                    {copy.operation}:{" "}
-                    <bdi>{localizedCode(locale, event.operationKind)}</bdi>
-                  </p>
-                ) : null}
-                {event.reasonCode ? (
-                  <p>
-                    {copy.reason}:{" "}
-                    <bdi>{localizedCode(locale, event.reasonCode)}</bdi>
-                  </p>
-                ) : null}
-                <dl>
+                <dl className="fact-list">
+                  {event.operationKind ? (
+                    <div>
+                      <dt>{copy.operation}</dt>
+                      <dd>
+                        <bdi>{localizedCode(locale, event.operationKind)}</bdi>
+                      </dd>
+                    </div>
+                  ) : null}
+                  {event.reasonCode ? (
+                    <div>
+                      <dt>{copy.reason}</dt>
+                      <dd>
+                        <bdi>{localizedCode(locale, event.reasonCode)}</bdi>
+                      </dd>
+                    </div>
+                  ) : null}
                   <div>
                     <dt>{copy.provenance}</dt>
                     <dd>{localizedCode(locale, event.provenance)}</dd>
@@ -201,7 +210,7 @@ export function AdministratorPaymentHistoryView({
                     </dd>
                   </div>
                 </dl>
-                <dl className={styles.references}>
+                <dl className="fact-list">
                   <div>
                     <dt>{copy.eventReference}</dt>
                     <dd>
@@ -284,7 +293,9 @@ export function AdministratorPaymentHistoryView({
             ))}
           </ol>
         ) : (
-          <p>{copy.empty}</p>
+          <div className="empty-state">
+            <p>{copy.empty}</p>
+          </div>
         )}
       </section>
     </section>

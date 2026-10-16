@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useActionState } from "react";
 
 import {
@@ -170,7 +169,11 @@ export function CottageProfileOverview({
         })}
       </div>
       {actor === "administrator" && continuationHref ? (
-        <Link href={continuationHref}>{copy.nextCottages}</Link>
+        <div className="administrator-review-next">
+          <ActionLink kind="secondary" href={continuationHref}>
+            {copy.nextCottages}
+          </ActionLink>
+        </div>
       ) : null}
       {actor === "owner" && canCreate ? (
         <form action={createAction} className="cottage-profile-create-form">

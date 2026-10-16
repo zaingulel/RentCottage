@@ -17,15 +17,17 @@ export default async function AdministratorRecordDetailPage({
   if (result.status === "invalid") notFound();
   if (result.status === "ready")
     return (
-      <main className="owner-application-page">
+      <main className="page results-page page-record">
         <AdministratorRecordDetailView locale={locale} record={result.record} />
       </main>
     );
   const copy = administratorRecordsMessages[locale];
   return (
-    <main className="owner-application-page access-required-page">
-      <section className="access-required-card">
-        <h1>{copy.title}</h1>
+    <main className="page results-page page-record">
+      <header className="page-heading">
+        <h1 className="page-title">{copy.title}</h1>
+      </header>
+      <section className="administrator-notice">
         {result.status === "access_required" ? (
           <ActionFeedback kind="error">{copy.accessRequired}</ActionFeedback>
         ) : result.status === "not_found" ? (

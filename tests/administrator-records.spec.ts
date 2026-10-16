@@ -221,7 +221,7 @@ test.beforeAll(async ({}, testInfo) => {
 
 test("an administrator discovers accounts and approval records with authoritative counts and restricted documents in every locale", async ({
   page,
-}) => {
+}, testInfo) => {
   const fixture = reviewFixture;
   const applications = count(
     "select count(*) from public.owner_applications where status in ('submitted','under_review');",
@@ -246,6 +246,15 @@ test("an administrator discovers accounts and approval records with authoritativ
   );
   await page.getByRole("button", { name: "Verify" }).click();
   await expect(page.getByText(/Administrator access is ready/)).toBeVisible();
+  if (testInfo.project.name === "desktop") {
+    await page.evaluate(() => document.fonts.ready);
+    const capture = testInfo.outputPath("563-before-after-landing-en-1440.png");
+    await page.screenshot({ path: capture, fullPage: true });
+    await testInfo.attach("563-before-after-landing-en-1440", {
+      path: capture,
+      contentType: "image/png",
+    });
+  }
   await page.getByRole("link", { name: "Records" }).click();
   await expect(
     page.getByRole("heading", { name: "Marketplace records" }),
@@ -309,6 +318,28 @@ test("an administrator discovers accounts and approval records with authoritativ
     await expect(
       page.getByRole("link", { name: "Fictional Historic Snapshot" }),
     ).toBeVisible();
+    if (
+      (testInfo.project.name === "desktop" && locale === "en") ||
+      (testInfo.project.name === "mobile" && locale === "ar")
+    ) {
+      const viewport = page.viewportSize()!;
+      const width = testInfo.project.name === "mobile" ? 390 : 1440;
+      if (testInfo.project.name === "mobile")
+        await page.setViewportSize({ width: 390, height: 844 });
+      await page.evaluate(() => document.fonts.ready);
+      await expect(
+        page.getByRole("link", { name: "Fictional Historic Snapshot" }),
+      ).toBeVisible();
+      const name = `563-before-after-records-${locale}-${width}`;
+      const capture = testInfo.outputPath(`${name}.png`);
+      await page.screenshot({ path: capture, fullPage: true });
+      await testInfo.attach(name, {
+        path: capture,
+        contentType: "image/png",
+      });
+      if (testInfo.project.name === "mobile")
+        await page.setViewportSize(viewport);
+    }
     expect(
       await page.evaluate(
         () =>
@@ -414,6 +445,33 @@ test("an administrator discovers accounts and approval records with authoritativ
   expect(
     readyApplication?.documents.find(({ kind }) => kind === "identity")?.id,
   ).toBe(reviewDocumentId);
+  if (testInfo.project.name === "mobile") {
+    const viewport = page.viewportSize()!;
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(
+      `/ar/administrator/owner-applications/${reviewApplicationId}`,
+    );
+    await expect(
+      page.getByText(fixture.reviewLegalName, { exact: true }),
+    ).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await page.evaluate(() => document.fonts.ready);
+    const capture = testInfo.outputPath(
+      "563-before-after-owner-application-ar-390.png",
+    );
+    await page.screenshot({ path: capture, fullPage: true });
+    await testInfo.attach("563-before-after-owner-application-ar-390", {
+      path: capture,
+      contentType: "image/png",
+    });
+    await page.setViewportSize(viewport);
+    await page.goto(
+      `/en/administrator/owner-applications/${reviewApplicationId}`,
+    );
+    await expect(
+      documentRow.getByRole("button", { name: "Create secure link" }),
+    ).toBeVisible();
+  }
   const accessedAfter = new Date(Date.now() - 5_000).toISOString();
   await documentRow.getByRole("button", { name: "Create secure link" }).focus();
   await page.keyboard.press("Enter");
@@ -446,6 +504,103 @@ test("an administrator discovers accounts and approval records with authoritativ
   expect(decodeURIComponent(new URL(href).pathname)).toContain(
     audit.data.object_path,
   );
+
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    const copy = administratorRecordsMessages[locale];
+    await page.goto(`/${locale}/administrator/records`);
+    await expect(page.getByRole("heading", { name: copy.title })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Fictional Queue Owner" }),
+    ).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const query = page.getByLabel(copy.query, { exact: true });
+    if (testInfo.project.name === "desktop") {
+      await expect.soft
+        .poll(async () => {
+          const fields = await Promise.all(
+            [copy.kind, copy.query, copy.status, copy.from, copy.through].map(
+              (label) =>
+                page
+                  .getByLabel(label, { exact: true })
+                  .locator("..")
+                  .boundingBox(),
+            ),
+          );
+          const actions = await page
+            .getByRole("button", { name: copy.search, exact: true })
+            .locator("..")
+            .boundingBox();
+          const [kind, search, status, from, through] = fields;
+          if (!kind || !search || !status || !from || !through || !actions)
+            return null;
+          return {
+            firstRow:
+              Math.abs(kind.y - search.y) < 1 &&
+              Math.abs(kind.y - status.y) < 1,
+            dateRow:
+              Math.abs(from.y - through.y) < 1 &&
+              actions.y >= from.y &&
+              actions.y + actions.height <= from.y + from.height + 1,
+            columns:
+              Math.abs(kind.x - from.x) < 1 &&
+              Math.abs(search.x - through.x) < 1 &&
+              Math.abs(status.x - actions.x) < 1 &&
+              Math.abs(kind.width - search.width) < 1 &&
+              Math.abs(search.width - status.width) < 1,
+            secondRow:
+              from.y >=
+              Math.max(
+                ...fields.slice(0, 3).map((field) => field!.y + field!.height),
+              ),
+          };
+        }, `${locale} records use three columns and a shared date/action row`)
+        .toEqual({
+          firstRow: true,
+          dateRow: true,
+          columns: true,
+          secondRow: true,
+        });
+    }
+    if (testInfo.project.name === "mobile") {
+      await expect.soft
+        .poll(
+          () =>
+            page
+              .locator("form input, form select, form button")
+              .evaluateAll((controls) =>
+                controls.every((control) => {
+                  const bounds = control.getBoundingClientRect();
+                  return bounds.left >= 0 && bounds.right <= window.innerWidth;
+                }),
+              ),
+          `${locale} records fields fit the phone viewport`,
+        )
+        .toBe(true);
+    }
+    await expect.soft(query).toHaveAccessibleDescription(copy.applicationHint);
+    await expect.soft
+      .poll(async () => {
+        const hint = page.getByText(copy.applicationHint, { exact: true });
+        if (!(await hint.isVisible())) return false;
+        const field = await query.boundingBox();
+        return hint.evaluate((element, fieldBottom) => {
+          const bounds = element.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          return (
+            bounds.top >= fieldBottom &&
+            [...range.getClientRects()].every(
+              (line) =>
+                line.left >= Math.max(0, bounds.left) &&
+                line.right <= Math.min(window.innerWidth, bounds.right) + 1 &&
+                line.top >= bounds.top &&
+                line.bottom <= bounds.bottom + 1,
+            )
+          );
+        }, field!.y + field!.height);
+      }, `${locale} complete query guidance is visible below its field`)
+      .toBe(true);
+  }
 
   await page.goto("/en/administrator/records");
   await page

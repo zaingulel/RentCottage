@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/owner-application/review-actions", () => ({
@@ -57,6 +58,103 @@ const detail: OwnerApplicationReviewDetail = {
 };
 
 describe("Owner Application review detail", () => {
+  it("visibly labels review decision fields and preserves submitted form values", async () => {
+    const user = userEvent.setup();
+    render(<OwnerApplicationReviewDetailView locale="en" detail={detail} />);
+
+    const reasons = screen.getAllByRole("textbox", {
+      name: "Reason",
+      exact: true,
+    });
+    expect(reasons).toHaveLength(3);
+    for (const [name, controls] of [
+      ["Reason", reasons],
+      ["Jurisdiction", [screen.getByRole("textbox", { name: "Jurisdiction" })]],
+      [
+        "Licensing basis",
+        [screen.getByRole("combobox", { name: "Licensing basis" })],
+      ],
+      [
+        "Licence or exemption basis",
+        [screen.getByRole("textbox", { name: "Licence or exemption basis" })],
+      ],
+    ] as const) {
+      for (const control of controls) {
+        const labels = (
+          control as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+        ).labels;
+        expect(labels).toHaveLength(1);
+        expect(labels![0]).toBeVisible();
+        expect(labels![0]).toHaveTextContent(name);
+      }
+    }
+
+    const fields = screen.getByRole("group", {
+      name: "Required application fields",
+    });
+    const documents = screen.getByRole("group", { name: "Required evidence" });
+    expect(fields.tagName).toBe("FIELDSET");
+    expect(documents.tagName).toBe("FIELDSET");
+    await user.click(
+      within(fields).getByRole("checkbox", { name: "Legal name", exact: true }),
+    );
+    await user.click(
+      within(documents).getByRole("checkbox", {
+        name: "Identity evidence",
+        exact: true,
+      }),
+    );
+    await user.type(reasons[0], "Please update the identity evidence.");
+    const requestForm = screen
+      .getByRole("button", { name: "Request missing information" })
+      .closest("form")!;
+    const request = new FormData(requestForm);
+    expect(Object.fromEntries(request)).toEqual({
+      locale: "en",
+      action: "request_information",
+      applicationId: "20000000-0000-4000-8000-000000000001",
+      expectedVersion: "2",
+      reason: "Please update the identity evidence.",
+      requestedFields: "legal_name",
+      requestedDocumentKinds: "identity",
+    });
+    expect(request.getAll("requestedFields")).toEqual(["legal_name"]);
+    expect(request.getAll("requestedDocumentKinds")).toEqual(["identity"]);
+
+    await user.type(reasons[1], "Evidence checked.");
+    await user.type(
+      screen.getByRole("textbox", { name: "Jurisdiction" }),
+      "Erbil",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Licensing basis" }),
+      "exemption",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Licence or exemption basis" }),
+      "Recorded exemption evidence.",
+    );
+    await user.type(
+      screen.getByLabelText("Expiry date: Licence or exemption evidence"),
+      "2027-08-16",
+    );
+    const approvalForm = screen
+      .getByRole("button", { name: "Approve Owner Application" })
+      .closest("form")!;
+    expect(Object.fromEntries(new FormData(approvalForm))).toEqual({
+      locale: "en",
+      action: "approve",
+      applicationId: "20000000-0000-4000-8000-000000000001",
+      expectedVersion: "2",
+      reason: "Evidence checked.",
+      jurisdiction: "Erbil",
+      licensingBasis: "exemption",
+      licenceOrExemptionBasis: "Recorded exemption evidence.",
+      "expiryDate:identity": "",
+      "expiryDate:licensing_or_exemption": "2027-08-16",
+    });
+  });
+
   it("shows the private profile, evidence and every legal submitted action", () => {
     render(<OwnerApplicationReviewDetailView locale="en" detail={detail} />);
 

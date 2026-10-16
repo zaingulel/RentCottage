@@ -245,6 +245,22 @@ test("AAL2 support sees ordered redacted history in every launch language", asyn
     await expect(page.getByText("Sensitive Customer")).toHaveCount(0);
     await expect(page.getByText("merchant-secret-value")).toHaveCount(0);
     await expect(page.getByText("raw-provider-token")).toHaveCount(0);
+    if (testInfo.project.name === "mobile" && locale === "ar") {
+      const viewport = page.viewportSize()!;
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.evaluate(() => document.fonts.ready);
+      await expect(events).toHaveCount(3);
+      await expect(events.nth(2)).toContainText(retry);
+      const capture = testInfo.outputPath(
+        "563-before-after-payment-history-ar-390.png",
+      );
+      await page.screenshot({ path: capture, fullPage: true });
+      await testInfo.attach("563-before-after-payment-history-ar-390", {
+        path: capture,
+        contentType: "image/png",
+      });
+      await page.setViewportSize(viewport);
+    }
     await page.goto(`/${locale}/administrator/payments/${supportReference}`);
     const supportLabel = {
       en: "Internal support reference",

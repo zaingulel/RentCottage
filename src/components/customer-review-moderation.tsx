@@ -122,7 +122,7 @@ function HideWithReason({
   return (
     <>
       {hide ? (
-        <dl className={styles.audit}>
+        <dl className={`fact-list ${styles.audit}`}>
           <div>
             <dt>{copy.reason}</dt>
             <dd>{hide.reason}</dd>
@@ -182,7 +182,7 @@ function ModerationCard({
 }) {
   const copy = customerReviewMessages[locale];
   return (
-    <article className={styles.card}>
+    <article className={`card ${styles.card} ${styles.administratorCard}`}>
       <div className={styles.identifiers}>
         <span>
           {copy.bookingReference}: <bdi>{review.bookingRequestReference}</bdi>
@@ -264,7 +264,7 @@ function ReviewFilterForm({
       key={`${filters.state}|${filters.from}|${filters.through}`}
       action={base}
       method="get"
-      className={recordStyles.filters}
+      className={`${recordStyles.filters} ${recordStyles.reviewFilters}`}
     >
       <label>
         <span>{records.status}</span>
@@ -322,14 +322,16 @@ export function CustomerReviewModeration({
   const copy = customerReviewMessages[locale];
   if (result.status === "invalid")
     return (
-      <main className={styles.page}>
-        <h1
-          id="administrator-reviews-heading"
-          tabIndex={-1}
-          className="action-focus-target"
-        >
-          {copy.administratorTitle}
-        </h1>
+      <main className={`page results-page ${styles.administratorPage}`}>
+        <header className="page-heading">
+          <h1
+            id="administrator-reviews-heading"
+            tabIndex={-1}
+            className="page-title action-focus-target"
+          >
+            {copy.administratorTitle}
+          </h1>
+        </header>
         <ActionFocusTarget
           targetId="administrator-reviews-heading"
           navigation
@@ -343,14 +345,16 @@ export function CustomerReviewModeration({
     );
   if (result.status !== "success")
     return (
-      <main className={styles.page}>
-        <h1
-          id="administrator-reviews-heading"
-          tabIndex={-1}
-          className="action-focus-target"
-        >
-          {copy.administratorTitle}
-        </h1>
+      <main className={`page results-page ${styles.administratorPage}`}>
+        <header className="page-heading">
+          <h1
+            id="administrator-reviews-heading"
+            tabIndex={-1}
+            className="page-title action-focus-target"
+          >
+            {copy.administratorTitle}
+          </h1>
+        </header>
         <ActionFocusTarget
           targetId="administrator-reviews-heading"
           navigation
@@ -374,14 +378,16 @@ export function CustomerReviewModeration({
       </main>
     );
   return (
-    <main className={styles.page}>
-      <h1
-        id="administrator-reviews-heading"
-        tabIndex={-1}
-        className="action-focus-target"
-      >
-        {copy.administratorTitle}
-      </h1>
+    <main className={`page results-page ${styles.administratorPage}`}>
+      <header className="page-heading">
+        <h1
+          id="administrator-reviews-heading"
+          tabIndex={-1}
+          className="page-title action-focus-target"
+        >
+          {copy.administratorTitle}
+        </h1>
+      </header>
       <ActionFocusTarget targetId="administrator-reviews-heading" navigation />
       <ActionFocusTarget targetId="administrator-reviews-heading" />
       <ActionLink
@@ -400,11 +406,13 @@ export function CustomerReviewModeration({
         <strong>{formatInteger(result.total, locale)}</strong>
       </p>
       {result.items.length === 0 ? (
-        <p>
-          {filters.state || filters.from || filters.through
-            ? copy.emptyFiltered
-            : copy.empty}
-        </p>
+        <div className="empty-state">
+          <p>
+            {filters.state || filters.from || filters.through
+              ? copy.emptyFiltered
+              : copy.empty}
+          </p>
+        </div>
       ) : null}
       <div className={styles.list}>
         {result.items.map((review) => (
@@ -416,15 +424,15 @@ export function CustomerReviewModeration({
         ))}
       </div>
       {result.nextCursor ? (
-        <Link
-          className={styles.next}
+        <ActionLink
+          kind="secondary"
           href={`/${locale}/administrator/reviews?${nextSearch(
             filters,
             result.nextCursor,
           )}`}
         >
           {copy.next}
-        </Link>
+        </ActionLink>
       ) : null}
     </main>
   );

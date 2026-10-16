@@ -4,6 +4,7 @@ import { notFound, unstable_rethrow } from "next/navigation";
 import { resolvePlatformAdministratorAccess } from "@/access/platform-administrator-gate";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { BackofficeNavigation } from "@/components/backoffice-navigation";
+import { ActionLink } from "@/components/interaction-controls";
 import { OwnerApplicationReviewQueue } from "@/components/owner-application-review-queue";
 import { ownerApplicationReviewMessages } from "@/i18n/owner-application-review-messages";
 import { isLocale } from "@/i18n/routing";
@@ -57,9 +58,11 @@ export default async function OwnerApplicationReviewPage({
 
   if (!page) {
     return (
-      <main className="owner-application-page access-required-page">
-        <section className="access-required-card" role="alert">
-          <h1>{copy.title}</h1>
+      <main className="page results-page">
+        <header className="page-heading">
+          <h1 className="page-title">{copy.title}</h1>
+        </header>
+        <section className="administrator-notice" role="alert">
           <p>{copy.unavailable}</p>
         </section>
       </main>
@@ -68,12 +71,11 @@ export default async function OwnerApplicationReviewPage({
 
   if (page.status === "access_required") {
     return (
-      <main className="owner-application-page access-required-page">
-        <header className="owner-application-header">
-          <span>{copy.eyebrow}</span>
+      <main className="page results-page">
+        <header className="page-heading">
+          <h1 className="page-title">{copy.title}</h1>
         </header>
-        <section className="access-required-card">
-          <h1>{copy.title}</h1>
+        <section className="administrator-notice">
           <p>{copy.accessRequired}</p>
           <Link href={`/${locale}/administrator/access`}>{copy.signIn}</Link>
         </section>
@@ -82,37 +84,35 @@ export default async function OwnerApplicationReviewPage({
   }
 
   return (
-    <main className="owner-application-page">
+    <main className="page results-page">
       <BackofficeNavigation
         locale={locale}
         area="administrator"
         current="owner-applications"
       />
       <section className="administrator-review-page">
-        <div className="application-section-heading">
-          <span>01</span>
-          <div>
-            <h1>{copy.title}</h1>
-            <p>{copy.intro}</p>
-          </div>
-        </div>
+        <header className="page-heading">
+          <h1 className="page-title">{copy.title}</h1>
+          <p>{copy.intro}</p>
+        </header>
         <OwnerApplicationReviewQueue
           locale={locale}
           applications={page.review.applications}
         />
         {page.review.nextCursor ? (
-          <Link
-            className="administrator-review-next"
-            href={{
-              pathname: `/${locale}/administrator/owner-applications`,
-              query: {
-                afterSubmittedAt: page.review.nextCursor.submittedAt,
-                afterApplicationId: page.review.nextCursor.applicationId,
-              },
-            }}
-          >
-            {copy.nextPage}
-          </Link>
+          <div className="administrator-review-next">
+            <ActionLink
+              kind="secondary"
+              href={`/${locale}/administrator/owner-applications?${new URLSearchParams(
+                {
+                  afterSubmittedAt: page.review.nextCursor.submittedAt,
+                  afterApplicationId: page.review.nextCursor.applicationId,
+                },
+              )}`}
+            >
+              {copy.nextPage}
+            </ActionLink>
+          </div>
         ) : null}
       </section>
     </main>

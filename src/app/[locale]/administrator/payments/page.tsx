@@ -13,24 +13,27 @@ export default async function AdministratorPaymentLookupPage({
   if (!isLocale(locale)) notFound();
   const copy = administratorPaymentHistoryMessages[locale];
   return (
-    <main className="owner-application-page access-required-page">
+    <main className="page results-page page-record">
+      <header className="page-heading">
+        <h1 className="page-title">{copy.title}</h1>
+      </header>
       <form
-        className="access-required-card"
+        className="administrator-payment-lookup"
         action={`/${locale}/administrator/payments/lookup`}
         method="get"
       >
-        <p>{copy.eyebrow}</p>
-        <h1>{copy.title}</h1>
-        <label htmlFor="payment-reference">{copy.lookupLabel}</label>
-        <input
-          id="payment-reference"
-          className="form-control"
-          name="reference"
-          required
-          pattern="RC-REQ-[A-F0-9]{16}"
-          autoComplete="off"
-          dir="ltr"
-        />
+        <label htmlFor="payment-reference">
+          <span>{copy.lookupLabel}</span>
+          <input
+            id="payment-reference"
+            className="form-control"
+            name="reference"
+            required
+            pattern="RC-REQ-[A-F0-9]{16}"
+            autoComplete="off"
+            dir="ltr"
+          />
+        </label>
         <ActionButton kind="primary" type="submit">
           {copy.lookupAction}
         </ActionButton>
