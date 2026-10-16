@@ -1,6 +1,6 @@
 {
   "canonical": "zaingulel/fabraik",
-  "syncedFrom": "a85a57268f91c89b7f748f10e872c6ad5fb2028b",
+  "syncedFrom": "b9a438803bd1b158b17f3526676d021af69c3384",
   "entries": [
     {
       "path": ".agents/skills/accessibility-review/SKILL.md",
@@ -837,11 +837,11 @@
     },
     {
       "path": "scripts/lib/closeout-cleanup.mjs",
-      "sha256": "7ae062b76760aaf8c0b8920c7f5c0803f3429e5842ba3f38fbaec0c7572bf470"
+      "sha256": "3864bd5cac9eb4db2f7e30906c2716c4a35112dc9e7f335ee24c4ab0c332bef6"
     },
     {
       "path": "scripts/lib/closeout-cleanup.test.mjs",
-      "sha256": "102978975474a0a92fd498c0fe02d995feee5bb61e51af4c249b6ee04acaeeb4"
+      "sha256": "04fdb4041c51303330f607055187f50efa6abcf384f4084ff7e6b2f09851e276"
     },
     {
       "path": "scripts/lib/codex-hook-adapters.mjs",

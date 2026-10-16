@@ -77,6 +77,7 @@ function scenario(t) {
     records: [{ path: mainDir, branch: 'refs/heads/main' }, { path: worktree, branch: 'refs/heads/job/23' }],
     branch: true,
     status: '',
+    index: reply(0, 'H kept.txt\0'),
     docker: { containers: [], vanished: [] },
     native: {},
     lsof: { listeners: [], open: [] },
@@ -95,6 +96,10 @@ function scenario(t) {
       if (key === `-C ${worktree} status --porcelain -z --untracked-files=normal --ignored=matching`) {
         state.onStatus?.();
         return reply(0, state.status);
+      }
+      if (key === `-C ${worktree} ls-files -v -z`) {
+        assert.deepEqual(args, ['-C', worktree, 'ls-files', '-v', '-z']);
+        return state.index;
       }
       if (args.length === 7 && args[0] === '--literal-pathspecs' && args[1] === '-C' &&
         state.records.some(({ path }) => path === args[2]) && args.slice(3, 6).join(' ') === 'ls-files -z --') {
@@ -291,16 +296,24 @@ test('nothing present exits 3', async (t) => {
 });
 
 test('docker not installed skips containers and still removes the worktree and the branch', { skip: SKIP_POSIX }, async (t) => {
-  const s = scenario(t);
-  s.state.docker = null;
-  assert.deepEqual(await s.cleanup(), {
-    exitCode: 0,
-    out: ['skipped containers: docker is not installed', `removed worktree ${s.worktree}`, 'removed branch job/23', 'closeout-cleanup: 2 removed, 0 retained'],
-    err: [],
-  });
-  assert.equal(existsSync(s.worktree), false);
-  assert.ok(!s.calls.some((call) => call.includes('-D')));
-  assert.deepEqual(s.unexpected, []);
+  for (const [name, stdout] of [
+    ['empty index', ''],
+    ['ordinary filenames with spaces and newlines', 'H kept.txt\0H spaced name.txt\0H line\nbreak.txt\0'],
+  ]) {
+    await t.test(name, async (t) => {
+      const s = scenario(t);
+      s.state.docker = null;
+      s.state.index = reply(0, stdout);
+      assert.deepEqual(await s.cleanup(), {
+        exitCode: 0,
+        out: ['skipped containers: docker is not installed', `removed worktree ${s.worktree}`, 'removed branch job/23', 'closeout-cleanup: 2 removed, 0 retained'],
+        err: [],
+      });
+      assert.equal(existsSync(s.worktree), false);
+      assert.ok(!s.calls.some((call) => call.includes('-D')));
+      assert.deepEqual(s.unexpected, []);
+    });
+  }
 });
 
 const ID_A = 'a'.repeat(64);
@@ -596,6 +609,28 @@ test('a modified, an untracked or an unnamed ignored entry retains the worktree'
     const s = scenario(t);
     s.state.status = status;
     assertWorktreeRetained(s, await s.cleanup(['23', '--regenerated', 'node_modules']), `git status lists "${listed}"`);
+  }
+});
+
+test('ANTI-REGRESSION: unsafe index observations retain the worktree and branch', { skip: SKIP_POSIX }, async (t) => {
+  const rejected = 'git index flags are hidden or unreadable; inspect git ls-files -v, resolve index flags and review local changes before retrying';
+  for (const [name, index, reason] of [
+    ['absent executable', { absent: true }, 'could not read git index flags: not installed'],
+    ['timeout', { failed: 'ETIMEDOUT' }, 'could not read git index flags: failed: ETIMEDOUT'],
+    ['nonzero exit', reply(128, '', 'fatal: index unavailable\n'), 'could not read git index flags: fatal: index unavailable'],
+    ['successful stderr', reply(0, 'H kept.txt\0', 'warning: incomplete index\n'), rejected],
+    ['missing terminal NUL', reply(0, 'H kept.txt'), rejected],
+    ['empty filename', reply(0, 'H \0'), rejected],
+    ['interior empty record', reply(0, 'H kept.txt\0\0H other.txt\0'), rejected],
+    ['unknown tag', reply(0, 'X kept.txt\0'), rejected],
+    ['ordinary record followed by hidden record', reply(0, 'H kept.txt\0S hidden.txt\0'), rejected],
+  ]) {
+    await t.test(name, async (t) => {
+      const s = scenario(t);
+      s.state.index = index;
+      assertWorktreeRetained(s, await s.cleanup(), reason);
+      assertWorktreeNotRemoved(s);
+    });
   }
 });
 
@@ -1159,7 +1194,9 @@ function cliFixture(t, docker, overrides = {}) {
   const git = (args) => spawnSync('git', args, { cwd: root, env, encoding: 'utf8' });
   const ok = (result, what) => assert.equal(result.status, 0, `${what} failed: ${result.stderr}`);
   ok(git(['init', '-q', repository]), 'git init');
-  ok(git(['-C', repository, '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'fixture baseline']), 'baseline commit');
+  writeFileSync(join(repository, 'kept.txt'), 'committed\n');
+  ok(git(['-C', repository, 'add', '--', 'kept.txt']), 'track kept.txt');
+  ok(git(['-C', repository, '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'fixture baseline']), 'baseline commit');
   ok(git(['-C', repository, 'worktree', 'add', '-q', '-b', 'job/23', worktree]), 'job worktree');
   mkdirSync(join(repository, '.git', 'info'), { recursive: true });
   writeFileSync(join(repository, '.git', 'info', 'exclude'), 'node_modules/\n');
@@ -1183,7 +1220,7 @@ function cliFixture(t, docker, overrides = {}) {
   const branchStatus = () => git(['-C', repository, 'rev-parse', '--verify', '--quiet', 'refs/heads/job/23']).status;
   const registered = () => git(['-C', repository, 'worktree', 'list', '--porcelain']).stdout.includes(`worktree ${worktree}\n`);
   const dockerCalls = () => readFileSync(dockerLog, 'utf8').trim().split('\n');
-  return { worktree, scratch, cleanup, branchStatus, registered, dockerCalls };
+  return { worktree, scratch, cleanup, branchStatus, registered, dockerCalls, git };
 }
 
 test('the CLI removes an outside scratch file, the worktree with its regenerated directory and the branch through real git', { skip: process.platform !== 'linux' && 'Docker-present CLI proof requires native Linux' }, (t) => {
@@ -1198,6 +1235,32 @@ test('the CLI removes an outside scratch file, the worktree with its regenerated
   assert.equal(existsSync(f.scratch), false);
   assert.equal(existsSync(f.worktree), false);
   assert.equal(f.branchStatus(), 1);
+});
+
+test('ANTI-REGRESSION: the CLI retains tracked edits hidden by index flags', { skip: process.platform !== 'linux' && 'Docker-present CLI proof requires native Linux' }, async (t) => {
+  for (const [mark, tag] of [['skip-worktree', 'S'], ['assume-unchanged', 'h']]) {
+    await t.test(mark, (t) => {
+      const f = cliFixture(t, DOCKER_EMPTY);
+      const marked = f.git(['-C', f.worktree, 'update-index', `--${mark}`, '--', 'kept.txt']);
+      assert.equal(marked.status, 0, marked.stderr);
+      writeFileSync(join(f.worktree, 'kept.txt'), 'local edit\n');
+      const status = f.git(['-C', f.worktree, 'status', '--porcelain']);
+      assert.equal(status.status, 0, status.stderr);
+      assert.equal(status.stdout, '');
+      const flags = f.git(['-C', f.worktree, 'ls-files', '-v', '-z']);
+      assert.equal(flags.status, 0, flags.stderr);
+      assert.equal(flags.stdout, `${tag} kept.txt\0`);
+      const run = f.cleanup();
+      assert.equal(run.status, 4, run.stdout + run.stderr);
+      assert.equal(run.stderr, '');
+      assert.match(run.stdout, /retained worktree .*: git index flags are hidden or unreadable/);
+      assert.match(run.stdout, /retained branch job\/23: its worktree is retained/);
+      assert.equal(readFileSync(join(f.worktree, 'kept.txt'), 'utf8'), 'local edit\n');
+      assert.equal(f.registered(), true);
+      assert.equal(f.branchStatus(), 0);
+      assert.equal(existsSync(f.scratch), false);
+    });
+  }
 });
 
 test('the CLI retains every target when the docker daemon is unreachable', { skip: process.platform !== 'linux' && 'Docker-present CLI proof requires native Linux' }, (t) => {

@@ -616,8 +616,8 @@ export function parseStatusEntries(stdout) {
   return entries;
 }
 
-// Removes the worktree once git status shows nothing but ignored directories named as regenerated, since removal
-// deletes ignored files without refusing, then confirms git no longer registers it.
+// Requires ordinary index flags as well as status showing only regenerated ignored directories: ordinary removal
+// deletes ignored files and edits hidden by skip-worktree or assume-unchanged without refusing.
 function removeWorktree(git, worktree, regenerated, retainWorktree, verify) {
   const status = git('-C', worktree.path, 'status', '--porcelain', '-z', '--untracked-files=normal', '--ignored=matching');
   if (status.status !== 0) return retainWorktree(`git status failed: ${describe(status)}`);
@@ -629,6 +629,12 @@ function removeWorktree(git, worktree, regenerated, retainWorktree, verify) {
   if (held.length) {
     const more = held.length > 5 ? ` and ${held.length - 5} more` : '';
     return retainWorktree(`git status lists ${held.slice(0, 5).join(', ')}${more}`);
+  }
+  const index = git('-C', worktree.path, 'ls-files', '-v', '-z');
+  if (index.status !== 0) return retainWorktree(`could not read git index flags: ${describe(index)}`);
+  if (index.stderr !== '' || index.stdout !== '' && (!index.stdout.endsWith('\0') ||
+    !index.stdout.slice(0, -1).split('\0').every((record) => record.startsWith('H ') && record.length > 2))) {
+    return retainWorktree('git index flags are hidden or unreadable; inspect git ls-files -v, resolve index flags and review local changes before retrying');
   }
   const unverified = verify();
   if (unverified) return retainWorktree(unverified);
