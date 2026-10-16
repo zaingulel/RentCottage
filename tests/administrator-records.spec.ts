@@ -456,22 +456,24 @@ test("an administrator discovers accounts and approval records with authoritativ
     ).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
     const query = page.getByLabel(copy.query, { exact: true });
+    const controls = [
+      page.getByRole("combobox", { name: copy.kind, exact: true }),
+      query,
+      page.getByRole("combobox", { name: copy.status, exact: true }),
+      page.getByLabel(copy.from, { exact: true }),
+      page.getByLabel(copy.through, { exact: true }),
+    ];
+    const searchButton = page.getByRole("button", {
+      name: copy.search,
+      exact: true,
+    });
     if (testInfo.project.name === "desktop") {
       await expect.soft
         .poll(async () => {
           const fields = await Promise.all(
-            [
-              page.getByRole("combobox", { name: copy.kind, exact: true }),
-              page.getByLabel(copy.query, { exact: true }),
-              page.getByRole("combobox", { name: copy.status, exact: true }),
-              page.getByLabel(copy.from, { exact: true }),
-              page.getByLabel(copy.through, { exact: true }),
-            ].map((control) => control.locator("..").boundingBox()),
+            controls.map((control) => control.locator("..").boundingBox()),
           );
-          const actions = await page
-            .getByRole("button", { name: copy.search, exact: true })
-            .locator("..")
-            .boundingBox();
+          const actions = await searchButton.locator("..").boundingBox();
           const [kind, search, status, from, through] = fields;
           if (!kind || !search || !status || !from || !through || !actions)
             return null;
@@ -506,16 +508,8 @@ test("an administrator discovers accounts and approval records with authoritativ
     if (testInfo.project.name === "mobile") {
       await expect.soft
         .poll(async () => {
-          const controls = [
-            page.getByRole("combobox", { name: copy.kind, exact: true }),
-            query,
-            page.getByRole("combobox", { name: copy.status, exact: true }),
-            page.getByLabel(copy.from, { exact: true }),
-            page.getByLabel(copy.through, { exact: true }),
-            page.getByRole("button", { name: copy.search, exact: true }),
-          ];
           const boxes = await Promise.all(
-            controls.map((control, index) =>
+            [...controls, searchButton].map((control, index) =>
               control.locator(index === 1 ? "../.." : "..").boundingBox(),
             ),
           );
@@ -535,12 +529,9 @@ test("an administrator discovers accounts and approval records with authoritativ
               return {
                 left,
                 right,
-                width: right - left,
                 viewport: window.innerWidth,
               };
             });
-          const first = boxes[0];
-          if (!first) return false;
           return boxes.every((box, index) => {
             const previous = boxes[index - 1];
             return (
@@ -549,12 +540,8 @@ test("an administrator discovers accounts and approval records with authoritativ
               box.height > 0 &&
               box.x >= 0 &&
               box.x + box.width <= form.viewport &&
-              Math.abs(box.x - first.x) <= 1 &&
-              Math.abs(box.x + box.width - first.x - first.width) <= 1 &&
-              Math.abs(box.width - first.width) <= 1 &&
               Math.abs(box.x - form.left) <= 1 &&
               Math.abs(box.x + box.width - form.right) <= 1 &&
-              Math.abs(box.width - form.width) <= 1 &&
               (index === 0 ||
                 (previous !== null && box.y >= previous.y + previous.height))
             );
