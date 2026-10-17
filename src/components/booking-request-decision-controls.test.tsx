@@ -221,7 +221,7 @@ it("shows Eastern Arabic digits in the Sorani decline hint", () => {
       />,
     );
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: decline, exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: decline }));
     expect(screen.getByText(expected)).toBeVisible();
     expect(screen.getByRole("textbox")).toHaveAttribute("maxLength", "500");
     unmount();
