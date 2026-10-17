@@ -512,7 +512,7 @@ its own; the block it sits in sets the space around it.
   accessible palette/dot contrast and shadow-free controls supersede decorative reference differences.
   Normal field edges, shared chrome and the lower route blocks remain outside this pattern. Never clip focus.
 - Cottage card: a cottage list card has five rows held in a subgrid so cards in a row align: cover, title, detail,
-  small print, actions. The card grid fills its row with empty columns, so a lone card keeps its column width.
+  supporting content, actions. The card grid fills its row with empty columns, so a lone card keeps its column width.
   The cover runs edge to edge at `16 / 10`, cropped with `object-fit: cover`, on `--surface-placeholder` while
   it loads, and shows the first ready photo in the photo editor's order with a translated text alternative that
   names the cottage. Status badges sit over the cover at its block start and inline start, `--space-3` in, on
@@ -522,6 +522,18 @@ its own; the block it sits in sets the space around it.
   shows the From Price in `--muted` at `--font-size-2`, formatted like every other amount, at the inline end of the
   actions row, or on its own line below the open action where the row is too narrow; it shows nothing where there
   is no price.
+  An owner's unpublished draft uses the same five rows: its detail line shows the authoritative completed count
+  out of 13 requirements, with both numbers localized. Row four is `.cottage-profile-draft-progress`, a grid with
+  `--space-2` between a decorative bar and exactly one wrapping next-step sentence. The pill track is `6px` tall,
+  filled with `--line`; its `--gold` fill has the completed fraction as its percentage inline size and starts at
+  the reading edge through inherited direction. This track height is an approved sizing literal. The redundant
+  bar has `aria-hidden`, no animation and no live region. The sentence is start-aligned, selectable body text in
+  `--ink-accent`, weight 700 and `--font-size-1`, with no margin. Incomplete drafts say Continue setup; complete,
+  permitted drafts say Ready to submit for content approval and Review and submit. These actions only navigate
+  to the existing editor. When submission is disallowed, the sentence explains the expired or suspended account
+  and uses Open Cottage Profile. Unavailable progress shows Progress unavailable and directs the owner to check
+  the required details in the editor, with no count or bar. Other card states keep their existing detail and
+  photo-count rows.
 - Request row: `article.card.request-row` shows one waiting Booking Request, in a single-column `div.request-rows`
   with `--space-3` between rows. It uses the card pattern and is a three-column grid with `--space-4` padding and
   gaps: a `5rem` square image frame with `--radius-card` corners on `--surface-placeholder`, left empty when the

@@ -2,6 +2,7 @@ import { formatCount, type CountForms } from "./format";
 import type { Locale } from "./routing";
 import type {
   CottageProfile,
+  CottageProfileDraftRequirement,
   CottageProfileStatus,
 } from "@/cottage-profile/cottage-profile";
 
@@ -27,6 +28,28 @@ const en = {
   createFirst: "Create a cottage draft",
   empty: "No Cottage Profiles are available.",
   open: "Open Cottage Profile",
+  continueSetup: "Continue setup",
+  reviewAndSubmit: "Review and submit",
+  draftProgressCount: "{completed} of {total} requirements complete",
+  draftProgressUnavailable: "Progress unavailable",
+  draftProgressCheck: "Open the Cottage Profile to check the required details",
+  draftProgressReadOnly:
+    "Submission is unavailable while your owner account is expired or suspended",
+  draftReadyToSubmit: "Ready to submit for content approval",
+  draftNextName: "Next: add the cottage name.",
+  draftNextGovernorate: "Next: choose the governorate.",
+  draftNextApproximateLocation: "Next: add an approximate public location.",
+  draftNextCapacity: "Next: set guest capacity.",
+  draftNextBedrooms: "Next: set bedrooms.",
+  draftNextBathrooms: "Next: set bathrooms.",
+  draftNextAmenities: "Next: choose at least one amenity.",
+  draftNextExactPoint: "Next: enter the cottage's exact coordinates.",
+  draftNextPrivateDirections: "Next: add private directions.",
+  draftNextSourceLanguage: "Next: choose the source language.",
+  draftNextDescription: "Next: add a description.",
+  draftNextHouseRules: "Next: add House Rules.",
+  draftNextPhotos:
+    "Next: add or check your photos. You need 1–12 ready photos.",
   nextCottages: "Next Cottage Profiles",
   applicationProfile: "Started in Owner Application",
   noPhotos: "No photos yet",
@@ -183,6 +206,27 @@ const ar: Copy = {
   createFirst: "إنشاء مسودة كوخ",
   empty: "لا توجد ملفات أكواخ متاحة.",
   open: "فتح ملف الكوخ",
+  continueSetup: "متابعة الإعداد",
+  reviewAndSubmit: "المراجعة والإرسال",
+  draftProgressCount: "اكتمل {completed} من {total} متطلبًا",
+  draftProgressUnavailable: "التقدم غير متاح",
+  draftProgressCheck: "افتح ملف الكوخ للتحقق من التفاصيل المطلوبة",
+  draftProgressReadOnly:
+    "الإرسال غير متاح ما دام حساب المالك منتهي الصلاحية أو موقوفًا",
+  draftReadyToSubmit: "جاهز للإرسال للموافقة على المحتوى",
+  draftNextName: "التالي: أضف اسم الكوخ.",
+  draftNextGovernorate: "التالي: اختر المحافظة.",
+  draftNextApproximateLocation: "التالي: أضف موقعًا عامًا تقريبيًا.",
+  draftNextCapacity: "التالي: حدّد سعة الضيوف.",
+  draftNextBedrooms: "التالي: حدّد عدد غرف النوم.",
+  draftNextBathrooms: "التالي: حدّد عدد الحمامات.",
+  draftNextAmenities: "التالي: اختر مرفقًا واحدًا على الأقل.",
+  draftNextExactPoint: "التالي: أدخل إحداثيات الكوخ الدقيقة.",
+  draftNextPrivateDirections: "التالي: أضف اتجاهات الوصول الخاصة.",
+  draftNextSourceLanguage: "التالي: اختر لغة المصدر.",
+  draftNextDescription: "التالي: أضف وصفًا.",
+  draftNextHouseRules: "التالي: أضف قواعد المنزل.",
+  draftNextPhotos: "التالي: أضف صورك أو تحقق منها. تحتاج إلى 1–12 صورة جاهزة.",
   nextCottages: "ملفات الأكواخ التالية",
   applicationProfile: "بدأ في طلب المالك",
   noPhotos: "لا توجد صور بعد",
@@ -318,6 +362,28 @@ const ckb: Copy = {
   createFirst: "دروستکردنی ڕەشنووسی کۆتێج",
   empty: "هیچ پرۆفایلێکی کۆتێج بەردەست نییە.",
   open: "کردنەوەی پرۆفایلی کۆتێج",
+  continueSetup: "بەردەوامبوون لە ئامادەکردن",
+  reviewAndSubmit: "پێداچوونەوە و ناردن",
+  draftProgressCount: "{completed} لە {total} پێداویستی تەواو کراوە",
+  draftProgressUnavailable: "پێشکەوتن بەردەست نییە",
+  draftProgressCheck: "پرۆفایلی کۆتێج بکەرەوە بۆ پشکنینی وردەکارییە پێویستەکان",
+  draftProgressReadOnly:
+    "لە کاتێکدا هەژماری خاوەنەکەت بەسەرچووە یان ڕاگیراوە، ناردن بەردەست نییە",
+  draftReadyToSubmit: "ئامادەیە بۆ ناردن بۆ پەسەندکردنی ناوەڕۆک",
+  draftNextName: "دواتر: ناوی کۆتێج زیاد بکە.",
+  draftNextGovernorate: "دواتر: پارێزگا هەڵبژێرە.",
+  draftNextApproximateLocation: "دواتر: شوێنێکی گشتیی نزیکەیی زیاد بکە.",
+  draftNextCapacity: "دواتر: ژمارەی میوان دیاری بکە.",
+  draftNextBedrooms: "دواتر: ژمارەی ژوورەکانی نوستن دیاری بکە.",
+  draftNextBathrooms: "دواتر: ژمارەی حەمامەکان دیاری بکە.",
+  draftNextAmenities: "دواتر: لانیکەم یەک خزمەتگوزاری هەڵبژێرە.",
+  draftNextExactPoint: "دواتر: کۆئۆردیناتە وردەکانی کۆتێج بنووسە.",
+  draftNextPrivateDirections: "دواتر: ڕێنمایی تایبەتی گەیشتن زیاد بکە.",
+  draftNextSourceLanguage: "دواتر: زمانی سەرچاوە هەڵبژێرە.",
+  draftNextDescription: "دواتر: وەسفێک زیاد بکە.",
+  draftNextHouseRules: "دواتر: یاساکانی ماڵ زیاد بکە.",
+  draftNextPhotos:
+    "دواتر: وێنەکانت زیاد بکە یان بیانپشکنە. پێویستت بە ١–١٢ وێنەی ئامادەیە.",
   nextCottages: "پرۆفایلەکانی دواتری کۆتێج",
   applicationProfile: "لە داواکاری خاوەن دەستی پێکردووە",
   noPhotos: "هێشتا وێنە نییە",
@@ -439,6 +505,31 @@ const ckb: Copy = {
 };
 
 export const cottageProfileMessages: Record<Locale, Copy> = { en, ar, ckb };
+
+const cottageProfileDraftMessageKeys = {
+  name: "draftNextName",
+  governorate: "draftNextGovernorate",
+  approximateLocation: "draftNextApproximateLocation",
+  capacity: "draftNextCapacity",
+  bedrooms: "draftNextBedrooms",
+  bathrooms: "draftNextBathrooms",
+  amenities: "draftNextAmenities",
+  exactPoint: "draftNextExactPoint",
+  privateDirections: "draftNextPrivateDirections",
+  sourceLanguage: "draftNextSourceLanguage",
+  description: "draftNextDescription",
+  houseRules: "draftNextHouseRules",
+  photos: "draftNextPhotos",
+} as const satisfies Record<CottageProfileDraftRequirement, keyof Copy>;
+
+export function cottageProfileDraftNextStepLabel(
+  locale: Locale,
+  requirement: CottageProfileDraftRequirement,
+): string {
+  return cottageProfileMessages[locale][
+    cottageProfileDraftMessageKeys[requirement]
+  ];
+}
 
 const cottageProfileStatusMessageKeys = {
   draft: "draft",

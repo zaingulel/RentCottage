@@ -1498,20 +1498,18 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await page
     .getByRole("button", { name: "Create another cottage draft" })
     .click();
-  await expect(
-    page.getByRole("link", { name: "Open Cottage Profile" }),
-  ).toHaveCount(2);
+  await expect(page.getByRole("link", { name: "Continue setup" })).toHaveCount(
+    2,
+  );
   await page.reload();
-  await expect(
-    page.getByRole("link", { name: "Open Cottage Profile" }),
-  ).toHaveCount(2);
+  await expect(page.getByRole("link", { name: "Continue setup" })).toHaveCount(
+    2,
+  );
 
   const additionalProfile = page
     .getByRole("article")
     .filter({ hasNotText: "Started in Owner Application" });
-  await additionalProfile
-    .getByRole("link", { name: "Open Cottage Profile" })
-    .click();
+  await additionalProfile.getByRole("link", { name: "Continue setup" }).click();
   await page.getByRole("button", { name: "Abandon draft" }).click();
   await expect(page.getByText("Abandoned", { exact: true })).toBeVisible();
   await expect(
@@ -1536,7 +1534,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     .getByRole("article")
     .filter({ hasText: "Started in Owner Application" });
   await applicationProfile
-    .getByRole("link", { name: "Open Cottage Profile" })
+    .getByRole("link", { name: "Continue setup" })
     .click();
   await expect(
     page.getByText(
@@ -1589,6 +1587,27 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   ).toBeVisible();
 
   const profilePath = new URL(page.url()).pathname.replace(/^\/en/, "");
+  await page.goto("/en/owner/cottages");
+  const savedDraftCard = page.getByRole("article").filter({
+    has: page.locator(`a[href="/en${profilePath}"]`),
+  });
+  await expect(
+    savedDraftCard.getByText("12 of 13 requirements complete", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    savedDraftCard.getByText(
+      "Next: add or check your photos. You need 1–12 ready photos.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  const continueSetup = savedDraftCard.getByRole("link", {
+    name: "Continue setup",
+    exact: true,
+  });
+  await continueSetup.focus();
+  await expect(continueSetup).toBeFocused();
+  await continueSetup.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`/en${profilePath}$`));
   for (const locale of ["en", "ar", "ckb"] as const) {
     const copy = cottageShiftScheduleMessages[locale];
     await page.goto(`/${locale}${profilePath}`);
@@ -1996,9 +2015,18 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   expect(await previewResponse.body()).toEqual(cleanCottagePhoto);
 
   await page.goto("/en/owner/cottages");
-  const coverPhotoPath = await page
+  const readyDraftCard = page
     .locator("article.cottage-profile-card")
-    .filter({ has: page.locator(`a[href="/en${profilePath}"]`) })
+    .filter({ has: page.locator(`a[href="/en${profilePath}"]`) });
+  await expect(
+    readyDraftCard.getByText("13 of 13 requirements complete", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    readyDraftCard.getByText("Ready to submit for content approval", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  const coverPhotoPath = await readyDraftCard
     .locator("img")
     .getAttribute("src");
   expect(coverPhotoPath).toMatch(
@@ -2016,7 +2044,14 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   expect(await signedOutCoverPhoto.text()).toBe(
     "Cottage Profile photo is unavailable",
   );
-  await page.goto(`/en${profilePath}`);
+  const reviewAndSubmit = readyDraftCard.getByRole("link", {
+    name: "Review and submit",
+    exact: true,
+  });
+  await reviewAndSubmit.focus();
+  await expect(reviewAndSubmit).toBeFocused();
+  await reviewAndSubmit.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`/en${profilePath}$`));
 
   await page.reload();
   await expect(page.getByLabel("Source language")).toHaveValue("en");
@@ -2169,6 +2204,27 @@ test("an approved owner continues the first Cottage Profile and submits a privat
         .replace("{end}", "02:00") + ` ${scheduleCopy.nextDay}`,
     );
   }
+  await page.goto("/en/owner/cottages");
+  const submittedCard = page.getByRole("article").filter({
+    has: page.locator(`a[href="/en${profilePath}"]`),
+  });
+  await expect(
+    submittedCard.getByText("Submitted for content approval", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    submittedCard.getByText("13 of 13 requirements complete", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    submittedCard.getByText("Ready to submit for content approval", {
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expect(
+    submittedCard.getByRole("link", {
+      name: "Open Cottage Profile",
+      exact: true,
+    }),
+  ).toHaveAttribute("href", `/en${profilePath}`);
 });
 
 test("a Platform Administrator reaches access only after authenticator MFA", async ({
