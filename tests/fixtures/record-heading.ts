@@ -52,14 +52,12 @@ export async function observeRecordHeading(
           ) < 1,
       };
     }, configuredViewport.width);
-  await expect
-    .poll(measureHeadingBounds)
-    .toEqual({
-      above: true,
-      contained: true,
-      startAligned: true,
-      layoutFitsViewport: true,
-    });
+  await expect.poll(measureHeadingBounds).toEqual({
+    above: true,
+    contained: true,
+    startAligned: true,
+    layoutFitsViewport: true,
+  });
   await returnLink.focus();
   await page.keyboard.press("Tab");
   await page.keyboard.press("Shift+Tab");
@@ -74,14 +72,12 @@ export async function observeRecordHeading(
       ),
     )
     .toBe(true);
-  await expect
-    .poll(measureHeadingBounds)
-    .toEqual({
-      above: true,
-      contained: true,
-      startAligned: true,
-      layoutFitsViewport: true,
-    });
+  await expect.poll(measureHeadingBounds).toEqual({
+    above: true,
+    contained: true,
+    startAligned: true,
+    layoutFitsViewport: true,
+  });
   const observationPath = testInfo.outputPath(`${label}.json`);
   await writeFile(
     observationPath,

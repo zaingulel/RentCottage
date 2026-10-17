@@ -1257,9 +1257,9 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
       .innerText();
     expect(bookingReference).toMatch(/^[A-Z0-9][A-Z0-9-]{0,119}$/);
     const bookingPeriod = expectedMorningPeriod(demo.recordedDay);
-    await expect(
-      detailValue(customerDetails, "Booking period"),
-    ).toHaveText(bookingPeriod);
+    await expect(detailValue(customerDetails, "Booking period")).toHaveText(
+      bookingPeriod,
+    );
     await expect(
       detailValue(customerDetails, "Original booking price"),
     ).toHaveText("IQD 180,000");
