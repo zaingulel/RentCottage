@@ -18,8 +18,10 @@ export default async function AdministratorAccessPage({
   const copy = accessMessages[locale];
 
   return (
-    <main className="standalone-access">
-      <h1>{copy.administratorTitle}</h1>
+    <main className="page results-page administrator-access-page page-record">
+      <header className="page-heading">
+        <h1 className="page-title">{copy.administratorTitle}</h1>
+      </header>
       <AdministratorAccessForm
         locale={locale}
         returnTo={safeAdministratorReturnDestination(locale, query.returnTo)}

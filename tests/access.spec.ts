@@ -1148,7 +1148,7 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
     await expect(
       administratorPage
         .locator(
-          ".administrator-review-detail > .application-section .application-status",
+          ".administrator-review-detail > .page-heading .application-status",
         )
         .first(),
     ).toHaveText("Under review");
@@ -1175,7 +1175,7 @@ registerOwnedJourney("owner-submit", async ({ browser, page }, testInfo) => {
     await expect(
       administratorPage
         .locator(
-          ".administrator-review-detail > .application-section .application-status",
+          ".administrator-review-detail > .page-heading .application-status",
         )
         .first(),
     ).toHaveText("Needs information");
@@ -2679,7 +2679,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
 
   await page.getByRole("button", { name: "Start review" }).click();
   const currentAdministratorStatus = page
-    .locator(".administrator-review-detail > .application-section")
+    .locator(".administrator-review-detail > .page-heading")
     .first()
     .locator(".application-status");
   await expect(currentAdministratorStatus).toHaveText("Under review");

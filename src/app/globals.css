@@ -810,8 +810,6 @@ input[type="file"].form-control::file-selector-button {
 }
 
 .administrator-review-page {
-  width: min(68rem, calc(100% - 2.25rem));
-  margin-inline: auto;
   display: grid;
   gap: var(--space-5);
 }
@@ -822,15 +820,17 @@ input[type="file"].form-control::file-selector-button {
 }
 
 .administrator-review-card {
+  display: grid;
+  gap: var(--space-5);
+  min-inline-size: 0;
   padding: var(--space-5);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--card);
+  overflow-wrap: anywhere;
 }
 
 .administrator-review-card > header {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: start;
   justify-content: space-between;
   gap: var(--space-4);
 }
@@ -838,7 +838,13 @@ input[type="file"].form-control::file-selector-button {
 .administrator-review-card h2,
 .administrator-review-card h3,
 .administrator-review-card p {
-  margin-block: var(--space-1);
+  margin: 0;
+}
+
+.administrator-review-card > header > div {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
 }
 
 .administrator-review-card ul {
@@ -883,12 +889,6 @@ input[type="file"].form-control::file-selector-button {
 
 .administrator-review-next {
   justify-self: end;
-  border-radius: 999px;
-  background: var(--green);
-  padding: var(--space-3) var(--space-4);
-  color: var(--ink-on-green-bright);
-  font-weight: 700;
-  text-decoration: none;
 }
 
 .access-required-card {
@@ -1960,53 +1960,26 @@ html[lang="ckb"] .booking-summary h2 {
   gap: var(--space-5);
 }
 
-.review-detail-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4);
-  margin: var(--space-4) 0 0;
-}
-
-.review-detail-grid > div,
-.review-action-card,
 .owner-response-card {
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   padding: var(--space-4);
 }
 
-.review-detail-grid dt {
-  color: var(--muted);
-  font-size: var(--font-size-1);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.review-detail-grid dd {
-  margin: var(--space-1) 0 0;
-  overflow-wrap: anywhere;
-}
-
-.review-actions-section,
-.review-action-card,
 .owner-response-card,
 .owner-response-card form {
   display: grid;
   gap: var(--space-4);
 }
 
-.review-action-card fieldset {
+.administrator-review-detail .review-action-card > label,
+.administrator-review-detail
+  .review-action-card
+  > fieldset:not(.option-group)
+  label {
   display: grid;
   gap: var(--space-2);
-  border: 0;
-  padding: 0;
-}
-
-.review-action-card fieldset label {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
+  min-inline-size: 0;
 }
 
 .application-status-needs_information,
@@ -2025,16 +1998,6 @@ html[lang="ckb"] .booking-summary h2 {
 .application-status-approved {
   background: var(--status-approved-bg);
   color: var(--status-approved-text);
-}
-
-@media (max-width: 40rem) {
-  .review-detail-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.cottage-profile-page {
-  min-height: 100vh;
 }
 
 .cottage-profile-overview,
@@ -4506,4 +4469,131 @@ a:focus-visible,
   outline: 3px solid var(--focus-ring);
   outline-offset: -3px;
   box-shadow: none;
+}
+
+.administrator-notice,
+.administrator-payment-lookup {
+  display: grid;
+  gap: var(--space-5);
+  min-inline-size: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  overflow-wrap: anywhere;
+}
+
+.administrator-notice > p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.administrator-payment-lookup label,
+.administrator-access-page .access-panel label {
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.administrator-payment-lookup > .action {
+  justify-self: start;
+}
+
+.administrator-access-page .access-panel {
+  gap: var(--space-5);
+  margin: 0;
+  padding: var(--space-5);
+}
+
+.administrator-review-page > .page-heading,
+.administrator-review-detail > .page-heading {
+  margin-block-end: 0;
+}
+
+.administrator-application-group,
+.administrator-application-actions,
+.administrator-review-detail .review-action-card {
+  display: grid;
+  gap: var(--space-5);
+  min-inline-size: 0;
+}
+
+.administrator-application-group,
+.administrator-application-history,
+.administrator-review-detail .review-action-card {
+  padding: var(--space-5);
+  overflow-wrap: anywhere;
+}
+
+.administrator-application-group > .section-title,
+.administrator-application-actions > .section-title,
+.administrator-application-history > .section-title {
+  margin-block-end: 0;
+}
+
+.administrator-review-documents {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.administrator-review-detail .review-action-card > fieldset:not(.option-group) {
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.administrator-messaging {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.administrator-moderation-list {
+  display: grid;
+  gap: var(--space-5);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.administrator-moderation-card {
+  display: grid;
+  gap: var(--space-4);
+  min-inline-size: 0;
+  padding: var(--space-5);
+}
+
+.administrator-moderation-card > p {
+  margin: 0;
+}
+
+.administrator-messaging > .action-link {
+  margin-block-start: var(--space-5);
+}
+
+@media (max-width: 40rem) {
+  .administrator-notice,
+  .administrator-payment-lookup,
+  .administrator-access-page .access-panel,
+  .administrator-review-card,
+  .administrator-application-group,
+  .administrator-application-history,
+  .administrator-review-detail .review-action-card,
+  .administrator-moderation-card {
+    padding: var(--space-4);
+  }
+
+  .administrator-review-page,
+  .administrator-review-list,
+  .administrator-review-card,
+  .administrator-review-detail,
+  .administrator-application-group,
+  .administrator-application-actions,
+  .administrator-review-detail .review-action-card,
+  .administrator-moderation-list {
+    gap: var(--space-4);
+  }
 }

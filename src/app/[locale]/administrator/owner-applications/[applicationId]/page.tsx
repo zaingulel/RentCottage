@@ -42,9 +42,11 @@ export default async function OwnerApplicationReviewDetailPage({
 
   if (!page) {
     return (
-      <main className="owner-application-page access-required-page">
-        <section className="access-required-card" role="alert">
-          <h1>{copy.title}</h1>
+      <main className="page results-page page-record">
+        <header className="page-heading">
+          <h1 className="page-title">{copy.title}</h1>
+        </header>
+        <section className="administrator-notice" role="alert">
           <p>{copy.unavailable}</p>
         </section>
       </main>
@@ -53,9 +55,11 @@ export default async function OwnerApplicationReviewDetailPage({
 
   if (page.status === "access_required") {
     return (
-      <main className="owner-application-page access-required-page">
-        <section className="access-required-card">
-          <h1>{copy.title}</h1>
+      <main className="page results-page page-record">
+        <header className="page-heading">
+          <h1 className="page-title">{copy.title}</h1>
+        </header>
+        <section className="administrator-notice">
           <Link href={`/${locale}/administrator/access`}>{copy.back}</Link>
         </section>
       </main>
@@ -64,7 +68,7 @@ export default async function OwnerApplicationReviewDetailPage({
 
   if (!page.detail) notFound();
   return (
-    <main className="owner-application-page">
+    <main className="page results-page page-record">
       <BackofficeNavigation
         locale={locale}
         area="administrator"

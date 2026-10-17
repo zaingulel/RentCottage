@@ -52,8 +52,11 @@ export function formatIqd(amount: number, locale: Locale): string {
   return `IQD ${formatInteger(amount, locale)}`;
 }
 
-export function formatFilsAsIqd(amountFils: number, locale: Locale): string {
-  if (!Number.isSafeInteger(amountFils))
+export function formatFilsAsIqd(
+  amountFils: number | bigint,
+  locale: Locale,
+): string {
+  if (typeof amountFils === "number" && !Number.isSafeInteger(amountFils))
     throw new Error("Money must be exact integer fils");
   const fils = BigInt(amountFils);
   const magnitude = fils < 0n ? -fils : fils;

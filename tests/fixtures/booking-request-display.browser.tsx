@@ -328,13 +328,7 @@ window.renderCottageOverviewDisplay = ({ locale, actor }) => {
               : { role: "platform_administrator" },
         }}
       />
-      <main
-        className={
-          actor === "owner"
-            ? "results-page page"
-            : "owner-application-page cottage-profile-page"
-        }
-      >
+      <main className="results-page page">
         <BackofficeNavigation locale={locale} area={actor} current="cottages" />
         <CottageProfileOverview
           locale={locale}
@@ -430,13 +424,7 @@ window.renderCottageEditorDisplay = ({
           }}
         />
       ) : null}
-      <main
-        className={
-          actor === "owner"
-            ? "results-page page"
-            : "owner-application-page cottage-profile-page"
-        }
-      >
+      <main className="results-page page">
         <BackofficeNavigation locale={locale} area={actor} current="cottages" />
         <CottageProfileEditor
           key={`${locale}:${actor}:${state}`}

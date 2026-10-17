@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 
@@ -17,7 +18,6 @@ import {
   ActionButton,
   ActionFeedback,
   ActionFocusTarget,
-  ActionLink,
   FormControl,
   prepareActionFocusNavigation,
 } from "./interaction-controls";
@@ -218,20 +218,30 @@ export function AdministratorAccessForm({
           {message}
         </ActionFeedback>
       )}
-      {complete && reviewHref ? (
-        <ActionLink kind="text" href={reviewHref}>
-          {copy.reviewApplications}
-        </ActionLink>
-      ) : null}
-      {complete && cottageProfilesHref ? (
-        <ActionLink kind="text" href={cottageProfilesHref}>
-          {copy.manageCottageProfiles}
-        </ActionLink>
-      ) : null}
-      {complete && recordsHref ? (
-        <ActionLink kind="text" href={recordsHref}>
-          {administratorRecordsMessages[locale].records}
-        </ActionLink>
+      {complete ? (
+        <ul className="list-rows">
+          {reviewHref ? (
+            <li>
+              <Link className="list-row-title" href={reviewHref}>
+                {copy.reviewApplications}
+              </Link>
+            </li>
+          ) : null}
+          {cottageProfilesHref ? (
+            <li>
+              <Link className="list-row-title" href={cottageProfilesHref}>
+                {copy.manageCottageProfiles}
+              </Link>
+            </li>
+          ) : null}
+          {recordsHref ? (
+            <li>
+              <Link className="list-row-title" href={recordsHref}>
+                {administratorRecordsMessages[locale].records}
+              </Link>
+            </li>
+          ) : null}
+        </ul>
       ) : null}
     </section>
   );

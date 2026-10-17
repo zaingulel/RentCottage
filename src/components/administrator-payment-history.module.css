@@ -1,69 +1,73 @@
 .history {
-  width: min(64rem, calc(100% - 2.25rem));
-  margin: var(--space-6) auto;
   display: grid;
   gap: var(--space-5);
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
 }
 
-.heading,
-.card,
-.events > li {
+.history > :global(.page-heading) {
+  margin-block-end: 0;
+}
+
+.reference {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.notice {
+  margin: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: var(--card);
-  padding: var(--space-4);
+  padding: var(--space-5);
 }
 
-.heading,
-.eventTitle {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-4);
-  align-items: start;
+.current,
+.event {
+  display: grid;
+  gap: var(--space-5);
+  min-inline-size: 0;
+  padding: var(--space-5);
 }
 
-.heading p,
-.heading h1,
-.events p {
+.current > :global(.section-title) {
+  margin-block-end: 0;
+}
+
+.currentStatus {
   margin: 0;
 }
 
-.card dl,
-.events dl {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: var(--space-3);
-}
-
-.card dl > div,
-.events dl > div {
-  min-width: 0;
-}
-
-.card dt,
-.events dt {
+.currentStatus > span {
   color: var(--muted);
-  font-size: var(--font-size-1);
 }
 
-.card dd,
-.events dd {
-  margin: var(--space-1) 0 0;
-  overflow-wrap: anywhere;
+.eventTitle {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: start;
+  gap: var(--space-3);
 }
 
 .events {
   list-style: none;
   padding: 0;
+  margin: var(--space-5) 0 0;
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 
-.references {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-  gap: var(--space-2);
-  margin-block-start: var(--space-3);
-  font-size: var(--font-size-1);
-  overflow-wrap: anywhere;
+@media (max-width: 40rem) {
+  .current,
+  .event,
+  .notice {
+    padding: var(--space-4);
+  }
+
+  .history,
+  .current,
+  .event,
+  .events {
+    gap: var(--space-4);
+  }
 }

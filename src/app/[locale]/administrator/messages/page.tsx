@@ -73,7 +73,7 @@ export default async function AdministratorMessagingPage({
     );
   }
   return (
-    <main className="results-page">
+    <main className="page results-page">
       <MessagingModeration locale={locale} moderation={moderation} />
     </main>
   );

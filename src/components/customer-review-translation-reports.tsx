@@ -21,8 +21,8 @@ function ReportCard({
 }) {
   const copy = customerReviewMessages[locale];
   return (
-    <article className={styles.card}>
-      <h2>
+    <article className={`card ${styles.card} ${styles.administratorCard}`}>
+      <h2 className="card-title">
         {report.subject === "reply"
           ? copy.ownerReply
           : copy.translatedReviewText}
@@ -77,8 +77,10 @@ export function CustomerReviewTranslationReports({
   const moderationHref = `/${locale}/administrator/reviews`;
   if (result.status !== "success")
     return (
-      <main className={styles.page}>
-        <h1>{copy.translationReportsTitle}</h1>
+      <main className={`page results-page ${styles.administratorPage}`}>
+        <header className="page-heading">
+          <h1 className="page-title">{copy.translationReportsTitle}</h1>
+        </header>
         {result.status === "invalid" ? (
           <ActionFeedback kind="error">{copy.invalid}</ActionFeedback>
         ) : (
@@ -99,14 +101,16 @@ export function CustomerReviewTranslationReports({
       </main>
     );
   return (
-    <main className={styles.page}>
+    <main className={`page results-page ${styles.administratorPage}`}>
       <BackofficeNavigation
         locale={locale}
         area="administrator"
         current="queues"
         nested
       />
-      <h1>{copy.translationReportsTitle}</h1>
+      <header className="page-heading">
+        <h1 className="page-title">{copy.translationReportsTitle}</h1>
+      </header>
       {result.items.length === 0 ? (
         <div className="empty-state">
           <p>{copy.translationReportsEmpty}</p>

@@ -70,6 +70,24 @@ describe("localized formatting", () => {
     expect(() => formatFilsAsIqd(0.1, "en")).toThrow();
   });
 
+  it("formats bigint fils exactly in every launch locale", () => {
+    for (const [locale, smallest, fraction, largest] of [
+      ["en", "IQD 0.001", "IQD 105,000.001", "IQD 9,223,372,036,854,775.807"],
+      ["ar", "IQD 0.001", "IQD 105,000.001", "IQD 9,223,372,036,854,775.807"],
+      ["ckb", "IQD ٠٫٠٠١", "IQD ١٠٥٬٠٠٠٫٠٠١", "IQD ٩٬٢٢٣٬٣٧٢٬٠٣٦٬٨٥٤٬٧٧٥٫٨٠٧"],
+    ] as const) {
+      expect(formatFilsAsIqd(1n, locale)).toBe(smallest);
+      expect(formatFilsAsIqd(105000001n, locale)).toBe(fraction);
+      expect(formatFilsAsIqd(9223372036854775807n, locale)).toBe(largest);
+    }
+    expect(() => formatFilsAsIqd(Number.MAX_SAFE_INTEGER + 1, "en")).toThrow(
+      "Money must be exact integer fils",
+    );
+    expect(() => formatFilsAsIqd(0.1, "en")).toThrow(
+      "Money must be exact integer fils",
+    );
+  });
+
   it.each([
     ["ar", "IQD 9,007,199,254,740.991", "IQD \u200e-0.001", "IQD 0.001"],
     ["ckb", "IQD ٩٬٠٠٧٬١٩٩٬٢٥٤٬٧٤٠٫٩٩١", "IQD \u200f-٠٫٠٠١", "IQD ٠٫٠٠١"],

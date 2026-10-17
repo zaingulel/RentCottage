@@ -138,15 +138,22 @@ export function AdministratorRecords({
     view.status === "invalid"
       ? "administrator-records-filter-error"
       : undefined;
+  const queryHintId = "administrator-records-query-hint";
+  const queryHint = copy[
+    `${filters.kind.slice(0, -1)}Hint` as keyof typeof copy
+  ] as string;
 
   return (
     <section
-      className={styles.content}
+      className={styles.recordsContent}
       aria-labelledby="administrator-records-title"
     >
-      <p className={styles.eyebrow}>{copy.eyebrow}</p>
-      <h1 id="administrator-records-title">{copy.title}</h1>
-      <p>{copy.intro}</p>
+      <header className="page-heading">
+        <h1 className="page-title" id="administrator-records-title">
+          {copy.title}
+        </h1>
+        <p>{copy.intro}</p>
+      </header>
       <div className={styles.queues} role="group" aria-label={copy.queuesLabel}>
         <ActionButton
           kind="secondary"
@@ -171,7 +178,10 @@ export function AdministratorRecords({
             : ""}
         </ActionButton>
       </div>
-      <form onSubmit={submit} className={styles.filters}>
+      <form
+        onSubmit={submit}
+        className={`${styles.filters} ${styles.recordsFilters}`}
+      >
         <label>
           <span>{copy.kind}</span>
           <FormControl
@@ -195,23 +205,25 @@ export function AdministratorRecords({
             ))}
           </FormControl>
         </label>
-        <label>
-          <span>{copy.query}</span>
-          <FormControl
-            kind="input"
-            name="query"
-            aria-invalid={Boolean(filterErrorId) || undefined}
-            aria-describedby={filterErrorId}
-            value={filters.query}
-            onChange={(event) => change({ query: event.target.value })}
-            placeholder={
-              copy[
-                `${filters.kind.slice(0, -1)}Hint` as keyof typeof copy
-              ] as string
-            }
-            autoComplete="off"
-          />
-        </label>
+        <div className={styles.queryFilter}>
+          <label>
+            <span>{copy.query}</span>
+            <FormControl
+              kind="input"
+              name="query"
+              aria-invalid={Boolean(filterErrorId) || undefined}
+              aria-describedby={[filterErrorId, queryHintId]
+                .filter(Boolean)
+                .join(" ")}
+              value={filters.query}
+              onChange={(event) => change({ query: event.target.value })}
+              autoComplete="off"
+            />
+          </label>
+          <p id={queryHintId} className={styles.queryHint}>
+            {queryHint}
+          </p>
+        </div>
         {filters.kind !== "customers" ? (
           <label>
             <span>{copy.status}</span>
@@ -234,7 +246,7 @@ export function AdministratorRecords({
             </FormControl>
           </label>
         ) : null}
-        <label>
+        <label className={styles.fromFilter}>
           <span>{copy.from}</span>
           <FormControl
             kind="input"
@@ -246,7 +258,7 @@ export function AdministratorRecords({
             onChange={(event) => change({ from: event.target.value || null })}
           />
         </label>
-        <label>
+        <label className={styles.throughFilter}>
           <span>{copy.through}</span>
           <FormControl
             kind="input"
@@ -316,23 +328,27 @@ export function AdministratorRecords({
               </strong>
             </p>
             {view.page.rows.length ? (
-              <ol className={styles.list}>
+              <ol className={styles.recordsList}>
                 {view.page.rows.map((row) => (
-                  <li key={row.id} className={styles.card}>
-                    <ActionLink kind="text" href={recordHref(locale, row)}>
-                      {row.label}
-                    </ActionLink>
-                    <dl>
+                  <li key={row.id} className={`card ${styles.recordCard}`}>
+                    <header className={styles.recordHeading}>
+                      <h2 className="card-title">
+                        <ActionLink kind="text" href={recordHref(locale, row)}>
+                          {row.label}
+                        </ActionLink>
+                      </h2>
+                      <p className={styles.recordStatus}>
+                        {copy.status}:{" "}
+                        <span className="status-badge">
+                          <StatusText locale={locale} status={row.status} />
+                        </span>
+                      </p>
+                    </header>
+                    <dl className="fact-list">
                       <div>
                         <dt>{copy.id}</dt>
                         <dd>
                           <bdi>{row.id}</bdi>
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{copy.status}</dt>
-                        <dd>
-                          <StatusText locale={locale} status={row.status} />
                         </dd>
                       </div>
                       <div>
@@ -366,7 +382,9 @@ export function AdministratorRecords({
                 ))}
               </ol>
             ) : (
-              <p>{copy.empty}</p>
+              <div className="empty-state">
+                <p>{copy.empty}</p>
+              </div>
             )}
             {view.page.nextCursor ? (
               <ActionButton
@@ -402,30 +420,34 @@ function DecisionDetails({
 }) {
   const copy = administratorRecordsMessages[locale];
   return (
-    <dl className={styles.detailList}>
-      <div>
-        <dt>{copy.status}</dt>
-        <dd>{approved ? copy.approved : copy.rejected}</dd>
-      </div>
-      <div>
-        <dt>{copy.reason}</dt>
-        <dd>{reason}</dd>
-      </div>
-      <div>
-        <dt>{copy.administrator}</dt>
-        <dd>
-          <bdi>{administratorId}</bdi>
-        </dd>
-      </div>
-      <div>
-        <dt>{copy.decided}</dt>
-        <dd>
-          <time dateTime={decidedAt}>
-            {formatIraqDateTime(decidedAt, locale)}
-          </time>
-        </dd>
-      </div>
-    </dl>
+    <>
+      <p className={styles.recordStatus}>
+        {copy.status}:{" "}
+        <span className="status-badge">
+          {approved ? copy.approved : copy.rejected}
+        </span>
+      </p>
+      <dl className="fact-list">
+        <div>
+          <dt>{copy.reason}</dt>
+          <dd>{reason}</dd>
+        </div>
+        <div>
+          <dt>{copy.administrator}</dt>
+          <dd>
+            <bdi>{administratorId}</bdi>
+          </dd>
+        </div>
+        <div>
+          <dt>{copy.decided}</dt>
+          <dd>
+            <time dateTime={decidedAt}>
+              {formatIraqDateTime(decidedAt, locale)}
+            </time>
+          </dd>
+        </div>
+      </dl>
+    </>
   );
 }
 
@@ -438,142 +460,150 @@ export function AdministratorRecordDetailView({
 }) {
   const copy = administratorRecordsMessages[locale];
   return (
-    <article className={styles.content}>
-      <ActionLink kind="text" href={`/${locale}/administrator/records`}>
-        {copy.back}
-      </ActionLink>
-      <h1>{record.kind === "account" ? copy.account : copy.approval}</h1>
+    <article className={styles.recordsContent}>
+      <header className="page-heading">
+        <ActionLink kind="text" href={`/${locale}/administrator/records`}>
+          {copy.back}
+        </ActionLink>
+        <h1 className="page-title">
+          {record.kind === "account" ? copy.account : copy.approval}
+        </h1>
+      </header>
       {record.kind === "account" ? (
         <>
-          <dl className={styles.detailList}>
-            <div>
-              <dt>{copy.id}</dt>
-              <dd>
-                <bdi>{record.id}</bdi>
-              </dd>
-            </div>
-            <div>
-              <dt>{copy.role}</dt>
-              <dd>
-                <StatusText locale={locale} status={record.marketplaceRole} />
-              </dd>
-            </div>
-            <div>
-              <dt>{copy.customerCapability}</dt>
-              <dd>{copy.yes}</dd>
-            </div>
+          <section className={`card ${styles.summary}`}>
             {record.ownerApprovalState ? (
-              <div>
-                <dt>{copy.ownerApproval}</dt>
-                <dd>
+              <p className={styles.recordStatus}>
+                {copy.ownerApproval}:{" "}
+                <span className="status-badge">
                   <StatusText
                     locale={locale}
                     status={record.ownerApprovalState}
                   />
+                </span>
+              </p>
+            ) : null}
+            <dl className="fact-list">
+              <div>
+                <dt>{copy.id}</dt>
+                <dd>
+                  <bdi>{record.id}</bdi>
                 </dd>
               </div>
-            ) : null}
-            {record.maskedPhone ? (
               <div>
-                <dt>{copy.phone}</dt>
+                <dt>{copy.role}</dt>
                 <dd>
-                  <bdi>{record.maskedPhone}</bdi>
+                  <StatusText locale={locale} status={record.marketplaceRole} />
                 </dd>
               </div>
-            ) : null}
-            <div>
-              <dt>{copy.created}</dt>
-              <dd>
-                <time dateTime={record.createdAt}>
-                  {formatIraqDateTime(record.createdAt, locale)}
-                </time>
-              </dd>
-            </div>
-          </dl>
-          <div className={styles.detailLinks}>
-            {record.applicationId ? (
-              <ActionLink
-                kind="text"
-                href={`/${locale}/administrator/owner-applications/${record.applicationId}`}
-              >
-                {copy.applicationLink}
-              </ActionLink>
-            ) : null}
-            {record.marketplaceRole === "cottage_owner" ? (
-              <ActionLink
-                kind="text"
-                href={`/${locale}/administrator/records?scope=cottages&ownerId=${record.id}`}
-              >
-                {copy.cottagesLink}
-              </ActionLink>
-            ) : null}
-          </div>
-        </>
-      ) : (
-        <>
-          <dl className={styles.detailList}>
-            <div>
-              <dt>{copy.id}</dt>
-              <dd>
-                <bdi>{record.id}</bdi>
-              </dd>
-            </div>
-            <div>
-              <dt>{copy.profileId}</dt>
-              <dd>
-                <bdi>{record.profileId}</bdi>
-              </dd>
-            </div>
-            <div>
-              <dt>{copy.ownerId}</dt>
-              <dd>
-                <bdi>{record.ownerId}</bdi>
-              </dd>
-            </div>
-            <div>
-              <dt>{copy.cycle}</dt>
-              <dd>
-                {new Intl.NumberFormat(locale).format(record.cycleNumber)}
-              </dd>
-            </div>
-            <div>
-              <dt>{copy.status}</dt>
-              <dd>
-                <StatusText locale={locale} status={record.state} />
-              </dd>
-            </div>
-            <div>
-              <dt>{copy.locality}</dt>
-              <dd>{record.approximateLocation}</dd>
-            </div>
-            <div>
-              <dt>{copy.created}</dt>
-              <dd>
-                <time dateTime={record.createdAt}>
-                  {formatIraqDateTime(record.createdAt, locale)}
-                </time>
-              </dd>
-            </div>
-            {record.decidedAt ? (
               <div>
-                <dt>{copy.decided}</dt>
+                <dt>{copy.customerCapability}</dt>
+                <dd>{copy.yes}</dd>
+              </div>
+              {record.maskedPhone ? (
+                <div>
+                  <dt>{copy.phone}</dt>
+                  <dd>
+                    <bdi>{record.maskedPhone}</bdi>
+                  </dd>
+                </div>
+              ) : null}
+              <div>
+                <dt>{copy.created}</dt>
                 <dd>
-                  <time dateTime={record.decidedAt}>
-                    {formatIraqDateTime(record.decidedAt, locale)}
+                  <time dateTime={record.createdAt}>
+                    {formatIraqDateTime(record.createdAt, locale)}
                   </time>
                 </dd>
               </div>
-            ) : null}
-          </dl>
-          <h2>{record.name}</h2>
-          <ActionLink
-            kind="text"
-            href={`/${locale}/administrator/cottages/${record.profileId}`}
-          >
-            {copy.profileLink}
-          </ActionLink>
-          <section>
-            <h2>{copy.publicationDecision}</h2>
+            </dl>
+            <div className={styles.detailLinks}>
+              {record.applicationId ? (
+                <ActionLink
+                  kind="text"
+                  href={`/${locale}/administrator/owner-applications/${record.applicationId}`}
+                >
+                  {copy.applicationLink}
+                </ActionLink>
+              ) : null}
+              {record.marketplaceRole === "cottage_owner" ? (
+                <ActionLink
+                  kind="text"
+                  href={`/${locale}/administrator/records?scope=cottages&ownerId=${record.id}`}
+                >
+                  {copy.cottagesLink}
+                </ActionLink>
+              ) : null}
+            </div>
+          </section>
+        </>
+      ) : (
+        <>
+          <section className={`card ${styles.summary}`}>
+            <p className={styles.recordStatus}>
+              {copy.status}:{" "}
+              <span className="status-badge">
+                <StatusText locale={locale} status={record.state} />
+              </span>
+            </p>
+            <dl className="fact-list">
+              <div>
+                <dt>{copy.id}</dt>
+                <dd>
+                  <bdi>{record.id}</bdi>
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.profileId}</dt>
+                <dd>
+                  <bdi>{record.profileId}</bdi>
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.ownerId}</dt>
+                <dd>
+                  <bdi>{record.ownerId}</bdi>
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.cycle}</dt>
+                <dd>
+                  {new Intl.NumberFormat(locale).format(record.cycleNumber)}
+                </dd>
+              </div>
+              <div>
+                <dt>{copy.locality}</dt>
+                <dd>{record.approximateLocation}</dd>
+              </div>
+              <div>
+                <dt>{copy.created}</dt>
+                <dd>
+                  <time dateTime={record.createdAt}>
+                    {formatIraqDateTime(record.createdAt, locale)}
+                  </time>
+                </dd>
+              </div>
+              {record.decidedAt ? (
+                <div>
+                  <dt>{copy.decided}</dt>
+                  <dd>
+                    <time dateTime={record.decidedAt}>
+                      {formatIraqDateTime(record.decidedAt, locale)}
+                    </time>
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+            <h2 className="card-title">{record.name}</h2>
+            <ActionLink
+              kind="text"
+              href={`/${locale}/administrator/cottages/${record.profileId}`}
+            >
+              {copy.profileLink}
+            </ActionLink>
+          </section>
+          <section className={`card ${styles.summary}`}>
+            <h2 className="section-title">{copy.publicationDecision}</h2>
             {record.publicationDecision ? (
               <DecisionDetails
                 locale={locale}
@@ -583,13 +613,18 @@ export function AdministratorRecordDetailView({
               <p>{copy.noDecision}</p>
             )}
           </section>
-          <section>
-            <h2>{copy.localizationDecisions}</h2>
+          <section className={styles.decisionGroup}>
+            <h2 className="section-title">{copy.localizationDecisions}</h2>
             {record.localizedDecisions.length ? (
-              <ol className={styles.list}>
+              <ol className={styles.recordsList}>
                 {record.localizedDecisions.map((decision) => (
-                  <li key={decision.decisionId} className={styles.card}>
-                    <h3>{copy.languageNames[decision.locale]}</h3>
+                  <li
+                    key={decision.decisionId}
+                    className={`card ${styles.recordCard}`}
+                  >
+                    <h3 className="card-title">
+                      {copy.languageNames[decision.locale]}
+                    </h3>
                     <p>
                       {copy.revision}: <bdi>{decision.revisionId}</bdi>
                     </p>

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { ActionLink } from "@/components/interaction-controls";
 
 import { formatIraqDateTime } from "@/i18n/format";
 import { messagingMessages } from "@/i18n/messaging-messages";
@@ -14,17 +14,25 @@ export function MessagingModeration({
 }) {
   const copy = messagingMessages[locale];
   return (
-    <section className="messaging-shell" dir={directionFor(locale)}>
-      <h1>{copy.moderation}</h1>
-      <ul>
+    <section className="administrator-messaging" dir={directionFor(locale)}>
+      <header className="page-heading">
+        <h1 className="page-title">{copy.moderation}</h1>
+      </header>
+      <ul className="administrator-moderation-list">
         {moderation.items.map((item) =>
           item.type === "blocked" ? (
-            <li key={item.attemptId}>
-              <strong>{copy.blockedAttempts}</strong>
+            <li
+              key={item.attemptId}
+              className="card administrator-moderation-card"
+            >
+              <h2 className="card-title">{copy.blockedAttempts}</h2>
               <p>
-                <Link href={`/${locale}/messages/${item.conversationId}`}>
+                <ActionLink
+                  kind="text"
+                  href={`/${locale}/messages/${item.conversationId}`}
+                >
                   {item.actorRole === "customer" ? copy.customer : copy.owner}
-                </Link>{" "}
+                </ActionLink>{" "}
                 · {copy.categories[item.category]} ·{" "}
                 {formatIraqDateTime(item.occurredAt, locale)}
               </p>
@@ -33,11 +41,17 @@ export function MessagingModeration({
               </p>
             </li>
           ) : (
-            <li key={item.reportId}>
-              <strong>{copy.translationReports}</strong>
-              <Link href={`/${locale}/messages/${item.conversationId}`}>
+            <li
+              key={item.reportId}
+              className="card administrator-moderation-card"
+            >
+              <h2 className="card-title">{copy.translationReports}</h2>
+              <ActionLink
+                kind="text"
+                href={`/${locale}/messages/${item.conversationId}`}
+              >
                 {copy.categories[item.category]}
-              </Link>
+              </ActionLink>
               <p
                 lang={item.originalLanguage}
                 dir={directionFor(item.originalLanguage)}
@@ -61,11 +75,12 @@ export function MessagingModeration({
         )}
       </ul>
       {moderation.nextCursor ? (
-        <Link
+        <ActionLink
+          kind="secondary"
           href={`/${locale}/administrator/messages?at=${encodeURIComponent(moderation.nextCursor.at)}&id=${moderation.nextCursor.id}&type=${moderation.nextCursor.type}`}
         >
           {copy.older}
-        </Link>
+        </ActionLink>
       ) : null}
     </section>
   );

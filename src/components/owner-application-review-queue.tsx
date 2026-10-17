@@ -145,7 +145,11 @@ export function OwnerApplicationReviewQueue({
 }) {
   const copy = ownerApplicationReviewMessages[locale];
   if (applications.length === 0) {
-    return <p className="application-notice">{copy.empty}</p>;
+    return (
+      <div className="empty-state">
+        <p>{copy.empty}</p>
+      </div>
+    );
   }
 
   return (
@@ -153,16 +157,16 @@ export function OwnerApplicationReviewQueue({
       {applications.map((application) => (
         <article
           key={application.applicationId}
-          className="administrator-review-card"
+          className="card administrator-review-card"
         >
           <header>
             <div>
-              <span>
+              <span className="status-badge">
                 {application.status === "under_review"
                   ? copy.underReview
                   : copy.submitted}
               </span>
-              <h2>{application.legalName}</h2>
+              <h2 className="card-title">{application.legalName}</h2>
             </div>
             <time dateTime={application.submittedAt}>
               {new Intl.DateTimeFormat(locale, {
@@ -188,7 +192,7 @@ export function OwnerApplicationReviewQueue({
           >
             {copy.openApplication}
           </Link>
-          <h3>{copy.documents}</h3>
+          <h3 className="section-title">{copy.documents}</h3>
           <ul>
             {application.documents.map((document) => (
               <ReviewDocument

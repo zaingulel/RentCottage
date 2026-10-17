@@ -428,7 +428,9 @@ its own; the block it sits in sets the space around it.
   same record follow inside the `li`.
 - Card: `article.card` presents one record among several in a grid or list on a page that uses the Page template.
   The same `.card` surface also applies to the public cottage booking aside, cottage editor field groups and the
-  Customer Booking Request status/progress, reference/details and separate Messages groups. It is a `--card` surface with `--radius-card` corners and the `--shadow-card` elevation shadow. It shows no
+  Customer Booking Request status/progress, reference/details and separate Messages groups, and to Platform
+  Administrator account/approval summaries, Owner Application facts/evidence/action groups and current-payment
+  facts. It is a `--card` surface with `--radius-card` corners and the `--shadow-card` elevation shadow. It shows no
   border: its `1px` border is `transparent`, so the card keeps an edge where the browser forces colours and removes
   shadows. It sets no padding and no layout; the block that uses it does. Its text has three tiers: `card-title` on
   the record's heading, in `--display` at weight 700 in `--ink` at `--font-size-4`, with line height `1.25` and
@@ -437,6 +439,12 @@ its own; the block it sits in sets the space around it.
   The cottage list card, `.cottage-profile-card`, uses the pattern and adds the Cottage card rules below. A
   panel, notice, list row or empty state outside those named groups is not a card and keeps its `1px` `--line`
   border.
+  Administrator card groups use `--space-5` padding and separation, with `--space-4` at `phone`. Records filters
+  retain their bordered treatment and use three equal shrinkable columns above `phone`: kind/query/status on
+  the first row, from/through/actions on the second. The customer kind leaves the status slot empty. At `phone`,
+  filters follow document order in one column. Complete query guidance wraps in a paragraph below its field,
+  associated through `aria-describedby` alongside any existing error association. Records results use two equal
+  columns, one at `phone`; title links start-align even when wrapping. Review filters use the base filter grid; records-specific columns and slot positions belong only to `.recordsFilters` and its descendants.
 - Search result: each result uses the card surface with an `18rem` photo beside its details, moving above them at
   `tablet`. Without a photo, omit the empty frame and use the full detail width. The detail header places its
   overview at the inline start and From Price at the inline end, in `--display`, `--green` and `--font-size-5`,

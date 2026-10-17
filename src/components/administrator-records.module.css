@@ -1,14 +1,3 @@
-.content {
-  width: min(100%, 76rem);
-  margin-inline: auto;
-  padding: clamp(var(--space-4), 3vw, var(--space-7));
-}
-
-.eyebrow {
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
 .queues,
 .actions,
 .detailLinks {
@@ -26,6 +15,39 @@
   padding: var(--space-5);
   border: 1px solid var(--line-records);
   border-radius: var(--radius-card);
+}
+
+.recordsFilters {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fromFilter {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.throughFilter {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.recordsFilters > .actions {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.queryFilter {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.queryHint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-size-1);
+  overflow-wrap: anywhere;
 }
 
 .filters label {
@@ -54,56 +76,84 @@
   font-size: var(--font-size-3);
 }
 
-.list {
+@media (max-width: 40rem) {
+  .recordsFilters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recordsFilters > label,
+  .recordsFilters > .actions {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+.recordsContent {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.recordsList {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5);
   list-style: none;
+  margin: var(--space-5) 0;
   padding: 0;
 }
 
-.card {
-  min-width: 0;
+.recordCard,
+.summary {
+  display: grid;
+  align-content: start;
+  min-inline-size: 0;
+  gap: var(--space-5);
   padding: var(--space-5);
-  border: 1px solid var(--line-records);
-  border-radius: var(--radius-card);
-  overflow-wrap: anywhere;
 }
 
-.card a {
-  font-weight: 700;
+.summary,
+.decisionGroup {
+  margin-block-end: var(--space-5);
 }
 
-.card dl,
-.detailList {
+.recordHeading {
   display: grid;
-  gap: var(--space-2);
-  margin-block: var(--space-4);
-}
-
-.card dl div,
-.detailList div {
-  display: grid;
-  grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr);
   gap: var(--space-3);
-  min-width: 0;
 }
 
-.card dt,
-.detailList dt {
-  font-weight: 700;
+.recordHeading :global(.action-link) {
+  justify-content: start;
+  text-align: start;
+  font: inherit;
 }
 
-.card dd,
-.detailList dd {
+.recordStatus {
   margin: 0;
-  overflow-wrap: anywhere;
+}
+
+.summary > :global(.section-title),
+.summary > .detailLinks {
+  margin: 0;
 }
 
 @media (max-width: 40rem) {
-  .card dl div,
-  .detailList div {
-    grid-template-columns: 1fr;
-    gap: var(--space-1);
+  .recordsList {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recordsList,
+  .recordCard,
+  .summary {
+    gap: var(--space-4);
+  }
+
+  .recordCard,
+  .summary {
+    padding: var(--space-4);
+  }
+
+  .summary,
+  .decisionGroup {
+    margin-block-end: var(--space-4);
   }
 }

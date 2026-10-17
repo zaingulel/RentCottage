@@ -33,12 +33,14 @@ export default async function AdministratorPaymentHistoryPage({
   if (result?.status === "not_found") notFound();
   if (!result || result.status === "access_required") {
     return (
-      <main className="owner-application-page access-required-page">
+      <main className="page results-page page-record">
+        <header className="page-heading">
+          <h1 className="page-title">{copy.title}</h1>
+        </header>
         <section
-          className="access-required-card"
+          className="administrator-notice"
           role={!result ? "alert" : undefined}
         >
-          <h1>{copy.title}</h1>
           <p>{result ? copy.accessRequired : copy.unavailable}</p>
           {result ? (
             <Link href={`/${locale}/administrator/access`}>
@@ -57,7 +59,7 @@ export default async function AdministratorPaymentHistoryPage({
     return null;
   });
   return (
-    <main className="owner-application-page payment-history-page">
+    <main className="page results-page page-record">
       <BackofficeNavigation
         locale={locale}
         area="administrator"

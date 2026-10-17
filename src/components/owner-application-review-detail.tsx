@@ -5,7 +5,9 @@ import { useActionState } from "react";
 import {
   ActionButton,
   ActionFeedback,
+  ChoiceControl,
   FormControl,
+  OptionGroup,
 } from "@/components/interaction-controls";
 import { ownerApplicationMessages } from "@/i18n/owner-application-messages";
 import { ownerApplicationReviewDetailMessages } from "@/i18n/owner-application-review-detail-messages";
@@ -76,13 +78,12 @@ export function OwnerApplicationReviewDetailView({
 
   return (
     <div className="administrator-review-detail">
-      <section className="application-section">
-        <div className="application-section-heading">
-          <span>01</span>
-          <h1>{copy.title}</h1>
-        </div>
+      <header className="page-heading">
+        <h1 className="page-title">{copy.title}</h1>
         <StatusLabel locale={locale} status={detail.status} />
-        <dl className="review-detail-grid">
+      </header>
+      <section className="card administrator-application-group">
+        <dl className="fact-list">
           <div>
             <dt>{copy.legalName}</dt>
             <dd>{detail.legalName}</dd>
@@ -118,12 +119,9 @@ export function OwnerApplicationReviewDetailView({
         </dl>
       </section>
 
-      <section className="application-section">
-        <div className="application-section-heading">
-          <span>02</span>
-          <h2>{copy.cottage}</h2>
-        </div>
-        <dl className="review-detail-grid">
+      <section className="card administrator-application-group">
+        <h2 className="section-title">{copy.cottage}</h2>
+        <dl className="fact-list">
           <div>
             <dt>{ownerCopy.cottageName}</dt>
             <dd>{detail.cottage.name}</dd>
@@ -163,11 +161,8 @@ export function OwnerApplicationReviewDetailView({
         </dl>
       </section>
 
-      <section className="application-section">
-        <div className="application-section-heading">
-          <span>03</span>
-          <h2>{copy.evidence}</h2>
-        </div>
+      <section className="card administrator-application-group">
+        <h2 className="section-title">{copy.evidence}</h2>
         <ul className="administrator-review-documents">
           {detail.documents.map((document) => (
             <ReviewDocument
@@ -179,13 +174,10 @@ export function OwnerApplicationReviewDetailView({
         </ul>
       </section>
 
-      <section className="application-section review-actions-section">
-        <div className="application-section-heading">
-          <span>04</span>
-          <h2>{copy.application}</h2>
-        </div>
+      <section className="administrator-application-actions">
+        <h2 className="section-title">{copy.application}</h2>
         {detail.status === "submitted" ? (
-          <form action={action}>
+          <form action={action} className="card review-action-card">
             <ReviewActionFields
               detail={detail}
               locale={locale}
@@ -198,87 +190,100 @@ export function OwnerApplicationReviewDetailView({
         ) : null}
         {canDecide ? (
           <>
-            <form action={action} className="review-action-card">
+            <form action={action} className="card review-action-card">
               <ReviewActionFields
                 detail={detail}
                 locale={locale}
                 action="request_information"
               />
-              <h3>{copy.requestInformation}</h3>
-              <FormControl
-                kind="textarea"
-                name="reason"
-                aria-label={copy.reason}
-                required
-                maxLength={1000}
-              />
-              <fieldset>
-                <legend>{copy.requestedFields}</legend>
+              <h3 className="card-title">{copy.requestInformation}</h3>
+              <label>
+                <span>{copy.reason}</span>
+                <FormControl
+                  kind="textarea"
+                  name="reason"
+                  aria-label={copy.reason}
+                  required
+                  maxLength={1000}
+                />
+              </label>
+              <OptionGroup legend={copy.requestedFields} layout="stack">
                 {ownerApplicationResponseFields.map((field) => (
-                  <label key={field}>
-                    <input
-                      type="checkbox"
-                      name="requestedFields"
-                      value={field}
-                    />
+                  <ChoiceControl
+                    key={field}
+                    kind="checkbox"
+                    name="requestedFields"
+                    value={field}
+                  >
                     {ownerCopy.missing[field] ?? field}
-                  </label>
+                  </ChoiceControl>
                 ))}
-              </fieldset>
-              <fieldset>
-                <legend>{copy.requestedDocuments}</legend>
+              </OptionGroup>
+              <OptionGroup legend={copy.requestedDocuments} layout="stack">
                 {verificationDocumentKinds.map((kind) => (
-                  <label key={kind}>
-                    <input
-                      type="checkbox"
-                      name="requestedDocumentKinds"
-                      value={kind}
-                    />
+                  <ChoiceControl
+                    key={kind}
+                    kind="checkbox"
+                    name="requestedDocumentKinds"
+                    value={kind}
+                  >
                     {ownerCopy.documentKinds[kind].title}
-                  </label>
+                  </ChoiceControl>
                 ))}
-              </fieldset>
+              </OptionGroup>
               <ActionButton kind="secondary" size="regular" type="submit">
                 {copy.requestInformation}
               </ActionButton>
             </form>
-            <form action={action} className="review-action-card">
+            <form action={action} className="card review-action-card">
               <ReviewActionFields
                 detail={detail}
                 locale={locale}
                 action="approve"
               />
-              <h3>{copy.approve}</h3>
-              <FormControl
-                kind="textarea"
-                name="reason"
-                aria-label={copy.reason}
-                required
-                maxLength={1000}
-              />
-              <FormControl
-                kind="input"
-                name="jurisdiction"
-                aria-label={copy.jurisdiction}
-                required
-                maxLength={120}
-              />
-              <FormControl
-                kind="select"
-                name="licensingBasis"
-                aria-label={copy.licensingBasis}
-                defaultValue={detail.licensingBasis}
-              >
-                <option value="licence">{copy.licence}</option>
-                <option value="exemption">{copy.exemption}</option>
-              </FormControl>
-              <FormControl
-                kind="textarea"
-                name="licenceOrExemptionBasis"
-                aria-label={copy.basis}
-                required
-                maxLength={1000}
-              />
+              <h3 className="card-title">{copy.approve}</h3>
+              <label>
+                <span>{copy.reason}</span>
+                <FormControl
+                  kind="textarea"
+                  name="reason"
+                  aria-label={copy.reason}
+                  required
+                  maxLength={1000}
+                />
+              </label>
+              <label>
+                <span>{copy.jurisdiction}</span>
+                <FormControl
+                  kind="input"
+                  name="jurisdiction"
+                  aria-label={copy.jurisdiction}
+                  required
+                  maxLength={120}
+                />
+              </label>
+              <label>
+                <span>{copy.licensingBasis}</span>
+                <FormControl
+                  kind="select"
+                  name="licensingBasis"
+                  aria-label={copy.licensingBasis}
+                  defaultValue={detail.licensingBasis}
+                >
+                  <option value="licence">{copy.licence}</option>
+                  <option value="exemption">{copy.exemption}</option>
+                </FormControl>
+              </label>
+              <label>
+                <span>{copy.basis}</span>
+                <FormControl
+                  kind="textarea"
+                  name="licenceOrExemptionBasis"
+                  aria-label={copy.basis}
+                  required
+                  maxLength={1000}
+                />
+              </label>
               <fieldset>
                 <legend>{copy.expiryDate}</legend>
                 {detail.documents.map((document) => (
@@ -297,20 +302,23 @@ export function OwnerApplicationReviewDetailView({
                 {copy.approve}
               </ActionButton>
             </form>
-            <form action={action} className="review-action-card">
+            <form action={action} className="card review-action-card">
               <ReviewActionFields
                 detail={detail}
                 locale={locale}
                 action="reject"
               />
-              <h3>{copy.reject}</h3>
-              <FormControl
-                kind="textarea"
-                name="reason"
-                aria-label={copy.reason}
-                required
-                maxLength={1000}
-              />
+              <h3 className="card-title">{copy.reject}</h3>
+              <label>
+                <span>{copy.reason}</span>
+                <FormControl
+                  kind="textarea"
+                  name="reason"
+                  aria-label={copy.reason}
+                  required
+                  maxLength={1000}
+                />
+              </label>
               <ActionButton kind="secondary" size="regular" type="submit">
                 {copy.reject}
               </ActionButton>
@@ -318,20 +326,23 @@ export function OwnerApplicationReviewDetailView({
           </>
         ) : null}
         {detail.status === "approved" || detail.status === "expired" ? (
-          <form action={action} className="review-action-card">
+          <form action={action} className="card review-action-card">
             <ReviewActionFields
               detail={detail}
               locale={locale}
               action="suspend"
             />
-            <h3>{copy.suspend}</h3>
-            <FormControl
-              kind="textarea"
-              name="reason"
-              aria-label={copy.reason}
-              required
-              maxLength={1000}
-            />
+            <h3 className="card-title">{copy.suspend}</h3>
+            <label>
+              <span>{copy.reason}</span>
+              <FormControl
+                kind="textarea"
+                name="reason"
+                aria-label={copy.reason}
+                required
+                maxLength={1000}
+              />
+            </label>
             <ActionButton kind="secondary" size="regular" type="submit">
               {copy.suspend}
             </ActionButton>
@@ -348,11 +359,8 @@ export function OwnerApplicationReviewDetailView({
         ) : null}
       </section>
 
-      <section className="application-section">
-        <div className="application-section-heading">
-          <span>05</span>
-          <h2>{copy.history}</h2>
-        </div>
+      <section className="application-section administrator-application-history">
+        <h2 className="section-title">{copy.history}</h2>
         {detail.transitions.length ? (
           <ol>
             {detail.transitions.map((transition, index) => (

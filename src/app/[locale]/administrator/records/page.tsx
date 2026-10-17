@@ -44,7 +44,7 @@ export default async function AdministratorRecordsPage({
       ? { status: "invalid" as const }
       : await searchAdministratorRecords(filters);
   return (
-    <main className="owner-application-page">
+    <main className="page results-page">
       <AdministratorRecords
         locale={locale}
         initial={initial}

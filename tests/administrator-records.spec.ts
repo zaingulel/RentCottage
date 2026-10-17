@@ -221,7 +221,7 @@ test.beforeAll(async ({}, testInfo) => {
 
 test("an administrator discovers accounts and approval records with authoritative counts and restricted documents in every locale", async ({
   page,
-}) => {
+}, testInfo) => {
   const fixture = reviewFixture;
   const applications = count(
     "select count(*) from public.owner_applications where status in ('submitted','under_review');",
@@ -446,6 +446,133 @@ test("an administrator discovers accounts and approval records with authoritativ
   expect(decodeURIComponent(new URL(href).pathname)).toContain(
     audit.data.object_path,
   );
+
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    const copy = administratorRecordsMessages[locale];
+    await page.goto(`/${locale}/administrator/records`);
+    await expect(page.getByRole("heading", { name: copy.title })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Fictional Queue Owner" }),
+    ).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const query = page.getByLabel(copy.query, { exact: true });
+    const controls = [
+      page.getByRole("combobox", { name: copy.kind, exact: true }),
+      query,
+      page.getByRole("combobox", { name: copy.status, exact: true }),
+      page.getByLabel(copy.from, { exact: true }),
+      page.getByLabel(copy.through, { exact: true }),
+    ];
+    const searchButton = page.getByRole("button", {
+      name: copy.search,
+      exact: true,
+    });
+    if (testInfo.project.name === "desktop") {
+      await expect.soft
+        .poll(async () => {
+          const fields = await Promise.all(
+            controls.map((control) => control.locator("..").boundingBox()),
+          );
+          const actions = await searchButton.locator("..").boundingBox();
+          const [kind, search, status, from, through] = fields;
+          if (!kind || !search || !status || !from || !through || !actions)
+            return null;
+          return {
+            firstRow:
+              Math.abs(kind.y - search.y) < 1 &&
+              Math.abs(kind.y - status.y) < 1,
+            dateRow:
+              Math.abs(from.y - through.y) < 1 &&
+              actions.y >= from.y &&
+              actions.y + actions.height <= from.y + from.height + 1,
+            columns:
+              Math.abs(kind.x - from.x) < 1 &&
+              Math.abs(search.x - through.x) < 1 &&
+              Math.abs(status.x - actions.x) < 1 &&
+              Math.abs(kind.width - search.width) < 1 &&
+              Math.abs(search.width - status.width) < 1,
+            secondRow:
+              from.y >=
+              Math.max(
+                ...fields.slice(0, 3).map((field) => field!.y + field!.height),
+              ),
+          };
+        }, `${locale} records use three columns and a shared date/action row`)
+        .toEqual({
+          firstRow: true,
+          dateRow: true,
+          columns: true,
+          secondRow: true,
+        });
+    }
+    if (testInfo.project.name === "mobile") {
+      await expect.soft
+        .poll(async () => {
+          const boxes = await Promise.all(
+            [...controls, searchButton].map((control, index) =>
+              control.locator(index === 1 ? "../.." : "..").boundingBox(),
+            ),
+          );
+          const form = await controls[0]
+            .locator("../..")
+            .evaluate((element) => {
+              const bounds = element.getBoundingClientRect();
+              const style = getComputedStyle(element);
+              const left =
+                bounds.left +
+                parseFloat(style.borderLeftWidth) +
+                parseFloat(style.paddingLeft);
+              const right =
+                bounds.right -
+                parseFloat(style.borderRightWidth) -
+                parseFloat(style.paddingRight);
+              return {
+                left,
+                right,
+                viewport: window.innerWidth,
+              };
+            });
+          return boxes.every((box, index) => {
+            const previous = boxes[index - 1];
+            return (
+              box !== null &&
+              box.width > 0 &&
+              box.height > 0 &&
+              box.x >= 0 &&
+              box.x + box.width <= form.viewport &&
+              Math.abs(box.x - form.left) <= 1 &&
+              Math.abs(box.x + box.width - form.right) <= 1 &&
+              (index === 0 ||
+                (previous !== null && box.y >= previous.y + previous.height))
+            );
+          });
+        }, `${locale} records filters fill one phone column in document order`)
+        .toBe(true);
+    }
+    await expect.soft(query).toHaveAccessibleDescription(copy.applicationHint);
+    await expect.soft
+      .poll(async () => {
+        const hint = page.getByText(copy.applicationHint, { exact: true });
+        if (!(await hint.isVisible())) return false;
+        const field = await query.boundingBox();
+        return hint.evaluate((element, fieldBottom) => {
+          const bounds = element.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          return (
+            bounds.top >= fieldBottom &&
+            [...range.getClientRects()].every(
+              (line) =>
+                line.left >= Math.max(0, bounds.left) &&
+                line.right <= Math.min(window.innerWidth, bounds.right) + 1 &&
+                line.top >= bounds.top &&
+                line.bottom <= bounds.bottom + 1,
+            )
+          );
+        }, field!.y + field!.height);
+      }, `${locale} complete query guidance is visible below its field`)
+      .toBe(true);
+  }
 
   await page.goto("/en/administrator/records");
   await page

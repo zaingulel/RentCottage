@@ -50,12 +50,14 @@ export default async function AdministratorCottagesPage({
   }
   if (!page || page.status === "access_required") {
     return (
-      <main className="owner-application-page access-required-page">
+      <main className="page results-page">
+        <header className="page-heading">
+          <h1 className="page-title">{copy.adminTitle}</h1>
+        </header>
         <section
-          className="access-required-card"
+          className="administrator-notice"
           role={!page ? "alert" : undefined}
         >
-          <h1>{copy.adminTitle}</h1>
           <p>{!page ? copy.unavailable : copy.adminAccessRequired}</p>
           {page ? (
             <Link href={`/${locale}/administrator/access`}>
@@ -67,7 +69,7 @@ export default async function AdministratorCottagesPage({
     );
   }
   return (
-    <main className="owner-application-page cottage-profile-page">
+    <main className="page results-page">
       <BackofficeNavigation
         locale={locale}
         area="administrator"
