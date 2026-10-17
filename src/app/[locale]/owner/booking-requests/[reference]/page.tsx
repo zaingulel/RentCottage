@@ -137,7 +137,7 @@ export default async function OwnerConfirmedBookingPage({
       <ActionFocusTarget targetId="owner-booking-request-detail" />
       <ActionFocusTarget targetId="owner-booking-request-detail" navigation />
       <OwnerBookingRequestNotifications
-        headingLevel={1}
+        presentation="page"
         locale={locale}
         notifications={[details.request]}
         focusSuccessorId="owner-booking-request-detail"

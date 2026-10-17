@@ -218,7 +218,7 @@ it("shows no review section outside a Confirmed Booking", async () => {
   expect(screen.queryByRole("region", { name: "Customer review" })).toBeNull();
 });
 
-it("742 owner request headings return to owner bookings", async () => {
+it("owner request headings return to owner bookings", async () => {
   for (const [locale, name] of [
     ["en", "Bookings for my cottages"],
     ["ar", "حجوزات أكواخي"],

@@ -580,7 +580,7 @@ describe("administrator payout investigation", () => {
   );
 });
 
-it("742 cancelled participant headings return before the title", () => {
+it("cancelled participant headings return before the title", () => {
   for (const [locale, customerName, ownerName] of [
     ["en", "My bookings", "Bookings for my cottages"],
     ["ar", "حجوزاتي", "حجوزات أكواخي"],

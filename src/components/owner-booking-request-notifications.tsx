@@ -278,13 +278,13 @@ export function OwnerBookingRequestNotifications({
   notifications,
   focusSuccessorId = "owner-booking-requests-heading",
   waitingPresentation = "card",
-  headingLevel = 2,
+  presentation = "section",
 }: {
   locale: Locale;
   notifications: OwnerBookingRequestNotificationDisplay[] | undefined;
   focusSuccessorId?: string;
   waitingPresentation?: "card" | "row";
-  headingLevel?: 1 | 2;
+  presentation?: "page" | "section";
 }) {
   const copy = ownerBookingRequestMessages[locale];
   const refresh = useBookingRequestRefresh(
@@ -305,6 +305,8 @@ export function OwnerBookingRequestNotifications({
     ({ status, paymentRequiredExpiry }) =>
       isPaymentDisplayStatus(status) || paymentRequiredExpiry !== null,
   );
+  const Heading = presentation === "page" ? "h1" : "h2";
+  const HeadingWrapper = presentation === "page" ? "header" : "div";
   const rows =
     waitingPresentation === "row"
       ? notifications.filter(isWaitingBookingRequest)
@@ -320,32 +322,27 @@ export function OwnerBookingRequestNotifications({
       className="owner-booking-requests"
       aria-labelledby="owner-booking-requests-heading"
     >
-      {headingLevel === 1 ? (
-        <header className="page-heading">
+      <HeadingWrapper
+        className={presentation === "page" ? "page-heading" : undefined}
+      >
+        {presentation === "page" ? (
           <ActionLink kind="text" href={`/${locale}/bookings?workspace=owner`}>
             {accessMessages[locale].ownerBookings}
           </ActionLink>
-          <h1
-            id="owner-booking-requests-heading"
-            tabIndex={-1}
-            className="page-title action-focus-target"
-          >
-            {containsPaymentDisplayState ? copy.paymentTitle : copy.title}
-          </h1>
-          <p>{containsPaymentDisplayState ? copy.paymentIntro : copy.intro}</p>
-        </header>
-      ) : (
-        <div>
-          <h2
-            id="owner-booking-requests-heading"
-            tabIndex={-1}
-            className="section-title action-focus-target"
-          >
-            {containsPaymentDisplayState ? copy.paymentTitle : copy.title}
-          </h2>
-          <p>{containsPaymentDisplayState ? copy.paymentIntro : copy.intro}</p>
-        </div>
-      )}
+        ) : null}
+        <Heading
+          id="owner-booking-requests-heading"
+          tabIndex={-1}
+          className={
+            presentation === "page"
+              ? "page-title action-focus-target"
+              : "section-title action-focus-target"
+          }
+        >
+          {containsPaymentDisplayState ? copy.paymentTitle : copy.title}
+        </Heading>
+        <p>{containsPaymentDisplayState ? copy.paymentIntro : copy.intro}</p>
+      </HeadingWrapper>
       {notifications.length === 0 ? <p>{copy.empty}</p> : null}
       {rows.length > 0 ? (
         <div className="request-rows">

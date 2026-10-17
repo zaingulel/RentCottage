@@ -657,7 +657,7 @@ it("keeps elapsed and attention states held and refreshing until one unpaid-expi
   }
 });
 
-it("742 default owner list retains its section heading", () => {
+it("default owner list retains its section heading", () => {
   for (const [locale, title] of [
     ["en", "Pending Booking Requests"],
     ["ar", "طلبات الحجز قيد الانتظار"],

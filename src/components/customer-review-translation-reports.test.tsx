@@ -297,7 +297,7 @@ describe("CustomerReviewTranslationReports", () => {
   });
 });
 
-it("742 report headings always return to reviews", () => {
+it("report headings always return to reviews", () => {
   const cursor = {
     reportedAt: "2026-10-12T10:00:00.000Z",
     reportId: "33333333-3333-4333-8333-333333333333",

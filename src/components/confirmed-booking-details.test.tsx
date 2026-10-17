@@ -332,7 +332,7 @@ it("shows the persisted lifecycle beside the retained booking reference", () => 
   expect(screen.getByText("Preserved House Rules")).toBeInTheDocument();
 });
 
-it("742 confirmed headings return before the title", () => {
+it("confirmed headings return before the title", () => {
   for (const [locale, customerName, ownerName] of [
     ["en", "My bookings", "Bookings for my cottages"],
     ["ar", "حجوزاتي", "حجوزات أكواخي"],

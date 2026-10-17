@@ -304,7 +304,7 @@ it("keeps request details visible when delivery status cannot load", async () =>
   ).toBeVisible();
 });
 
-it("742 Customer request headings return to My bookings", async () => {
+it("Customer request headings return to My bookings", async () => {
   for (const [locale, name] of [
     ["en", "My bookings"],
     ["ar", "حجوزاتي"],
