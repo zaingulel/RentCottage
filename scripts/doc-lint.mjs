@@ -38,23 +38,8 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import {
-  extractPathRefs,
-  checkPathRefs,
-  parseSkillMeta,
-  findIllegalInvocations,
-  findDateStamps,
-  buildTrackedSet,
-  pathExists,
-  classifyDocLintPath,
-  vendoredSkillNames,
-} from "./lib/doc-lint.mjs";
-import { checkMarkdownLinks } from "./lib/doc-lint-links.mjs";
-import {
-  extractManualHeadings,
-  extractHeadingCitations,
-  checkHeadingCitations,
-} from "./lib/doc-lint-citations.mjs";
+import { docLintVerdict } from "./lib/doc-lint-verdict.mjs";
+import { readSettingsHeader, SETTINGS_PATH } from "./lib/runtimes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STAGED = process.argv.includes("--staged");
@@ -102,122 +87,23 @@ const workingTreeFiles = [
   ]),
 ];
 const scanFiles = STAGED ? indexedFiles : workingTreeTrackedFiles;
-const trackedSet = buildTrackedSet(STAGED ? indexedFiles : workingTreeFiles);
-const vendoredNames = vendoredSkillNames(indexedFiles);
-const dateStampFiles = scanFiles.filter(
-  (rel) => classifyDocLintPath(rel, vendoredNames).dateStamps,
-);
-const pathRefScanFiles = scanFiles.filter(
-  (rel) => classifyDocLintPath(rel, vendoredNames).pathRefs,
-);
-const commandFiles = scanFiles.filter(
-  (rel) => classifyDocLintPath(rel, vendoredNames).illegalInvocations,
-);
-const skillMetaFiles = scanFiles.filter(
-  (rel) => classifyDocLintPath(rel, vendoredNames).skillMeta,
-);
+const resolutionFiles = STAGED ? indexedFiles : workingTreeFiles;
 
 function main() {
-  // Repo-wide only: a scan set that classified nothing across the full tree
-  // means the gate would "pass" over no content at all — fail loud rather than
-  // report a vacuous clean run. --staged legitimately scans only what is
-  // staged, so a commit that stages no prose empties sets by design.
-  if (!STAGED) {
-    const emptySets = [
-      ["path-ref", pathRefScanFiles],
-      ["date-stamp", dateStampFiles],
-      ["illegal-invocation", commandFiles],
-    ]
-      .filter(([, files]) => files.length === 0)
-      .map(([name]) => name);
-    if (emptySets.length > 0) {
-      throw new Error(
-        `empty scan set(s): ${emptySets.join(", ")} — no files classified`,
-      );
-    }
-  }
-
-  const errors = [];
-  const advisories = [];
-
-  // Derived at most once per run, and only once a citation is actually found:
-  // the pre-commit fixture repos arm this CLI in scratch trees that have no
-  // CLAUDE.md/AGENTS.md, so an eager read would crash every clean run. When a
-  // citation IS found AGENTS.md and CLAUDE.md must be readable — the throw is the fail-loud
-  // path, never a silent "no headings" pass.
-  let headingsByManual;
-  const manualHeadings = () => {
-    if (headingsByManual) return headingsByManual;
-    const claudeManual = readContent("CLAUDE.md");
-    const agentsHeadings = extractManualHeadings(readContent("AGENTS.md"));
-    // CLAUDE.md imports AGENTS.md (`@AGENTS.md`), so a CLAUDE.md citation may name a heading of either.
-    headingsByManual = {
-      "CLAUDE.md": new Set([
-        ...extractManualHeadings(claudeManual),
-        ...(/^@AGENTS\.md\s*$/m.test(claudeManual) ? agentsHeadings : []),
-      ]),
-      "AGENTS.md": agentsHeadings,
-    };
-    return headingsByManual;
-  };
-
-  // --- Dangling path refs, dead links, citations — the full scan set ---------
-  for (const rel of pathRefScanFiles) {
-    const text = readContent(rel);
-    const refs = extractPathRefs(text, rel);
-    const dangling = checkPathRefs(refs, (p) => pathExists(trackedSet, p));
-    for (const d of dangling) {
-      errors.push(
-        `${rel}:${d.line} — dangling path ref: \`${d.path}\` does not exist`,
-      );
-    }
-
-    for (const d of checkMarkdownLinks(rel, text, (p) =>
-      pathExists(trackedSet, p),
-    )) {
-      const reason =
-        d.resolved === null ? "escapes the repo root" : "does not exist";
-      errors.push(
-        `${rel}:${d.line} — dead Markdown link: \`${d.target}\` ${reason}`,
-      );
-    }
-
-    const citations = extractHeadingCitations(text);
-    if (citations.length > 0) {
-      for (const v of checkHeadingCitations(citations, manualHeadings())) {
-        errors.push(
-          `${rel}:${v.line} — phantom ${v.manual} citation: \`${v.heading}\` is not a heading`,
-        );
-      }
-    }
-  }
-
-  // --- Illegal invocations — skill bodies under .agents/skills/; the disabled set also reads
-  // the vendored upstream skills' frontmatter, whose bodies are never linted ---
-  const skillFiles = commandFiles.map((rel) => ({
-    path: rel,
-    text: readContent(rel),
-  }));
-  const meta = parseSkillMeta(
-    skillMetaFiles.map((rel) => ({ path: rel, text: readContent(rel) })),
+  const settings = readSettingsHeader(
+    resolutionFiles.includes(SETTINGS_PATH)
+      ? readContent(SETTINGS_PATH)
+      : undefined,
+    SETTINGS_PATH,
   );
-  const disabledNames = [...meta.entries()]
-    .filter(([, v]) => v.disabled)
-    .map(([name]) => name);
-  const illegal = findIllegalInvocations(skillFiles, disabledNames);
-  for (const v of illegal) {
-    errors.push(`${v.path}:${v.line} — ${v.message}`);
-  }
-
-  // --- Date-stamps — ADVISORY, always-loaded + Codex surfaces ------------------
-  for (const rel of dateStampFiles) {
-    const text = readContent(rel);
-    for (const d of findDateStamps(text)) {
-      advisories.push(
-        `${rel}:${d.line} — date-stamp \`${d.match}\` (doc-authoring-leanness: strip date-stamps)`,
-      );
-    }
-  }
+  const { errors, advisories } = docLintVerdict({
+    files: scanFiles,
+    read: readContent,
+    settings,
+    resolutionFiles,
+    vendoredFiles: indexedFiles,
+    allowEmpty: STAGED,
+  });
 
   for (const a of advisories) console.log(`⚠ ${a}`);
   for (const e of errors) console.error(e);
