@@ -58,14 +58,14 @@ describe("Booking Request error messages", () => {
   });
 });
 
-it("uses Eastern Arabic digits in Sorani booking notices", () => {
+it("uses Eastern Arabic digits in the Sorani note hint and preserves booking evidence", () => {
   expect(bookingRequestMessages.ckb).toMatchObject({
     noteHint: "تا ٥٠٠ پیت. زانیاری پەیوەندی مەنووسە.",
     cancellationPolicy:
-      "هەڵوەشاندنەوە لانیکەم ٤٨ کاتژمێر پێش شەفت پارەکە بە تەواوی دەگەڕێنێتەوە. لە ناو ٤٨ کاتژمێر یان نەهاتندا پارە ناگەڕێتەوە.",
+      "هەڵوەشاندنەوە لانیکەم 48 کاتژمێر پێش شەفت پارەکە بە تەواوی دەگەڕێنێتەوە. لە ناو 48 کاتژمێر یان نەهاتندا پارە ناگەڕێتەوە.",
     inside48Warning:
-      "ئەم داواکارییە لە ناو ٤٨ کاتژمێردا دەست پێدەکات و دوای پەسەندکردن پارەکە ناگەڕێتەوە.",
-    acceptInside48: "یاسای نەگەڕاندنەوەی پارە لە ناو ٤٨ کاتژمێردا قبوڵ دەکەم.",
+      "ئەم داواکارییە لە ناو 48 کاتژمێردا دەست پێدەکات و دوای پەسەندکردن پارەکە ناگەڕێتەوە.",
+    acceptInside48: "یاسای نەگەڕاندنەوەی پارە لە ناو 48 کاتژمێردا قبوڵ دەکەم.",
   });
   expect(bookingRequestMessages.en).toMatchObject({
     noteHint: "Up to 500 characters. Do not include contact details.",

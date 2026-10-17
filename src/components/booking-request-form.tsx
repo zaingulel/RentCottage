@@ -81,6 +81,11 @@ export function BookingRequestForm({
   );
   const { pending, run } = useExclusiveAction();
 
+  // Submission keeps the canonical database evidence unchanged.
+  function displayAcceptanceText(text: string | null) {
+    return locale === "ckb" ? text?.replaceAll("48", "٤٨") : text;
+  }
+
   if (result && "bookingRequestReference" in result) {
     return (
       <section
@@ -266,7 +271,9 @@ export function BookingRequestForm({
             {copy.acceptHouseRules}
           </ChoiceControl>
           <div className="booking-request-policy">
-            <p>{acceptanceEvidence.cancellationPolicy}</p>
+            <p>
+              {displayAcceptanceText(acceptanceEvidence.cancellationPolicy)}
+            </p>
             <ChoiceControl
               kind="checkbox"
               required
@@ -290,7 +297,7 @@ export function BookingRequestForm({
           </ChoiceControl>
           {uiPolicy.requiresInside48HourNoRefundAcceptance ? (
             <div className="booking-request-warning">
-              <p>{acceptanceEvidence.inside48Warning}</p>
+              <p>{displayAcceptanceText(acceptanceEvidence.inside48Warning)}</p>
               <ChoiceControl
                 kind="checkbox"
                 required
@@ -299,7 +306,7 @@ export function BookingRequestForm({
                   setAcceptedInside48HourNoRefund(event.target.checked)
                 }
               >
-                {acceptanceEvidence.inside48Acceptance}
+                {displayAcceptanceText(acceptanceEvidence.inside48Acceptance)}
               </ChoiceControl>
             </div>
           ) : null}
