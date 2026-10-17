@@ -93,13 +93,9 @@ export function BookingFinancialDetails({
       {participantCancellation ? null : lifecycleDetails}
       {view.cancellation ? (
         <header
-          className={
-            view.actorRole !== "platform_administrator"
-              ? "page-heading"
-              : undefined
-          }
+          className={participantCancellation ? "page-heading" : undefined}
         >
-          {view.actorRole !== "platform_administrator" ? (
+          {participantCancellation ? (
             <ActionLink
               kind="text"
               href={`/${locale}/bookings${view.actorRole === "cottage_owner" ? "?workspace=owner" : ""}`}
@@ -113,7 +109,7 @@ export function BookingFinancialDetails({
             id={financialFocusTargetId}
             tabIndex={-1}
             className={
-              view.actorRole !== "platform_administrator"
+              participantCancellation
                 ? "page-title action-focus-target"
                 : "action-focus-target"
             }

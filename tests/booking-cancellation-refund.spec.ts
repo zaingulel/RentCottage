@@ -1097,6 +1097,15 @@ test.describe("retained cancellation and refund controls", () => {
                 header: headerRectangle.toJSON(),
                 next: nextRectangle.toJSON(),
                 parent: parent.getBoundingClientRect().toJSON(),
+                panelHtml: parent.outerHTML,
+                language: document.documentElement.lang,
+                direction: document.documentElement.dir,
+                stylesheetHrefs: Array.from(
+                  document.querySelectorAll<HTMLLinkElement>(
+                    'link[rel~="stylesheet"][href]',
+                  ),
+                  (link) => link.href,
+                ),
               };
             }),
             null,
