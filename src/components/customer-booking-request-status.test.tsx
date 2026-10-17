@@ -81,7 +81,9 @@ describe("Customer Booking Request status", () => {
     expect(screen.getByText("Payment deadline").nextSibling).toHaveTextContent(
       "12:20",
     );
-    expect(vi.getTimerCount()).toBe(1);
+    vi.runOnlyPendingTimers();
+    expect(refresh).toHaveBeenCalledOnce();
+    refresh.mockClear();
     view.rerender(
       <CustomerBookingRequestStatus
         locale="en"
@@ -92,7 +94,8 @@ describe("Customer Booking Request status", () => {
       "payment deadline has passed",
     );
     expect(screen.getByRole("status")).toHaveTextContent("remain held");
-    expect(vi.getTimerCount()).toBe(1);
+    vi.runOnlyPendingTimers();
+    expect(refresh).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
   it("shows the request details as a fact list with each label directly before its value", () => {
@@ -211,25 +214,30 @@ describe("Customer Booking Request status", () => {
     const view = render(
       <CustomerBookingRequestStatus locale="en" request={request} />,
     );
-    expect(vi.getTimerCount()).toBe(1);
-    vi.advanceTimersToNextTimer();
+    vi.runOnlyPendingTimers();
     expect(refresh).toHaveBeenCalledOnce();
+    refresh.mockClear();
     view.rerender(
       <CustomerBookingRequestStatus
         locale="en"
         request={{ ...request, status: "paid-confirmed" }}
       />,
     );
-    expect(vi.getTimerCount()).toBe(0);
+    vi.runOnlyPendingTimers();
+    expect(refresh).not.toHaveBeenCalled();
+    refresh.mockClear();
     view.rerender(
       <CustomerBookingRequestStatus
         locale="en"
         request={{ ...request, status: "capture-processing" }}
       />,
     );
-    expect(vi.getTimerCount()).toBe(1);
+    vi.runOnlyPendingTimers();
+    expect(refresh).toHaveBeenCalledOnce();
+    refresh.mockClear();
     view.unmount();
-    expect(vi.getTimerCount()).toBe(0);
+    vi.runOnlyPendingTimers();
+    expect(refresh).not.toHaveBeenCalled();
   });
   it("shows a contact-safe processing state while authoritative withdrawal settles", async () => {
     let finish!: (value: {
@@ -666,6 +674,7 @@ describe("Customer payment recovery command identity", () => {
 it("keeps elapsed and attention states held and refreshing until one unpaid-expiry notice arrives", () => {
   vi.useFakeTimers();
   try {
+    refresh.mockClear();
     let fixture: (typeof customerDisplayFixtures)[
       | "payment-expiry-processing"
       | "payment-expiry-attention-required"] =
@@ -674,8 +683,8 @@ it("keeps elapsed and attention states held and refreshing until one unpaid-expi
       <CustomerBookingRequestStatus locale="en" request={fixture} />,
     );
     expect(screen.getByRole("status")).toHaveTextContent("remain held");
-    vi.advanceTimersToNextTimer();
-    expect(refresh).toHaveBeenCalled();
+    vi.runOnlyPendingTimers();
+    expect(refresh).toHaveBeenCalledOnce();
     fixture = customerDisplayFixtures["payment-expiry-attention-required"];
     view.rerender(
       <CustomerBookingRequestStatus locale="en" request={fixture} />,
@@ -687,8 +696,9 @@ it("keeps elapsed and attention states held and refreshing until one unpaid-expi
     expect(screen.getByRole("status")).toHaveTextContent("remain held");
     expect(screen.getByRole("status")).not.toHaveTextContent("released");
     refresh.mockClear();
-    vi.advanceTimersToNextTimer();
+    vi.runOnlyPendingTimers();
     expect(refresh).toHaveBeenCalledOnce();
+    refresh.mockClear();
     const completed = customerDisplayFixtures["payment-expiry-expired"];
     view.rerender(
       <CustomerBookingRequestStatus locale="en" request={completed} />,
@@ -710,7 +720,8 @@ it("keeps elapsed and attention states held and refreshing until one unpaid-expi
       ),
     ).toHaveLength(1);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    expect(vi.getTimerCount()).toBe(0);
+    vi.runOnlyPendingTimers();
+    expect(refresh).not.toHaveBeenCalled();
     view.unmount();
   } finally {
     vi.useRealTimers();
