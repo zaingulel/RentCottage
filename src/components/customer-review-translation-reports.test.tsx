@@ -296,3 +296,38 @@ describe("CustomerReviewTranslationReports", () => {
     );
   });
 });
+
+it("742 report headings always return to reviews", () => {
+  const cursor = {
+    reportedAt: "2026-10-12T10:00:00.000Z",
+    reportId: "33333333-3333-4333-8333-333333333333",
+  };
+  for (const [locale, name] of [
+    ["en", "Customer review moderation"],
+    ["ar", "إدارة تقييمات العملاء"],
+    ["ckb", "بەڕێوەبردنی هەڵسەنگاندنی کڕیاران"],
+  ] as const) {
+    for (const [result, continued] of [
+      [success([]), false],
+      [success([report]), false],
+      [success([report], cursor), true],
+      [success([]), true],
+    ] as const) {
+      const view = renderReports(result, locale, continued);
+      const titles = screen.getAllByRole("heading", { level: 1 });
+      expect(titles).toHaveLength(1);
+      const title = titles[0];
+      const heading = title.closest("header")!;
+      expect(heading).toHaveClass("page-heading");
+      expect(within(heading).getAllByRole("link")).toHaveLength(1);
+      const link = within(heading).getByRole("link", { name });
+      expect(link).toBeVisible();
+      expect(link).toHaveAttribute("href", `/${locale}/administrator/reviews`);
+      expect(
+        link.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(screen.getAllByRole("link", { name })).toHaveLength(1);
+      view.unmount();
+    }
+  }
+});
