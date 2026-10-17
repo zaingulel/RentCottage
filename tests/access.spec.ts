@@ -1643,6 +1643,22 @@ test("an approved owner continues the first Cottage Profile and submits a privat
         }),
       )
       .toEqual({ fits: true, placed: true });
+    await heading.getByRole("heading", { level: 1 }).click();
+    await expect
+      .poll(() =>
+        action.evaluate((element) => ({
+          focused: element.matches(":focus-visible"),
+          decoration: getComputedStyle(element).textDecorationLine,
+        })),
+      )
+      .toEqual({ focused: false, decoration: "none" });
+    const restingWidth = await page.evaluate(() => innerWidth);
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `cottage-list-resting-${locale}-${restingWidth}-${testInfo.project.name}.png`,
+      ),
+      fullPage: true,
+    });
     await tabTo(page, add);
     await expect(add).toBeFocused();
     await tabTo(page, action);

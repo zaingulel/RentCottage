@@ -520,9 +520,10 @@ its own; the block it sits in sets the space around it.
   `--surface-no-photo` and `--surface-no-photo-band`, each `--space-3` wide, with the label centred in bold
   `--ink-accent` at `--font-size-2`. Supporting content wraps known guest and bedroom facts in `--muted` at `--font-size-1`, with
   `--space-3` between facts; missing facts reserve no space. Non-drafts keep the photo count in that strip.
-  Every card action reuses the underlined green text ActionLink at `--font-size-2`, start-aligned with a 44px
-  minimum height and the shared focus rings. Its decorative, aria-hidden arrow points right in English and
-  mirrors under right-to-left direction. Card insets preserve the full focus perimeter. Eligible owners see
+  Every card action reuses the weight-700 green text ActionLink at `--font-size-2`, with no resting underline
+  or border, start-aligned with a 44px minimum height and the shared keyboard focus rings. The filled Add a
+  cottage action retains priority; existing hover behavior is preserved without new hover styling. Each card
+  action's decorative, aria-hidden arrow points right in English and mirrors under right-to-left direction. Card insets preserve the full focus perimeter. Eligible owners see
   Edit cottage only for published profiles whose working copy is a draft; other fallback states and
   Administrators retain Open Cottage Profile. The actions row puts this action at the inline start. The owner's card
   shows the From Price in `--muted` at `--font-size-2`, formatted like every other amount, at the inline end of the

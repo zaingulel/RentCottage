@@ -2301,6 +2301,7 @@ form.cottage-profile-editor > fieldset,
   min-block-size: 2.75rem;
   font-size: var(--font-size-2);
   text-align: start;
+  text-decoration: none;
 }
 
 .cottage-profile-card-arrow {

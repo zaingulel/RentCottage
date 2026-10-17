@@ -778,6 +778,15 @@ test("cottage list cards start their title and open button at the same height wh
       return {
         titles: rects(".cottage-profile-card h2").map((rect) => rect.top),
         links: rects(".cottage-profile-card a").map((rect) => rect.top),
+        actions: [...document.querySelectorAll(".cottage-profile-card a")].map(
+          (action) => {
+            const style = getComputedStyle(action);
+            return {
+              decoration: style.textDecorationLine,
+              weight: style.fontWeight,
+            };
+          },
+        ),
         link: rects(".cottage-profile-card a")[0].toJSON(),
         price: rects(".cottage-profile-card-price")[0].toJSON(),
         arrows: [
@@ -796,6 +805,10 @@ test("cottage list cards start their title and open button at the same height wh
     });
     expect(measured.titles).toHaveLength(2);
     expect(measured.links).toHaveLength(2);
+    expect(measured.actions).toEqual([
+      { decoration: "none", weight: "700" },
+      { decoration: "none", weight: "700" },
+    ]);
     expect(measured.coverBottoms).toHaveLength(2);
     if (testInfo.project.name === "desktop") {
       expect(measured.titles[0]).toBe(measured.titles[1]);
