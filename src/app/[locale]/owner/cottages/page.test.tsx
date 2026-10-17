@@ -150,7 +150,14 @@ describe("owner Cottage Profiles page", () => {
     expect(
       navigation.getByRole("link", { name: "My cottages" }),
     ).toHaveAttribute("aria-current", "page");
-    expect(screen.getAllByRole("link", { name: "Bookings" })).toHaveLength(1);
+    expect(
+      screen
+        .getAllByRole("link")
+        .filter(
+          (link) =>
+            link.getAttribute("href") === "/en/bookings?workspace=owner",
+        ),
+    ).toHaveLength(1);
     expect(navigation.getByRole("link", { name: "Bookings" })).toBeVisible();
     expect(
       screen.queryByRole("link", { name: "RentCottage" }),
