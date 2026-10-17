@@ -41,12 +41,12 @@ export function BackofficeNavigation({
           {
             key: "cottages",
             href: `/${locale}/owner/cottages`,
-            label: access.manageCottages,
+            label: access.ownerCottagesTab,
           },
           {
             key: "bookings",
             href: `/${locale}/bookings?workspace=owner`,
-            label: access.ownerBookings,
+            label: access.ownerBookingsTab,
           },
         ]
       : [

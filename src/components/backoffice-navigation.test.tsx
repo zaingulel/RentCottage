@@ -14,11 +14,7 @@ function links(areaLabel: string) {
 
 describe("BackofficeNavigation", () => {
   it.each([
-    [
-      "en",
-      "Owner Backoffice",
-      ["Manage my cottages", "Bookings for my cottages"],
-    ],
+    ["en", "Owner Backoffice", ["My cottages", "Bookings"]],
     ["ar", "مكتب مالك الكوخ", ["إدارة أكواخي", "حجوزات أكواخي"]],
     [
       "ckb",
@@ -205,14 +201,14 @@ describe("BackofficeNavigation", () => {
       const navigation = within(
         screen.getByRole("navigation", { name: areaLabel }),
       );
-      const { ownerBookings, manageCottages } = accessMessages[locale];
+      const { ownerBookingsTab, ownerCottagesTab } = accessMessages[locale];
       expect(
         navigation.getByRole("link", {
-          name: `${ownerBookings} ${ownerBookingRequestMessages[locale].title}: ${number}`,
+          name: `${ownerBookingsTab} ${ownerBookingRequestMessages[locale].title}: ${number}`,
         }),
       ).toBeVisible();
       expect(
-        navigation.getByRole("link", { name: manageCottages }),
+        navigation.getByRole("link", { name: ownerCottagesTab }),
       ).toBeVisible();
     },
   );
@@ -230,7 +226,7 @@ describe("BackofficeNavigation", () => {
       expect(
         within(
           screen.getByRole("navigation", { name: "Owner Backoffice" }),
-        ).getByRole("link", { name: "Bookings for my cottages" }),
+        ).getByRole("link", { name: "Bookings" }),
       ).toBeVisible();
       expect(
         container.querySelector(".backoffice-navigation-count"),

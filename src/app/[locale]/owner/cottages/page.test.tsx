@@ -92,9 +92,7 @@ describe("owner Cottage Profiles page", () => {
     );
     expect(listOwner).toHaveBeenCalledOnce();
     expect(loadOwnerBookingRequestNotifications).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole("link", { name: "Bookings for my cottages" }),
-    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Bookings" })).toBeVisible();
   });
 
   it("shows on the Bookings tab the number of pending Booking Requests the page lists", async () => {
@@ -120,9 +118,9 @@ describe("owner Cottage Profiles page", () => {
 
     const bookings = within(
       screen.getByRole("navigation", { name: "Owner Backoffice" }),
-    ).getByRole("link", { name: /^Bookings for my cottages/ });
+    ).getByRole("link", { name: /^Bookings/ });
     expect(bookings).toHaveAccessibleName(
-      "Bookings for my cottages Pending Booking Requests: 2",
+      "Bookings Pending Booking Requests: 2",
     );
     expect(
       screen.getAllByRole("button", { name: "Accept complete request" }),
@@ -150,14 +148,17 @@ describe("owner Cottage Profiles page", () => {
       screen.getByRole("navigation", { name: "Owner Backoffice" }),
     );
     expect(
-      navigation.getByRole("link", { name: "Manage my cottages" }),
+      navigation.getByRole("link", { name: "My cottages" }),
     ).toHaveAttribute("aria-current", "page");
     expect(
-      screen.getAllByRole("link", { name: "Bookings for my cottages" }),
+      screen
+        .getAllByRole("link")
+        .filter(
+          (link) =>
+            link.getAttribute("href") === "/en/bookings?workspace=owner",
+        ),
     ).toHaveLength(1);
-    expect(
-      navigation.getByRole("link", { name: "Bookings for my cottages" }),
-    ).toBeVisible();
+    expect(navigation.getByRole("link", { name: "Bookings" })).toBeVisible();
     expect(
       screen.queryByRole("link", { name: "RentCottage" }),
     ).not.toBeInTheDocument();
