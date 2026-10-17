@@ -1,5 +1,5 @@
 import { selectBookingSettlement } from "@/booking-request/booking-payout";
-import Link from "next/link";
+import { accessMessages } from "@/i18n/access-messages";
 import type { BookingFinancialView } from "@/booking-request/booking-financial-view";
 import { bookingFinancialPresentation } from "@/booking-request/booking-financial-presentation";
 import { refundAllocationTotal } from "@/payment/payment-refund-allocation";
@@ -8,7 +8,7 @@ import { formatFilsAsIqd, formatIraqDateTime } from "@/i18n/format";
 import { bookingPayoutMessages } from "@/i18n/administrator-payment-history-messages";
 import { bookingManagementMessages } from "@/i18n/booking-management-messages";
 import type { Locale } from "@/i18n/routing";
-import { ActionFocusTarget } from "./interaction-controls";
+import { ActionFocusTarget, ActionLink } from "./interaction-controls";
 import { BookingLifecycleDetails } from "./booking-lifecycle-details";
 import { BookingManagementControl } from "./booking-management-controls";
 import { NotificationRetryControl } from "./notification-retry-control";
@@ -87,11 +87,31 @@ export function BookingFinancialDetails({
         eligibility={view.eligibility}
       />
       {view.cancellation ? (
-        <header>
+        <header
+          className={
+            view.actorRole !== "platform_administrator"
+              ? "page-heading"
+              : undefined
+          }
+        >
+          {view.actorRole !== "platform_administrator" ? (
+            <ActionLink
+              kind="text"
+              href={`/${locale}/bookings${view.actorRole === "cottage_owner" ? "?workspace=owner" : ""}`}
+            >
+              {view.actorRole === "customer"
+                ? accessMessages[locale].myBookings
+                : accessMessages[locale].ownerBookings}
+            </ActionLink>
+          ) : null}
           <h1
             id={financialFocusTargetId}
             tabIndex={-1}
-            className="action-focus-target"
+            className={
+              view.actorRole !== "platform_administrator"
+                ? "page-title action-focus-target"
+                : "action-focus-target"
+            }
           >
             {c.cancelled}
           </h1>
@@ -101,13 +121,6 @@ export function BookingFinancialDetails({
             {view.cottageName} · <strong>{view.bookingReference}</strong>
           </p>
           <p>{formatIraqDateTime(view.cancellation.occurredAt, locale)}</p>
-          {view.actorRole !== "platform_administrator" ? (
-            <Link
-              href={`/${locale}/bookings${view.actorRole === "cottage_owner" ? "?workspace=owner" : ""}`}
-            >
-              {c.history}
-            </Link>
-          ) : null}
         </header>
       ) : (
         <h2

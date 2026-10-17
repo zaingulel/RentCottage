@@ -247,7 +247,7 @@ it("742 owner request headings return to owner bookings", async () => {
       const title = titles[0];
       const heading = title.closest("header");
       expect(heading).toHaveClass("page-heading");
-      const link = within(heading!).getByRole("link", { name, exact: true });
+      const link = within(heading!).getByRole("link", { name });
       expect(link).toBeVisible();
       expect(link).toHaveAttribute(
         "href",

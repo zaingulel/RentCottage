@@ -331,3 +331,68 @@ it("shows the persisted lifecycle beside the retained booking reference", () => 
   ).toBeVisible();
   expect(screen.getByText("Preserved House Rules")).toBeInTheDocument();
 });
+
+it("742 confirmed headings return before the title", () => {
+  for (const [locale, customerName, ownerName] of [
+    ["en", "My bookings", "Bookings for my cottages"],
+    ["ar", "حجوزاتي", "حجوزات أكواخي"],
+    ["ckb", "حجزەکانم", "حجزەکانی کۆتێجەکانم"],
+  ] as const) {
+    for (const actorRole of ["customer", "cottage_owner"] as const) {
+      for (const lifecycleStatus of ["confirmed", "completed"] as const) {
+        const access =
+          actorRole === "customer"
+            ? base
+            : {
+                ...base,
+                actorRole,
+                pricing: {
+                  bookingPriceIqd: 110000,
+                  marketplaceCommissionFils: 11000000,
+                  ownerNetFils: 99000000,
+                },
+              };
+        const view = render(
+          <ConfirmedBookingDetails
+            locale={locale}
+            access={access}
+            notification={pending}
+            navigation={null}
+            lifecycleStatus={lifecycleStatus}
+          />,
+        );
+        const titles = screen.getAllByRole("heading", { level: 1 });
+        expect(titles).toHaveLength(1);
+        const title = titles[0];
+        const heading = title.closest("header")!;
+        expect(heading).toHaveClass("page-heading");
+        const links = within(heading).getAllByRole("link");
+        expect(links).toHaveLength(1);
+        const link = within(heading).getByRole("link", {
+          name: actorRole === "customer" ? customerName : ownerName,
+        });
+        expect(link).toBeVisible();
+        expect(link).toHaveAttribute(
+          "href",
+          actorRole === "customer"
+            ? `/${locale}/bookings`
+            : `/${locale}/bookings?workspace=owner`,
+        );
+        expect(
+          link.compareDocumentPosition(title) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+        const supportingText = within(heading).getByText("Preserved Cottage", {
+          exact: false,
+        });
+        expect(supportingText.tagName).toBe("P");
+        expect(
+          within(supportingText).getByText("CONFIRMED-BOOKING-35").tagName,
+        ).toBe("STRONG");
+        expect(title).toHaveAttribute("id", "confirmed-booking-heading");
+        expect(title).toHaveAttribute("tabindex", "-1");
+        view.unmount();
+      }
+    }
+  }
+});

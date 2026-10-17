@@ -3341,18 +3341,6 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
   background: var(--surface-bright);
 }
 
-.confirmed-booking-details > header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.confirmed-booking-details > header p,
-.confirmed-booking-details > header h1 {
-  margin-block: 0 var(--space-1);
-}
-
 .confirmed-booking-details .fact-list {
   margin-block-start: var(--space-6);
 }
@@ -3748,10 +3736,6 @@ section.request-follow-up {
   .fact-list > div {
     grid-template-columns: 1fr;
     gap: var(--space-1);
-  }
-
-  .confirmed-booking-details > header {
-    display: grid;
   }
 
   .booking-request-progress {

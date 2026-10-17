@@ -1,13 +1,16 @@
 import type { BookingLifecycleStatus } from "@/booking-request/booking-lifecycle";
 import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
 import { accessMessages } from "@/i18n/access-messages";
-import Link from "next/link";
 import type { ConfirmedBookingAccess } from "@/booking-request/confirmed-booking-access";
 import type { PaidConfirmationNotificationPresentationStatus } from "@/booking-request/request-confirmed-booking-access";
 import type { NavigationHandoff } from "@/cottage-profile/map-provider";
 import { formatFilsAsIqd, formatIqd, formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
-import { ActionFocusTarget, Disclosure } from "./interaction-controls";
+import {
+  ActionFocusTarget,
+  ActionLink,
+  Disclosure,
+} from "./interaction-controls";
 import { NotificationRetryControl } from "./notification-retry-control";
 
 const messages = {
@@ -148,26 +151,26 @@ export function ConfirmedBookingDetails({
       className="confirmed-booking-details"
       aria-labelledby="confirmed-booking-heading"
     >
-      <header>
-        <div>
-          <h1
-            id="confirmed-booking-heading"
-            tabIndex={-1}
-            className="page-title action-focus-target"
-          >
-            {bookingLifecycleMessages[locale][lifecycleStatus]}
-          </h1>
-          <ActionFocusTarget targetId="confirmed-booking-heading" navigation />
-          <p>{access.cottageName}</p>
-          <strong>{access.bookingReference}</strong>
-        </div>
-        <Link
+      <header className="page-heading">
+        <ActionLink
+          kind="text"
           href={`/${locale}/bookings${access.actorRole === "cottage_owner" ? "?workspace=owner" : ""}`}
         >
           {access.actorRole === "customer"
             ? accessMessages[locale].myBookings
             : accessMessages[locale].ownerBookings}
-        </Link>
+        </ActionLink>
+        <h1
+          id="confirmed-booking-heading"
+          tabIndex={-1}
+          className="page-title action-focus-target"
+        >
+          {bookingLifecycleMessages[locale][lifecycleStatus]}
+        </h1>
+        <ActionFocusTarget targetId="confirmed-booking-heading" navigation />
+        <p>
+          {access.cottageName} · <strong>{access.bookingReference}</strong>
+        </p>
       </header>
       {practicalDetailsIncomplete ? (
         <p role="status" aria-label={c.incomplete}>

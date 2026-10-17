@@ -22,6 +22,7 @@ import { administratorQueuesMessages } from "../src/i18n/administrator-queues-me
 import { administratorRecordsMessages } from "../src/i18n/administrator-records-messages";
 import { administratorTotalsMessages } from "../src/i18n/administrator-totals-messages";
 import { bookingManagementMessages as messages } from "../src/i18n/booking-management-messages";
+import { accessMessages } from "../src/i18n/access-messages";
 import { bookingLifecycleMessages } from "../src/i18n/booking-lifecycle-messages";
 import { ownerBookingEarningsMessages as earningsMessages } from "../src/i18n/owner-booking-earnings-messages";
 import { ownerBookingEarnings } from "../src/booking-request/owner-booking-earnings";
@@ -1034,7 +1035,12 @@ test.describe("retained cancellation and refund controls", () => {
         expect(replayed[key]).toEqual(before[key]);
       for (const key of ["attempts", "links", "conversations", "messages"])
         expect(replayed[key]).toEqual(linked[key]);
-      await page.getByRole("link", { name: copy.history, exact: true }).click();
+      await page
+        .getByRole("link", {
+          name: accessMessages[locale].myBookings,
+          exact: true,
+        })
+        .click();
       await expect(page).toHaveURL(`/${locale}/bookings`);
       const retainedBooking = page.getByRole("link", {
         name: new RegExp(browserQuote.cottageName),
