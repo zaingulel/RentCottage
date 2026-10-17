@@ -12,8 +12,10 @@ export const accessMessages: Record<
     myBookings: string;
     messages: string;
     ownerBookings: string;
+    ownerBookingsTab: string;
     listCottage: string;
     manageCottages: string;
+    ownerCottagesTab: string;
     signOut: string;
     enrollTitle: string;
     enrollIntro: string;
@@ -71,8 +73,10 @@ export const accessMessages: Record<
     myBookings: "حجوزاتي",
     messages: "الرسائل",
     ownerBookings: "حجوزات أكواخي",
+    ownerBookingsTab: "حجوزات أكواخي",
     listCottage: "أدرج كوخك",
     manageCottages: "إدارة أكواخي",
+    ownerCottagesTab: "إدارة أكواخي",
     signOut: "تسجيل الخروج",
     enrollTitle: "انضم كمالك كوخ",
     enrollIntro:
@@ -134,8 +138,10 @@ export const accessMessages: Record<
     myBookings: "حجزەکانم",
     messages: "نامەکان",
     ownerBookings: "حجزەکانی کۆتێجەکانم",
+    ownerBookingsTab: "حجزەکانی کۆتێجەکانم",
     listCottage: "کۆتێجەکەت تۆمار بکە",
     manageCottages: "بەڕێوەبردنی کۆتێجەکانم",
+    ownerCottagesTab: "بەڕێوەبردنی کۆتێجەکانم",
     signOut: "چوونەدەرەوە",
     enrollTitle: "ببە خاوەنی کۆتێج",
     enrollIntro:
@@ -202,8 +208,10 @@ export const accessMessages: Record<
     myBookings: "My bookings",
     messages: "Messages",
     ownerBookings: "Bookings for my cottages",
+    ownerBookingsTab: "Bookings",
     listCottage: "List your cottage",
     manageCottages: "Manage my cottages",
+    ownerCottagesTab: "My cottages",
     signOut: "Sign out",
     enrollTitle: "Become a Cottage Owner",
     enrollIntro:

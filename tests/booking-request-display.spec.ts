@@ -27,6 +27,7 @@ declare global {
     renderCottageOverviewDisplay: (input: {
       locale: "en" | "ar" | "ckb";
       actor: "owner" | "administrator";
+      waitingBookingRequests?: number;
     }) => void;
     renderBookingRequestDisplay: (input: {
       locale: "en" | "ar" | "ckb";
@@ -1816,6 +1817,124 @@ test("pages reflow beside a classic scrollbar at 320 pixels in every language", 
     }
   } finally {
     await browser.close();
+  }
+});
+
+test("owner tabs and waiting count fit at 390 pixels without scrolling", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mountBookingRequestDisplay(page, testInfo);
+  await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(390);
+
+  const locales = [
+    {
+      locale: "en",
+      cottages: "My cottages",
+      bookings: "Bookings",
+    },
+    {
+      locale: "ar",
+      cottages: "إدارة أكواخي",
+      bookings: "حجوزات أكواخي",
+    },
+    {
+      locale: "ckb",
+      cottages: "بەڕێوەبردنی کۆتێجەکانم",
+      bookings: "حجزەکانی کۆتێجەکانم",
+    },
+  ] as const;
+
+  for (const input of locales) {
+    await page.evaluate((state) => window.renderCottageOverviewDisplay(state), {
+      locale: input.locale,
+      actor: "owner" as const,
+      waitingBookingRequests: 12,
+    });
+    await page.evaluate(() => document.fonts.ready);
+
+    const tabs = page.locator(".backoffice-navigation-tab");
+    const cottagesTab = tabs.nth(0);
+    const bookingsTab = tabs.nth(1);
+    await expect(cottagesTab).toHaveAccessibleName(input.cottages);
+    await expect(bookingsTab).toHaveAccessibleName(
+      new RegExp(
+        `^${input.bookings} ${ownerBookingRequestMessages[input.locale].title}: (?:12|١٢|۱۲)$`,
+      ),
+    );
+    const count = bookingsTab.locator(".backoffice-navigation-count");
+    await expect(count).toContainText(/(?:12|١٢|۱۲)/);
+
+    const readGeometry = () =>
+      page.evaluate(() => {
+        const row = document.querySelector<HTMLElement>(
+          ".backoffice-navigation-links",
+        );
+        const tabs = Array.from(
+          document.querySelectorAll<HTMLElement>(".backoffice-navigation-tab"),
+        );
+        const count = tabs[1]?.querySelector<HTMLElement>(
+          ".backoffice-navigation-count",
+        );
+        if (!row || tabs.length < 2 || !count) {
+          throw new Error("Owner navigation tabs or waiting count are missing");
+        }
+        const rect = (element: HTMLElement) => {
+          const { left, right, top, bottom } = element.getBoundingClientRect();
+          return { left, right, top, bottom };
+        };
+        return {
+          row: rect(row),
+          rowClientWidth: row.clientWidth,
+          rowScrollWidth: row.scrollWidth,
+          pageClientWidth: document.documentElement.clientWidth,
+          pageScrollWidth: document.documentElement.scrollWidth,
+          tabs: tabs.slice(0, 2).map(rect),
+          count: rect(count),
+        };
+      });
+    const geometry = await readGeometry();
+    console.info(
+      `${input.locale} owner tab geometry: ${JSON.stringify(geometry)}`,
+    );
+
+    await cottagesTab.focus();
+    await page.keyboard.press("Tab");
+    await expect(bookingsTab).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(cottagesTab).toBeFocused();
+
+    if (input.locale === "en") {
+      await expect(async () => {
+        const englishGeometry = await readGeometry();
+        expect(englishGeometry.rowScrollWidth).toBeLessThanOrEqual(
+          englishGeometry.rowClientWidth,
+        );
+        expect(englishGeometry.pageScrollWidth).toBeLessThanOrEqual(
+          englishGeometry.pageClientWidth,
+        );
+        for (const box of [...englishGeometry.tabs, englishGeometry.count]) {
+          expect(box.left).toBeGreaterThanOrEqual(englishGeometry.row.left);
+          expect(box.right).toBeLessThanOrEqual(englishGeometry.row.right);
+        }
+        expect(
+          Math.abs(englishGeometry.tabs[0].top - englishGeometry.tabs[1].top),
+        ).toBeLessThanOrEqual(1);
+        expect(englishGeometry.count.top).toBeGreaterThanOrEqual(
+          englishGeometry.tabs[1].top,
+        );
+        expect(englishGeometry.count.bottom).toBeLessThanOrEqual(
+          englishGeometry.tabs[1].bottom,
+        );
+      }).toPass();
+    }
+
+    if (input.locale === "en" || input.locale === "ar") {
+      await page.screenshot({
+        path: testInfo.outputPath(`owner-tabs-${input.locale}.png`),
+        fullPage: true,
+      });
+    }
   }
 });
 

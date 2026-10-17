@@ -188,7 +188,7 @@ describe("Cottage Profile owner detail page", () => {
 
     const manageCottages = within(
       screen.getByRole("navigation", { name: "Owner Backoffice" }),
-    ).getByRole("link", { name: "Manage my cottages" });
+    ).getByRole("link", { name: "My cottages" });
     expect(manageCottages).toHaveAttribute("href", "/en/owner/cottages");
     expect(manageCottages).toHaveAttribute("aria-current", "true");
     expect(
@@ -222,10 +222,8 @@ describe("Cottage Profile owner detail page", () => {
     expect(
       within(
         screen.getByRole("navigation", { name: "Owner Backoffice" }),
-      ).getByRole("link", { name: /^Bookings for my cottages/ }),
-    ).toHaveAccessibleName(
-      "Bookings for my cottages Pending Booking Requests: 1",
-    );
+      ).getByRole("link", { name: /^Bookings/ }),
+    ).toHaveAccessibleName("Bookings Pending Booking Requests: 1");
   });
 
   it("shows the editor as unavailable when the waiting Booking Requests cannot be loaded", async () => {

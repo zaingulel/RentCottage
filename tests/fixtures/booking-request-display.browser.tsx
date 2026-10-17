@@ -313,7 +313,11 @@ const overviewDisplayCottage = {
   updatedAt: "2026-08-17T09:00:00.000Z",
 } satisfies CottageProfile;
 
-window.renderCottageOverviewDisplay = ({ locale, actor }) => {
+window.renderCottageOverviewDisplay = ({
+  locale,
+  actor,
+  waitingBookingRequests,
+}) => {
   document.documentElement.lang = locale;
   document.documentElement.dir = locale === "en" ? "ltr" : "rtl";
   root.render(
@@ -329,7 +333,20 @@ window.renderCottageOverviewDisplay = ({ locale, actor }) => {
         }}
       />
       <main className="results-page page">
-        <BackofficeNavigation locale={locale} area={actor} current="cottages" />
+        {actor === "owner" ? (
+          <BackofficeNavigation
+            locale={locale}
+            area="owner"
+            current="cottages"
+            waitingBookingRequests={waitingBookingRequests}
+          />
+        ) : (
+          <BackofficeNavigation
+            locale={locale}
+            area="administrator"
+            current="cottages"
+          />
+        )}
         <CottageProfileOverview
           locale={locale}
           actor={actor}
