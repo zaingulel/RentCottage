@@ -797,6 +797,7 @@ describe("Supabase Cottage Profile adapter", () => {
     );
     const changedProfileIds = [profileIdFor(99), profileIdFor(1)];
     const contentChangeRequests: string[][] = [];
+    const draftProgressRequests: string[][] = [];
     const rpc = vi.fn((functionName: string, args: Record<string, unknown>) => {
       if (functionName === "list_owner_cottage_profiles") {
         return result(
@@ -806,6 +807,21 @@ describe("Supabase Cottage Profile adapter", () => {
         );
       }
       const requested = args.target_profile_ids as string[];
+      if (functionName === "read_owner_cottage_profile_draft_progress") {
+        draftProgressRequests.push(requested);
+        return result(
+          requested.map((profileId) => ({
+            profile_id: profileId,
+            profile_version: 1,
+            completed_requirements: 12,
+            next_requirement: "photos",
+            submission_allowed: true,
+          })),
+        );
+      }
+      if (functionName !== "list_cottage_profile_unpublished_content_changes") {
+        throw new Error("Unexpected Cottage Profile RPC");
+      }
       contentChangeRequests.push(requested);
       return result(
         requested.map((profileId) => ({
@@ -844,7 +860,12 @@ describe("Supabase Cottage Profile adapter", () => {
       [profileIdFor(1)],
     ]);
     expect(contentChangeRequests[0]).toHaveLength(50);
-    expect(rpc).toHaveBeenCalledTimes(4);
+    expect(draftProgressRequests).toEqual([
+      profiles
+        .filter((profile) => profile.current_publication_id === null)
+        .map(({ id }) => id),
+    ]);
+    expect(rpc).toHaveBeenCalledTimes(5);
   });
 
   it.each([

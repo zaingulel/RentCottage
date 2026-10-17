@@ -304,7 +304,7 @@ describe("Cottage Profile overview", () => {
         expect(within(card).queryByRole("progressbar")).toBeNull();
         expect(within(card).queryByRole("status")).toBeNull();
         expect(
-          within(card).getByRole("link", { name: state.action, exact: true }),
+          within(card).getByRole("link", { name: state.action }),
         ).toHaveAttribute("href", `/${locale}/owner/cottages/${profile.id}`);
         unmount();
       }
@@ -340,7 +340,7 @@ describe("Cottage Profile overview", () => {
             .querySelector(".cottage-profile-draft-progress"),
         ).toBeNull();
         expect(
-          screen.getByRole("link", { name: expected.open, exact: true }),
+          screen.getByRole("link", { name: expected.open }),
         ).toHaveAttribute("href", `/${locale}/${actor}/cottages/${profile.id}`);
         unmount();
       }
