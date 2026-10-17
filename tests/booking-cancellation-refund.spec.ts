@@ -791,7 +791,10 @@ test.describe("retained cancellation and refund controls", () => {
         exact: true,
       });
       await expect(confirmed).toContainText(browserQuote.cottageName);
-      await expect(confirmed).toHaveCSS("border-top-style", "solid");
+      await expect(confirmed.locator(".confirmed-booking-record")).toHaveCSS(
+        "border-top-style",
+        "solid",
+      );
       await assertMobile();
       const before = observeConnectedStay();
       for (const key of [
@@ -836,7 +839,7 @@ test.describe("retained cancellation and refund controls", () => {
               .poll(() =>
                 period.locator("dd > span").evaluateAll((entries) =>
                   entries.flatMap((entry) =>
-                    Array.from(entry.querySelectorAll(":scope > bdi"))
+                    Array.from(entry.querySelectorAll("bdi"))
                       .slice(1)
                       .map((timestamp) => timestamp.getClientRects().length),
                   ),
@@ -848,7 +851,7 @@ test.describe("retained cancellation and refund controls", () => {
               .evaluateAll((entries) =>
                 entries.map((entry) =>
                   Array.from(
-                    entry.querySelectorAll(":scope > bdi"),
+                    entry.querySelectorAll("bdi"),
                     (value) => value.textContent ?? "",
                   ),
                 ),

@@ -193,8 +193,13 @@ export function ConfirmedBookingDetails({
                       <bdi>{item.displayName}</bdi>
                     </strong>{" "}
                     <span>
-                      <bdi>{formatIraqDateTime(item.startsAt, locale)}</bdi> –{" "}
-                      <bdi>{formatIraqDateTime(item.endsAt, locale)}</bdi>
+                      <bdi className="booking-period-timestamp">
+                        {formatIraqDateTime(item.startsAt, locale)}
+                      </bdi>{" "}
+                      –{" "}
+                      <bdi className="booking-period-timestamp">
+                        {formatIraqDateTime(item.endsAt, locale)}
+                      </bdi>
                     </span>
                   </span>
                 ))}

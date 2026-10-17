@@ -135,10 +135,13 @@
 
 .administratorPage {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: var(--space-5);
   overflow-wrap: anywhere;
+}
+
+.administratorPage > :global(nav.backoffice-navigation) {
+  inline-size: 100%;
 }
 
 .administratorPage > :global(.page-heading) {

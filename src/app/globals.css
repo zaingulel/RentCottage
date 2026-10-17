@@ -3398,6 +3398,10 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
   white-space: pre-wrap;
 }
 
+.confirmed-booking-details .booking-period-timestamp {
+  display: inline-block;
+}
+
 .confirmed-booking-details .fact-list dd > span {
   white-space: normal;
 }

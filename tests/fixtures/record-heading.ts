@@ -146,17 +146,15 @@ export async function observeRecordHeading(
             view,
             viewport: { width: innerWidth, height: innerHeight },
             configuredViewport,
-            reportLayout: view.startsWith("heading-reports-")
-              ? {
-                  mainHtml: link.closest("main")!.outerHTML,
-                  stylesheetHrefs: Array.from(
-                    document.querySelectorAll<HTMLLinkElement>(
-                      'link[rel~="stylesheet"][href]',
-                    ),
-                    (stylesheet) => stylesheet.href,
-                  ),
-                }
-              : undefined,
+            layout: {
+              mainHtml: link.closest("main")!.outerHTML,
+              stylesheetHrefs: Array.from(
+                document.querySelectorAll<HTMLLinkElement>(
+                  'link[rel~="stylesheet"][href]',
+                ),
+                (stylesheet) => stylesheet.href,
+              ),
+            },
             accessibleText: link.textContent?.trim(),
             href: link.getAttribute("href"),
             title: link

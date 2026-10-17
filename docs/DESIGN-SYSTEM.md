@@ -461,8 +461,8 @@ its own; the block it sits in sets the space around it.
   The conditional incomplete-details status paragraph precedes the practical-access list, using `--ink` on
   `--surface-notice`, `--radius-card` and `--space-4` padding and bottom separation. Booking Period entries put
   the bold original name on one block line and both unchanged Iraq timestamps with their range dash on the next,
-  retaining name/start/end direction isolation and `--space-3` between entries. Timestamps may wrap; cross-midnight
-  endpoints remain complete. Terms Disclosure follows every fact inside the card, with `--space-5` above it.
+  retaining name/start/end direction isolation and `--space-3` between entries. Each complete timestamp retains its existing
+  inline-block boundary; the range can wrap between those timestamp boxes. Cross-midnight endpoints remain complete. Terms Disclosure follows every fact inside the card, with `--space-5` above it.
   Children shrink and text wraps down to 320 CSS pixels without clipping, ellipses or fixed heights. Customer
   progress, shared chrome and following review panels retain their own patterns.
 - Search result: each result uses the card surface with an `18rem` photo beside its details, moving above them at
