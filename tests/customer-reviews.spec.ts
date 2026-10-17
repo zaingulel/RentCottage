@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { observeRecordHeading } from "./fixtures/record-heading";
 import {
   expect,
@@ -1989,6 +1990,221 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
 
     const ownerPath = (locale: "en" | "ar" | "ckb") =>
       `/${locale}/owner/booking-requests/${fixture.ids.bookingReference}`;
+    const observeCompletedRecord = async (locale: Locale) => {
+      await test.step("completed booking record has readable groups", async () => {
+        const region = page.locator("section.confirmed-booking-details");
+        await expect(region.getByRole("heading", { level: 1 })).toBeVisible();
+        const configuredViewport = page.viewportSize();
+        if (!configuredViewport)
+          throw new Error("Booking record requires a configured viewport");
+        const measure = () => {
+          const viewport = page.viewportSize();
+          if (!viewport)
+            throw new Error("Booking record requires a configured viewport");
+          return region.evaluate((section, viewport) => {
+            const header = section.querySelector("header")!;
+            const metadata = header.querySelector("p")!;
+            const card = section.querySelector(".confirmed-booking-record")!;
+            const groups = Array.from(
+              card.querySelectorAll(":scope > .confirmed-booking-group"),
+            );
+            const period = groups[0].querySelectorAll("dd")[1];
+            const entries = Array.from(period.children);
+            const bounds = (element: Element) =>
+              element.getBoundingClientRect().toJSON();
+            const typography = (element: Element) => {
+              const style = getComputedStyle(element);
+              const backgrounds = [];
+              for (
+                let ancestor: Element | null = element;
+                ancestor;
+                ancestor = ancestor.parentElement
+              ) {
+                const ancestorStyle = getComputedStyle(ancestor);
+                backgrounds.push({
+                  element: ancestor.tagName,
+                  backgroundColor: ancestorStyle.backgroundColor,
+                  backgroundImage: ancestorStyle.backgroundImage,
+                });
+              }
+              return {
+                text: element.textContent,
+                color: style.color,
+                fontFamily: style.fontFamily,
+                fontSize: style.fontSize,
+                fontWeight: style.fontWeight,
+                lineHeight: style.lineHeight,
+                backgrounds,
+              };
+            };
+            const boxes = [
+              section,
+              header,
+              metadata,
+              ...metadata.children,
+              card,
+              ...groups,
+              ...section.querySelectorAll("dt, dd"),
+              ...entries,
+              ...period.querySelectorAll("bdi"),
+            ].map(bounds);
+            const periodBounds = entries.map((entry) => ({
+              entry: bounds(entry),
+              name: bounds(entry.children[0]),
+              range: bounds(entry.children[1]),
+              timestamps: Array.from(entry.querySelectorAll("bdi"), (item) => ({
+                text: item.textContent,
+                rectangle: bounds(item),
+              })),
+            }));
+            const summary = card.querySelector("summary")!;
+            const summaryStyle = getComputedStyle(summary);
+            return {
+              locale: document.documentElement.lang,
+              viewport,
+              actualViewport: { width: innerWidth, height: innerHeight },
+              heading: bounds(header),
+              metadata: Array.from(metadata.children, bounds),
+              card: bounds(card),
+              groups: groups.map((group) => ({
+                rectangle: bounds(group),
+                firstTerm: group.querySelector("dt")!.textContent,
+              })),
+              periods: periodBounds,
+              typography: {
+                title: typography(header.querySelector("h1")!),
+                metadata: Array.from(metadata.children, typography),
+                notice: typography(groups[3].querySelector('[role="status"]')!),
+                explanation: typography(groups[3].querySelector("small")!),
+                finalMoney: Array.from(
+                  groups[1].querySelectorAll(
+                    ".confirmed-booking-final-money > *",
+                  ),
+                  typography,
+                ),
+              },
+              terms: {
+                rectangle: bounds(summary),
+                focusVisible: summary.matches(":focus-visible"),
+                outline: {
+                  style: summaryStyle.outlineStyle,
+                  width: summaryStyle.outlineWidth,
+                  color: summaryStyle.outlineColor,
+                  offset: summaryStyle.outlineOffset,
+                },
+                shadow: summaryStyle.boxShadow,
+                typography: typography(summary),
+              },
+              checks: {
+                headingAboveCard:
+                  header.getBoundingClientRect().bottom <=
+                  card.getBoundingClientRect().top,
+                referenceBelowCottage:
+                  metadata.children[0].getBoundingClientRect().bottom <=
+                  metadata.children[1].getBoundingClientRect().top,
+                fourGroups: groups.length === 4,
+                groupsInOrder: groups.every(
+                  (group, index) =>
+                    index === 0 ||
+                    groups[index - 1].getBoundingClientRect().bottom <=
+                      group.getBoundingClientRect().top,
+                ),
+                periodsSeparate:
+                  entries.length === 3 &&
+                  periodBounds.every(
+                    (entry, index) =>
+                      entry.name.bottom <= entry.range.top &&
+                      (index === 0 ||
+                        periodBounds[index - 1].entry.bottom <=
+                          entry.entry.top),
+                  ),
+                fitsViewport:
+                  innerWidth <= viewport.width + 1 &&
+                  document.documentElement.scrollWidth <= viewport.width + 1 &&
+                  boxes.every(
+                    (box) => box.left >= -1 && box.right <= viewport.width + 1,
+                  ),
+              },
+            };
+          }, viewport);
+        };
+        const expectedChecks = {
+          headingAboveCard: true,
+          referenceBelowCottage: true,
+          fourGroups: true,
+          groupsInOrder: true,
+          periodsSeparate: true,
+          fitsViewport: true,
+        };
+        await expect
+          .poll(async () => (await measure()).checks)
+          .toEqual(expectedChecks);
+        const expectedFirstTerms = {
+          en: [
+            "Customer",
+            "Original booking price",
+            "House Rules",
+            "Confirmation notice",
+          ],
+          ar: ["العميل", "سعر الحجز الأصلي", "قواعد البيت", "إشعار التأكيد"],
+          ckb: [
+            "کڕیار",
+            "نرخی سەرەتایی حجز",
+            "یاساکانی کۆتێج",
+            "ئاگادارکردنەوەی پشتڕاستکردن",
+          ],
+        };
+        expect(
+          (await measure()).groups.map((group) => group.firstTerm),
+        ).toEqual(expectedFirstTerms[locale]);
+        const disclosure = region.locator("details");
+        const summary = disclosure.locator("summary");
+        const body = disclosure.locator("p");
+        await expect(disclosure).not.toHaveAttribute("open");
+        await expect(body).not.toBeVisible();
+        await summary.focus();
+        await page.keyboard.press("Enter");
+        await expect(disclosure).toHaveAttribute("open", "");
+        await expect(body).toBeVisible();
+        await expect(body).not.toBeEmpty();
+        await page.keyboard.press("Enter");
+        await expect(disclosure).not.toHaveAttribute("open");
+        await expect(body).not.toBeVisible();
+        await expect(summary).toBeFocused();
+        await expect
+          .poll(() =>
+            summary.evaluate((element) => element.matches(":focus-visible")),
+          )
+          .toBe(true);
+        const observations = [await measure()];
+        if (testInfo.project.name === "mobile") {
+          try {
+            await page.setViewportSize({
+              width: 320,
+              height: configuredViewport.height,
+            });
+            await expect
+              .poll(async () => (await measure()).checks)
+              .toEqual(expectedChecks);
+            observations.push(await measure());
+          } finally {
+            await page.setViewportSize(configuredViewport);
+          }
+          await expect
+            .poll(async () => (await measure()).checks)
+            .toEqual(expectedChecks);
+        }
+        const observationPath = testInfo.outputPath(
+          `completed-booking-record-${locale}.json`,
+        );
+        await writeFile(observationPath, JSON.stringify(observations, null, 2));
+        await testInfo.attach(`completed-booking-record-${locale}`, {
+          path: observationPath,
+          contentType: "application/json",
+        });
+        await region.locator("header").getByRole("link").focus();
+      });
+    };
     await signInPhone(page, fixture.phones.owner, ownerPath("en"));
     {
       const heading = page.getByRole("main").locator("header.page-heading");
@@ -2005,6 +2221,7 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
         "/en/bookings?workspace=owner",
         "heading-owner-completed-en-a11y",
       );
+      await observeCompletedRecord("en");
       if (testInfo.project.name === "desktop")
         await page.screenshot({
           path: testInfo.outputPath("heading-owner-completed-en.png"),
@@ -2306,6 +2523,7 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
         `/${locale}/bookings?workspace=owner`,
         `heading-owner-completed-${locale}-a11y`,
       );
+      await observeCompletedRecord(locale);
       if (testInfo.project.name === "mobile" && locale === "ar")
         await page.screenshot({
           path: testInfo.outputPath("heading-owner-completed-ar.png"),

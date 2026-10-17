@@ -169,151 +169,177 @@ export function ConfirmedBookingDetails({
         </h1>
         <ActionFocusTarget targetId="confirmed-booking-heading" navigation />
         <p>
-          {access.cottageName} · <strong>{access.bookingReference}</strong>
+          <span>{access.cottageName}</span>
+          <strong>
+            <bdi>{access.bookingReference}</bdi>
+          </strong>
         </p>
       </header>
-      {practicalDetailsIncomplete ? (
-        <p role="status" aria-label={c.incomplete}>
-          {c.incomplete}
-        </p>
-      ) : null}
-      <dl className="fact-list">
-        <div>
-          <dt>{c.customer}</dt>
-          <dd>{access.customerName}</dd>
-        </div>
-        <div>
-          <dt>{c.period}</dt>
-          <dd>
-            {access.bookingPeriod.map((item) => (
-              <span
-                key={`${item.serviceDay}-${item.kind}-${item.position ?? "full"}`}
-              >
-                <bdi>{item.displayName}</bdi> ·{" "}
-                <bdi className="booking-period-timestamp">
-                  {formatIraqDateTime(item.startsAt, locale)}
-                </bdi>{" "}
-                –{" "}
-                <bdi className="booking-period-timestamp">
-                  {formatIraqDateTime(item.endsAt, locale)}
-                </bdi>
-              </span>
-            ))}
-          </dd>
-        </div>
-        <div>
-          <dt>{c.party}</dt>
-          <dd>{access.partySize}</dd>
-        </div>
-        <div>
-          <dt>{c.price}</dt>
-          <dd>{formatIqd(access.pricing.bookingPriceIqd, locale)}</dd>
-        </div>
-        {access.actorRole === "customer" ? (
-          <>
+      <div className="card confirmed-booking-record">
+        <div className="confirmed-booking-group">
+          <dl className="fact-list">
             <div>
-              <dt>{c.fee}</dt>
-              <dd>{formatIqd(access.pricing.serviceFeeIqd, locale)}</dd>
+              <dt>{c.customer}</dt>
+              <dd>{access.customerName}</dd>
             </div>
             <div>
-              <dt>{c.total}</dt>
-              <dd>{formatIqd(access.pricing.customerTotalIqd, locale)}</dd>
-            </div>
-          </>
-        ) : (
-          <>
-            <div>
-              <dt>{c.commission}</dt>
+              <dt>{c.period}</dt>
               <dd>
-                {formatFilsAsIqd(
-                  access.pricing.marketplaceCommissionFils,
-                  locale,
-                )}
+                {access.bookingPeriod.map((item) => (
+                  <span
+                    key={`${item.serviceDay}-${item.kind}-${item.position ?? "full"}`}
+                  >
+                    <strong>
+                      <bdi>{item.displayName}</bdi>
+                    </strong>{" "}
+                    <span>
+                      <bdi>{formatIraqDateTime(item.startsAt, locale)}</bdi> –{" "}
+                      <bdi>{formatIraqDateTime(item.endsAt, locale)}</bdi>
+                    </span>
+                  </span>
+                ))}
               </dd>
             </div>
             <div>
-              <dt>{c.net}</dt>
-              <dd>{formatFilsAsIqd(access.pricing.ownerNetFils, locale)}</dd>
+              <dt>{c.party}</dt>
+              <dd>{access.partySize}</dd>
             </div>
-          </>
-        )}
-        <div>
-          <dt>{c.rules}</dt>
-          <dd dir="auto">{access.houseRules}</dd>
+          </dl>
         </div>
-        {access.exactAddress ? (
-          <div>
-            <dt>{c.address}</dt>
-            <dd dir="auto">{access.exactAddress}</dd>
-          </div>
-        ) : null}
-        {access.privateDirections ? (
-          <div>
-            <dt>{c.directions}</dt>
-            <dd dir="auto">{access.privateDirections}</dd>
-          </div>
-        ) : null}
-        {access.mapPin ? (
-          <div>
-            <dt>{c.map}</dt>
-            <dd>
-              <bdi dir="ltr">
-                {access.mapPin.latitude}, {access.mapPin.longitude}
-              </bdi>
-              {navigation ? (
-                <small>{navigationLabel(navigation, locale)}</small>
-              ) : null}
-            </dd>
-          </div>
-        ) : null}
-        {access.customerPhone ? (
-          <div>
-            <dt>{c.customerPhone}</dt>
-            <dd>
-              <bdi dir="ltr">{access.customerPhone}</bdi>
-            </dd>
-          </div>
-        ) : null}
-        {access.ownerPhone ? (
-          <div>
-            <dt>{c.ownerPhone}</dt>
-            <dd>
-              <bdi dir="ltr">{access.ownerPhone}</bdi>
-            </dd>
-          </div>
-        ) : null}
-        <div>
-          <dt>{c.notice}</dt>
-          <dd>
-            <span
-              id={noticeFocusTargetId}
-              tabIndex={-1}
-              className="action-focus-target"
+        <div className="confirmed-booking-group">
+          <dl className="fact-list">
+            <div>
+              <dt>{c.price}</dt>
+              <dd>{formatIqd(access.pricing.bookingPriceIqd, locale)}</dd>
+            </div>
+            {access.actorRole === "customer" ? (
+              <>
+                <div>
+                  <dt>{c.fee}</dt>
+                  <dd>{formatIqd(access.pricing.serviceFeeIqd, locale)}</dd>
+                </div>
+                <div className="confirmed-booking-final-money">
+                  <dt>{c.total}</dt>
+                  <dd>{formatIqd(access.pricing.customerTotalIqd, locale)}</dd>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <dt>{c.commission}</dt>
+                  <dd>
+                    {formatFilsAsIqd(
+                      access.pricing.marketplaceCommissionFils,
+                      locale,
+                    )}
+                  </dd>
+                </div>
+                <div className="confirmed-booking-final-money">
+                  <dt>{c.net}</dt>
+                  <dd>
+                    {formatFilsAsIqd(access.pricing.ownerNetFils, locale)}
+                  </dd>
+                </div>
+              </>
+            )}
+          </dl>
+        </div>
+        <div className="confirmed-booking-group">
+          {practicalDetailsIncomplete ? (
+            <p
+              className="confirmed-booking-incomplete"
               role="status"
+              aria-label={c.incomplete}
             >
-              {notification.historical ? c.historical : c[notification.state]}
-              {notification.state !== "retryable" ? (
-                <ActionFocusTarget targetId={noticeFocusTargetId} />
-              ) : null}
-            </span>
-            <small>{c.fictional}</small>
-            {notification.state === "retryable" ? (
-              <NotificationRetryControl
-                locale={locale}
-                reference={access.bookingRequestReference}
-                receiptId={access.receiptId}
-                focusSuccessorId={noticeFocusTargetId}
-                label={c.retry}
-                failed={c.retryFailed}
-                queued={c.retryQueued}
-              />
+              {c.incomplete}
+            </p>
+          ) : null}
+          <dl className="fact-list">
+            <div>
+              <dt>{c.rules}</dt>
+              <dd dir="auto">{access.houseRules}</dd>
+            </div>
+            {access.exactAddress ? (
+              <div>
+                <dt>{c.address}</dt>
+                <dd dir="auto">{access.exactAddress}</dd>
+              </div>
             ) : null}
-          </dd>
+            {access.privateDirections ? (
+              <div>
+                <dt>{c.directions}</dt>
+                <dd dir="auto">{access.privateDirections}</dd>
+              </div>
+            ) : null}
+            {access.mapPin ? (
+              <div>
+                <dt>{c.map}</dt>
+                <dd>
+                  <bdi dir="ltr">
+                    {access.mapPin.latitude}, {access.mapPin.longitude}
+                  </bdi>
+                  {navigation ? (
+                    <small>{navigationLabel(navigation, locale)}</small>
+                  ) : null}
+                </dd>
+              </div>
+            ) : null}
+            {access.customerPhone ? (
+              <div>
+                <dt>{c.customerPhone}</dt>
+                <dd>
+                  <bdi dir="ltr">{access.customerPhone}</bdi>
+                </dd>
+              </div>
+            ) : null}
+            {access.ownerPhone ? (
+              <div>
+                <dt>{c.ownerPhone}</dt>
+                <dd>
+                  <bdi dir="ltr">{access.ownerPhone}</bdi>
+                </dd>
+              </div>
+            ) : null}
+          </dl>
         </div>
-      </dl>
-      <Disclosure summary={c.terms}>
-        <p dir="auto">{access.bookingTermsBody}</p>
-      </Disclosure>
+        <div className="confirmed-booking-group">
+          <dl className="fact-list">
+            <div>
+              <dt>{c.notice}</dt>
+              <dd>
+                <span
+                  id={noticeFocusTargetId}
+                  tabIndex={-1}
+                  className="action-focus-target"
+                  role="status"
+                >
+                  {notification.historical
+                    ? c.historical
+                    : c[notification.state]}
+                  {notification.state !== "retryable" ? (
+                    <ActionFocusTarget targetId={noticeFocusTargetId} />
+                  ) : null}
+                </span>
+                <small>{c.fictional}</small>
+                {notification.state === "retryable" ? (
+                  <NotificationRetryControl
+                    locale={locale}
+                    reference={access.bookingRequestReference}
+                    receiptId={access.receiptId}
+                    focusSuccessorId={noticeFocusTargetId}
+                    label={c.retry}
+                    failed={c.retryFailed}
+                    queued={c.retryQueued}
+                  />
+                ) : null}
+              </dd>
+            </div>
+          </dl>
+        </div>
+        <Disclosure summary={c.terms}>
+          <p dir="auto">{access.bookingTermsBody}</p>
+        </Disclosure>
+      </div>
     </section>
   );
 }

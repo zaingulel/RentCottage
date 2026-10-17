@@ -3330,7 +3330,6 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
   }
 }
 
-.confirmed-booking-details,
 .booking-request-progress-card,
 .booking-history {
   width: min(100%, 52rem);
@@ -3341,16 +3340,75 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
   background: var(--surface-bright);
 }
 
-.confirmed-booking-details .fact-list {
-  margin-block-start: var(--space-6);
+.confirmed-booking-details,
+.confirmed-booking-details .page-heading,
+.confirmed-booking-details .page-heading > p,
+.confirmed-booking-record,
+.confirmed-booking-group,
+.confirmed-booking-record .fact-list > div > * {
+  min-inline-size: 0;
+}
+
+.confirmed-booking-details .page-heading > p > * {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.confirmed-booking-details .page-heading > p > span {
+  color: var(--ink);
+  font-size: var(--font-size-3);
+  font-weight: 700;
+}
+
+.confirmed-booking-details .page-heading > p > strong {
+  margin-block-start: var(--space-1);
+  color: var(--muted);
+  font-size: var(--font-size-2);
+  font-weight: 400;
+}
+
+.confirmed-booking-record {
+  padding: var(--space-5);
+}
+
+.confirmed-booking-group + .confirmed-booking-group {
+  margin-block-start: var(--space-5);
+  padding-block-start: var(--space-5);
+  border-block-start: 1px solid var(--line);
+}
+
+.confirmed-booking-final-money > dt,
+.confirmed-booking-final-money > dd {
+  font-weight: 700;
+}
+
+.confirmed-booking-final-money > dd {
+  font-size: var(--font-size-4);
+}
+
+.confirmed-booking-incomplete {
+  margin-block: 0 var(--space-4);
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--surface-notice);
+  color: var(--ink);
 }
 
 .confirmed-booking-details .fact-list dd {
   white-space: pre-wrap;
 }
 
-.confirmed-booking-details .booking-period-timestamp {
-  display: inline-block;
+.confirmed-booking-details .fact-list dd > span {
+  white-space: normal;
+}
+
+.confirmed-booking-details .fact-list dd > span + span {
+  margin-block-start: var(--space-3);
+}
+
+.confirmed-booking-details .fact-list dd > span > strong,
+.confirmed-booking-details .fact-list dd > span > span {
+  display: block;
 }
 
 .confirmed-booking-details dd > small {
@@ -3360,7 +3418,13 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
 }
 
 .confirmed-booking-details .disclosure {
-  margin-block-start: var(--space-4);
+  margin-block-start: var(--space-5);
+}
+
+@media (max-width: 40rem) {
+  .confirmed-booking-record {
+    padding: var(--space-4);
+  }
 }
 
 .confirmed-booking-details .disclosure > p {

@@ -97,7 +97,7 @@ function expectedMorningPeriod(day: string) {
     timeStyle: "short",
     timeZone: "Asia/Baghdad",
   });
-  return `Morning · ${format.format(new Date(`${day}T08:00:00+03:00`))} – ${format.format(new Date(`${day}T12:00:00+03:00`))}`;
+  return `Morning ${format.format(new Date(`${day}T08:00:00+03:00`))} – ${format.format(new Date(`${day}T12:00:00+03:00`))}`;
 }
 
 function expectedServiceDayLabel(day: string) {
@@ -1256,11 +1256,10 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
       .locator("header strong")
       .innerText();
     expect(bookingReference).toMatch(/^[A-Z0-9][A-Z0-9-]{0,119}$/);
-    const bookingPeriod = await detailValue(
-      customerDetails,
-      "Booking period",
-    ).innerText();
-    expect(bookingPeriod).toBe(expectedMorningPeriod(demo.recordedDay));
+    const bookingPeriod = expectedMorningPeriod(demo.recordedDay);
+    await expect(
+      detailValue(customerDetails, "Booking period"),
+    ).toHaveText(bookingPeriod);
     await expect(
       detailValue(customerDetails, "Original booking price"),
     ).toHaveText("IQD 180,000");

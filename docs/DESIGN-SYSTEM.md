@@ -430,7 +430,8 @@ its own; the block it sits in sets the space around it.
   same record follow inside the `li`.
 - Card: `article.card` presents one record among several in a grid or list on a page that uses the Page template.
   The same `.card` surface also applies to the public cottage booking aside, cottage editor field groups and the
-  Customer Booking Request status/progress, reference/details and separate Messages groups, and to Platform
+  Customer Booking Request status/progress, reference/details and separate Messages groups, the Confirmed Booking
+  facts container, and Platform
   Administrator account/approval summaries, Owner Application facts/evidence/action groups and current-payment
   facts. It is a `--card` surface with `--radius-card` corners and the `--shadow-card` elevation shadow. It shows no
   border: its `1px` border is `transparent`, so the card keeps an edge where the browser forces colours and removes
@@ -447,6 +448,23 @@ its own; the block it sits in sets the space around it.
   filters follow document order in one column. Complete query guidance wraps in a paragraph below its field,
   associated through `aria-describedby` alongside any existing error association. Records results use two equal
   columns, one at `phone`; title links start-align even when wrapping. Review filters use the base filter grid; records-specific columns and slot positions belong only to `.recordsFilters` and its descendants.
+- Confirmed Booking: `section.confirmed-booking-details` is unboxed and fills the page column. Its
+  `header.page-heading` retains the return link, title and focus target, with `--space-2` gaps and `--space-5`
+  before the facts card. The supporting paragraph has two naturally wrapping blocks: the cottage name in bold
+  `--ink` at `--font-size-3`, then the retained strong reference in normal-weight `--muted` at `--font-size-2`,
+  isolated by `bdi`, with `--space-1` between them. `div.card.confirmed-booking-record` has `--space-5` padding,
+  `--space-4` at `phone`. Four ordinary wrappers each hold a native `dl.fact-list`, in order: customer/Booking
+  Period/party; original price and role-specific money; practical access; confirmation notice, fictional-delivery
+  explanation and retry. Wrappers have `--space-5` separation; each after the first has a `1px` `--line` top rule
+  and `--space-5` top padding. Reuse fact-list columns and phone stacking. The final money label and value are
+  bold; its value uses body type at `--font-size-4`. Original owner share retains that meaning.
+  The conditional incomplete-details status paragraph precedes the practical-access list, using `--ink` on
+  `--surface-notice`, `--radius-card` and `--space-4` padding and bottom separation. Booking Period entries put
+  the bold original name on one block line and both unchanged Iraq timestamps with their range dash on the next,
+  retaining name/start/end direction isolation and `--space-3` between entries. Timestamps may wrap; cross-midnight
+  endpoints remain complete. Terms Disclosure follows every fact inside the card, with `--space-5` above it.
+  Children shrink and text wraps down to 320 CSS pixels without clipping, ellipses or fixed heights. Customer
+  progress, shared chrome and following review panels retain their own patterns.
 - Search result: each result uses the card surface with an `18rem` photo beside its details, moving above them at
   `tablet`. Without a photo, omit the empty frame and use the full detail width. The detail header places its
   overview at the inline start and From Price at the inline end, in `--display`, `--green` and `--font-size-5`,
