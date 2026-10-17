@@ -821,7 +821,22 @@ test("cottage list cards start their title and open button at the same height wh
         measured.price.right <= measured.link.left ||
         measured.price.left >= measured.link.right,
     ).toBe(true);
-    expect(measured.price.top).toBeGreaterThanOrEqual(measured.link.top);
+    const inlinePrice =
+      measured.price.top < measured.link.bottom &&
+      measured.price.bottom > measured.link.top;
+    if (testInfo.project.name === "desktop" && locale === "en") {
+      expect(inlinePrice).toBe(true);
+    }
+    if (inlinePrice) {
+      expect(
+        Math.abs(
+          (measured.price.top + measured.price.bottom) / 2 -
+            (measured.link.top + measured.link.bottom) / 2,
+        ),
+      ).toBeLessThanOrEqual(1);
+    } else {
+      expect(measured.price.top).toBeGreaterThanOrEqual(measured.link.bottom);
+    }
     expect(measured.arrows).toEqual([
       locale === "en" ? "none" : "matrix(-1, 0, 0, 1, 0, 0)",
       locale === "en" ? "none" : "matrix(-1, 0, 0, 1, 0, 0)",
@@ -830,6 +845,14 @@ test("cottage list cards start their title and open button at the same height wh
       locale === "en" ? measured.pillsFromLeft : measured.pillsFromRight;
     for (const offset of inlineStart) expect(offset).toBeCloseTo(12, 1);
     expect(measured.document).toBeLessThanOrEqual(measured.available);
+    if (testInfo.project.name === "desktop" && locale === "en") {
+      await page
+        .locator(".cottage-profile-card")
+        .first()
+        .screenshot({
+          path: testInfo.outputPath("published-card-alignment-desktop.png"),
+        });
+    }
   }
 
   // A lone card keeps its column width: drop the second card and the fixture's width cap, so the grid is the page column.
