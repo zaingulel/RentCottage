@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   cottageProfileCounts,
+  cottageProfileMessages,
   ownerCottagesSummarySentence,
 } from "./cottage-profile-messages";
 import type { Locale } from "./routing";
@@ -123,4 +124,50 @@ describe("owner Cottage Profile counts", () => {
       );
     },
   );
+});
+
+it("uses Eastern Arabic digits in Sorani cottage profile prose", () => {
+  expect(cottageProfileMessages.ckb).toMatchObject({
+    completion:
+      "هەموو خانە پێویستەکان پڕ بکەوە و ١ تا ١٢ وێنەی ئامادە زیاد بکە پێش ناردن.",
+    photoGuidance:
+      "١ تا ١٢ وێنەی JPEG، PNG یان WebP زیاد بکە. هەر وێنەیەک نابێت لە ٥ MiB زیاتر بێت. HEIC وەرناگیرێت.",
+    capacityLimit: "دەتوانیت تا ٢٠ پرۆفایلی کراوە و بڵاونەکراوەی کۆتێجت هەبێت.",
+    rateLimit:
+      "دەتوانیت لە ماوەی ٢٤ کاتژمێردا تا ٢٠ پرۆفایلی زیادەی کۆتێج دروست بکەیت.",
+    incomplete:
+      "هەموو خانە پێویستەکان پڕ بکەوە و دڵنیابە ١ تا ١٢ وێنە ئامادەن.",
+    pointOutside:
+      "ئەم ژمارانە لە دەرەوەی ناوچەی پشتگیریکراون (پانی جوگرافی لە 29.0 تا 37.4، درێژی جوگرافی لە 38.7 تا 49.2). پشکنینیان بکە و دووبارە هەوڵ بدەوە.",
+    pointDecimal:
+      "هەردوو ژمارەکە بە شێوەی دەیی بنووسە، وەک 36.408333 و 44.385834.",
+  });
+  expect(cottageProfileMessages.en).toMatchObject({
+    completion:
+      "Complete every required field and add 1–12 ready photos before submission.",
+    photoGuidance:
+      "Add 1–12 JPEG, PNG or WebP images. Each image must be 5 MiB or smaller. HEIC is not accepted.",
+    capacityLimit: "You can have up to 20 open unpublished Cottage Profiles.",
+    rateLimit:
+      "You can create up to 20 additional Cottage Profiles in 24 hours.",
+    incomplete:
+      "Complete every required field and make sure 1–12 photos are ready before submitting.",
+    pointOutside:
+      "These numbers are outside the supported area (latitude 29.0 to 37.4, longitude 38.7 to 49.2). Check them and try again.",
+    pointDecimal:
+      "Enter both as decimal numbers, such as 36.408333 and 44.385834.",
+  });
+  expect(cottageProfileMessages.ar).toMatchObject({
+    completion:
+      "أكمل جميع الحقول المطلوبة وأضف من 1 إلى 12 صورة جاهزة قبل الإرسال.",
+    photoGuidance:
+      "أضف من 1 إلى 12 صورة JPEG أو PNG أو WebP. الحد الأقصى لكل صورة 5 ميبيبايت. صيغة HEIC غير مقبولة.",
+    capacityLimit: "يمكن أن يكون لديك حتى 20 ملف كوخ مفتوحاً وغير منشور.",
+    rateLimit: "يمكنك إنشاء حتى 20 ملف كوخ إضافياً خلال 24 ساعة.",
+    incomplete:
+      "أكمل كل الحقول المطلوبة وتأكد من جاهزية 1 إلى 12 صورة قبل الإرسال.",
+    pointOutside:
+      "هذه الأرقام خارج المنطقة المدعومة (خط العرض من 29.0 إلى 37.4، وخط الطول من 38.7 إلى 49.2). تحقق منها وحاول مرة أخرى.",
+    pointDecimal: "أدخل الرقمين بصيغة عشرية، مثل 36.408333 و 44.385834.",
+  });
 });
