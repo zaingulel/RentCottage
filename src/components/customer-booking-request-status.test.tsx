@@ -225,7 +225,6 @@ describe("Customer Booking Request status", () => {
     );
     vi.runOnlyPendingTimers();
     expect(refresh).not.toHaveBeenCalled();
-    refresh.mockClear();
     view.rerender(
       <CustomerBookingRequestStatus
         locale="en"
