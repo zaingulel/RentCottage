@@ -1835,7 +1835,6 @@ test("owner tabs and waiting count fit at 390 pixels without scrolling", async (
     {
       locale: "ar",
       cottages: "إدارة أكواخي",
-      bookings: "حجوزات أكواخي",
     },
   ] as const;
 
@@ -1849,37 +1848,42 @@ test("owner tabs and waiting count fit at 390 pixels without scrolling", async (
 
     const tabs = page.locator(".backoffice-navigation-tab");
     const cottagesTab = tabs.nth(0);
-    const bookingsTab = tabs.nth(1);
-    const readGeometry = () =>
-      page.evaluate(() => {
-        const row = document.querySelector<HTMLElement>(
-          ".backoffice-navigation-links",
-        );
-        const tabs = Array.from(
-          document.querySelectorAll<HTMLElement>(".backoffice-navigation-tab"),
-        );
-        const count = tabs[1]?.querySelector<HTMLElement>(
-          ".backoffice-navigation-count",
-        );
-        if (!row || tabs.length < 2 || !count) {
-          throw new Error("Owner navigation tabs or waiting count are missing");
-        }
-        const rect = (element: HTMLElement) => {
-          const { left, right, top, bottom } = element.getBoundingClientRect();
-          return { left, right, top, bottom };
-        };
-        return {
-          viewportWidth: window.innerWidth,
-          row: rect(row),
-          rowClientWidth: row.clientWidth,
-          rowScrollWidth: row.scrollWidth,
-          pageClientWidth: document.documentElement.clientWidth,
-          pageScrollWidth: document.documentElement.scrollWidth,
-          tabs: tabs.slice(0, 2).map(rect),
-          count: rect(count),
-        };
-      });
     if (input.locale === "en") {
+      const bookingsTab = tabs.nth(1);
+      const readGeometry = () =>
+        page.evaluate(() => {
+          const row = document.querySelector<HTMLElement>(
+            ".backoffice-navigation-links",
+          );
+          const tabs = Array.from(
+            document.querySelectorAll<HTMLElement>(
+              ".backoffice-navigation-tab",
+            ),
+          );
+          const count = tabs[1]?.querySelector<HTMLElement>(
+            ".backoffice-navigation-count",
+          );
+          if (!row || tabs.length < 2 || !count) {
+            throw new Error(
+              "Owner navigation tabs or waiting count are missing",
+            );
+          }
+          const rect = (element: HTMLElement) => {
+            const { left, right, top, bottom } =
+              element.getBoundingClientRect();
+            return { left, right, top, bottom };
+          };
+          return {
+            viewportWidth: window.innerWidth,
+            row: rect(row),
+            rowClientWidth: row.clientWidth,
+            rowScrollWidth: row.scrollWidth,
+            pageClientWidth: document.documentElement.clientWidth,
+            pageScrollWidth: document.documentElement.scrollWidth,
+            tabs: tabs.slice(0, 2).map(rect),
+            count: rect(count),
+          };
+        });
       await expect(async () => {
         const englishGeometry = await readGeometry();
         expect(englishGeometry.viewportWidth).toBe(390);
@@ -1903,9 +1907,7 @@ test("owner tabs and waiting count fit at 390 pixels without scrolling", async (
           englishGeometry.tabs[1].bottom,
         );
       }).toPass();
-    }
 
-    if (input.locale === "en") {
       await expect(cottagesTab).toHaveAccessibleName(input.cottages);
       await expect(bookingsTab).toHaveAccessibleName(
         new RegExp(
