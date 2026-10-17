@@ -1,5 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
   AdministratorQueue,
@@ -64,6 +64,58 @@ function page(
 const noFilters = { state: "", from: "", through: "" };
 
 describe("AdministratorQueues", () => {
+  it("shows Sorani counts without Sorani locale data", () => {
+    const RealNumberFormat = Intl.NumberFormat;
+    const numberFormat = vi
+      .spyOn(Intl, "NumberFormat")
+      .mockImplementation(function (locales, options) {
+        const first = Array.isArray(locales) ? locales[0] : locales;
+        return new RealNumberFormat(
+          typeof first === "string" && first.startsWith("ckb")
+            ? "en-US"
+            : locales,
+          options,
+        );
+      });
+    try {
+      for (const [locale, label, total, counts] of [
+        ["ckb", "تۆمارە هاوتاکان", "١٬٢٤٨", ["٣", "٠", "١٬٢٣٤", "٥", "٦"]],
+        ["en", "Matching records", "1,248", ["3", "0", "1,234", "5", "6"]],
+        ["ar", "السجلات المطابقة", "1,248", ["3", "0", "1,234", "5", "6"]],
+      ] as const) {
+        const { unmount } = render(
+          <AdministratorQueues
+            locale={locale}
+            filters={{ queue: "refunds", ...noFilters }}
+            outcome={{
+              status: "ready",
+              page: page("refunds", [], {
+                total: 1248,
+                stateCounts: {
+                  requested: 3,
+                  processing: 0,
+                  succeeded: 1234,
+                  failed: 5,
+                  unknown: 6,
+                },
+              }),
+            }}
+          />,
+        );
+        expect(
+          screen.getByText(`${label}:`).closest("p")?.querySelector("strong"),
+        ).toHaveTextContent(total);
+        const options = screen.getAllByRole("option").slice(1);
+        expect(options).toHaveLength(5);
+        for (const [index, count] of counts.entries())
+          expect(options[index]).toHaveTextContent(`(${count})`);
+        unmount();
+      }
+    } finally {
+      numberFormat.mockRestore();
+    }
+  });
+
   const cases = {
     requests: {
       row: row({ state: "payment-required" }),

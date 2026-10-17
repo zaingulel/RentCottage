@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
   BookingMoneyFigures,
@@ -191,6 +191,66 @@ const labelledAmounts = [
 ] as const;
 
 describe("AdministratorBookingMoney", () => {
+  it("shows Sorani counts without Sorani locale data", () => {
+    const RealNumberFormat = Intl.NumberFormat;
+    const numberFormat = vi
+      .spyOn(Intl, "NumberFormat")
+      .mockImplementation(function (locales, options) {
+        const first = Array.isArray(locales) ? locales[0] : locales;
+        return new RealNumberFormat(
+          typeof first === "string" && first.startsWith("ckb")
+            ? "en-US"
+            : locales,
+          options,
+        );
+      });
+    try {
+      for (const [locale, label, count, flagged, limit] of [
+        [
+          "ckb",
+          "حجزە پشتڕاستکراوەکان",
+          "١٬٢٣٤",
+          "چونکە ٢ لەم",
+          "زیاتر لە ٥٠٠ حجز",
+        ],
+        [
+          "en",
+          "Confirmed Bookings",
+          "1,234",
+          "because 2 of these",
+          "More than 500 bookings",
+        ],
+        ["ar", "الحجوزات المؤكدة", "1,234", "لأن 2 من هذه", "أكثر من 500 حجز"],
+      ] as const) {
+        const { unmount } = show(
+          ready({
+            summary: {
+              bookingCount: 1234,
+              flagged: [bookingRow(1), bookingRow(2)],
+              totals: { status: "unavailable" },
+            },
+            page: { rows: [], nextCursor: null },
+          }),
+          locale,
+        );
+        expect(
+          screen.getByText(`${label}:`).querySelector("strong"),
+        ).toHaveTextContent(count);
+        expect(screen.getByRole("alert")).toHaveTextContent(flagged);
+        unmount();
+
+        const limited = show(
+          { status: "too_many", search: noCursor, limit: 500 },
+          locale,
+        );
+        expect(screen.getByRole("alert")).toHaveTextContent(limit);
+        limited.unmount();
+      }
+    } finally {
+      numberFormat.mockRestore();
+    }
+  });
+
   it("shows each total as a labelled amount in English, Arabic and Sorani", () => {
     for (const [locale, facts] of labelledAmounts) {
       const { unmount } = show(ready(), locale);

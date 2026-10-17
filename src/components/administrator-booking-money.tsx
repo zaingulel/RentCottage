@@ -13,7 +13,11 @@ import { administratorRecordsMessages } from "@/i18n/administrator-records-messa
 import { administratorTotalsMessages } from "@/i18n/administrator-totals-messages";
 import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
 import { bookingManagementMessages } from "@/i18n/booking-management-messages";
-import { formatFilsAsIqd, formatIraqDateTime } from "@/i18n/format";
+import {
+  formatFilsAsIqd,
+  formatInteger,
+  formatIraqDateTime,
+} from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 
 import {
@@ -218,7 +222,6 @@ export function AdministratorBookingMoney({
 }) {
   const copy = administratorTotalsMessages[locale];
   const records = administratorRecordsMessages[locale];
-  const number = new Intl.NumberFormat(locale);
   const base = `/${locale}/administrator/totals`;
 
   function href(cursor?: { afterAt: string; afterId: string }) {
@@ -285,7 +288,10 @@ export function AdministratorBookingMoney({
         <ActionFeedback kind="error">{copy.invalid}</ActionFeedback>
       ) : outcome.status === "too_many" ? (
         <ActionFeedback kind="error">
-          {copy.tooMany.replace("{limit}", number.format(outcome.limit))}
+          {copy.tooMany.replace(
+            "{limit}",
+            formatInteger(outcome.limit, locale),
+          )}
         </ActionFeedback>
       ) : (
         <BookingMoneyResults
@@ -314,7 +320,6 @@ function BookingMoneyResults({
   resetHref: string;
 }) {
   const records = administratorRecordsMessages[locale];
-  const number = new Intl.NumberFormat(locale);
   const { totals, flagged } = summary;
   const empty = summary.bookingCount === 0 && flagged.length === 0;
   const continued = search.afterAt !== null;
@@ -324,7 +329,7 @@ function BookingMoneyResults({
       <div className={styles.results}>
         <p className={styles.total}>
           {copy.bookingCount}:{" "}
-          <strong>{number.format(summary.bookingCount)}</strong>
+          <strong>{formatInteger(summary.bookingCount, locale)}</strong>
         </p>
         {empty ? (
           <div className="empty-state">
@@ -355,7 +360,7 @@ function BookingMoneyResults({
           <ActionFeedback kind="error">
             {copy.totalsUnavailable.replace(
               "{count}",
-              number.format(flagged.length),
+              formatInteger(flagged.length, locale),
             )}
           </ActionFeedback>
         )}
