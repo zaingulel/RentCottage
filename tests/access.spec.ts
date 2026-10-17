@@ -1474,6 +1474,9 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   };
   const phone = phoneByProject[testInfo.project.name];
   if (!phone) throw new Error("Approved owner browser fixture is unmapped");
+  const checkDraftProgressLayout =
+    testInfo.project.name === "mobile" || testInfo.project.name === "desktop";
+  const originalViewport = page.viewportSize()!;
 
   await page.goto("/en/owner/access");
   await page.getByLabel("Iraqi phone number").fill(phone);
@@ -1498,20 +1501,18 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   await page
     .getByRole("button", { name: "Create another cottage draft" })
     .click();
-  await expect(
-    page.getByRole("link", { name: "Open Cottage Profile" }),
-  ).toHaveCount(2);
+  await expect(page.getByRole("link", { name: "Continue setup" })).toHaveCount(
+    2,
+  );
   await page.reload();
-  await expect(
-    page.getByRole("link", { name: "Open Cottage Profile" }),
-  ).toHaveCount(2);
+  await expect(page.getByRole("link", { name: "Continue setup" })).toHaveCount(
+    2,
+  );
 
   const additionalProfile = page
     .getByRole("article")
     .filter({ hasNotText: "Started in Owner Application" });
-  await additionalProfile
-    .getByRole("link", { name: "Open Cottage Profile" })
-    .click();
+  await additionalProfile.getByRole("link", { name: "Continue setup" }).click();
   await page.getByRole("button", { name: "Abandon draft" }).click();
   await expect(page.getByText("Abandoned", { exact: true })).toBeVisible();
   await expect(
@@ -1536,7 +1537,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     .getByRole("article")
     .filter({ hasText: "Started in Owner Application" });
   await applicationProfile
-    .getByRole("link", { name: "Open Cottage Profile" })
+    .getByRole("link", { name: "Continue setup" })
     .click();
   await expect(
     page.getByText(
@@ -1589,6 +1590,95 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   ).toBeVisible();
 
   const profilePath = new URL(page.url()).pathname.replace(/^\/en/, "");
+  await page.goto("/en/owner/cottages");
+  const savedDraftCard = page.getByRole("article").filter({
+    has: page.locator(`a[href="/en${profilePath}"]`),
+  });
+  await expect(
+    savedDraftCard.getByText("12 of 13 requirements complete", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    savedDraftCard.getByText(
+      "Next: add or check your photos. You need 1–12 ready photos.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  if (checkDraftProgressLayout) {
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `draft-progress-partial-en-${testInfo.project.name}.png`,
+      ),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 320, height: originalViewport.height });
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          width: innerWidth,
+          fits:
+            document.documentElement.scrollWidth <=
+            document.documentElement.clientWidth,
+        })),
+      )
+      .toEqual({ width: 320, fits: true });
+    for (const [locale, count, next] of [
+      [
+        "ar",
+        "اكتمل 12 من 13 متطلبًا",
+        "التالي: أضف صورك أو تحقق منها. تحتاج إلى 1–12 صورة جاهزة.",
+      ],
+      [
+        "ckb",
+        "١٢ لە ١٣ پێداویستی تەواو کراوە",
+        "دواتر: وێنەکانت زیاد بکە یان بیانپشکنە. پێویستت بە ١–١٢ وێنەی ئامادەیە.",
+      ],
+    ] as const) {
+      await page.goto(`/${locale}/owner/cottages`);
+      const card = page
+        .getByRole("article")
+        .filter({ has: page.locator(`a[href="/${locale}${profilePath}"]`) });
+      await expect(card.getByText(count, { exact: true })).toBeVisible();
+      await expect(card.getByText(next, { exact: true })).toBeVisible();
+      await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+      await expect
+        .poll(() =>
+          card.evaluate((card) => {
+            const track = card
+              .querySelector(".cottage-profile-draft-progress-track")!
+              .getBoundingClientRect();
+            const fill = card
+              .querySelector(".cottage-profile-draft-progress-track > span")!
+              .getBoundingClientRect();
+            return {
+              width: innerWidth,
+              fits:
+                document.documentElement.scrollWidth <=
+                document.documentElement.clientWidth,
+              direction: getComputedStyle(card).direction,
+              partialFill: fill.width > 0 && fill.width < track.width,
+              atReadingEdge: Math.abs(fill.right - track.right) <= 1,
+            };
+          }),
+        )
+        .toEqual({
+          width: 320,
+          fits: true,
+          direction: "rtl",
+          partialFill: true,
+          atReadingEdge: true,
+        });
+    }
+    await page.setViewportSize(originalViewport);
+    await page.goto("/en/owner/cottages");
+  }
+  const continueSetup = savedDraftCard.getByRole("link", {
+    name: "Continue setup",
+    exact: true,
+  });
+  await continueSetup.focus();
+  await expect(continueSetup).toBeFocused();
+  await continueSetup.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`/en${profilePath}$`));
   for (const locale of ["en", "ar", "ckb"] as const) {
     const copy = cottageShiftScheduleMessages[locale];
     await page.goto(`/${locale}${profilePath}`);
@@ -1996,9 +2086,18 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   expect(await previewResponse.body()).toEqual(cleanCottagePhoto);
 
   await page.goto("/en/owner/cottages");
-  const coverPhotoPath = await page
+  const readyDraftCard = page
     .locator("article.cottage-profile-card")
-    .filter({ has: page.locator(`a[href="/en${profilePath}"]`) })
+    .filter({ has: page.locator(`a[href="/en${profilePath}"]`) });
+  await expect(
+    readyDraftCard.getByText("13 of 13 requirements complete", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    readyDraftCard.getByText("Ready to submit for content approval", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  const coverPhotoPath = await readyDraftCard
     .locator("img")
     .getAttribute("src");
   expect(coverPhotoPath).toMatch(
@@ -2016,7 +2115,42 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   expect(await signedOutCoverPhoto.text()).toBe(
     "Cottage Profile photo is unavailable",
   );
-  await page.goto(`/en${profilePath}`);
+  if (checkDraftProgressLayout) {
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `draft-progress-ready-en-${testInfo.project.name}.png`,
+      ),
+      fullPage: true,
+    });
+    await page.goto("/ar/owner/cottages");
+    const readyArabicCard = page.getByRole("article").filter({
+      has: page.locator(`a[href="/ar${profilePath}"]`),
+    });
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await expect(
+      readyArabicCard.getByText("اكتمل 13 من 13 متطلبًا", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      readyArabicCard.getByText("جاهز للإرسال للموافقة على المحتوى", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `draft-progress-ready-ar-${testInfo.project.name}.png`,
+      ),
+      fullPage: true,
+    });
+    await page.goto("/en/owner/cottages");
+  }
+  const reviewAndSubmit = readyDraftCard.getByRole("link", {
+    name: "Review and submit",
+    exact: true,
+  });
+  await reviewAndSubmit.focus();
+  await expect(reviewAndSubmit).toBeFocused();
+  await reviewAndSubmit.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`/en${profilePath}$`));
 
   await page.reload();
   await expect(page.getByLabel("Source language")).toHaveValue("en");
@@ -2169,6 +2303,27 @@ test("an approved owner continues the first Cottage Profile and submits a privat
         .replace("{end}", "02:00") + ` ${scheduleCopy.nextDay}`,
     );
   }
+  await page.goto("/en/owner/cottages");
+  const submittedCard = page.getByRole("article").filter({
+    has: page.locator(`a[href="/en${profilePath}"]`),
+  });
+  await expect(
+    submittedCard.getByText("Submitted for content approval", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    submittedCard.getByText("13 of 13 requirements complete", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    submittedCard.getByText("Ready to submit for content approval", {
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expect(
+    submittedCard.getByRole("link", {
+      name: "Open Cottage Profile",
+      exact: true,
+    }),
+  ).toHaveAttribute("href", `/en${profilePath}`);
 });
 
 test("a Platform Administrator reaches access only after authenticator MFA", async ({

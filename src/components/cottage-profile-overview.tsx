@@ -13,6 +13,7 @@ import { formatInteger, formatIqd } from "@/i18n/format";
 import {
   cottageProfileCounts,
   cottageProfileMessages,
+  cottageProfileDraftNextStepLabel,
   cottageProfileStatusLabel,
   cottageProfileStatusBadgeClass,
   ownerCottagesSummarySentence,
@@ -96,6 +97,30 @@ export function CottageProfileOverview({
       <div className="cottage-profile-card-grid">
         {profiles.map((profile) => {
           const name = profile.name || copy.editorTitle;
+          const isOwnerDraft =
+            actor === "owner" &&
+            profile.status === "draft" &&
+            profile.currentPublicationId === null;
+          const progress =
+            profile.draftProgress?.status === "loaded"
+              ? profile.draftProgress
+              : null;
+          const draftNextStep = !progress
+            ? copy.draftProgressCheck
+            : !progress.submissionAllowed
+              ? copy.draftProgressReadOnly
+              : progress.nextRequirement === null
+                ? copy.draftReadyToSubmit
+                : cottageProfileDraftNextStepLabel(
+                    locale,
+                    progress.nextRequirement,
+                  );
+          const actionLabel =
+            isOwnerDraft && progress?.submissionAllowed
+              ? progress.nextRequirement === null
+                ? copy.reviewAndSubmit
+                : copy.continueSetup
+              : copy.open;
           const cover = profile.photos.find((photo) => photo.state === "ready");
           const price =
             fromPrices?.status === "loaded"
@@ -142,24 +167,53 @@ export function CottageProfileOverview({
               </div>
               <h2 className="card-title">{name}</h2>
               <p className="card-detail">
-                {[profile.governorate, profile.approximateLocation]
-                  .filter(Boolean)
-                  .join(" · ") || copy.completion}
+                {isOwnerDraft
+                  ? progress
+                    ? copy.draftProgressCount
+                        .replace(
+                          "{completed}",
+                          formatInteger(progress.completed, locale),
+                        )
+                        .replace("{total}", formatInteger(13, locale))
+                    : copy.draftProgressUnavailable
+                  : [profile.governorate, profile.approximateLocation]
+                      .filter(Boolean)
+                      .join(" · ") || copy.completion}
               </p>
-              <p className="card-small-print">
-                {formatInteger(
-                  profile.photos.filter((photo) => photo.state === "ready")
-                    .length,
-                  locale,
-                )}
-                /{formatInteger(12, locale)} {copy.photos}
-              </p>
+              {isOwnerDraft ? (
+                <div className="cottage-profile-draft-progress">
+                  {progress ? (
+                    <div
+                      className="cottage-profile-draft-progress-track"
+                      aria-hidden="true"
+                    >
+                      <span
+                        style={{
+                          inlineSize: `${(progress.completed / 13) * 100}%`,
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                  <p className="cottage-profile-draft-next-step">
+                    {draftNextStep}
+                  </p>
+                </div>
+              ) : (
+                <p className="card-small-print">
+                  {formatInteger(
+                    profile.photos.filter((photo) => photo.state === "ready")
+                      .length,
+                    locale,
+                  )}
+                  /{formatInteger(12, locale)} {copy.photos}
+                </p>
+              )}
               <div className="cottage-profile-card-actions">
                 <ActionLink
                   kind="primary"
                   href={`/${locale}/${route}/cottages/${profile.id}`}
                 >
-                  {copy.open}
+                  {actionLabel}
                 </ActionLink>
                 {priceText ? (
                   <p className="cottage-profile-card-price">{priceText}</p>

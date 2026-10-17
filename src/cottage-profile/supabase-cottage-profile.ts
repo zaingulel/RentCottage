@@ -4,6 +4,7 @@ import { parseAccountContext } from "@/access/supabase-account-access";
 
 import {
   cottageProfileAmenities,
+  cottageProfileDraftRequirements,
   cottageProfileMaximumLengths,
   cottageProfileMaximumPhotoBytes,
   cottageProfileMaximumPhotoFilenameLength,
@@ -15,6 +16,7 @@ import {
   type CottageProfileAdministratorCursor,
   type CottageProfileAdministratorPage,
   type CottageProfileDraftValues,
+  type CottageProfileDraftRequirement,
   type CottageProfilePhoto,
   type CottageProfileRepository,
   type PreparedCottageProfilePhotoDeletion,
@@ -40,6 +42,7 @@ const sourceColumns =
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const knownAmenities = new Set<string>(cottageProfileAmenities);
+const knownDraftRequirements = new Set<string>(cottageProfileDraftRequirements);
 const photoMediaTypes = new Set<string>(cottageProfilePhotoMediaTypes);
 
 function record(value: unknown): Record<string, unknown> {
@@ -540,7 +543,8 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
         throw new Error("Cottage Profile list is invalid");
       }
       profiles.push(...(await this.hydrateList(data)));
-      if (data.length < ownerPageSize) return profiles;
+      if (data.length < ownerPageSize)
+        return this.attachDraftProgress(profiles);
       const boundary = record(data.at(-1));
       const nextCursor = parseAdministratorCottageProfileCursor(
         boundary.updated_at,
@@ -555,6 +559,73 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
       }
       cursor = nextCursor;
     }
+  }
+
+  private async attachDraftProgress(
+    profiles: CottageProfile[],
+  ): Promise<CottageProfile[]> {
+    const drafts = profiles.filter(
+      (profile) =>
+        profile.status === "draft" && profile.currentPublicationId === null,
+    );
+    const progress = new Map<string, CottageProfile["draftProgress"]>();
+    for (let offset = 0; offset < drafts.length; offset += ownerPageSize) {
+      const batch = drafts.slice(offset, offset + ownerPageSize);
+      for (const profile of batch)
+        progress.set(profile.id, { status: "unavailable" });
+      try {
+        const { data, error } = await this.client.rpc(
+          "read_owner_cottage_profile_draft_progress",
+          { target_profile_ids: batch.map((profile) => profile.id) },
+        );
+        assertProviderSuccess(error);
+        if (!Array.isArray(data) || data.length !== batch.length) {
+          throw new Error("Cottage Profile draft progress is invalid");
+        }
+        const versions = new Map(
+          batch.map((profile) => [profile.id, profile.version]),
+        );
+        const validated = new Map<string, CottageProfile["draftProgress"]>();
+        for (const value of data) {
+          const row = record(value);
+          const id = row.profile_id;
+          const completed = row.completed_requirements;
+          const next = row.next_requirement;
+          if (
+            typeof id !== "string" ||
+            !versions.has(id) ||
+            validated.has(id) ||
+            !Number.isSafeInteger(row.profile_version) ||
+            row.profile_version !== versions.get(id) ||
+            typeof completed !== "number" ||
+            !Number.isInteger(completed) ||
+            completed < 0 ||
+            completed > 13 ||
+            (next !== null &&
+              (typeof next !== "string" ||
+                !knownDraftRequirements.has(next))) ||
+            (next === null) !== (completed === 13) ||
+            typeof row.submission_allowed !== "boolean"
+          ) {
+            throw new Error("Cottage Profile draft progress is invalid");
+          }
+          validated.set(id, {
+            status: "loaded",
+            completed,
+            nextRequirement: next as CottageProfileDraftRequirement | null,
+            submissionAllowed: row.submission_allowed,
+          });
+        }
+        for (const [id, report] of validated) progress.set(id, report);
+      } catch {
+        // Keep the profile readable when its authoritative progress is unavailable.
+      }
+    }
+    return profiles.map((profile) =>
+      progress.has(profile.id)
+        ? { ...profile, draftProgress: progress.get(profile.id) }
+        : profile,
+    );
   }
 
   async listAdministrator(

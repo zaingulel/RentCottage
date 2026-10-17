@@ -15,6 +15,8 @@ CREATE EXTENSION IF NOT EXISTS "pg_net" WITH SCHEMA "extensions";
 
 COMMENT ON SCHEMA "public" IS 'standard public schema';
 
+CREATE SCHEMA IF NOT EXISTS "private" AUTHORIZATION "postgres";
+
 CREATE EXTENSION IF NOT EXISTS "btree_gist" WITH SCHEMA "extensions";
 
 CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";

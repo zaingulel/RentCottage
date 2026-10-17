@@ -11,7 +11,10 @@ vi.mock("@/cottage-profile/actions", () => ({
   createCottageProfileDraftAction: vi.fn(),
 }));
 
-import type { CottageProfile } from "@/cottage-profile/cottage-profile";
+import type {
+  CottageProfile,
+  CottageProfileDraftRequirement,
+} from "@/cottage-profile/cottage-profile";
 import { createCottageProfileDraftAction } from "@/cottage-profile/actions";
 import { formatIqd } from "@/i18n/format";
 import { CottageProfileOverview } from "./cottage-profile-overview";
@@ -82,6 +85,276 @@ const publishedUpdateAwaitingApproval: StatusFields = {
 };
 
 describe("Cottage Profile overview", () => {
+  it("renders authoritative draft progress and one next step in every launch language", () => {
+    const requirements = [
+      "name",
+      "governorate",
+      "approximateLocation",
+      "capacity",
+      "bedrooms",
+      "bathrooms",
+      "amenities",
+      "exactPoint",
+      "privateDirections",
+      "sourceLanguage",
+      "description",
+      "houseRules",
+      "photos",
+    ] as const satisfies readonly CottageProfileDraftRequirement[];
+    const expectations = {
+      en: {
+        counts: [
+          "0 of 13 requirements complete",
+          "5 of 13 requirements complete",
+          "12 of 13 requirements complete",
+          "13 of 13 requirements complete",
+        ],
+        next: [
+          "Next: add the cottage name.",
+          "Next: choose the governorate.",
+          "Next: add an approximate public location.",
+          "Next: set guest capacity.",
+          "Next: set bedrooms.",
+          "Next: set bathrooms.",
+          "Next: choose at least one amenity.",
+          "Next: enter the cottage's exact coordinates.",
+          "Next: add private directions.",
+          "Next: choose the source language.",
+          "Next: add a description.",
+          "Next: add House Rules.",
+          "Next: add or check your photos. You need 1–12 ready photos.",
+        ],
+        continue: "Continue setup",
+        review: "Review and submit",
+        open: "Open Cottage Profile",
+        ready: "Ready to submit for content approval",
+        unavailable: "Progress unavailable",
+        check: "Open the Cottage Profile to check the required details",
+        readOnly:
+          "Submission is unavailable while your owner account is expired or suspended",
+      },
+      ar: {
+        counts: [
+          "اكتمل 0 من 13 متطلبًا",
+          "اكتمل 5 من 13 متطلبًا",
+          "اكتمل 12 من 13 متطلبًا",
+          "اكتمل 13 من 13 متطلبًا",
+        ],
+        next: [
+          "التالي: أضف اسم الكوخ.",
+          "التالي: اختر المحافظة.",
+          "التالي: أضف موقعًا عامًا تقريبيًا.",
+          "التالي: حدّد سعة الضيوف.",
+          "التالي: حدّد عدد غرف النوم.",
+          "التالي: حدّد عدد الحمامات.",
+          "التالي: اختر مرفقًا واحدًا على الأقل.",
+          "التالي: أدخل إحداثيات الكوخ الدقيقة.",
+          "التالي: أضف اتجاهات الوصول الخاصة.",
+          "التالي: اختر لغة المصدر.",
+          "التالي: أضف وصفًا.",
+          "التالي: أضف قواعد المنزل.",
+          "التالي: أضف صورك أو تحقق منها. تحتاج إلى 1–12 صورة جاهزة.",
+        ],
+        continue: "متابعة الإعداد",
+        review: "المراجعة والإرسال",
+        open: "فتح ملف الكوخ",
+        ready: "جاهز للإرسال للموافقة على المحتوى",
+        unavailable: "التقدم غير متاح",
+        check: "افتح ملف الكوخ للتحقق من التفاصيل المطلوبة",
+        readOnly:
+          "الإرسال غير متاح ما دام حساب المالك منتهي الصلاحية أو موقوفًا",
+      },
+      ckb: {
+        counts: [
+          "٠ لە ١٣ پێداویستی تەواو کراوە",
+          "٥ لە ١٣ پێداویستی تەواو کراوە",
+          "١٢ لە ١٣ پێداویستی تەواو کراوە",
+          "١٣ لە ١٣ پێداویستی تەواو کراوە",
+        ],
+        next: [
+          "دواتر: ناوی کۆتێج زیاد بکە.",
+          "دواتر: پارێزگا هەڵبژێرە.",
+          "دواتر: شوێنێکی گشتیی نزیکەیی زیاد بکە.",
+          "دواتر: ژمارەی میوان دیاری بکە.",
+          "دواتر: ژمارەی ژوورەکانی نوستن دیاری بکە.",
+          "دواتر: ژمارەی حەمامەکان دیاری بکە.",
+          "دواتر: لانیکەم یەک خزمەتگوزاری هەڵبژێرە.",
+          "دواتر: کۆئۆردیناتە وردەکانی کۆتێج بنووسە.",
+          "دواتر: ڕێنمایی تایبەتی گەیشتن زیاد بکە.",
+          "دواتر: زمانی سەرچاوە هەڵبژێرە.",
+          "دواتر: وەسفێک زیاد بکە.",
+          "دواتر: یاساکانی ماڵ زیاد بکە.",
+          "دواتر: وێنەکانت زیاد بکە یان بیانپشکنە. پێویستت بە ١–١٢ وێنەی ئامادەیە.",
+        ],
+        continue: "بەردەوامبوون لە ئامادەکردن",
+        review: "پێداچوونەوە و ناردن",
+        open: "کردنەوەی پرۆفایلی کۆتێج",
+        ready: "ئامادەیە بۆ ناردن بۆ پەسەندکردنی ناوەڕۆک",
+        unavailable: "پێشکەوتن بەردەست نییە",
+        check: "پرۆفایلی کۆتێج بکەرەوە بۆ پشکنینی وردەکارییە پێویستەکان",
+        readOnly:
+          "لە کاتێکدا هەژماری خاوەنەکەت بەسەرچووە یان ڕاگیراوە، ناردن بەردەست نییە",
+      },
+    };
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      const expected = expectations[locale];
+      const cases: {
+        report: CottageProfile["draftProgress"];
+        count: string;
+        next: string;
+        action: string;
+      }[] = [
+        {
+          report: {
+            status: "loaded",
+            completed: 0,
+            nextRequirement: "name",
+            submissionAllowed: true,
+          },
+          count: expected.counts[0]!,
+          next: expected.next[0]!,
+          action: expected.continue,
+        },
+        {
+          report: {
+            status: "loaded",
+            completed: 5,
+            nextRequirement: "bathrooms",
+            submissionAllowed: true,
+          },
+          count: expected.counts[1]!,
+          next: expected.next[5]!,
+          action: expected.continue,
+        },
+        ...requirements.map((key, index) => ({
+          report: {
+            status: "loaded" as const,
+            completed: 12,
+            nextRequirement: key,
+            submissionAllowed: true,
+          },
+          count: expected.counts[2]!,
+          next: expected.next[index]!,
+          action: expected.continue,
+        })),
+        {
+          report: {
+            status: "loaded",
+            completed: 13,
+            nextRequirement: null,
+            submissionAllowed: true,
+          },
+          count: expected.counts[3]!,
+          next: expected.ready,
+          action: expected.review,
+        },
+        {
+          report: {
+            status: "loaded",
+            completed: 5,
+            nextRequirement: "bathrooms",
+            submissionAllowed: false,
+          },
+          count: expected.counts[1]!,
+          next: expected.readOnly,
+          action: expected.open,
+        },
+        {
+          report: {
+            status: "loaded",
+            completed: 13,
+            nextRequirement: null,
+            submissionAllowed: false,
+          },
+          count: expected.counts[3]!,
+          next: expected.readOnly,
+          action: expected.open,
+        },
+        ...[undefined, { status: "unavailable" as const }].map((report) => ({
+          report,
+          count: expected.unavailable,
+          next: expected.check,
+          action: expected.open,
+        })),
+      ];
+      for (const state of cases) {
+        const { unmount } = render(
+          <CottageProfileOverview
+            locale={locale}
+            actor="owner"
+            profiles={[{ ...profile, draftProgress: state.report }]}
+          />,
+        );
+        const card = screen.getByRole("article");
+        expect(
+          within(card).getByText(state.count, { exact: true }),
+        ).toBeVisible();
+        expect(
+          within(card).getByText(state.next, { exact: true }),
+        ).toBeVisible();
+        expect(
+          card.querySelectorAll(".cottage-profile-draft-next-step"),
+        ).toHaveLength(1);
+        expect(card.children).toHaveLength(5);
+        expect(card.children[3]).toHaveClass("cottage-profile-draft-progress");
+        const bar = card.querySelector(".cottage-profile-draft-progress-track");
+        if (state.report?.status === "loaded") {
+          expect(bar).toHaveAttribute("aria-hidden", "true");
+          if (state.report.completed === 5) {
+            const fill = bar!.querySelector("span")!;
+            expect(fill.style.inlineSize).toMatch(/%$/);
+            expect(Number.parseFloat(fill.style.inlineSize)).toBeCloseTo(
+              38.46153846,
+              3,
+            );
+          }
+        } else expect(bar).toBeNull();
+        expect(within(card).queryByRole("progressbar")).toBeNull();
+        expect(within(card).queryByRole("status")).toBeNull();
+        expect(
+          within(card).getByRole("link", { name: state.action }),
+        ).toHaveAttribute("href", `/${locale}/owner/cottages/${profile.id}`);
+        unmount();
+      }
+      for (const [actor, fields] of [
+        ["owner", published],
+        ["owner", neverPublishedSubmitted],
+        ["owner", abandoned],
+        ["administrator", neverPublishedDraft],
+      ] as const) {
+        const { unmount } = render(
+          <CottageProfileOverview
+            locale={locale}
+            actor={actor}
+            profiles={[
+              {
+                ...profile,
+                ...fields,
+                draftProgress: {
+                  status: "loaded",
+                  completed: 13,
+                  nextRequirement: null,
+                  submissionAllowed: true,
+                },
+              },
+            ]}
+          />,
+        );
+        expect(screen.queryByText(expected.counts[3]!)).toBeNull();
+        expect(screen.queryByText(expected.ready)).toBeNull();
+        expect(
+          screen
+            .getByRole("article")
+            .querySelector(".cottage-profile-draft-progress"),
+        ).toBeNull();
+        expect(
+          screen.getByRole("link", { name: expected.open }),
+        ).toHaveAttribute("href", `/${locale}/${actor}/cottages/${profile.id}`);
+        unmount();
+      }
+    }
+  });
+
   it("shows Sorani photo count digits without Sorani locale data", () => {
     const RealNumberFormat = Intl.NumberFormat;
     const numberFormat = vi
@@ -115,7 +388,7 @@ describe("Cottage Profile overview", () => {
           <CottageProfileOverview
             locale={locale}
             actor="owner"
-            profiles={[{ ...profile, photos }]}
+            profiles={[{ ...profile, ...published, photos }]}
           />,
         );
         expect(screen.getByText(expected)).toBeVisible();
@@ -150,7 +423,7 @@ describe("Cottage Profile overview", () => {
     expect(card.children[1]).toBe(screen.getByRole("heading", { level: 2 }));
     expect(screen.getByRole("heading", { level: 2 })).toHaveClass("card-title");
     expect(card.children[2]).toHaveClass("card-detail");
-    expect(card.children[3]).toHaveClass("card-small-print");
+    expect(card.children[3]).toHaveClass("cottage-profile-draft-progress");
     expect(card.lastElementChild).toHaveClass("cottage-profile-card-actions");
     expect(card.lastElementChild).toContainElement(
       screen.getByRole("link", { name: "Open Cottage Profile" }),

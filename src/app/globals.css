@@ -2239,6 +2239,36 @@ form.cottage-profile-editor > fieldset,
   gap: var(--space-2) var(--space-3);
 }
 
+.cottage-profile-draft-progress {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+}
+
+.cottage-profile-draft-progress-track {
+  display: flex;
+  block-size: 6px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.cottage-profile-draft-progress-track > span {
+  flex: none;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--gold);
+}
+
+.cottage-profile-draft-next-step {
+  margin: 0;
+  color: var(--ink-accent);
+  font-size: var(--font-size-1);
+  font-weight: 700;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
 .cottage-profile-card-price {
   margin: 0;
   color: var(--muted);
