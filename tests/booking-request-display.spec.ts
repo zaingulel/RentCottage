@@ -736,8 +736,8 @@ test("cottage list cards start their title and open button at the same height wh
       `${hasPhoto ? photo : '<p class="cottage-profile-card-no-photo">No photos yet</p>'}</div>` +
       '<h2 class="card-title">Cottage</h2>' +
       `<p class="card-detail">${location}</p>` +
-      '<p class="card-small-print">0/12 photos</p>' +
-      '<div class="cottage-profile-card-actions"><a class="action-link action-primary action-content" href="/">Open Cottage Profile</a>' +
+      '<div class="cottage-profile-card-supporting"><div class="cottage-profile-card-facts card-small-print"><span>10 guests</span><span>4 bedrooms</span><span>0/12 photos</span></div></div>' +
+      '<div class="cottage-profile-card-actions"><a class="action-link action-text" href="/">Edit cottage<span class="cottage-profile-card-arrow" aria-hidden="true">→</span></a>' +
       `${price}</div>` +
       "</article>";
     document.body.insertAdjacentHTML(
@@ -778,8 +778,20 @@ test("cottage list cards start their title and open button at the same height wh
       return {
         titles: rects(".cottage-profile-card h2").map((rect) => rect.top),
         links: rects(".cottage-profile-card a").map((rect) => rect.top),
-        linkBottom: rects(".cottage-profile-card a")[0].bottom,
-        priceTop: rects(".cottage-profile-card-price")[0].top,
+        actions: [...document.querySelectorAll(".cottage-profile-card a")].map(
+          (action) => {
+            const style = getComputedStyle(action);
+            return {
+              decoration: style.textDecorationLine,
+              weight: style.fontWeight,
+            };
+          },
+        ),
+        link: rects(".cottage-profile-card a")[0].toJSON(),
+        price: rects(".cottage-profile-card-price")[0].toJSON(),
+        arrows: [
+          ...document.querySelectorAll(".cottage-profile-card-arrow"),
+        ].map((arrow) => getComputedStyle(arrow).transform),
         coverBottoms: covers.map((rect) => rect.bottom),
         pillsFromLeft: firstPills.map(
           (rect, index) => rect.left - covers[index].left,
@@ -793,17 +805,54 @@ test("cottage list cards start their title and open button at the same height wh
     });
     expect(measured.titles).toHaveLength(2);
     expect(measured.links).toHaveLength(2);
+    expect(measured.actions).toEqual([
+      { decoration: "none", weight: "700" },
+      { decoration: "none", weight: "700" },
+    ]);
     expect(measured.coverBottoms).toHaveLength(2);
     if (testInfo.project.name === "desktop") {
       expect(measured.titles[0]).toBe(measured.titles[1]);
       expect(measured.links[0]).toBe(measured.links[1]);
-      expect(measured.priceTop).toBeGreaterThanOrEqual(measured.linkBottom);
       expect(measured.coverBottoms[0]).toBe(measured.coverBottoms[1]);
     }
+    expect(
+      measured.price.bottom <= measured.link.top ||
+        measured.price.top >= measured.link.bottom ||
+        measured.price.right <= measured.link.left ||
+        measured.price.left >= measured.link.right,
+    ).toBe(true);
+    const inlinePrice =
+      measured.price.top < measured.link.bottom &&
+      measured.price.bottom > measured.link.top;
+    if (testInfo.project.name === "desktop" && locale === "en") {
+      expect(inlinePrice).toBe(true);
+    }
+    if (inlinePrice) {
+      expect(
+        Math.abs(
+          (measured.price.top + measured.price.bottom) / 2 -
+            (measured.link.top + measured.link.bottom) / 2,
+        ),
+      ).toBeLessThanOrEqual(1);
+    } else {
+      expect(measured.price.top).toBeGreaterThanOrEqual(measured.link.bottom);
+    }
+    expect(measured.arrows).toEqual([
+      locale === "en" ? "none" : "matrix(-1, 0, 0, 1, 0, 0)",
+      locale === "en" ? "none" : "matrix(-1, 0, 0, 1, 0, 0)",
+    ]);
     const inlineStart =
       locale === "en" ? measured.pillsFromLeft : measured.pillsFromRight;
     for (const offset of inlineStart) expect(offset).toBeCloseTo(12, 1);
     expect(measured.document).toBeLessThanOrEqual(measured.available);
+    if (testInfo.project.name === "desktop" && locale === "en") {
+      await page
+        .locator(".cottage-profile-card")
+        .first()
+        .screenshot({
+          path: testInfo.outputPath("published-card-alignment-desktop.png"),
+        });
+    }
   }
 
   // A lone card keeps its column width: drop the second card and the fixture's width cap, so the grid is the page column.
@@ -854,8 +903,8 @@ test("a cottage list card casts the card shadow and each toned status badge show
         `${photo}</div>` +
         '<h2 class="card-title">Cottage</h2>' +
         '<p class="card-detail">Erbil</p>' +
-        '<p class="card-small-print">0/12 photos</p>' +
-        '<div class="cottage-profile-card-actions"><a class="action-link action-primary action-content" href="#">Open Cottage Profile</a></div>' +
+        '<div class="cottage-profile-card-supporting"><div class="cottage-profile-card-facts card-small-print"><span>10 guests</span><span>4 bedrooms</span><span>0/12 photos</span></div></div>' +
+        '<div class="cottage-profile-card-actions"><a class="action-link action-text" href="#">Open Cottage Profile<span class="cottage-profile-card-arrow" aria-hidden="true">→</span></a></div>' +
         "</article></div></section></main>",
     );
   }, coverPhotoMarkup);

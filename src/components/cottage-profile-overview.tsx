@@ -9,7 +9,7 @@ import {
 } from "@/cottage-profile/actions";
 import type { OwnerCottageFromPricesResult } from "@/cottage-discovery/supabase-cottage-discovery";
 import type { CottageProfile } from "@/cottage-profile/cottage-profile";
-import { formatInteger, formatIqd } from "@/i18n/format";
+import { formatCount, formatInteger, formatIqd } from "@/i18n/format";
 import {
   cottageProfileCounts,
   cottageProfileMessages,
@@ -59,20 +59,42 @@ export function CottageProfileOverview({
   return (
     <section className="cottage-profile-overview">
       <header className="page-heading">
-        <h1
-          id="cottage-profile-overview-title"
-          tabIndex={-1}
-          className="page-title action-focus-target"
-        >
-          {title}
-        </h1>
-        <ActionFocusTarget
-          targetId="cottage-profile-overview-title"
-          navigation
-        />
-        {actor === "administrator" ? <p>{copy.adminIntro}</p> : null}
-        {actor === "owner" && profiles.length > 0 ? (
-          <p>{ownerCottagesSummarySentence(locale, counts)}</p>
+        <div className="cottage-profile-overview-heading-copy">
+          <h1
+            id="cottage-profile-overview-title"
+            tabIndex={-1}
+            className="page-title action-focus-target"
+          >
+            {title}
+          </h1>
+          <ActionFocusTarget
+            targetId="cottage-profile-overview-title"
+            navigation
+          />
+          {actor === "administrator" ? <p>{copy.adminIntro}</p> : null}
+          {actor === "owner" && profiles.length > 0 ? (
+            <p>{ownerCottagesSummarySentence(locale, counts)}</p>
+          ) : null}
+        </div>
+        {actor === "owner" && canCreate ? (
+          <form action={createAction} className="cottage-profile-create-form">
+            <input type="hidden" name="locale" value={locale} />
+            <button type="submit">
+              <span aria-hidden="true">+</span> {copy.create}
+            </button>
+            {createState.status === "unavailable" ? (
+              <p role="alert">{copy.failed}</p>
+            ) : null}
+            {createState.status === "denied" ? (
+              <p role="alert">{copy.createDenied}</p>
+            ) : null}
+            {createState.status === "capacity_limit" ? (
+              <p role="alert">{copy.capacityLimit}</p>
+            ) : null}
+            {createState.status === "rate_limit" ? (
+              <p role="alert">{copy.rateLimit}</p>
+            ) : null}
+          </form>
         ) : null}
       </header>
       {actor === "owner" && profiles.length > 0 ? (
@@ -120,7 +142,12 @@ export function CottageProfileOverview({
               ? progress.nextRequirement === null
                 ? copy.reviewAndSubmit
                 : copy.continueSetup
-              : copy.open;
+              : actor === "owner" &&
+                  canCreate &&
+                  profile.status === "draft" &&
+                  profile.currentPublicationId !== null
+                ? copy.edit
+                : copy.open;
           const cover = profile.photos.find((photo) => photo.state === "ready");
           const price =
             fromPrices?.status === "loaded"
@@ -180,40 +207,62 @@ export function CottageProfileOverview({
                       .filter(Boolean)
                       .join(" · ") || copy.completion}
               </p>
-              {isOwnerDraft ? (
-                <div className="cottage-profile-draft-progress">
-                  {progress ? (
-                    <div
-                      className="cottage-profile-draft-progress-track"
-                      aria-hidden="true"
-                    >
-                      <span
-                        style={{
-                          inlineSize: `${(progress.completed / 13) * 100}%`,
-                        }}
-                      />
-                    </div>
+              <div className="cottage-profile-card-supporting">
+                <div className="cottage-profile-card-facts card-small-print">
+                  {profile.capacity !== null ? (
+                    <span>
+                      {formatCount(profile.capacity, locale, copy.guestCount)}
+                    </span>
                   ) : null}
-                  <p className="cottage-profile-draft-next-step">
-                    {draftNextStep}
-                  </p>
+                  {profile.bedrooms !== null ? (
+                    <span>
+                      {formatCount(profile.bedrooms, locale, copy.bedroomCount)}
+                    </span>
+                  ) : null}
+                  {!isOwnerDraft ? (
+                    <span>
+                      {formatInteger(
+                        profile.photos.filter(
+                          (photo) => photo.state === "ready",
+                        ).length,
+                        locale,
+                      )}
+                      /{formatInteger(12, locale)} {copy.photos}
+                    </span>
+                  ) : null}
                 </div>
-              ) : (
-                <p className="card-small-print">
-                  {formatInteger(
-                    profile.photos.filter((photo) => photo.state === "ready")
-                      .length,
-                    locale,
-                  )}
-                  /{formatInteger(12, locale)} {copy.photos}
-                </p>
-              )}
+                {isOwnerDraft ? (
+                  <div className="cottage-profile-draft-progress">
+                    {progress ? (
+                      <div
+                        className="cottage-profile-draft-progress-track"
+                        aria-hidden="true"
+                      >
+                        <span
+                          style={{
+                            inlineSize: `${(progress.completed / 13) * 100}%`,
+                          }}
+                        />
+                      </div>
+                    ) : null}
+                    <p className="cottage-profile-draft-next-step">
+                      {draftNextStep}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
               <div className="cottage-profile-card-actions">
                 <ActionLink
-                  kind="primary"
+                  kind="text"
                   href={`/${locale}/${route}/cottages/${profile.id}`}
                 >
                   {actionLabel}
+                  <span
+                    className="cottage-profile-card-arrow"
+                    aria-hidden="true"
+                  >
+                    →
+                  </span>
                 </ActionLink>
                 {priceText ? (
                   <p className="cottage-profile-card-price">{priceText}</p>
@@ -229,26 +278,6 @@ export function CottageProfileOverview({
             {copy.nextCottages}
           </ActionLink>
         </div>
-      ) : null}
-      {actor === "owner" && canCreate ? (
-        <form action={createAction} className="cottage-profile-create-form">
-          <input type="hidden" name="locale" value={locale} />
-          <button type="submit">
-            {profiles.length === 0 ? copy.createFirst : copy.create}
-          </button>
-          {createState.status === "unavailable" ? (
-            <p role="alert">{copy.failed}</p>
-          ) : null}
-          {createState.status === "denied" ? (
-            <p role="alert">{copy.createDenied}</p>
-          ) : null}
-          {createState.status === "capacity_limit" ? (
-            <p role="alert">{copy.capacityLimit}</p>
-          ) : null}
-          {createState.status === "rate_limit" ? (
-            <p role="alert">{copy.rateLimit}</p>
-          ) : null}
-        </form>
       ) : null}
     </section>
   );

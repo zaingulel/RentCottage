@@ -745,7 +745,7 @@ registerOwnedJourney("signin", async ({ page }, testInfo) => {
     page.getByLabel(browserFixtures.ckb.application.legalName),
   ).toHaveValue("Access Journey Draft Owner");
   await expect(
-    page.getByRole("button", { name: "Create another cottage draft" }),
+    page.getByRole("button", { name: "زیادکردنی کۆتێج" }),
   ).toHaveCount(0);
 });
 
@@ -1498,9 +1498,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     page.getByRole("heading", { name: "Your cottages", exact: true }),
   ).toBeFocused();
   await expect(page.getByText("Started in Owner Application")).toBeVisible();
-  await page
-    .getByRole("button", { name: "Create another cottage draft" })
-    .click();
+  await page.getByRole("button", { name: "Add a cottage" }).click();
   await expect(page.getByRole("link", { name: "Continue setup" })).toHaveCount(
     2,
   );
@@ -1603,7 +1601,101 @@ test("an approved owner continues the first Cottage Profile and submits a privat
       { exact: true },
     ),
   ).toBeVisible();
+  const checkCottageListPresentation = async (locale: BrowserLocale) => {
+    const copy = {
+      en: { add: "Add a cottage", guests: "10 guests", bedrooms: "4 bedrooms" },
+      ar: { add: "إضافة كوخ", guests: "10 ضيوف", bedrooms: "4 غرف نوم" },
+      ckb: {
+        add: "زیادکردنی کۆتێج",
+        guests: "١٠ میوان",
+        bedrooms: "٤ ژووری نوستن",
+      },
+    }[locale];
+    const heading = page.locator(".cottage-profile-overview > header");
+    const add = heading.getByRole("button", { name: copy.add, exact: true });
+    const card = page
+      .getByRole("article")
+      .filter({ has: page.locator(`a[href="/${locale}${profilePath}"]`) });
+    const action = card.getByRole("link");
+    await expect(card.getByText(copy.guests, { exact: true })).toBeVisible();
+    await expect(card.getByText(copy.bedrooms, { exact: true })).toBeVisible();
+    await expect(add).toBeVisible();
+    await expect
+      .poll(() =>
+        heading.evaluate((element) => {
+          const copy = element
+            .querySelector(".cottage-profile-overview-heading-copy")!
+            .getBoundingClientRect();
+          const form = element.querySelector("form")!.getBoundingClientRect();
+          return {
+            fits:
+              document.documentElement.scrollWidth <=
+              document.documentElement.clientWidth,
+            placed:
+              innerWidth <= 640
+                ? form.top >= copy.bottom &&
+                  (getComputedStyle(element).direction === "rtl"
+                    ? Math.abs(form.right - copy.right) <= 1
+                    : Math.abs(form.left - copy.left) <= 1)
+                : Math.abs(form.bottom - copy.bottom) <= 1 &&
+                  (form.left >= copy.right || form.right <= copy.left),
+          };
+        }),
+      )
+      .toEqual({ fits: true, placed: true });
+    await heading.getByRole("heading", { level: 1 }).click();
+    await expect
+      .poll(() =>
+        action.evaluate((element) => ({
+          focused: element.matches(":focus-visible"),
+          decoration: getComputedStyle(element).textDecorationLine,
+        })),
+      )
+      .toEqual({ focused: false, decoration: "none" });
+    const restingWidth = await page.evaluate(() => innerWidth);
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `cottage-list-resting-${locale}-${restingWidth}-${testInfo.project.name}.png`,
+      ),
+      fullPage: true,
+    });
+    await tabTo(page, add);
+    await expect(add).toBeFocused();
+    await tabTo(page, action);
+    await expect(action).toBeFocused();
+    expect(
+      await action.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const card = element.closest("article")!.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        const perimeter =
+          Number.parseFloat(style.outlineWidth) +
+          Number.parseFloat(style.outlineOffset);
+        return {
+          target: rect.height >= 44 && rect.width >= 44,
+          focus:
+            element.matches(":focus-visible") &&
+            style.outlineStyle === "solid" &&
+            style.boxShadow !== "none",
+          unclipped:
+            rect.left - perimeter >= card.left &&
+            rect.right + perimeter <= card.right &&
+            rect.top - perimeter >= card.top &&
+            rect.bottom + perimeter <= card.bottom,
+          arrow: getComputedStyle(
+            element.querySelector(".cottage-profile-card-arrow")!,
+          ).transform,
+        };
+      }),
+    ).toEqual({
+      target: true,
+      focus: true,
+      unclipped: true,
+      arrow: locale === "en" ? "none" : "matrix(-1, 0, 0, 1, 0, 0)",
+    });
+  };
   if (checkDraftProgressLayout) {
+    await checkCottageListPresentation("en");
     await page.screenshot({
       path: testInfo.outputPath(
         `draft-progress-partial-en-${testInfo.project.name}.png`,
@@ -1621,6 +1713,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
         })),
       )
       .toEqual({ width: 320, fits: true });
+    await checkCottageListPresentation("en");
     for (const [locale, count, next] of [
       [
         "ar",
@@ -1639,6 +1732,13 @@ test("an approved owner continues the first Cottage Profile and submits a privat
         .filter({ has: page.locator(`a[href="/${locale}${profilePath}"]`) });
       await expect(card.getByText(count, { exact: true })).toBeVisible();
       await expect(card.getByText(next, { exact: true })).toBeVisible();
+      await checkCottageListPresentation(locale);
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `cottage-list-${locale}-320-${testInfo.project.name}.png`,
+        ),
+        fullPage: true,
+      });
       await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
       await expect
         .poll(() =>
@@ -1669,6 +1769,12 @@ test("an approved owner continues the first Cottage Profile and submits a privat
         });
     }
     await page.setViewportSize(originalViewport);
+    await page.goto("/ar/owner/cottages");
+    await checkCottageListPresentation("ar");
+    await page.screenshot({
+      path: testInfo.outputPath(`cottage-list-ar-${testInfo.project.name}.png`),
+      fullPage: true,
+    });
     await page.goto("/en/owner/cottages");
   }
   const continueSetup = savedDraftCard.getByRole("link", {

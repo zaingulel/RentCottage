@@ -85,6 +85,203 @@ const publishedUpdateAwaitingApproval: StatusFields = {
 };
 
 describe("Cottage Profile overview", () => {
+  it.each(["en", "ar", "ckb"] as const)(
+    "renders the approved cottage list presentation in %s",
+    (locale) => {
+      const expectations = {
+        en: {
+          guests: ["1 guest", "2 guests", "3 guests", "11 guests"],
+          bedrooms: ["1 bedroom", "2 bedrooms", "3 bedrooms", "11 bedrooms"],
+          maximumGuests: "100 guests",
+          edit: "Edit cottage",
+          open: "Open Cottage Profile",
+        },
+        ar: {
+          guests: ["1 ضيف", "2 ضيفان", "3 ضيوف", "11 ضيفًا"],
+          bedrooms: ["1 غرفة نوم", "2 غرفتا نوم", "3 غرف نوم", "11 غرفة نوم"],
+          maximumGuests: "100 ضيف",
+          edit: "تعديل الكوخ",
+          open: "فتح ملف الكوخ",
+        },
+        ckb: {
+          guests: ["١ میوان", "٢ میوان", "٣ میوان", "١١ میوان"],
+          bedrooms: [
+            "١ ژووری نوستن",
+            "٢ ژووری نوستن",
+            "٣ ژووری نوستن",
+            "١١ ژووری نوستن",
+          ],
+          maximumGuests: "١٠٠ میوان",
+          edit: "دەستکاریکردنی کۆتێج",
+          open: "کردنەوەی پرۆفایلی کۆتێج",
+        },
+      };
+      const copy = expectations[locale];
+      for (const actor of ["owner", "administrator"] as const) {
+        const maximumCapacity = render(
+          <CottageProfileOverview
+            locale={locale}
+            actor={actor}
+            canCreate
+            profiles={[
+              { ...profile, ...published, capacity: 100, bedrooms: null },
+            ]}
+          />,
+        );
+        expect(
+          screen.getByText(copy.maximumGuests, { exact: true }),
+        ).toBeVisible();
+        maximumCapacity.unmount();
+        for (const [capacity, bedrooms, index] of [
+          [1, 1, 0],
+          [2, 2, 1],
+          [3, 3, 2],
+          [11, 11, 3],
+          [1, null, 0],
+          [null, 1, 0],
+          [null, null, 0],
+        ] as const) {
+          const { container, unmount } = render(
+            <CottageProfileOverview
+              locale={locale}
+              actor={actor}
+              canCreate
+              profiles={[{ ...profile, ...published, capacity, bedrooms }]}
+            />,
+          );
+          const card = screen.getByRole("article");
+          const facts = card.querySelector(".cottage-profile-card-facts")!;
+          expect(
+            within(facts as HTMLElement).queryByText(copy.guests[index], {
+              exact: true,
+            }) !== null,
+          ).toBe(capacity !== null);
+          expect(
+            within(facts as HTMLElement).queryByText(copy.bedrooms[index], {
+              exact: true,
+            }) !== null,
+          ).toBe(bedrooms !== null);
+          expect(facts.children).toHaveLength(
+            1 + Number(capacity !== null) + Number(bedrooms !== null),
+          );
+          const action = within(card).getByRole("link", {
+            name: actor === "owner" ? copy.edit : copy.open,
+          });
+          expect(action).toHaveClass("action-text");
+          expect(action).not.toHaveClass("action-primary");
+          expect(action).toHaveAttribute(
+            "href",
+            `/${locale}/${actor}/cottages/${profile.id}`,
+          );
+          expect(
+            action.querySelector('[aria-hidden="true"]'),
+          ).toHaveTextContent("→");
+          if (actor === "administrator")
+            expect(container.querySelector("header form")).toBeNull();
+          unmount();
+        }
+      }
+      const cases = [
+        { ...neverPublishedDraft, canCreate: true, expected: copy.open },
+        { ...neverPublishedSubmitted, canCreate: true, expected: copy.open },
+        { ...abandoned, canCreate: true, expected: copy.open },
+        {
+          ...publishedUpdateAwaitingApproval,
+          canCreate: true,
+          expected: copy.open,
+        },
+        { ...published, canCreate: false, expected: copy.open },
+        {
+          ...publishedWithUnpublishedChanges,
+          canCreate: true,
+          expected: copy.edit,
+        },
+      ];
+      for (const state of cases) {
+        const { unmount } = render(
+          <CottageProfileOverview
+            locale={locale}
+            actor="owner"
+            canCreate={state.canCreate}
+            profiles={[{ ...profile, ...state }]}
+          />,
+        );
+        expect(
+          screen.getByRole("link", { name: state.expected }),
+        ).toHaveAttribute("href", `/${locale}/owner/cottages/${profile.id}`);
+        unmount();
+      }
+    },
+  );
+
+  it("keeps draft creation in the heading for eligible owners", async () => {
+    const expectations = {
+      en: {
+        add: "Add a cottage",
+        denied: "This owner account cannot create another cottage draft.",
+      },
+      ar: {
+        add: "إضافة كوخ",
+        denied: "لا يمكن لحساب المالك هذا إنشاء مسودة كوخ أخرى.",
+      },
+      ckb: {
+        add: "زیادکردنی کۆتێج",
+        denied: "ئەم هەژماری خاوەنە ناتوانێت ڕەشنووسێکی کۆتێجی تر دروست بکات.",
+      },
+    };
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      for (const profiles of [[], [profile]]) {
+        vi.mocked(createCottageProfileDraftAction)
+          .mockClear()
+          .mockResolvedValue({ status: "denied" });
+        const { container, unmount } = render(
+          <CottageProfileOverview
+            locale={locale}
+            actor="owner"
+            canCreate
+            profiles={profiles}
+          />,
+        );
+        const button = screen.getByRole("button", {
+          name: expectations[locale].add,
+        });
+        expect(container.querySelector("header")).toContainElement(button);
+        const form = button.closest("form")!;
+        expect(new FormData(form).get("locale")).toBe(locale);
+        fireEvent.submit(form);
+        await waitFor(() =>
+          expect(screen.getByRole("alert")).toHaveTextContent(
+            expectations[locale].denied,
+          ),
+        );
+        expect(form).toContainElement(screen.getByRole("alert"));
+        expect(
+          vi.mocked(createCottageProfileDraftAction).mock.calls[0][0],
+        ).toEqual({ status: "idle" });
+        expect(
+          vi
+            .mocked(createCottageProfileDraftAction)
+            .mock.calls[0][1].get("locale"),
+        ).toBe(locale);
+        unmount();
+      }
+      for (const actor of ["owner", "administrator"] as const) {
+        const { unmount } = render(
+          <CottageProfileOverview
+            locale={locale}
+            actor={actor}
+            canCreate={actor === "administrator"}
+            profiles={[profile]}
+          />,
+        );
+        expect(
+          screen.queryByRole("button", { name: expectations[locale].add }),
+        ).toBeNull();
+        unmount();
+      }
+    }
+  });
+
   it("renders authoritative draft progress and one next step in every launch language", () => {
     const requirements = [
       "name",
@@ -296,7 +493,7 @@ describe("Cottage Profile overview", () => {
           card.querySelectorAll(".cottage-profile-draft-next-step"),
         ).toHaveLength(1);
         expect(card.children).toHaveLength(5);
-        expect(card.children[3]).toHaveClass("cottage-profile-draft-progress");
+        expect(card.children[3]).toHaveClass("cottage-profile-card-supporting");
         const bar = card.querySelector(".cottage-profile-draft-progress-track");
         if (state.report?.status === "loaded") {
           expect(bar).toHaveAttribute("aria-hidden", "true");
@@ -423,14 +620,14 @@ describe("Cottage Profile overview", () => {
     expect(card.children[1]).toBe(screen.getByRole("heading", { level: 2 }));
     expect(screen.getByRole("heading", { level: 2 })).toHaveClass("card-title");
     expect(card.children[2]).toHaveClass("card-detail");
-    expect(card.children[3]).toHaveClass("cottage-profile-draft-progress");
+    expect(card.children[3]).toHaveClass("cottage-profile-card-supporting");
     expect(card.lastElementChild).toHaveClass("cottage-profile-card-actions");
     expect(card.lastElementChild).toContainElement(
       screen.getByRole("link", { name: "Open Cottage Profile" }),
     );
     expect(
       screen.getByRole("link", { name: "Open Cottage Profile" }),
-    ).toHaveClass("action-content");
+    ).toHaveClass("action-text");
     expect(screen.getByRole("heading", { level: 1 })).toHaveClass("page-title");
     expect(screen.queryByText("01")).toBeNull();
     expect(
@@ -439,9 +636,7 @@ describe("Cottage Profile overview", () => {
       "href",
       "/en/owner/cottages/70000000-0000-4000-8000-000000000001",
     );
-    expect(
-      screen.getByRole("button", { name: "Create another cottage draft" }),
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Add a cottage" })).toBeEnabled();
   });
 
   it("shows the first ready photo as the cover, with the badges ahead of it", () => {
@@ -639,9 +834,7 @@ describe("Cottage Profile overview", () => {
     );
 
     fireEvent.submit(
-      screen
-        .getByRole("button", { name: "إنشاء مسودة كوخ أخرى" })
-        .closest("form")!,
+      screen.getByRole("button", { name: "إضافة كوخ" }).closest("form")!,
     );
 
     await waitFor(() =>
@@ -672,9 +865,7 @@ describe("Cottage Profile overview", () => {
     );
 
     fireEvent.submit(
-      screen
-        .getByRole("button", { name: "Create another cottage draft" })
-        .closest("form")!,
+      screen.getByRole("button", { name: "Add a cottage" }).closest("form")!,
     );
 
     await waitFor(() =>
@@ -888,12 +1079,7 @@ describe("Cottage Profile overview", () => {
     );
     expect(screen.queryByRole("list")).toBeNull();
     expect(container.querySelector("header p")).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Create a cottage draft" }),
-    ).toBeEnabled();
-    expect(
-      screen.queryByRole("button", { name: "Create another cottage draft" }),
-    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Add a cottage" })).toBeEnabled();
   });
 
   it("keeps the administrator list free of the owner summary", () => {

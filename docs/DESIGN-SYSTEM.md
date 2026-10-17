@@ -518,12 +518,19 @@ its own; the block it sits in sets the space around it.
   names the cottage. Status badges sit over the cover at its block start and inline start, `--space-3` in, on
   `--layer-raised`. A cottage with no ready photo shows the 'No photos yet' panel: `135deg` bands of
   `--surface-no-photo` and `--surface-no-photo-band`, each `--space-3` wide, with the label centred in bold
-  `--ink-accent` at `--font-size-2`. The actions row puts the open action at the inline start. The owner's card
+  `--ink-accent` at `--font-size-2`. Supporting content wraps known guest and bedroom facts in `--muted` at `--font-size-1`, with
+  `--space-3` between facts; missing facts reserve no space. Every card except an owner's unpublished draft keeps the photo count in that strip.
+  Every card action reuses the weight-700 green text ActionLink at `--font-size-2`, with no resting underline
+  or border, start-aligned with a 44px minimum height and the shared keyboard focus rings. The filled Add a
+  cottage action retains priority. Each card
+  action's decorative, aria-hidden arrow points right in English and mirrors under right-to-left direction. Card insets preserve the full focus perimeter. Eligible owners see
+  Edit cottage only for published profiles whose working copy is a draft; other fallback states and
+  Administrators retain Open Cottage Profile. The actions row puts this action at the inline start. The owner's card
   shows the From Price in `--muted` at `--font-size-2`, formatted like every other amount, at the inline end of the
-  actions row, or on its own line below the open action where the row is too narrow; it shows nothing where there
-  is no price.
+  actions row, vertically centered beside the action when they share a line, or on its own line below the
+  action where the row is too narrow; it shows nothing where there is no price.
   An owner's unpublished draft uses the same five rows: its detail line shows the authoritative completed count
-  out of 13 requirements, with both numbers localized. Row four is `.cottage-profile-draft-progress`, a grid with
+  out of 13 requirements, with both numbers localized. Row four holds any facts and, `--space-2` below them, `.cottage-profile-draft-progress`, a grid with
   `--space-2` between a decorative bar and exactly one wrapping next-step sentence. The pill track is `6px` tall,
   filled with `--line`; its `--gold` fill has the completed fraction as its percentage inline size and starts at
   the reading edge through inherited direction. This track height is an approved sizing literal. The redundant
@@ -532,8 +539,7 @@ its own; the block it sits in sets the space around it.
   permitted drafts say Ready to submit for content approval and Review and submit. These actions only navigate
   to the existing editor. When submission is disallowed, the sentence explains the expired or suspended account
   and uses Open Cottage Profile. Unavailable progress shows Progress unavailable and directs the owner to check
-  the required details in the editor, with no count or bar. Other card states keep their existing detail and
-  photo-count rows.
+  the required details in the editor, with no count or bar. Other card states keep their existing detail and photo count.
 - Request row: `article.card.request-row` shows one waiting Booking Request, in a single-column `div.request-rows`
   with `--space-3` between rows. It uses the card pattern and is a three-column grid with `--space-4` padding and
   gaps: a `5rem` square image frame with `--radius-card` corners on `--surface-placeholder`, left empty when the
@@ -549,8 +555,11 @@ its own; the block it sits in sets the space around it.
   the number in a `strong`, in `--display` in `--green` at `--font-size-5`, above its label in a `span`, in
   `--muted` at `--font-size-1`. It is not a card and takes no shadow. A count that cannot be known leaves its tile
   out and is never shown as zero; a page with nothing to count shows the empty state and no tiles. On the Cottage
-  Owner's cottages page the empty state holds only its sentence: the create form that follows it is the page's next
-  action, and where creation is unavailable no action is invented.
+  Owner's cottages page the empty state holds only its sentence. The eligible owner's native Add a cottage form
+  sits beside the title and summary, bottom-aligned with `--space-4` separation, and stacks at inline start below
+  the title at `phone`. Heading children shrink and wrap. Feedback wraps beneath the content-width button,
+  within the form's 22rem and 100% available-width cap. The same label and creation apply to empty and nonempty
+  lists; where creation is unavailable no action is invented.
 - Status badge: `span.status-badge` is the compact status of one item in a list row or card. Its text is the
   translated status label, so the status never depends on colour. It is a pill on `--status-neutral-bg` with bold
   `--ink` text at `--font-size-1`. A badge may add one tone class, which draws a `0.5rem` dot before the label,
