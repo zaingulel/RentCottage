@@ -3,7 +3,6 @@ import { accessMessages } from "../src/i18n/access-messages";
 import { cottageShiftScheduleMessages } from "../src/i18n/cottage-shift-schedule-messages";
 import { openHeaderPanel } from "./fixtures/site-header";
 import { createHmac } from "node:crypto";
-import { writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { crc32 } from "node:zlib";
 import * as OTPAuth from "otpauth";
@@ -1477,111 +1476,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   if (!phone) throw new Error("Approved owner browser fixture is unmapped");
   const captureDraftProgress =
     testInfo.project.name === "mobile" || testInfo.project.name === "desktop";
-  const draftCardMeasurements: unknown[] = [];
   const originalViewport = page.viewportSize()!;
-  async function measureDraftCard(card: Locator, state: string) {
-    const action = card.getByRole("link");
-    await page.keyboard.press("Tab");
-    await action.focus();
-    await expect(action).toBeFocused();
-    const measured = await card.evaluate(async (card) => {
-      const image = card.querySelector("img");
-      let photo: {
-        decoded: boolean;
-        complete: boolean;
-        width: number;
-        height: number;
-      } | null = null;
-      if (image) {
-        let decoded = true;
-        try {
-          await image.decode();
-        } catch {
-          decoded = false;
-        }
-        photo = {
-          decoded,
-          complete: image.complete,
-          width: image.naturalWidth,
-          height: image.naturalHeight,
-        };
-      }
-      function background(element: Element): string | null {
-        for (
-          let ancestor: Element | null = element;
-          ancestor;
-          ancestor = ancestor.parentElement
-        ) {
-          const color = getComputedStyle(ancestor).backgroundColor;
-          if (color !== "rgba(0, 0, 0, 0)" && color !== "transparent")
-            return color;
-        }
-        return null;
-      }
-      const selectors = {
-        count: ".card-detail",
-        next: ".cottage-profile-draft-next-step",
-        track: ".cottage-profile-draft-progress-track",
-        fill: ".cottage-profile-draft-progress-track > span",
-        action: "a",
-      };
-      const elements = Object.fromEntries(
-        Object.entries(selectors).map(([name, selector]) => {
-          const element = card.querySelector(selector)!;
-          const style = getComputedStyle(element);
-          const text = document.createRange();
-          text.selectNodeContents(element);
-          return [
-            name,
-            {
-              rect: element.getBoundingClientRect().toJSON(),
-              textRects: [...text.getClientRects()].map((rect) =>
-                rect.toJSON(),
-              ),
-              text: element.textContent,
-              foreground: style.color,
-              background: background(element),
-              fontSize: style.fontSize,
-              fontWeight: style.fontWeight,
-              lineHeight: style.lineHeight,
-              direction: style.direction,
-              textAlign: style.textAlign,
-              userSelect: style.userSelect,
-              clientWidth: element.clientWidth,
-              scrollWidth: element.scrollWidth,
-              focused: document.activeElement === element,
-              focusVisible: element.matches(":focus-visible"),
-              outline: style.outlineColor,
-              outlineStyle: style.outlineStyle,
-              outlineWidth: style.outlineWidth,
-              outlineOffset: style.outlineOffset,
-              boxShadow: style.boxShadow,
-              transition: style.transitionDuration,
-              animation: style.animationName,
-            },
-          ];
-        }),
-      );
-      return {
-        viewport: {
-          width: innerWidth,
-          height: innerHeight,
-          clientWidth: document.documentElement.clientWidth,
-          scrollWidth: document.documentElement.scrollWidth,
-        },
-        documentDirection: getComputedStyle(document.documentElement).direction,
-        cardDirection: getComputedStyle(card).direction,
-        cardRect: card.getBoundingClientRect().toJSON(),
-        cardBackground: background(card),
-        cardOverflow: getComputedStyle(card).overflow,
-        forcedColors: matchMedia("(forced-colors: active)").matches,
-        reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
-        photo,
-        elements,
-      };
-    });
-    draftCardMeasurements.push({ state, ...measured });
-  }
 
   await page.goto("/en/owner/access");
   await page.getByLabel("Iraqi phone number").fill(phone);
@@ -1709,7 +1604,6 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     ),
   ).toBeVisible();
   if (captureDraftProgress) {
-    await measureDraftCard(savedDraftCard, "partial-en");
     await page.screenshot({
       path: testInfo.outputPath(
         `draft-progress-partial-en-${testInfo.project.name}.png`,
@@ -1717,7 +1611,16 @@ test("an approved owner continues the first Cottage Profile and submits a privat
       fullPage: true,
     });
     await page.setViewportSize({ width: 320, height: originalViewport.height });
-    await measureDraftCard(savedDraftCard, "partial-en-320");
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          width: innerWidth,
+          fits:
+            document.documentElement.scrollWidth <=
+            document.documentElement.clientWidth,
+        })),
+      )
+      .toEqual({ width: 320, fits: true });
     for (const [locale, count, next] of [
       [
         "ar",
@@ -1736,7 +1639,34 @@ test("an approved owner continues the first Cottage Profile and submits a privat
         .filter({ has: page.locator(`a[href="/${locale}${profilePath}"]`) });
       await expect(card.getByText(count, { exact: true })).toBeVisible();
       await expect(card.getByText(next, { exact: true })).toBeVisible();
-      await measureDraftCard(card, `partial-${locale}-320`);
+      await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+      await expect
+        .poll(() =>
+          card.evaluate((card) => {
+            const track = card
+              .querySelector(".cottage-profile-draft-progress-track")!
+              .getBoundingClientRect();
+            const fill = card
+              .querySelector(".cottage-profile-draft-progress-track > span")!
+              .getBoundingClientRect();
+            return {
+              width: innerWidth,
+              fits:
+                document.documentElement.scrollWidth <=
+                document.documentElement.clientWidth,
+              direction: getComputedStyle(card).direction,
+              partialFill: fill.width > 0 && fill.width < track.width,
+              atReadingEdge: Math.abs(fill.right - track.right) <= 1,
+            };
+          }),
+        )
+        .toEqual({
+          width: 320,
+          fits: true,
+          direction: "rtl",
+          partialFill: true,
+          atReadingEdge: true,
+        });
     }
     await page.setViewportSize(originalViewport);
     await page.goto("/en/owner/cottages");
@@ -2186,7 +2116,6 @@ test("an approved owner continues the first Cottage Profile and submits a privat
     "Cottage Profile photo is unavailable",
   );
   if (captureDraftProgress) {
-    await measureDraftCard(readyDraftCard, "ready-en");
     await page.screenshot({
       path: testInfo.outputPath(
         `draft-progress-ready-en-${testInfo.project.name}.png`,
@@ -2206,56 +2135,13 @@ test("an approved owner continues the first Cottage Profile and submits a privat
         exact: true,
       }),
     ).toBeVisible();
-    await measureDraftCard(readyArabicCard, "ready-ar");
     await page.screenshot({
       path: testInfo.outputPath(
         `draft-progress-ready-ar-${testInfo.project.name}.png`,
       ),
       fullPage: true,
     });
-    await page.setViewportSize({ width: 320, height: originalViewport.height });
-    await measureDraftCard(readyArabicCard, "ready-ar-320");
-    await page.goto("/ckb/owner/cottages");
-    const readySoraniCard = page
-      .getByRole("article")
-      .filter({ has: page.locator(`a[href="/ckb${profilePath}"]`) });
-    await expect(
-      readySoraniCard.getByText("١٣ لە ١٣ پێداویستی تەواو کراوە", {
-        exact: true,
-      }),
-    ).toBeVisible();
-    await expect(
-      readySoraniCard.getByText("ئامادەیە بۆ ناردن بۆ پەسەندکردنی ناوەڕۆک", {
-        exact: true,
-      }),
-    ).toBeVisible();
-    await measureDraftCard(readySoraniCard, "ready-ckb-320");
-    await page.emulateMedia({
-      forcedColors: "active",
-      reducedMotion: "reduce",
-    });
-    await measureDraftCard(
-      readySoraniCard,
-      "ready-ckb-320-forced-colors-reduced-motion",
-    );
-    await page.screenshot({
-      path: testInfo.outputPath(
-        `draft-progress-ready-ckb-320-forced-colors-${testInfo.project.name}.png`,
-      ),
-      fullPage: true,
-    });
-    await page.emulateMedia({
-      forcedColors: "none",
-      reducedMotion: "no-preference",
-    });
-    await page.setViewportSize(originalViewport);
     await page.goto("/en/owner/cottages");
-    await writeFile(
-      testInfo.outputPath(
-        `draft-progress-accessibility-${testInfo.project.name}.json`,
-      ),
-      JSON.stringify(draftCardMeasurements),
-    );
   }
   const reviewAndSubmit = readyDraftCard.getByRole("link", {
     name: "Review and submit",

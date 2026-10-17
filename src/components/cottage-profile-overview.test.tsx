@@ -298,9 +298,17 @@ describe("Cottage Profile overview", () => {
         expect(card.children).toHaveLength(5);
         expect(card.children[3]).toHaveClass("cottage-profile-draft-progress");
         const bar = card.querySelector(".cottage-profile-draft-progress-track");
-        if (state.report?.status === "loaded")
+        if (state.report?.status === "loaded") {
           expect(bar).toHaveAttribute("aria-hidden", "true");
-        else expect(bar).toBeNull();
+          if (state.report.completed === 5) {
+            const fill = bar!.querySelector("span")!;
+            expect(fill.style.inlineSize).toMatch(/%$/);
+            expect(Number.parseFloat(fill.style.inlineSize)).toBeCloseTo(
+              38.46153846,
+              3,
+            );
+          }
+        } else expect(bar).toBeNull();
         expect(within(card).queryByRole("progressbar")).toBeNull();
         expect(within(card).queryByRole("status")).toBeNull();
         expect(
