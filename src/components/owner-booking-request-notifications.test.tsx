@@ -656,3 +656,25 @@ it("keeps elapsed and attention states held and refreshing until one unpaid-expi
     vi.useRealTimers();
   }
 });
+
+it("742 default owner list retains its section heading", () => {
+  for (const [locale, title] of [
+    ["en", "Pending Booking Requests"],
+    ["ar", "طلبات الحجز قيد الانتظار"],
+    ["ckb", "داواکارییە چاوەڕوانەکانی حجز"],
+  ] as const) {
+    const view = render(
+      <OwnerBookingRequestNotifications
+        locale={locale}
+        notifications={[pendingNotification]}
+      />,
+    );
+    const heading = screen.getByRole("heading", { level: 2, name: title });
+    expect(heading).toBeVisible();
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+    expect(
+      within(heading.parentElement!).queryByRole("link"),
+    ).not.toBeInTheDocument();
+    view.unmount();
+  }
+});

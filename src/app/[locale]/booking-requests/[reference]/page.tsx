@@ -15,20 +15,18 @@ import { CustomerBookingRequestStatus } from "@/components/customer-booking-requ
 import { ConfirmedBookingDetails } from "@/components/confirmed-booking-details";
 import { MessagingBookingLink } from "@/components/messaging-booking-link";
 import { CustomerReviewForm } from "@/components/customer-review-form";
+import { accessMessages } from "@/i18n/access-messages";
 import { isLocale } from "@/i18n/routing";
 
 const unavailableCopy = {
   en: {
     title: "Booking Request status is unavailable",
-    home: "RentCottage home",
   },
   ar: {
     title: "حالة طلب الحجز غير متاحة",
-    home: "الصفحة الرئيسية لـ RentCottage",
   },
   ckb: {
     title: "دۆخی داواکاری حجز بەردەست نییە",
-    home: "پەڕەی سەرەکیی RentCottage",
   },
 } as const;
 
@@ -73,8 +71,8 @@ export default async function CustomerBookingRequestPage({
         <ActionFocusTarget targetId="customer-booking-request-detail" />
         <section role="alert">
           <header className="page-heading">
-            <ActionLink kind="text" href={`/${locale}`}>
-              {unavailableCopy[locale].home}
+            <ActionLink kind="text" href={`/${locale}/bookings`}>
+              {accessMessages[locale].myBookings}
             </ActionLink>
             <h1
               id="customer-booking-request-unavailable-title"

@@ -24,6 +24,7 @@ import {
   ownerRequestPeriod,
   ownerRequestTimeLeft,
 } from "@/i18n/owner-booking-request-messages";
+import { accessMessages } from "@/i18n/access-messages";
 import type { Locale } from "@/i18n/routing";
 import {
   BookingRequestDecisionControls,
@@ -277,11 +278,13 @@ export function OwnerBookingRequestNotifications({
   notifications,
   focusSuccessorId = "owner-booking-requests-heading",
   waitingPresentation = "card",
+  headingLevel = 2,
 }: {
   locale: Locale;
   notifications: OwnerBookingRequestNotificationDisplay[] | undefined;
   focusSuccessorId?: string;
   waitingPresentation?: "card" | "row";
+  headingLevel?: 1 | 2;
 }) {
   const copy = ownerBookingRequestMessages[locale];
   const refresh = useBookingRequestRefresh(
@@ -317,16 +320,32 @@ export function OwnerBookingRequestNotifications({
       className="owner-booking-requests"
       aria-labelledby="owner-booking-requests-heading"
     >
-      <div>
-        <h2
-          id="owner-booking-requests-heading"
-          tabIndex={-1}
-          className="section-title action-focus-target"
-        >
-          {containsPaymentDisplayState ? copy.paymentTitle : copy.title}
-        </h2>
-        <p>{containsPaymentDisplayState ? copy.paymentIntro : copy.intro}</p>
-      </div>
+      {headingLevel === 1 ? (
+        <header className="page-heading">
+          <ActionLink kind="text" href={`/${locale}/bookings?workspace=owner`}>
+            {accessMessages[locale].ownerBookings}
+          </ActionLink>
+          <h1
+            id="owner-booking-requests-heading"
+            tabIndex={-1}
+            className="page-title action-focus-target"
+          >
+            {containsPaymentDisplayState ? copy.paymentTitle : copy.title}
+          </h1>
+          <p>{containsPaymentDisplayState ? copy.paymentIntro : copy.intro}</p>
+        </header>
+      ) : (
+        <div>
+          <h2
+            id="owner-booking-requests-heading"
+            tabIndex={-1}
+            className="section-title action-focus-target"
+          >
+            {containsPaymentDisplayState ? copy.paymentTitle : copy.title}
+          </h2>
+          <p>{containsPaymentDisplayState ? copy.paymentIntro : copy.intro}</p>
+        </div>
+      )}
       {notifications.length === 0 ? <p>{copy.empty}</p> : null}
       {rows.length > 0 ? (
         <div className="request-rows">

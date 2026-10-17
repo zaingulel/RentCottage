@@ -21,10 +21,12 @@ import {
   bookingRequestPaymentRequiredExpiryMessages,
 } from "@/i18n/booking-request-status-messages";
 import { formatIqd, formatIraqDateTime } from "@/i18n/format";
+import { accessMessages } from "@/i18n/access-messages";
 import type { Locale } from "@/i18n/routing";
 
 import { BookingRequestProgress } from "./booking-request-progress";
 import {
+  ActionLink,
   ActionButton,
   ActionFeedback,
   ActionFocusTarget,
@@ -209,14 +211,22 @@ function CustomerBookingRequestStatusView({
       {focusSuccessorId && (status === "processing" || !pending) ? (
         <ActionFocusTarget targetId={focusSuccessorId} />
       ) : null}
-      <h1
-        id="customer-booking-request-title"
-        tabIndex={-1}
-        className="page-title action-focus-target"
-      >
-        {copy.title}
-      </h1>
-      <ActionFocusTarget targetId="customer-booking-request-title" navigation />
+      <header className="page-heading">
+        <ActionLink kind="text" href={`/${locale}/bookings`}>
+          {accessMessages[locale].myBookings}
+        </ActionLink>
+        <h1
+          id="customer-booking-request-title"
+          tabIndex={-1}
+          className="page-title action-focus-target"
+        >
+          {copy.title}
+        </h1>
+        <ActionFocusTarget
+          targetId="customer-booking-request-title"
+          navigation
+        />
+      </header>
       <div className="card customer-booking-request-progress">
         <p className="status-banner" role="status" aria-live="polite">
           <BookingRequestStatusContent

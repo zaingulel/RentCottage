@@ -12,7 +12,7 @@ import { ConfirmedBookingDetails } from "@/components/confirmed-booking-details"
 import { CustomerReviewOwnerReply } from "@/components/customer-review-owner-reply";
 import { isLocale } from "@/i18n/routing";
 import { OwnerBookingRequestNotifications } from "@/components/owner-booking-request-notifications";
-import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
+import { accessMessages } from "@/i18n/access-messages";
 import { MessagingBookingLink } from "@/components/messaging-booking-link";
 
 const unavailableCopy = {
@@ -62,8 +62,11 @@ export default async function OwnerConfirmedBookingPage({
         <ActionFocusTarget targetId="owner-booking-request-detail" />
         <section role="alert">
           <header className="page-heading">
-            <ActionLink kind="text" href={`/${locale}/owner/cottages`}>
-              {cottageProfileMessages[locale].overviewTitle}
+            <ActionLink
+              kind="text"
+              href={`/${locale}/bookings?workspace=owner`}
+            >
+              {accessMessages[locale].ownerBookings}
             </ActionLink>
             <h1
               id="owner-booking-request-unavailable-title"
@@ -134,6 +137,7 @@ export default async function OwnerConfirmedBookingPage({
       <ActionFocusTarget targetId="owner-booking-request-detail" />
       <ActionFocusTarget targetId="owner-booking-request-detail" navigation />
       <OwnerBookingRequestNotifications
+        headingLevel={1}
         locale={locale}
         notifications={[details.request]}
         focusSuccessorId="owner-booking-request-detail"

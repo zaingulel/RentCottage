@@ -3794,6 +3794,10 @@ section.request-follow-up {
   gap: var(--space-5);
 }
 
+.customer-booking-request-status > .page-heading {
+  margin-block-end: 0;
+}
+
 .customer-booking-request-progress,
 .customer-booking-request-details {
   display: grid;
