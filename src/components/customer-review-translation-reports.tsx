@@ -79,6 +79,9 @@ export function CustomerReviewTranslationReports({
     return (
       <main className={`page results-page ${styles.administratorPage}`}>
         <header className="page-heading">
+          <ActionLink kind="text" href={moderationHref}>
+            {copy.administratorTitle}
+          </ActionLink>
           <h1 className="page-title">{copy.translationReportsTitle}</h1>
         </header>
         {result.status === "invalid" ? (

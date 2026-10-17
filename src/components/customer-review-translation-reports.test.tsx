@@ -331,3 +331,42 @@ it("742 report headings always return to reviews", () => {
     }
   }
 });
+
+it("translation report recovery headings return to reviews", () => {
+  for (const [locale, name] of [
+    ["en", "Customer review moderation"],
+    ["ar", "إدارة تقييمات العملاء"],
+    ["ckb", "بەڕێوەبردنی هەڵسەنگاندنی کڕیاران"],
+  ] as const) {
+    for (const status of [
+      "access-required",
+      "unavailable",
+      "invalid",
+    ] as const) {
+      const view = renderReports({ status }, locale);
+      const titles = screen.getAllByRole("heading", { level: 1 });
+      expect(titles).toHaveLength(1);
+      const title = titles[0];
+      const heading = title.closest("header")!;
+      expect(within(heading).getAllByRole("link")).toHaveLength(1);
+      const link = within(heading).getByRole("link", { name });
+      expect(link).toBeVisible();
+      expect(link).toHaveAttribute("href", `/${locale}/administrator/reviews`);
+      expect(
+        link.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+      if (status === "access-required") {
+        expect(
+          screen.getByRole("link", {
+            name: customerReviewMessages[locale].administratorAccessAction,
+          }),
+        ).toHaveAttribute(
+          "href",
+          `/${locale}/administrator/access?returnTo=${encodeURIComponent(`/${locale}/administrator/reviews`)}`,
+        );
+      }
+      view.unmount();
+    }
+  }
+});
