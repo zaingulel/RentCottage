@@ -1,3 +1,4 @@
+import { observeRecordHeading } from "./fixtures/record-heading";
 import {
   expect,
   test,
@@ -1056,6 +1057,60 @@ test.describe("retained cancellation and refund controls", () => {
       await expect(
         page.getByRole("heading", { name: copy.cancelled, exact: true }),
       ).toBeVisible();
+      const cancelledHeadingViewport = page.viewportSize()!;
+      try {
+        if (locale === "ar")
+          await page.setViewportSize({ width: 390, height: 844 });
+        await observeRecordHeading(
+          page,
+          testInfo,
+          accessMessages[locale].myBookings,
+          `/${locale}/bookings`,
+          `heading-cancelled-${locale}-a11y`,
+        );
+        const heading = page.getByRole("main").locator("header.page-heading");
+        await expect
+          .poll(() =>
+            heading.evaluate((header) => {
+              const next = header.nextElementSibling;
+              if (!next)
+                throw new Error("Cancelled heading has no following content");
+              return (
+                next.getBoundingClientRect().top -
+                header.getBoundingClientRect().bottom
+              );
+            }),
+          )
+          .toBeCloseTo(24, 1);
+        await testInfo.attach(`heading-cancelled-${locale}-gap`, {
+          contentType: "application/json",
+          body: JSON.stringify(
+            await heading.evaluate((header) => {
+              const next = header.nextElementSibling;
+              const parent = header.parentElement;
+              if (!next || !parent)
+                throw new Error("Cancelled heading layout is missing");
+              const headerRectangle = header.getBoundingClientRect();
+              const nextRectangle = next.getBoundingClientRect();
+              return {
+                gap: nextRectangle.top - headerRectangle.bottom,
+                header: headerRectangle.toJSON(),
+                next: nextRectangle.toJSON(),
+                parent: parent.getBoundingClientRect().toJSON(),
+              };
+            }),
+            null,
+            2,
+          ),
+        });
+        if (locale === "ar")
+          await page.screenshot({
+            path: testInfo.outputPath("heading-cancelled-ar.png"),
+          });
+      } finally {
+        if (locale === "ar")
+          await page.setViewportSize(cancelledHeadingViewport);
+      }
       await expect(
         page.getByText("Fictional private address", { exact: true }),
       ).toHaveCount(0);
