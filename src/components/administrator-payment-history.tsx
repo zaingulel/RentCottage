@@ -3,17 +3,9 @@ import {
   administratorPaymentHistoryCodeMessages,
   administratorPaymentHistoryMessages,
 } from "@/i18n/administrator-payment-history-messages";
-import { formatFilsAsIqd } from "@/i18n/format";
+import { formatFilsAsIqd, formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 import styles from "./administrator-payment-history.module.css";
-
-function formatTime(locale: Locale, value: string) {
-  return new Intl.DateTimeFormat(locale, {
-    dateStyle: "medium",
-    timeStyle: "medium",
-    timeZone: "Asia/Baghdad",
-  }).format(new Date(value));
-}
 
 function localizedCode(locale: Locale, code: string) {
   const messages = administratorPaymentHistoryCodeMessages[locale] as Record<
@@ -72,7 +64,11 @@ export function AdministratorPaymentHistoryView({
               <dt>{copy.deadline}</dt>
               <dd>
                 <time dateTime={history.current.paymentRequiredDeadline}>
-                  {formatTime(locale, history.current.paymentRequiredDeadline)}
+                  {formatIraqDateTime(
+                    history.current.paymentRequiredDeadline,
+                    locale,
+                    { seconds: true },
+                  )}
                 </time>
               </dd>
             </div>
@@ -167,7 +163,11 @@ export function AdministratorPaymentHistoryView({
                       <dt>{copy.providerOccurredAt}</dt>
                       <dd>
                         <time dateTime={event.providerOccurredAt}>
-                          {formatTime(locale, event.providerOccurredAt)}
+                          {formatIraqDateTime(
+                            event.providerOccurredAt,
+                            locale,
+                            { seconds: true },
+                          )}
                         </time>
                       </dd>
                     </div>
@@ -177,7 +177,9 @@ export function AdministratorPaymentHistoryView({
                       <dt>{copy.receivedAt}</dt>
                       <dd>
                         <time dateTime={event.receivedAt}>
-                          {formatTime(locale, event.receivedAt)}
+                          {formatIraqDateTime(event.receivedAt, locale, {
+                            seconds: true,
+                          })}
                         </time>
                       </dd>
                     </div>
@@ -187,7 +189,9 @@ export function AdministratorPaymentHistoryView({
                       <dt>{copy.sourceRecordedAt}</dt>
                       <dd>
                         <time dateTime={event.sourceRecordedAt}>
-                          {formatTime(locale, event.sourceRecordedAt)}
+                          {formatIraqDateTime(event.sourceRecordedAt, locale, {
+                            seconds: true,
+                          })}
                         </time>
                       </dd>
                     </div>
@@ -196,7 +200,9 @@ export function AdministratorPaymentHistoryView({
                     <dt>{copy.recordedAt}</dt>
                     <dd>
                       <time dateTime={event.recordedAt}>
-                        {formatTime(locale, event.recordedAt)}
+                        {formatIraqDateTime(event.recordedAt, locale, {
+                          seconds: true,
+                        })}
                       </time>
                     </dd>
                   </div>

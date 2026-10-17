@@ -107,6 +107,28 @@ describe("localized formatting", () => {
     expect(formatIraqDateTime("2026-08-21T23:30:00Z", "ar")).toContain("2:30");
   });
 
+  it("formats Sorani seconds without Sorani locale data", () => {
+    stubRuntimeWithoutSoraniData();
+    const instant = "2026-10-17T12:34:56Z";
+
+    expect(formatIraqDateTime(instant, "ckb", { seconds: true })).toBe(
+      "٢٠٢٦ تشرینی یەکەم ١٧ ٣:٣٤:٥٦ د.ن",
+    );
+    expect(formatIraqDateTime(instant, "ckb")).toBe(
+      "٢٠٢٦ تشرینی یەکەم ١٧ ٣:٣٤ د.ن",
+    );
+    expect(formatIraqDateTime(instant, "en", { seconds: true })).toBe(
+      "Oct 17, 2026, 3:34:56 PM",
+    );
+    expect(formatIraqDateTime(instant, "ar", { seconds: true })).toBe(
+      "17\u200f/10\u200f/2026، 3:34:56 م",
+    );
+    expect(formatIraqDateTime(instant, "en")).toBe("Oct 17, 2026, 3:34 PM");
+    expect(formatIraqDateTime(instant, "ar")).toBe(
+      "17\u200f/10\u200f/2026، 3:34 م",
+    );
+  });
+
   it("formats Service Days as calendar dates without a time zone shift", () => {
     expect(formatServiceDay("2026-09-22", "en")).toBe("Sep 22");
     expect(formatServiceDay("2026-09-22", "en", { weekday: true })).toBe(
