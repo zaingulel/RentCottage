@@ -12,7 +12,7 @@ import {
   type AdministratorSearchInput,
   searchKinds,
 } from "@/administrator-records/administrator-records";
-import { formatIraqDateTime } from "@/i18n/format";
+import { formatInteger, formatIraqDateTime } from "@/i18n/format";
 import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
 import type { Locale } from "@/i18n/routing";
 
@@ -163,7 +163,7 @@ export function AdministratorRecords({
         >
           {copy.applicationsQueue}
           {view.status === "ready"
-            ? `: ${new Intl.NumberFormat(locale).format(view.page.pendingApplications)}`
+            ? `: ${formatInteger(view.page.pendingApplications, locale)}`
             : ""}
         </ActionButton>
         <ActionButton
@@ -174,7 +174,7 @@ export function AdministratorRecords({
         >
           {copy.approvalsQueue}
           {view.status === "ready"
-            ? `: ${new Intl.NumberFormat(locale).format(view.page.pendingApprovals)}`
+            ? `: ${formatInteger(view.page.pendingApprovals, locale)}`
             : ""}
         </ActionButton>
       </div>
@@ -323,9 +323,7 @@ export function AdministratorRecords({
           <>
             <p className={styles.total}>
               {copy.matchingTotal}:{" "}
-              <strong>
-                {new Intl.NumberFormat(locale).format(view.page.total)}
-              </strong>
+              <strong>{formatInteger(view.page.total, locale)}</strong>
             </p>
             {view.page.rows.length ? (
               <ol className={styles.recordsList}>
@@ -370,11 +368,7 @@ export function AdministratorRecords({
                       {row.cycleNumber ? (
                         <div>
                           <dt>{copy.cycle}</dt>
-                          <dd>
-                            {new Intl.NumberFormat(locale).format(
-                              row.cycleNumber,
-                            )}
-                          </dd>
+                          <dd>{formatInteger(row.cycleNumber, locale)}</dd>
                         </div>
                       ) : null}
                     </dl>
@@ -567,9 +561,7 @@ export function AdministratorRecordDetailView({
               </div>
               <div>
                 <dt>{copy.cycle}</dt>
-                <dd>
-                  {new Intl.NumberFormat(locale).format(record.cycleNumber)}
-                </dd>
+                <dd>{formatInteger(record.cycleNumber, locale)}</dd>
               </div>
               <div>
                 <dt>{copy.locality}</dt>

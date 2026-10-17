@@ -622,3 +622,75 @@ describe("Booking Request form", () => {
     },
   );
 });
+
+it("BookingRequestForm displays Sorani booking terms with Eastern digits without changing acceptance evidence", async () => {
+  submitBookingRequest.mockResolvedValue({ status: "invalid" });
+  for (const [
+    locale,
+    cancellationPolicy,
+    inside48Warning,
+    inside48Acceptance,
+  ] of [
+    [
+      "ckb",
+      "هەڵوەشاندنەوە لانیکەم 48 کاتژمێر پێش شەفت پارەکە بە تەواوی دەگەڕێنێتەوە. لە ناو 48 کاتژمێر یان نەهاتندا پارە ناگەڕێتەوە.",
+      "ئەم داواکارییە لە ناو 48 کاتژمێردا دەست پێدەکات و دوای پەسەندکردن پارەکە ناگەڕێتەوە.",
+      "یاسای نەگەڕاندنەوەی پارە لە ناو 48 کاتژمێردا قبوڵ دەکەم.",
+    ],
+    [
+      "en",
+      "Cancel at least 48 hours before the first shift for a full refund. Cancellation inside 48 hours and no-shows receive no refund.",
+      "This request begins inside 48 hours and will be non-refundable immediately if accepted.",
+      "I understand and accept the inside-48-hours no-refund rule.",
+    ],
+    [
+      "ar",
+      "الإلغاء قبل 48 ساعة على الأقل يعيد المبلغ كاملاً. لا استرداد عند الإلغاء خلال 48 ساعة أو عدم الحضور.",
+      "يبدأ هذا الطلب خلال 48 ساعة وسيصبح غير قابل للاسترداد فور قبوله.",
+      "أفهم وأوافق على عدم الاسترداد خلال 48 ساعة.",
+    ],
+  ] as const) {
+    const evidence = Object.freeze({
+      ...policyProps(locale).acceptanceEvidence,
+      cancellationPolicy,
+      inside48Warning,
+      inside48Acceptance,
+    });
+    const { container, unmount } = render(
+      <BookingRequestForm
+        customerReady
+        locale={locale}
+        quote={quote}
+        discoveryQuery={discoveryQuery}
+        idempotencyKey="11111111-1111-4111-8111-111111111111"
+        uiPolicy={uiPolicy}
+        acceptanceEvidence={evidence}
+      />,
+    );
+    const displayed =
+      locale === "ckb"
+        ? [
+            "هەڵوەشاندنەوە لانیکەم ٤٨ کاتژمێر پێش شەفت پارەکە بە تەواوی دەگەڕێنێتەوە. لە ناو ٤٨ کاتژمێر یان نەهاتندا پارە ناگەڕێتەوە.",
+            "ئەم داواکارییە لە ناو ٤٨ کاتژمێردا دەست پێدەکات و دوای پەسەندکردن پارەکە ناگەڕێتەوە.",
+            "یاسای نەگەڕاندنەوەی پارە لە ناو ٤٨ کاتژمێردا قبوڵ دەکەم.",
+          ]
+        : [cancellationPolicy, inside48Warning, inside48Acceptance];
+    for (const text of displayed) expect(screen.getByText(text)).toBeVisible();
+    const checkbox = screen.getByRole("checkbox", { name: displayed[2] });
+    fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+    fireEvent.submit(container.querySelector("form")!);
+    await vi.waitFor(() =>
+      expect(
+        submitBookingRequest.mock.calls.at(-1)?.[0].acceptanceEvidence,
+      ).toBe(evidence),
+    );
+    expect(policyProps(locale).acceptanceEvidence).toEqual(evidence);
+    expect(evidence).toMatchObject({
+      cancellationPolicy,
+      inside48Warning,
+      inside48Acceptance,
+    });
+    unmount();
+  }
+});

@@ -1,5 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import { parseAdministratorPaymentHistory } from "@/booking-request/administrator-payment-history";
 import {
@@ -49,6 +49,50 @@ const history = {
     },
   ],
 };
+
+it("shows Sorani payment times with seconds without Sorani locale data", () => {
+  const RealDateTimeFormat = Intl.DateTimeFormat;
+  const dateTimeFormat = vi
+    .spyOn(Intl, "DateTimeFormat")
+    .mockImplementation(function (locales, options) {
+      const first = Array.isArray(locales) ? locales[0] : locales;
+      return new RealDateTimeFormat(
+        typeof first === "string" && first.startsWith("ckb")
+          ? "en-US"
+          : locales,
+        options,
+      );
+    });
+  const instant = "2026-10-17T12:34:56Z";
+  try {
+    const { container } = render(
+      <AdministratorPaymentHistoryView
+        locale="ckb"
+        history={{
+          ...history,
+          current: { ...history.current, paymentRequiredDeadline: instant },
+          events: [
+            {
+              ...history.events[0],
+              providerOccurredAt: instant,
+              receivedAt: instant,
+              recordedAt: instant,
+            },
+          ],
+        }}
+      />,
+    );
+    const times = container.querySelectorAll("time");
+    expect(times).toHaveLength(4);
+    for (const time of times) {
+      expect(time).toBeVisible();
+      expect(time.textContent).toBe("٢٠٢٦ تشرینی یەکەم ١٧ ٣:٣٤:٥٦ د.ن");
+      expect(time).toHaveAttribute("datetime", instant);
+    }
+  } finally {
+    dateTimeFormat.mockRestore();
+  }
+});
 
 it.each([
   ["en", "Internal support reference"],

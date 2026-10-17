@@ -148,7 +148,7 @@ export const bookingRequestMessages: Record<
     customerName: "ناوی کڕیار",
     partySize: "ژمارەی کەسان",
     bookingNote: "تێبینی حجز (ئارەزوومەندانە)",
-    noteHint: "تا 500 پیت. زانیاری پەیوەندی مەنووسە.",
+    noteHint: "تا ٥٠٠ پیت. زانیاری پەیوەندی مەنووسە.",
     acceptHouseRules:
       "یاسا پارێزراوەکانی کۆتێج کە لە سەرەوە نیشان دراون قبوڵ دەکەم.",
     acceptCancellation: "سیاسەتی هەڵوەشاندنەوە قبوڵ دەکەم.",

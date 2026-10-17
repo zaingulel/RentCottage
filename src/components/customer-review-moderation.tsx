@@ -192,7 +192,8 @@ function ModerationCard({
         </span>
       </div>
       <p>
-        {copy.rating}: {review.rating} / 5 {copy.ratingValue}
+        {copy.rating}: {formatInteger(review.rating, locale)} /{" "}
+        {formatInteger(5, locale)} {copy.ratingValue}
       </p>
       <p lang={review.originalLanguage} dir="auto">
         {review.originalBody ?? copy.ratingOnly}

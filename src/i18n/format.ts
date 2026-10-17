@@ -82,7 +82,7 @@ export function formatFilsAsIqd(
   return `IQD ${formattedWhole}${decimal}${localizedFraction}`;
 }
 
-function formatSoraniIraqDateTime(value: string): string {
+function formatSoraniIraqDateTime(value: string, seconds: boolean): string {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-US", {
       timeZone: "Asia/Baghdad",
@@ -91,6 +91,7 @@ function formatSoraniIraqDateTime(value: string): string {
       day: "numeric",
       hour: "numeric",
       minute: "2-digit",
+      ...(seconds ? { second: "2-digit" } : {}),
       hourCycle: "h12",
     })
       .formatToParts(new Date(value))
@@ -98,14 +99,20 @@ function formatSoraniIraqDateTime(value: string): string {
   );
   const month = soraniMonths[Number(parts.month) - 1];
   const period = parts.dayPeriod === "AM" ? "ب.ن" : "د.ن";
-  return `${toSoraniNumerals(parts.year)} ${month} ${toSoraniNumerals(parts.day)} ${toSoraniNumerals(parts.hour)}:${toSoraniNumerals(parts.minute)} ${period}`;
+  const second = seconds ? `:${toSoraniNumerals(parts.second)}` : "";
+  return `${toSoraniNumerals(parts.year)} ${month} ${toSoraniNumerals(parts.day)} ${toSoraniNumerals(parts.hour)}:${toSoraniNumerals(parts.minute)}${second} ${period}`;
 }
 
-export function formatIraqDateTime(value: string, locale: Locale): string {
-  if (locale === "ckb") return formatSoraniIraqDateTime(value);
+export function formatIraqDateTime(
+  value: string,
+  locale: Locale,
+  options: { seconds?: boolean } = {},
+): string {
+  if (locale === "ckb")
+    return formatSoraniIraqDateTime(value, options.seconds ?? false);
   return new Intl.DateTimeFormat(iraqIntlLocales[locale], {
     dateStyle: "medium",
-    timeStyle: "short",
+    timeStyle: options.seconds ? "medium" : "short",
     timeZone: "Asia/Baghdad",
   }).format(new Date(value));
 }

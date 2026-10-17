@@ -14,7 +14,7 @@ import { administratorQueuesMessages } from "@/i18n/administrator-queues-message
 import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
 import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
 import { bookingManagementMessages } from "@/i18n/booking-management-messages";
-import { formatIraqDateTime } from "@/i18n/format";
+import { formatInteger, formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 
 import {
@@ -91,7 +91,6 @@ export function AdministratorQueues({
 }) {
   const copy = administratorQueuesMessages[locale];
   const records = administratorRecordsMessages[locale];
-  const number = new Intl.NumberFormat(locale);
   const base = `/${locale}/administrator/queues`;
   const resetHref = `${base}?queue=${filters.queue}`;
 
@@ -149,7 +148,7 @@ export function AdministratorQueues({
               <option key={state} value={state}>
                 {stateLabel(locale, filters.queue, state)}
                 {outcome.status === "ready"
-                  ? ` (${number.format(outcome.page.stateCounts[state])})`
+                  ? ` (${formatInteger(outcome.page.stateCounts[state], locale)})`
                   : ""}
               </option>
             ))}
@@ -188,7 +187,7 @@ export function AdministratorQueues({
         <div className={styles.results}>
           <p className={styles.total}>
             {records.matchingTotal}:{" "}
-            <strong>{number.format(outcome.page.total)}</strong>
+            <strong>{formatInteger(outcome.page.total, locale)}</strong>
           </p>
           {outcome.page.rows.length ? (
             <ul className="list-rows">
