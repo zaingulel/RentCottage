@@ -90,12 +90,14 @@ describe("Cottage Profile overview", () => {
       en: {
         guests: ["1 guest", "2 guests", "3 guests", "11 guests"],
         bedrooms: ["1 bedroom", "2 bedrooms", "3 bedrooms", "11 bedrooms"],
+        maximumGuests: "100 guests",
         edit: "Edit cottage",
         open: "Open Cottage Profile",
       },
       ar: {
         guests: ["1 ضيف", "2 ضيفان", "3 ضيوف", "11 ضيفًا"],
         bedrooms: ["1 غرفة نوم", "2 غرفتا نوم", "3 غرف نوم", "11 غرفة نوم"],
+        maximumGuests: "100 ضيف",
         edit: "تعديل الكوخ",
         open: "فتح ملف الكوخ",
       },
@@ -107,6 +109,7 @@ describe("Cottage Profile overview", () => {
           "٣ ژووری نوستن",
           "١١ ژووری نوستن",
         ],
+        maximumGuests: "١٠٠ میوان",
         edit: "دەستکاریکردنی کۆتێج",
         open: "کردنەوەی پرۆفایلی کۆتێج",
       },
@@ -114,6 +117,20 @@ describe("Cottage Profile overview", () => {
     for (const locale of ["en", "ar", "ckb"] as const) {
       const copy = expectations[locale];
       for (const actor of ["owner", "administrator"] as const) {
+        const maximumCapacity = render(
+          <CottageProfileOverview
+            locale={locale}
+            actor={actor}
+            canCreate
+            profiles={[
+              { ...profile, ...published, capacity: 100, bedrooms: null },
+            ]}
+          />,
+        );
+        expect(
+          screen.getByText(copy.maximumGuests, { exact: true }),
+        ).toBeVisible();
+        maximumCapacity.unmount();
         for (const [index, count] of [1, 2, 3, 11].entries()) {
           for (const [capacity, bedrooms] of [
             [count, count],

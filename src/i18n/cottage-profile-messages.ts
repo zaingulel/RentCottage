@@ -214,7 +214,8 @@ const ar: Copy = {
     one: "{count} ضيف",
     two: "{count} ضيفان",
     few: "{count} ضيوف",
-    other: "{count} ضيفًا",
+    many: "{count} ضيفًا",
+    other: "{count} ضيف",
   },
   bedroomCount: {
     one: "{count} غرفة نوم",
