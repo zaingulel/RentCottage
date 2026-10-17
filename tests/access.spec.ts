@@ -1474,7 +1474,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   };
   const phone = phoneByProject[testInfo.project.name];
   if (!phone) throw new Error("Approved owner browser fixture is unmapped");
-  const captureDraftProgress =
+  const checkDraftProgressLayout =
     testInfo.project.name === "mobile" || testInfo.project.name === "desktop";
   const originalViewport = page.viewportSize()!;
 
@@ -1603,7 +1603,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
       { exact: true },
     ),
   ).toBeVisible();
-  if (captureDraftProgress) {
+  if (checkDraftProgressLayout) {
     await page.screenshot({
       path: testInfo.outputPath(
         `draft-progress-partial-en-${testInfo.project.name}.png`,
@@ -2115,7 +2115,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   expect(await signedOutCoverPhoto.text()).toBe(
     "Cottage Profile photo is unavailable",
   );
-  if (captureDraftProgress) {
+  if (checkDraftProgressLayout) {
     await page.screenshot({
       path: testInfo.outputPath(
         `draft-progress-ready-en-${testInfo.project.name}.png`,
