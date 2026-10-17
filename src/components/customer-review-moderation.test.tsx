@@ -57,6 +57,46 @@ const replyHidden = {
 };
 
 describe("CustomerReviewModeration", () => {
+  it("shows Sorani rating digits without Sorani locale data", () => {
+    const RealNumberFormat = Intl.NumberFormat;
+    const numberFormat = vi
+      .spyOn(Intl, "NumberFormat")
+      .mockImplementation(function (locales, options) {
+        const first = Array.isArray(locales) ? locales[0] : locales;
+        return new RealNumberFormat(
+          typeof first === "string" && first.startsWith("ckb")
+            ? "en-US"
+            : locales,
+          options,
+        );
+      });
+    try {
+      for (const [locale, expected] of [
+        ["ckb", "هەڵسەنگاندن: ٤ / ٥ ئەستێرە"],
+        ["en", "Rating: 4 / 5 stars"],
+        ["ar", "التقييم: 4 / 5 نجوم"],
+      ] as const) {
+        const { unmount } = render(
+          <CustomerReviewModeration
+            locale={locale}
+            filters={noFilters}
+            result={{
+              status: "success",
+              items: [review],
+              nextCursor: null,
+              total: 1,
+              stateCounts: { unhidden: 1, hidden: 0 },
+            }}
+          />,
+        );
+        expect(screen.getByText(expected)).toBeVisible();
+        unmount();
+      }
+    } finally {
+      numberFormat.mockRestore();
+    }
+  });
+
   beforeEach(() => vi.clearAllMocks());
 
   it("retains owned focus on the moderation heading when the Unhidden result removes its card", async () => {
@@ -443,8 +483,9 @@ describe("CustomerReviewModeration", () => {
         />,
       );
       const card = screen.getByRole("article");
+      const rating = locale === "ckb" ? "٤ / ٥" : "4 / 5";
       expect(
-        within(card).getByText(`${copy.rating}: 4 / 5 ${copy.ratingValue}`),
+        within(card).getByText(`${copy.rating}: ${rating} ${copy.ratingValue}`),
       ).toBeVisible();
       expect(within(card).getByText(hostile)).toHaveAttribute("dir", "auto");
       expect(within(card).queryByText("audit")).toBeNull();

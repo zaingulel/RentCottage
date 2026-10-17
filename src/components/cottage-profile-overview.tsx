@@ -147,11 +147,12 @@ export function CottageProfileOverview({
                   .join(" · ") || copy.completion}
               </p>
               <p className="card-small-print">
-                {
+                {formatInteger(
                   profile.photos.filter((photo) => photo.state === "ready")
-                    .length
-                }
-                /12 {copy.photos}
+                    .length,
+                  locale,
+                )}
+                /{formatInteger(12, locale)} {copy.photos}
               </p>
               <div className="cottage-profile-card-actions">
                 <ActionLink

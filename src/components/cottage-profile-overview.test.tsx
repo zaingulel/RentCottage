@@ -82,6 +82,50 @@ const publishedUpdateAwaitingApproval: StatusFields = {
 };
 
 describe("Cottage Profile overview", () => {
+  it("shows Sorani photo count digits without Sorani locale data", () => {
+    const RealNumberFormat = Intl.NumberFormat;
+    const numberFormat = vi
+      .spyOn(Intl, "NumberFormat")
+      .mockImplementation(function (locales, options) {
+        const first = Array.isArray(locales) ? locales[0] : locales;
+        return new RealNumberFormat(
+          typeof first === "string" && first.startsWith("ckb")
+            ? "en-US"
+            : locales,
+          options,
+        );
+      });
+    const photos: CottageProfile["photos"] = (
+      ["ready", "pending", "ready"] as const
+    ).map((state, index) => ({
+      id: `90000000-0000-4000-8000-00000000000${index + 1}`,
+      originalFilename: `synthetic-${index + 1}.png`,
+      mediaType: "image/png",
+      sizeBytes: 1024,
+      state,
+      updatedAt: "2026-08-17T09:00:00.000Z",
+    }));
+    try {
+      for (const [locale, expected] of [
+        ["ckb", "٢/١٢ وێنە تایبەتەکانی کۆتێج"],
+        ["en", "2/12 Private cottage photos"],
+        ["ar", "2/12 صور الكوخ الخاصة"],
+      ] as const) {
+        const { unmount } = render(
+          <CottageProfileOverview
+            locale={locale}
+            actor="owner"
+            profiles={[{ ...profile, photos }]}
+          />,
+        );
+        expect(screen.getByText(expected)).toBeVisible();
+        unmount();
+      }
+    } finally {
+      numberFormat.mockRestore();
+    }
+  });
+
   it("shows the continued application profile and allows approved owners to add another draft", () => {
     render(
       <CottageProfileOverview
