@@ -207,3 +207,23 @@ describe("Booking Request row decision controls", () => {
     expect(onStatusChange).toHaveBeenCalledExactlyOnceWith("pending");
   });
 });
+
+it("shows Eastern Arabic digits in the Sorani decline hint", () => {
+  for (const [locale, decline, expected] of [
+    ["ckb", "ڕەتکردنەوە", "تا ٥٠٠ پیت. زانیاری پەیوەندی مەنووسە."],
+    ["en", "Decline", "Up to 500 characters. Do not include contact details."],
+    ["ar", "رفض", "حتى 500 حرف. لا تكتب بيانات اتصال."],
+  ] as const) {
+    const { unmount } = render(
+      <BookingRequestRowDecisionControls
+        locale={locale}
+        bookingRequestId={bookingRequestId}
+      />,
+    );
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: decline, exact: true }));
+    expect(screen.getByText(expected)).toBeVisible();
+    expect(screen.getByRole("textbox")).toHaveAttribute("maxLength", "500");
+    unmount();
+  }
+});

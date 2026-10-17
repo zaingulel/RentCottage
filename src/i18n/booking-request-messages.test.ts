@@ -57,3 +57,31 @@ describe("Booking Request error messages", () => {
     ).toThrow("Unknown Booking Request submission status");
   });
 });
+
+it("uses Eastern Arabic digits in Sorani booking notices", () => {
+  expect(bookingRequestMessages.ckb).toMatchObject({
+    noteHint: "تا ٥٠٠ پیت. زانیاری پەیوەندی مەنووسە.",
+    cancellationPolicy:
+      "هەڵوەشاندنەوە لانیکەم ٤٨ کاتژمێر پێش شەفت پارەکە بە تەواوی دەگەڕێنێتەوە. لە ناو ٤٨ کاتژمێر یان نەهاتندا پارە ناگەڕێتەوە.",
+    inside48Warning:
+      "ئەم داواکارییە لە ناو ٤٨ کاتژمێردا دەست پێدەکات و دوای پەسەندکردن پارەکە ناگەڕێتەوە.",
+    acceptInside48: "یاسای نەگەڕاندنەوەی پارە لە ناو ٤٨ کاتژمێردا قبوڵ دەکەم.",
+  });
+  expect(bookingRequestMessages.en).toMatchObject({
+    noteHint: "Up to 500 characters. Do not include contact details.",
+    cancellationPolicy:
+      "Cancel at least 48 hours before the first shift for a full refund. Cancellation inside 48 hours and no-shows receive no refund.",
+    inside48Warning:
+      "This request begins inside 48 hours and will be non-refundable immediately if accepted.",
+    acceptInside48:
+      "I understand and accept the inside-48-hours no-refund rule.",
+  });
+  expect(bookingRequestMessages.ar).toMatchObject({
+    noteHint: "حتى 500 حرف. لا تكتب بيانات اتصال.",
+    cancellationPolicy:
+      "الإلغاء قبل 48 ساعة على الأقل يعيد المبلغ كاملاً. لا استرداد عند الإلغاء خلال 48 ساعة أو عدم الحضور.",
+    inside48Warning:
+      "يبدأ هذا الطلب خلال 48 ساعة وسيصبح غير قابل للاسترداد فور قبوله.",
+    acceptInside48: "أفهم وأوافق على عدم الاسترداد خلال 48 ساعة.",
+  });
+});
