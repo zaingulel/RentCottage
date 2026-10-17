@@ -41,6 +41,58 @@ const applications: SubmittedOwnerApplicationReview[] = [
 ];
 
 describe("Owner Application review queue", () => {
+  it("shows Sorani dates without Sorani locale data", () => {
+    const RealDateTimeFormat = Intl.DateTimeFormat;
+    const dateTimeFormat = vi
+      .spyOn(Intl, "DateTimeFormat")
+      .mockImplementation(function (locales, options) {
+        const first = Array.isArray(locales) ? locales[0] : locales;
+        return new RealDateTimeFormat(
+          typeof first === "string" && first.startsWith("ckb")
+            ? "en-US"
+            : locales,
+          options,
+        );
+      });
+    const instants = ["2026-10-17T12:34:56Z", "2026-10-18T12:34:56Z"];
+    try {
+      for (const [locale, expected] of [
+        [
+          "ckb",
+          ["٢٠٢٦ تشرینی یەکەم ١٧ ٣:٣٤ د.ن", "٢٠٢٦ تشرینی یەکەم ١٨ ٣:٣٤ د.ن"],
+        ],
+        ["en", ["Oct 17, 2026, 3:34 PM", "Oct 18, 2026, 3:34 PM"]],
+        [
+          "ar",
+          ["17\u200f/10\u200f/2026، 3:34 م", "18\u200f/10\u200f/2026، 3:34 م"],
+        ],
+      ] as const) {
+        const { container, unmount } = render(
+          <OwnerApplicationReviewQueue
+            locale={locale}
+            applications={[
+              {
+                ...applications[0],
+                submittedAt: instants[0],
+                reviewDueAt: instants[1],
+              },
+            ]}
+          />,
+        );
+        const times = container.querySelectorAll("time");
+        expect(times).toHaveLength(instants.length);
+        for (const [index, time] of times.entries()) {
+          expect(time).toBeVisible();
+          expect(time.textContent).toBe(expected[index]);
+          expect(time).toHaveAttribute("datetime", instants[index]);
+        }
+        unmount();
+      }
+    } finally {
+      dateTimeFormat.mockRestore();
+    }
+  });
+
   beforeEach(() => vi.resetAllMocks());
   afterEach(() => {
     vi.useRealTimers();

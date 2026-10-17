@@ -11,6 +11,7 @@ import {
 } from "@/components/interaction-controls";
 import { ownerApplicationMessages } from "@/i18n/owner-application-messages";
 import { ownerApplicationStatusMessages } from "@/i18n/owner-application-status-messages";
+import { formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 import {
   respondToOwnerApplicationAction,
@@ -194,11 +195,6 @@ export function OwnerApplicationReviewStatus({
     submitOwnerApplicationRenewalAction,
     idle,
   );
-  const dateTimeFormat = new Intl.DateTimeFormat(locale, {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Baghdad",
-  });
   return (
     <section className="application-section owner-review-status">
       <span
@@ -213,7 +209,7 @@ export function OwnerApplicationReviewStatus({
             {review.notices.map((notice, index) => (
               <li key={`${notice.createdAt}-${index}`}>
                 <time dateTime={notice.createdAt}>
-                  {dateTimeFormat.format(new Date(notice.createdAt))}
+                  {formatIraqDateTime(notice.createdAt, locale)}
                 </time>
                 {notice.reason ? ` · ${notice.reason}` : ""}
               </li>

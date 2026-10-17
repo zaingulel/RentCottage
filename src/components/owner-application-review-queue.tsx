@@ -9,6 +9,7 @@ import {
   ActionLink,
 } from "@/components/interaction-controls";
 import { ownerApplicationReviewMessages } from "@/i18n/owner-application-review-messages";
+import { formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 import {
   createOwnerDocumentAccessAction,
@@ -169,21 +170,13 @@ export function OwnerApplicationReviewQueue({
               <h2 className="card-title">{application.legalName}</h2>
             </div>
             <time dateTime={application.submittedAt}>
-              {new Intl.DateTimeFormat(locale, {
-                dateStyle: "medium",
-                timeStyle: "short",
-                timeZone: "Asia/Baghdad",
-              }).format(new Date(application.submittedAt))}
+              {formatIraqDateTime(application.submittedAt, locale)}
             </time>
           </header>
           <p>
             {copy.reviewDue}:{" "}
             <time dateTime={application.reviewDueAt}>
-              {new Intl.DateTimeFormat(locale, {
-                dateStyle: "medium",
-                timeStyle: "short",
-                timeZone: "Asia/Baghdad",
-              }).format(new Date(application.reviewDueAt))}
+              {formatIraqDateTime(application.reviewDueAt, locale)}
             </time>
           </p>
           <Link

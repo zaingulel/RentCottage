@@ -12,6 +12,7 @@ import {
 import { ownerApplicationMessages } from "@/i18n/owner-application-messages";
 import { ownerApplicationReviewDetailMessages } from "@/i18n/owner-application-review-detail-messages";
 import { ownerApplicationStatusMessages } from "@/i18n/owner-application-status-messages";
+import { formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 import { ownerApplicationResponseFields } from "@/owner-application/owner-application-review";
 import type { OwnerApplicationStatus } from "@/owner-application/owner-application-status";
@@ -68,11 +69,6 @@ export function OwnerApplicationReviewDetailView({
   const copy = ownerApplicationReviewDetailMessages[locale];
   const ownerCopy = ownerApplicationMessages[locale];
   const [state, action] = useActionState(reviewOwnerApplicationAction, idle);
-  const dateTimeFormat = new Intl.DateTimeFormat(locale, {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Baghdad",
-  });
   const canDecide =
     detail.status === "submitted" || detail.status === "under_review";
 
@@ -102,7 +98,7 @@ export function OwnerApplicationReviewDetailView({
             <dt>{copy.submitted}</dt>
             <dd>
               <time dateTime={detail.submittedAt}>
-                {dateTimeFormat.format(new Date(detail.submittedAt))}
+                {formatIraqDateTime(detail.submittedAt, locale)}
               </time>
             </dd>
           </div>
@@ -111,7 +107,7 @@ export function OwnerApplicationReviewDetailView({
               <dt>{copy.reviewDue}</dt>
               <dd>
                 <time dateTime={detail.reviewDueAt}>
-                  {dateTimeFormat.format(new Date(detail.reviewDueAt))}
+                  {formatIraqDateTime(detail.reviewDueAt, locale)}
                 </time>
               </dd>
             </div>
@@ -366,7 +362,7 @@ export function OwnerApplicationReviewDetailView({
             {detail.transitions.map((transition, index) => (
               <li key={`${transition.occurredAt}-${index}`}>
                 <time dateTime={transition.occurredAt}>
-                  {dateTimeFormat.format(new Date(transition.occurredAt))}
+                  {formatIraqDateTime(transition.occurredAt, locale)}
                 </time>{" "}
                 ·{" "}
                 <span className="review-transition" dir="ltr">

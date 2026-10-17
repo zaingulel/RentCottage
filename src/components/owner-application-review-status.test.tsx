@@ -64,6 +64,50 @@ const review: OwnerApplicationOwnerReview = {
 };
 
 describe("Owner Application review status", () => {
+  it("shows Sorani dates without Sorani locale data", () => {
+    const RealDateTimeFormat = Intl.DateTimeFormat;
+    const dateTimeFormat = vi
+      .spyOn(Intl, "DateTimeFormat")
+      .mockImplementation(function (locales, options) {
+        const first = Array.isArray(locales) ? locales[0] : locales;
+        return new RealDateTimeFormat(
+          typeof first === "string" && first.startsWith("ckb")
+            ? "en-US"
+            : locales,
+          options,
+        );
+      });
+    const instants = ["2026-10-17T12:34:56Z"];
+    try {
+      for (const [locale, expected] of [
+        ["ckb", ["٢٠٢٦ تشرینی یەکەم ١٧ ٣:٣٤ د.ن"]],
+        ["en", ["Oct 17, 2026, 3:34 PM"]],
+        ["ar", ["17\u200f/10\u200f/2026، 3:34 م"]],
+      ] as const) {
+        const { container, unmount } = render(
+          <OwnerApplicationReviewStatus
+            locale={locale}
+            application={application}
+            review={{
+              ...review,
+              notices: [{ ...review.notices[0], createdAt: instants[0] }],
+            }}
+          />,
+        );
+        const times = container.querySelectorAll("time");
+        expect(times).toHaveLength(instants.length);
+        for (const [index, time] of times.entries()) {
+          expect(time).toBeVisible();
+          expect(time.textContent).toBe(expected[index]);
+          expect(time).toHaveAttribute("datetime", instants[index]);
+        }
+        unmount();
+      }
+    } finally {
+      dateTimeFormat.mockRestore();
+    }
+  });
+
   it("shows the durable state and only the exact requested response scope", () => {
     render(
       <OwnerApplicationReviewStatus
