@@ -64,20 +64,23 @@ export interface CottageProfileSourceRevision {
   submittedAt: string;
 }
 
+export const cottageProfileDraftRequirements = [
+  "name",
+  "governorate",
+  "approximateLocation",
+  "capacity",
+  "bedrooms",
+  "bathrooms",
+  "amenities",
+  "exactPoint",
+  "privateDirections",
+  "sourceLanguage",
+  "description",
+  "houseRules",
+  "photos",
+] as const;
 export type CottageProfileDraftRequirement =
-  | "name"
-  | "governorate"
-  | "approximateLocation"
-  | "capacity"
-  | "bedrooms"
-  | "bathrooms"
-  | "amenities"
-  | "exactPoint"
-  | "privateDirections"
-  | "sourceLanguage"
-  | "description"
-  | "houseRules"
-  | "photos";
+  (typeof cottageProfileDraftRequirements)[number];
 
 export interface CottageProfile {
   id: string;

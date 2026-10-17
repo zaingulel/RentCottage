@@ -4,6 +4,7 @@ import { parseAccountContext } from "@/access/supabase-account-access";
 
 import {
   cottageProfileAmenities,
+  cottageProfileDraftRequirements,
   cottageProfileMaximumLengths,
   cottageProfileMaximumPhotoBytes,
   cottageProfileMaximumPhotoFilenameLength,
@@ -41,6 +42,7 @@ const sourceColumns =
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const knownAmenities = new Set<string>(cottageProfileAmenities);
+const knownDraftRequirements = new Set<string>(cottageProfileDraftRequirements);
 const photoMediaTypes = new Set<string>(cottageProfilePhotoMediaTypes);
 
 function record(value: unknown): Record<string, unknown> {
@@ -601,21 +603,7 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
             completed > 13 ||
             (next !== null &&
               (typeof next !== "string" ||
-                ![
-                  "name",
-                  "governorate",
-                  "approximateLocation",
-                  "capacity",
-                  "bedrooms",
-                  "bathrooms",
-                  "amenities",
-                  "exactPoint",
-                  "privateDirections",
-                  "sourceLanguage",
-                  "description",
-                  "houseRules",
-                  "photos",
-                ].includes(next))) ||
+                !knownDraftRequirements.has(next))) ||
             (next === null) !== (completed === 13) ||
             typeof row.submission_allowed !== "boolean"
           ) {
