@@ -584,6 +584,8 @@ function makeDocLintFixture(files) {
     "scripts/lib/doc-lint.mjs",
     "scripts/lib/doc-lint-links.mjs",
     "scripts/lib/doc-lint-citations.mjs",
+    "scripts/lib/doc-lint-verdict.mjs",
+    "scripts/lib/runtimes.mjs",
   ]) {
     fs.copyFileSync(path.join(ROOT, rel), path.join(root, rel));
   }
@@ -603,6 +605,145 @@ function runDocLintFixture(root, args = []) {
     encoding: "utf8",
   });
 }
+
+test("doc-lint CLI applies configured runtime and sweep omissions without accepting unrelated missing targets", () => {
+  const root = makeDocLintFixture({
+    "AGENTS.md": "# Operating rules\n",
+    ".agents/skills/seed/SKILL.md": "The seeded skill.\n",
+    ".agents/factory-settings.json": JSON.stringify({
+      version: 1,
+      runtimes: ["codex"],
+      docSweep: false,
+      seats: {},
+    }),
+    "docs/keep.md": [
+      "Read `.claude/agents/builder.md` and `scripts/sweep-scope-check.mjs`.",
+      "Read [the sweep](DOC-SWEEP.md).",
+    ].join("\n"),
+  });
+  try {
+    for (const args of [[], ["--staged"]]) {
+      const accepted = runDocLintFixture(root, args);
+      assert.equal(accepted.status, 0, accepted.stderr);
+    }
+    fs.appendFileSync(
+      path.join(root, "docs/keep.md"),
+      '\nSee CLAUDE.md "Absent section" and AGENTS.md "Operating rules".\n',
+    );
+    execFileSync("git", ["add", "docs/keep.md"], { cwd: root });
+    for (const args of [[], ["--staged"]]) {
+      const accepted = runDocLintFixture(root, args);
+      assert.equal(accepted.status, 0, accepted.stderr);
+    }
+    fs.appendFileSync(
+      path.join(root, "docs/keep.md"),
+      "Read `docs/missing.md`, `.codex/agents/missing.toml` and `scripts/sweep-unconfigured.mjs`.\n",
+    );
+    execFileSync("git", ["add", "docs/keep.md"], { cwd: root });
+    for (const args of [[], ["--staged"]]) {
+      const denied = runDocLintFixture(root, args);
+      assert.equal(denied.status, 1);
+      for (const missing of [
+        "docs/missing.md",
+        ".codex/agents/missing.toml",
+        "scripts/sweep-unconfigured.mjs",
+      ]) {
+        assert.ok(
+          denied.stderr.includes(`\`${missing}\` does not exist`),
+          denied.stderr,
+        );
+      }
+      assert.match(denied.stderr, /doc-lint: 3 error\(s\)\./);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("doc-lint CLI reads partially staged prose and settings from the index", () => {
+  const configured = JSON.stringify({
+    version: 1,
+    runtimes: ["codex"],
+    docSweep: false,
+    seats: {},
+  });
+  const defaults = '{"version":1,"seats":{}}';
+  const omittedRefs =
+    "Read `.claude/agents/builder.md` and `scripts/sweep-scope-check.mjs`.\n";
+  const root = makeDocLintFixture({
+    ...SCAN_SET_SEEDS,
+    ".agents/factory-settings.json": configured,
+    "docs/keep.md": omittedRefs,
+    "docs/indexed.md": "An indexed target.\n",
+  });
+  const settingsPath = path.join(root, ".agents/factory-settings.json");
+  const prosePath = path.join(root, "docs/keep.md");
+  try {
+    fs.writeFileSync(settingsPath, defaults);
+    fs.writeFileSync(prosePath, `${omittedRefs}Read \`docs/missing.md\`.\n`);
+    let staged = runDocLintFixture(root, ["--staged"]);
+    assert.equal(staged.status, 0, staged.stderr);
+    let working = runDocLintFixture(root);
+    assert.equal(working.status, 1);
+    assert.match(working.stderr, /docs\/missing\.md/);
+    assert.match(working.stderr, /\.claude\/agents\/builder\.md/);
+    assert.match(working.stderr, /scripts\/sweep-scope-check\.mjs/);
+
+    execFileSync("git", ["add", "."], { cwd: root });
+    fs.writeFileSync(settingsPath, configured);
+    fs.writeFileSync(prosePath, omittedRefs);
+    working = runDocLintFixture(root);
+    assert.equal(working.status, 0, working.stderr);
+    staged = runDocLintFixture(root, ["--staged"]);
+    assert.equal(staged.status, 1);
+    assert.match(staged.stderr, /docs\/missing\.md/);
+    assert.match(staged.stderr, /\.claude\/agents\/builder\.md/);
+    assert.match(staged.stderr, /scripts\/sweep-scope-check\.mjs/);
+
+    fs.writeFileSync(prosePath, "Read `docs/untracked.md`.\n");
+    execFileSync(
+      "git",
+      ["add", ".agents/factory-settings.json", "docs/keep.md"],
+      { cwd: root },
+    );
+    fs.writeFileSync(path.join(root, "docs/untracked.md"), "A local target.\n");
+    working = runDocLintFixture(root);
+    assert.equal(working.status, 0, working.stderr);
+    staged = runDocLintFixture(root, ["--staged"]);
+    assert.equal(staged.status, 1);
+    assert.match(staged.stderr, /`docs\/untracked\.md` does not exist/);
+
+    fs.writeFileSync(prosePath, "Read `docs/indexed.md`.\n");
+    execFileSync("git", ["add", "docs/keep.md"], { cwd: root });
+    fs.rmSync(path.join(root, "docs/indexed.md"));
+    working = runDocLintFixture(root);
+    assert.equal(working.status, 1);
+    assert.match(working.stderr, /`docs\/indexed\.md` does not exist/);
+    staged = runDocLintFixture(root, ["--staged"]);
+    assert.equal(staged.status, 0, staged.stderr);
+
+    fs.writeFileSync(prosePath, omittedRefs);
+    execFileSync("git", ["add", "docs/keep.md"], { cwd: root });
+    fs.rmSync(settingsPath);
+    working = runDocLintFixture(root);
+    assert.equal(working.status, 1);
+    assert.match(working.stderr, /scripts\/sweep-scope-check\.mjs/);
+    staged = runDocLintFixture(root, ["--staged"]);
+    assert.equal(staged.status, 0, staged.stderr);
+
+    execFileSync("git", ["rm", "--cached", ".agents/factory-settings.json"], {
+      cwd: root,
+    });
+    fs.writeFileSync(settingsPath, configured);
+    working = runDocLintFixture(root);
+    assert.equal(working.status, 0, working.stderr);
+    staged = runDocLintFixture(root, ["--staged"]);
+    assert.equal(staged.status, 1);
+    assert.match(staged.stderr, /scripts\/sweep-scope-check\.mjs/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("doc-lint CLI accepts the bundled provenance and still rejects a missing database path", () => {
   const root = makeDocLintFixture({
@@ -627,6 +768,87 @@ test("doc-lint CLI accepts the bundled provenance and still rejects a missing da
     assert.match(
       rejected.stderr,
       /docs\/AI-WORKFLOW-runtimes\.md:3 .+ `supabase\/missing\.sql` does not exist/,
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("doc-lint CLI preserves source-scoped provenance allowances in staged mode", () => {
+  const provenance = [
+    "`supabase-postgres-best-practices`, come from the official `supabase/agent-skills` repository at commit",
+    "c9be0e931b7930f7d02126d04774d904c381e7d7, under its `skills/` directory.",
+  ].join("\n");
+  const root = makeDocLintFixture({
+    ...SCAN_SET_SEEDS,
+    "docs/AI-WORKFLOW-runtimes.md": provenance,
+    ".agents/skills/supabase/references/skill-feedback.md":
+      "3. **Submit** — Create a GitHub Issue on the `supabase/agent-skills` repository using the draft as the issue body. The title must follow this format: `user-feedback: <summary of the problem>`.",
+    "docs/unrelated.md": "Unrelated source.\n",
+  });
+  try {
+    const accepted = runDocLintFixture(root, ["--staged"]);
+    assert.equal(accepted.status, 0, accepted.stderr);
+    fs.appendFileSync(
+      path.join(root, "docs/AI-WORKFLOW-runtimes.md"),
+      "\nRead `supabase/missing.sql`.\n",
+    );
+    fs.writeFileSync(path.join(root, "docs/unrelated.md"), provenance);
+    execFileSync("git", ["add", "."], { cwd: root });
+    const denied = runDocLintFixture(root, ["--staged"]);
+    assert.equal(denied.status, 1);
+    assert.match(
+      denied.stderr,
+      /docs\/AI-WORKFLOW-runtimes\.md:3 .+ `supabase\/missing\.sql` does not exist/,
+    );
+    assert.match(
+      denied.stderr,
+      /docs\/unrelated\.md:1 .+ `supabase\/agent-skills` does not exist/,
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("doc-lint CLI keeps date warnings advisory and malformed settings fail loud", () => {
+  const root = makeDocLintFixture({
+    ...SCAN_SET_SEEDS,
+    "AGENTS.md": "Last updated 2026-01-01.\n",
+    ".agents/factory-settings.json": '{"version":1,"seats":{}}',
+  });
+  const settingsPath = path.join(root, ".agents/factory-settings.json");
+  try {
+    for (const args of [[], ["--staged"]]) {
+      const advisory = runDocLintFixture(root, args);
+      assert.equal(advisory.status, 0, advisory.stderr);
+      assert.match(
+        advisory.stdout,
+        /⚠ AGENTS\.md:1 .+ date-stamp `2026-01-01`/,
+      );
+      assert.equal(advisory.stderr, "");
+    }
+    fs.writeFileSync(settingsPath, "{invalid");
+    const malformed = runDocLintFixture(root);
+    assert.equal(malformed.status, 1);
+    assert.match(
+      malformed.stderr,
+      /doc-lint: failed to scan .+ \.agents\/factory-settings\.json: is not valid JSON/,
+    );
+    const stagedValid = runDocLintFixture(root, ["--staged"]);
+    assert.equal(stagedValid.status, 0, stagedValid.stderr);
+    assert.match(stagedValid.stdout, /⚠ AGENTS\.md:1/);
+
+    execFileSync("git", ["add", ".agents/factory-settings.json"], {
+      cwd: root,
+    });
+    fs.writeFileSync(settingsPath, '{"version":1,"seats":{}}');
+    const workingValid = runDocLintFixture(root);
+    assert.equal(workingValid.status, 0, workingValid.stderr);
+    const stagedMalformed = runDocLintFixture(root, ["--staged"]);
+    assert.equal(stagedMalformed.status, 1);
+    assert.match(
+      stagedMalformed.stderr,
+      /\.agents\/factory-settings\.json: is not valid JSON/,
     );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
