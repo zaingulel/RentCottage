@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import {
   expect,
   type Locator,
@@ -62,9 +63,10 @@ export async function observeRecordHeading(
       ),
     )
     .toBe(true);
-  await testInfo.attach(label, {
-    contentType: "application/json",
-    body: JSON.stringify(
+  const observationPath = testInfo.outputPath(`${label}.json`);
+  await writeFile(
+    observationPath,
+    JSON.stringify(
       await returnLink.evaluate((link, view) => {
         const style = getComputedStyle(link);
         const backgrounds = [];
@@ -154,6 +156,10 @@ export async function observeRecordHeading(
       null,
       2,
     ),
+  );
+  await testInfo.attach(label, {
+    path: observationPath,
+    contentType: "application/json",
   });
   return returnLink;
 }

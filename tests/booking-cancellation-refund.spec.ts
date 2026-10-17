@@ -9,6 +9,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { readFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import * as OTPAuth from "otpauth";
@@ -1082,9 +1083,12 @@ test.describe("retained cancellation and refund controls", () => {
             }),
           )
           .toBeCloseTo(24, 1);
-        await testInfo.attach(`heading-cancelled-${locale}-gap`, {
-          contentType: "application/json",
-          body: JSON.stringify(
+        const gapPath = testInfo.outputPath(
+          `heading-cancelled-${locale}-gap.json`,
+        );
+        await writeFile(
+          gapPath,
+          JSON.stringify(
             await heading.evaluate((header) => {
               const next = header.nextElementSibling;
               const parent = header.parentElement;
@@ -1111,6 +1115,10 @@ test.describe("retained cancellation and refund controls", () => {
             null,
             2,
           ),
+        );
+        await testInfo.attach(`heading-cancelled-${locale}-gap`, {
+          path: gapPath,
+          contentType: "application/json",
         });
         if (locale === "ar")
           await page.screenshot({
