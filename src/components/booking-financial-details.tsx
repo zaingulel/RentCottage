@@ -76,16 +76,21 @@ export function BookingFinancialDetails({
     delivered: c.noticeDelivered,
     suppressed: c.noticeSuppressed,
   };
+  const participantCancellation =
+    view.cancellation && view.actorRole !== "platform_administrator";
+  const lifecycleDetails = (
+    <BookingLifecycleDetails
+      locale={locale}
+      reference={view.bookingRequestReference}
+      bookingReference={view.bookingReference}
+      actorRole={view.actorRole}
+      lifecycle={view.lifecycle}
+      eligibility={view.eligibility}
+    />
+  );
   return (
     <section className={styles.panel} aria-label={c.title}>
-      <BookingLifecycleDetails
-        locale={locale}
-        reference={view.bookingRequestReference}
-        bookingReference={view.bookingReference}
-        actorRole={view.actorRole}
-        lifecycle={view.lifecycle}
-        eligibility={view.eligibility}
-      />
+      {participantCancellation ? null : lifecycleDetails}
       {view.cancellation ? (
         <header
           className={
@@ -131,6 +136,7 @@ export function BookingFinancialDetails({
           {c.title}
         </h2>
       )}
+      {participantCancellation ? lifecycleDetails : null}
       {view.cancellation || view.actorRole === "platform_administrator" ? (
         <>
           <dl className={styles.summary}>

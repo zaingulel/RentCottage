@@ -215,8 +215,8 @@ Anything else is a token.
   `ActionLink kind="text"`, the page title, and an optional plain `p` in `--muted` with no margin. Its items start
   at the same inline edge, `--space-2` apart, and the block has `--space-5` below it.
   Omit the back link only when the Backoffice navigation already reaches the same destination; then the heading
-  starts at the page title. The Customer Booking Request status stack supplies the following `--space-5` gap,
-  so its heading has no bottom margin.
+  starts at the page title. The Customer Booking Request status stack and cancelled financial panels supply
+  the following `--space-5` gap, so their headings have no bottom margin.
 - A page may put one small label above its title. Its style is the `.results-intro p` rule, which only the
   not-found screen still uses as a label: `--font-size-1`, bold, in `--ink-accent`, with the title `--space-1`
   below it. No page on the template carries a label; the first that does moves that rule's declarations to a
