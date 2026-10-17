@@ -973,9 +973,7 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     await expectScene(
       cottageCard.getByRole("heading", { name: demo.cottageName }),
     );
-    await cottageCard
-      .getByRole("link", { name: "Open Cottage Profile" })
-      .click();
+    await cottageCard.getByRole("link", { name: "Edit cottage" }).click();
     await expect(page).toHaveURL(
       `/en/owner/cottages/${demo.cottages[0].profile.id}`,
     );

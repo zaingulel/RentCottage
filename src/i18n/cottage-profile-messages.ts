@@ -24,8 +24,10 @@ const en = {
   adminTitle: "Private Cottage Profiles",
   adminIntro:
     "Review unpublished working copies without changing submitted owner source.",
-  create: "Create another cottage draft",
-  createFirst: "Create a cottage draft",
+  create: "Add a cottage",
+  edit: "Edit cottage",
+  guestCount: { one: "{count} guest", other: "{count} guests" },
+  bedroomCount: { one: "{count} bedroom", other: "{count} bedrooms" },
   empty: "No Cottage Profiles are available.",
   open: "Open Cottage Profile",
   continueSetup: "Continue setup",
@@ -171,7 +173,11 @@ const en = {
     "Administrator working-copy edits do not change this submitted source.",
 } as const;
 
-type CountFormKey = "publishedCount" | "draftCount";
+type CountFormKey =
+  | "publishedCount"
+  | "draftCount"
+  | "guestCount"
+  | "bedroomCount";
 
 type Copy = { [Key in Exclude<keyof typeof en, CountFormKey>]: string } & {
   [Key in CountFormKey]: CountForms;
@@ -202,8 +208,20 @@ const ar: Copy = {
   adminEyebrow: "إدارة المنصة",
   adminTitle: "ملفات الأكواخ الخاصة",
   adminIntro: "راجع نسخ العمل غير المنشورة من دون تغيير مصدر المالك المرسل.",
-  create: "إنشاء مسودة كوخ أخرى",
-  createFirst: "إنشاء مسودة كوخ",
+  create: "إضافة كوخ",
+  edit: "تعديل الكوخ",
+  guestCount: {
+    one: "{count} ضيف",
+    two: "{count} ضيفان",
+    few: "{count} ضيوف",
+    other: "{count} ضيفًا",
+  },
+  bedroomCount: {
+    one: "{count} غرفة نوم",
+    two: "{count} غرفتا نوم",
+    few: "{count} غرف نوم",
+    other: "{count} غرفة نوم",
+  },
   empty: "لا توجد ملفات أكواخ متاحة.",
   open: "فتح ملف الكوخ",
   continueSetup: "متابعة الإعداد",
@@ -358,8 +376,10 @@ const ckb: Copy = {
   adminTitle: "پرۆفایلە تایبەتەکانی کۆتێج",
   adminIntro:
     "کۆپی کارکردنی بڵاونەکراوە بپشکنە بەبێ گۆڕینی سەرچاوەی نێردراوی خاوەن.",
-  create: "دروستکردنی ڕەشنووسی کۆتێجێکی تر",
-  createFirst: "دروستکردنی ڕەشنووسی کۆتێج",
+  create: "زیادکردنی کۆتێج",
+  edit: "دەستکاریکردنی کۆتێج",
+  guestCount: { other: "{count} میوان" },
+  bedroomCount: { other: "{count} ژووری نوستن" },
   empty: "هیچ پرۆفایلێکی کۆتێج بەردەست نییە.",
   open: "کردنەوەی پرۆفایلی کۆتێج",
   continueSetup: "بەردەوامبوون لە ئامادەکردن",
