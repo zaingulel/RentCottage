@@ -214,7 +214,9 @@ Anything else is a token.
 - Page heading: `header.page-heading` opens a page on the template. It holds, top to bottom, a back link as
   `ActionLink kind="text"`, the page title, and an optional plain `p` in `--muted` with no margin. Its items start
   at the same inline edge, `--space-2` apart, and the block has `--space-5` below it.
-  A page that opens with the Backoffice navigation has no back link; its heading starts at the page title.
+  Omit the back link only when the Backoffice navigation already reaches the same destination; then the heading
+  starts at the page title. The Customer Booking Request status stack supplies the following `--space-5` gap,
+  so its heading has no bottom margin.
 - A page may put one small label above its title. Its style is the `.results-intro p` rule, which only the
   not-found screen still uses as a label: `--font-size-1`, bold, in `--ink-accent`, with the title `--space-1`
   below it. No page on the template carries a label; the first that does moves that rule's declarations to a
@@ -591,7 +593,8 @@ its own; the block it sits in sets the space around it.
 - Empty state: `div.empty-state` fills a list or record area that has nothing to show. It is a `--card` block with
   a `1px` `--line` border, `--radius-card` corners and `--space-5` padding, holding one `p` with a single sentence
   saying what is absent and, `--space-3` below it, one next action as a secondary content-width `ActionLink`. It
-  is not an error; a failure uses `role="alert"`.
+  is not an error; a failure uses `role="alert"`. The translation-report empty state keeps only its sentence,
+  because the heading already provides its next action.
 - New work that shows facts, a list of records, a card, a status, a section title or an empty list reuses these. A screen
   with its own rules for one of them keeps those rules until it is moved onto the pattern.
 

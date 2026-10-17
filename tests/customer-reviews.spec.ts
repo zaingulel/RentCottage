@@ -5,6 +5,7 @@ import {
   type Page,
   type Response,
 } from "@playwright/test";
+import { accessMessages } from "../src/i18n/access-messages";
 import { openHeaderPanel } from "./fixtures/site-header";
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
@@ -1988,6 +1989,136 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     const ownerPath = (locale: "en" | "ar" | "ckb") =>
       `/${locale}/owner/booking-requests/${fixture.ids.bookingReference}`;
     await signInPhone(page, fixture.phones.owner, ownerPath("en"));
+    {
+      const heading = page.getByRole("main").locator("header.page-heading");
+      await expect(
+        heading.getByRole("heading", {
+          level: 1,
+          name: bookingLifecycleMessages.en.completed,
+        }),
+      ).toBeVisible();
+      const returnLink = heading.getByRole("link", {
+        name: accessMessages.en.ownerBookings,
+        exact: true,
+      });
+      await expect(returnLink).toBeVisible();
+      await expect(returnLink).toHaveAttribute(
+        "href",
+        "/en/bookings?workspace=owner",
+      );
+      await expect
+        .poll(() =>
+          heading.evaluate((header) => {
+            const link = header.querySelector("a");
+            const title = header.querySelector("h1");
+            if (!link || !title)
+              throw new Error("Heading return or title is missing");
+            const linkBox = link.getBoundingClientRect();
+            const titleBox = title.getBoundingClientRect();
+            const headingBox = header.getBoundingClientRect();
+            const rtl = getComputedStyle(header).direction === "rtl";
+            return {
+              above: linkBox.bottom <= titleBox.top,
+              contained: [linkBox, titleBox].every(
+                (box) =>
+                  box.left >= Math.max(0, headingBox.left) - 1 &&
+                  box.right <= Math.min(innerWidth, headingBox.right) + 1,
+              ),
+              startAligned:
+                Math.abs(
+                  rtl
+                    ? linkBox.right - titleBox.right
+                    : linkBox.left - titleBox.left,
+                ) < 1,
+              target: linkBox.width >= 24 && linkBox.height >= 24,
+            };
+          }),
+        )
+        .toEqual({
+          above: true,
+          contained: true,
+          startAligned: true,
+          target: true,
+        });
+      await returnLink.focus();
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Shift+Tab");
+      await expect(returnLink).toBeFocused();
+      await expect
+        .poll(() =>
+          returnLink.evaluate(
+            (link) =>
+              link.matches(":focus-visible") &&
+              getComputedStyle(link).outlineStyle === "solid" &&
+              parseFloat(getComputedStyle(link).outlineWidth) >= 2,
+          ),
+        )
+        .toBe(true);
+      await testInfo.attach("heading-owner-completed-en-a11y", {
+        contentType: "application/json",
+        body: JSON.stringify(
+          await returnLink.evaluate((link, view) => {
+            const style = getComputedStyle(link);
+            const rectangle = link.getBoundingClientRect();
+            const backgrounds = [];
+            for (
+              let element: Element | null = link;
+              element;
+              element = element.parentElement
+            ) {
+              const ancestorStyle = getComputedStyle(element);
+              backgrounds.push({
+                element: element.tagName,
+                id: element.id,
+                backgroundColor: ancestorStyle.backgroundColor,
+                backgroundImage: ancestorStyle.backgroundImage,
+              });
+            }
+            return {
+              locale: document.documentElement.lang,
+              view,
+              viewport: { width: innerWidth, height: innerHeight },
+              accessibleText: link.textContent?.trim(),
+              href: link.getAttribute("href"),
+              title: link
+                .closest("header")
+                ?.querySelector("h1")
+                ?.textContent?.trim(),
+              rectangle: {
+                x: rectangle.x,
+                y: rectangle.y,
+                width: rectangle.width,
+                height: rectangle.height,
+                top: rectangle.top,
+                right: rectangle.right,
+                bottom: rectangle.bottom,
+                left: rectangle.left,
+              },
+              activeElement: {
+                element: document.activeElement?.tagName,
+                id: document.activeElement?.id,
+                isReturnLink: document.activeElement === link,
+              },
+              focusVisible: link.matches(":focus-visible"),
+              textColor: style.color,
+              outline: {
+                style: style.outlineStyle,
+                width: style.outlineWidth,
+                color: style.outlineColor,
+              },
+              shadow: style.boxShadow,
+              backgrounds,
+            };
+          }, "owner-completed"),
+          null,
+          2,
+        ),
+      });
+      if (testInfo.project.name === "desktop")
+        await page.screenshot({
+          path: testInfo.outputPath("heading-owner-completed-en.png"),
+        });
+    }
     const ownerReview = page.getByRole("region", {
       name: "Customer review",
       exact: true,
@@ -2270,6 +2401,134 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
       { locale: "ckb", replyTitle: "وەڵامی تۆ" },
     ] as const) {
       await page.goto(ownerPath(locale));
+      const heading = page.getByRole("main").locator("header.page-heading");
+      await expect(
+        heading.getByRole("heading", {
+          level: 1,
+          name: bookingLifecycleMessages[locale].completed,
+        }),
+      ).toBeVisible();
+      const returnLink = heading.getByRole("link", {
+        name: accessMessages[locale].ownerBookings,
+        exact: true,
+      });
+      await expect(returnLink).toBeVisible();
+      await expect(returnLink).toHaveAttribute(
+        "href",
+        `/${locale}/bookings?workspace=owner`,
+      );
+      await expect
+        .poll(() =>
+          heading.evaluate((header) => {
+            const link = header.querySelector("a");
+            const title = header.querySelector("h1");
+            if (!link || !title)
+              throw new Error("Heading return or title is missing");
+            const linkBox = link.getBoundingClientRect();
+            const titleBox = title.getBoundingClientRect();
+            const headingBox = header.getBoundingClientRect();
+            const rtl = getComputedStyle(header).direction === "rtl";
+            return {
+              above: linkBox.bottom <= titleBox.top,
+              contained: [linkBox, titleBox].every(
+                (box) =>
+                  box.left >= Math.max(0, headingBox.left) - 1 &&
+                  box.right <= Math.min(innerWidth, headingBox.right) + 1,
+              ),
+              startAligned:
+                Math.abs(
+                  rtl
+                    ? linkBox.right - titleBox.right
+                    : linkBox.left - titleBox.left,
+                ) < 1,
+              target: linkBox.width >= 24 && linkBox.height >= 24,
+            };
+          }),
+        )
+        .toEqual({
+          above: true,
+          contained: true,
+          startAligned: true,
+          target: true,
+        });
+      await returnLink.focus();
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Shift+Tab");
+      await expect(returnLink).toBeFocused();
+      await expect
+        .poll(() =>
+          returnLink.evaluate(
+            (link) =>
+              link.matches(":focus-visible") &&
+              getComputedStyle(link).outlineStyle === "solid" &&
+              parseFloat(getComputedStyle(link).outlineWidth) >= 2,
+          ),
+        )
+        .toBe(true);
+      await testInfo.attach(`heading-owner-completed-${locale}-a11y`, {
+        contentType: "application/json",
+        body: JSON.stringify(
+          await returnLink.evaluate((link, view) => {
+            const style = getComputedStyle(link);
+            const rectangle = link.getBoundingClientRect();
+            const backgrounds = [];
+            for (
+              let element: Element | null = link;
+              element;
+              element = element.parentElement
+            ) {
+              const ancestorStyle = getComputedStyle(element);
+              backgrounds.push({
+                element: element.tagName,
+                id: element.id,
+                backgroundColor: ancestorStyle.backgroundColor,
+                backgroundImage: ancestorStyle.backgroundImage,
+              });
+            }
+            return {
+              locale: document.documentElement.lang,
+              view,
+              viewport: { width: innerWidth, height: innerHeight },
+              accessibleText: link.textContent?.trim(),
+              href: link.getAttribute("href"),
+              title: link
+                .closest("header")
+                ?.querySelector("h1")
+                ?.textContent?.trim(),
+              rectangle: {
+                x: rectangle.x,
+                y: rectangle.y,
+                width: rectangle.width,
+                height: rectangle.height,
+                top: rectangle.top,
+                right: rectangle.right,
+                bottom: rectangle.bottom,
+                left: rectangle.left,
+              },
+              activeElement: {
+                element: document.activeElement?.tagName,
+                id: document.activeElement?.id,
+                isReturnLink: document.activeElement === link,
+              },
+              focusVisible: link.matches(":focus-visible"),
+              textColor: style.color,
+              outline: {
+                style: style.outlineStyle,
+                width: style.outlineWidth,
+                color: style.outlineColor,
+              },
+              shadow: style.boxShadow,
+              backgrounds,
+            };
+          }, "owner-completed"),
+          null,
+          2,
+        ),
+      });
+      if (testInfo.project.name === "mobile" && locale === "ar")
+        await page.screenshot({
+          path: testInfo.outputPath("heading-owner-completed-ar.png"),
+        });
       await expect(
         page.getByRole("heading", { name: replyTitle }),
       ).toBeVisible();
@@ -2346,8 +2605,148 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
         path: testInfo.outputPath("administrator-translation-reports-en.png"),
         fullPage: true,
       });
-      await administratorPage.goBack();
-      await expect(administratorPage).toHaveURL("/en/administrator/reviews");
+      await administratorPage.setViewportSize(page.viewportSize()!);
+      for (const locale of ["en", "ar", "ckb"] as const) {
+        if (locale !== "en")
+          await administratorPage.goto(
+            `/${locale}/administrator/reviews/translation-reports`,
+          );
+        const heading = administratorPage
+          .getByRole("main")
+          .locator("header.page-heading");
+        await expect(
+          heading.getByRole("heading", {
+            level: 1,
+            name: customerReviewMessages[locale].translationReportsTitle,
+          }),
+        ).toBeVisible();
+        const returnLink = heading.getByRole("link", {
+          name: customerReviewMessages[locale].administratorTitle,
+          exact: true,
+        });
+        await expect(returnLink).toBeVisible();
+        await expect(returnLink).toHaveAttribute(
+          "href",
+          `/${locale}/administrator/reviews`,
+        );
+        await expect
+          .poll(() =>
+            heading.evaluate((header) => {
+              const link = header.querySelector("a");
+              const title = header.querySelector("h1");
+              if (!link || !title)
+                throw new Error("Heading return or title is missing");
+              const linkBox = link.getBoundingClientRect();
+              const titleBox = title.getBoundingClientRect();
+              const headingBox = header.getBoundingClientRect();
+              const rtl = getComputedStyle(header).direction === "rtl";
+              return {
+                above: linkBox.bottom <= titleBox.top,
+                contained: [linkBox, titleBox].every(
+                  (box) =>
+                    box.left >= Math.max(0, headingBox.left) - 1 &&
+                    box.right <= Math.min(innerWidth, headingBox.right) + 1,
+                ),
+                startAligned:
+                  Math.abs(
+                    rtl
+                      ? linkBox.right - titleBox.right
+                      : linkBox.left - titleBox.left,
+                  ) < 1,
+                target: linkBox.width >= 24 && linkBox.height >= 24,
+              };
+            }),
+          )
+          .toEqual({
+            above: true,
+            contained: true,
+            startAligned: true,
+            target: true,
+          });
+        await returnLink.focus();
+        await administratorPage.keyboard.press("Tab");
+        await administratorPage.keyboard.press("Shift+Tab");
+        await expect(returnLink).toBeFocused();
+        await expect
+          .poll(() =>
+            returnLink.evaluate(
+              (link) =>
+                link.matches(":focus-visible") &&
+                getComputedStyle(link).outlineStyle === "solid" &&
+                parseFloat(getComputedStyle(link).outlineWidth) >= 2,
+            ),
+          )
+          .toBe(true);
+        await testInfo.attach(`heading-reports-${locale}-a11y`, {
+          contentType: "application/json",
+          body: JSON.stringify(
+            await returnLink.evaluate((link, view) => {
+              const style = getComputedStyle(link);
+              const rectangle = link.getBoundingClientRect();
+              const backgrounds = [];
+              for (
+                let element: Element | null = link;
+                element;
+                element = element.parentElement
+              ) {
+                const ancestorStyle = getComputedStyle(element);
+                backgrounds.push({
+                  element: element.tagName,
+                  id: element.id,
+                  backgroundColor: ancestorStyle.backgroundColor,
+                  backgroundImage: ancestorStyle.backgroundImage,
+                });
+              }
+              return {
+                locale: document.documentElement.lang,
+                view,
+                viewport: { width: innerWidth, height: innerHeight },
+                accessibleText: link.textContent?.trim(),
+                href: link.getAttribute("href"),
+                title: link
+                  .closest("header")
+                  ?.querySelector("h1")
+                  ?.textContent?.trim(),
+                rectangle: {
+                  x: rectangle.x,
+                  y: rectangle.y,
+                  width: rectangle.width,
+                  height: rectangle.height,
+                  top: rectangle.top,
+                  right: rectangle.right,
+                  bottom: rectangle.bottom,
+                  left: rectangle.left,
+                },
+                activeElement: {
+                  element: document.activeElement?.tagName,
+                  id: document.activeElement?.id,
+                  isReturnLink: document.activeElement === link,
+                },
+                focusVisible: link.matches(":focus-visible"),
+                textColor: style.color,
+                outline: {
+                  style: style.outlineStyle,
+                  width: style.outlineWidth,
+                  color: style.outlineColor,
+                },
+                shadow: style.boxShadow,
+                backgrounds,
+              };
+            }, "translation-reports"),
+            null,
+            2,
+          ),
+        });
+        if (testInfo.project.name === "mobile" && locale === "ckb")
+          await administratorPage.screenshot({
+            path: testInfo.outputPath("heading-reports-ckb.png"),
+          });
+        await returnLink.press("Enter");
+        await expect(administratorPage).toHaveURL(
+          `/${locale}/administrator/reviews`,
+        );
+      }
+      await administratorPage.goto("/en/administrator/reviews");
     });
     const review = await openAdministratorReview(
       administratorPage,
