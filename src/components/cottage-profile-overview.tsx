@@ -208,7 +208,7 @@ export function CottageProfileOverview({
                       .join(" · ") || copy.completion}
               </p>
               <div className="cottage-profile-card-supporting">
-                <div className="cottage-profile-card-facts">
+                <div className="cottage-profile-card-facts card-small-print">
                   {profile.capacity !== null ? (
                     <span>
                       {formatCount(profile.capacity, locale, copy.guestCount)}

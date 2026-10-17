@@ -736,7 +736,7 @@ test("cottage list cards start their title and open button at the same height wh
       `${hasPhoto ? photo : '<p class="cottage-profile-card-no-photo">No photos yet</p>'}</div>` +
       '<h2 class="card-title">Cottage</h2>' +
       `<p class="card-detail">${location}</p>` +
-      '<div class="cottage-profile-card-supporting"><div class="cottage-profile-card-facts"><span>10 guests</span><span>4 bedrooms</span><span>0/12 photos</span></div></div>' +
+      '<div class="cottage-profile-card-supporting"><div class="cottage-profile-card-facts card-small-print"><span>10 guests</span><span>4 bedrooms</span><span>0/12 photos</span></div></div>' +
       '<div class="cottage-profile-card-actions"><a class="action-link action-text" href="/">Edit cottage<span class="cottage-profile-card-arrow" aria-hidden="true">→</span></a>' +
       `${price}</div>` +
       "</article>";
@@ -867,7 +867,7 @@ test("a cottage list card casts the card shadow and each toned status badge show
         `${photo}</div>` +
         '<h2 class="card-title">Cottage</h2>' +
         '<p class="card-detail">Erbil</p>' +
-        '<div class="cottage-profile-card-supporting"><div class="cottage-profile-card-facts"><span>10 guests</span><span>4 bedrooms</span><span>0/12 photos</span></div></div>' +
+        '<div class="cottage-profile-card-supporting"><div class="cottage-profile-card-facts card-small-print"><span>10 guests</span><span>4 bedrooms</span><span>0/12 photos</span></div></div>' +
         '<div class="cottage-profile-card-actions"><a class="action-link action-text" href="#">Open Cottage Profile<span class="cottage-profile-card-arrow" aria-hidden="true">→</span></a></div>' +
         "</article></div></section></main>",
     );
