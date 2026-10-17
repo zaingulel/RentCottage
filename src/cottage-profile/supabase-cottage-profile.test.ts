@@ -85,6 +85,189 @@ function loadProviderProfile({
 }
 
 describe("Supabase Cottage Profile adapter", () => {
+  it("loads validated draft progress and rejects corrupt or stale evidence", async () => {
+    const profile = {
+      id: "70000000-0000-4000-8000-000000000749",
+      owner_user_id: "10000000-0000-4000-8000-000000000749",
+      application_id: null,
+      current_publication_id: null,
+      status: "draft",
+      version: 1,
+      name: "Draft cottage",
+      governorate: null,
+      approximate_location: null,
+      exact_address: null,
+      exact_latitude: null,
+      exact_longitude: null,
+      private_directions: null,
+      capacity: null,
+      bedrooms: null,
+      bathrooms: null,
+      amenities: [],
+      source_language: null,
+      description: null,
+      house_rules: null,
+      submitted_source_revision_id: null,
+      updated_at: "2026-08-17T09:15:00.000Z",
+    };
+    const valid = {
+      profile_id: profile.id,
+      profile_version: 1,
+      completed_requirements: 1,
+      next_requirement: "governorate",
+      submission_allowed: true,
+    };
+    async function load(
+      answer: unknown,
+      error: unknown = null,
+      heldProfiles = [profile],
+    ) {
+      let page = 0;
+      const rpc = vi.fn(
+        (name: string, args: { target_profile_ids?: string[] }) => {
+          if (name === "list_owner_cottage_profiles") {
+            return result(heldProfiles.slice(page++ * 100, page * 100));
+          }
+          return result(
+            typeof answer === "function"
+              ? answer(args.target_profile_ids)
+              : answer,
+            error,
+          );
+        },
+      );
+      const client = {
+        rpc,
+        from: vi.fn(() => ({
+          select: () => ({
+            in: () => ({ eq: () => ({ order: () => result([]) }) }),
+          }),
+        })),
+      } as unknown as SupabaseClient;
+      const privilegedClient = { rpc: vi.fn() } as unknown as SupabaseClient;
+      const loaded = await new SupabaseCottageProfileRepository(
+        client,
+        privilegedClient,
+      ).listOwner();
+      expect(privilegedClient.rpc).not.toHaveBeenCalled();
+      return { loaded, rpc };
+    }
+    const { loaded: profiles, rpc } = await load([valid]);
+    expect(rpc).toHaveBeenCalledWith(
+      "read_owner_cottage_profile_draft_progress",
+      { target_profile_ids: [profile.id] },
+    );
+    expect(profiles[0]?.draftProgress).toEqual({
+      status: "loaded",
+      completed: 1,
+      nextRequirement: "governorate",
+      submissionAllowed: true,
+    });
+    for (const answer of [
+      null,
+      {},
+      [],
+      [valid, valid],
+      [null],
+      [{ ...valid, profile_id: "70000000-0000-4000-8000-000000000750" }],
+      [{ ...valid, profile_version: 2 }],
+      [{ ...valid, profile_version: "1" }],
+      [{ ...valid, profile_version: Number.MAX_SAFE_INTEGER + 1 }],
+      ...[-1, 14, 1.5, "1", null].map((completed_requirements) => [
+        { ...valid, completed_requirements },
+      ]),
+      ...["unknown", ["governorate"], 1, null].map((next_requirement) => [
+        { ...valid, next_requirement },
+      ]),
+      [{ ...valid, completed_requirements: 13 }],
+      [{ ...valid, submission_allowed: "true" }],
+    ]) {
+      const { loaded } = await load(answer);
+      expect(loaded[0], JSON.stringify(answer)).toMatchObject({
+        name: "Draft cottage",
+        draftProgress: { status: "unavailable" },
+      });
+    }
+    expect(
+      (await load([valid], { message: "provider failed" })).loaded[0]
+        ?.draftProgress,
+    ).toEqual({ status: "unavailable" });
+    expect(
+      (
+        await load(() => {
+          throw new Error("request failed");
+        })
+      ).loaded[0]?.draftProgress,
+    ).toEqual({ status: "unavailable" });
+    const duplicate = await load([valid, valid], null, [
+      profile,
+      { ...profile, id: "70000000-0000-4000-8000-000000000750" },
+    ]);
+    expect(duplicate.loaded.map((held) => held.draftProgress)).toEqual([
+      { status: "unavailable" },
+      { status: "unavailable" },
+    ]);
+    expect(
+      (
+        await load([
+          {
+            ...valid,
+            completed_requirements: 13,
+            next_requirement: null,
+            submission_allowed: false,
+          },
+        ])
+      ).loaded[0]?.draftProgress,
+    ).toEqual({
+      status: "loaded",
+      completed: 13,
+      nextRequirement: null,
+      submissionAllowed: false,
+    });
+    const many = Array.from({ length: 101 }, (_, index) => ({
+      ...profile,
+      id: `70000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    }));
+    const batched = await load(
+      (ids: string[]) => ids.map((id) => ({ ...valid, profile_id: id })),
+      null,
+      many,
+    );
+    expect(
+      batched.loaded.every((held) => held.draftProgress?.status === "loaded"),
+    ).toBe(true);
+    expect(
+      batched.rpc.mock.calls
+        .filter(
+          ([name]) => name === "read_owner_cottage_profile_draft_progress",
+        )
+        .map(([, args]) => args.target_profile_ids?.length),
+    ).toEqual([100, 1]);
+    const partial = await load(
+      (ids: string[]) =>
+        ids.length === 100
+          ? ids.map((id) => ({ ...valid, profile_id: id }))
+          : [],
+      null,
+      many,
+    );
+    expect(
+      partial.loaded
+        .slice(0, 100)
+        .every((held) => held.draftProgress?.status === "loaded"),
+    ).toBe(true);
+    expect(partial.loaded[100]?.draftProgress).toEqual({
+      status: "unavailable",
+    });
+    const excluded = await load([], null, [
+      { ...profile, status: "abandoned" },
+    ]);
+    expect(excluded.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "list_owner_cottage_profiles",
+    ]);
+    expect(excluded.loaded[0]?.draftProgress).toBeUndefined();
+  });
+
   it.each(["owner", "administrator"] as const)(
     "hydrates the %s list with one related-photo query and one source-revision query",
     async (actor) => {

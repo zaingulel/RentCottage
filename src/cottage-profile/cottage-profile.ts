@@ -64,6 +64,21 @@ export interface CottageProfileSourceRevision {
   submittedAt: string;
 }
 
+export type CottageProfileDraftRequirement =
+  | "name"
+  | "governorate"
+  | "approximateLocation"
+  | "capacity"
+  | "bedrooms"
+  | "bathrooms"
+  | "amenities"
+  | "exactPoint"
+  | "privateDirections"
+  | "sourceLanguage"
+  | "description"
+  | "houseRules"
+  | "photos";
+
 export interface CottageProfile {
   id: string;
   ownerUserId: string;
@@ -89,6 +104,14 @@ export interface CottageProfile {
   submittedSourceRevision: CottageProfileSourceRevision | null;
   hasUnpublishedContentChange: boolean;
   updatedAt: string;
+  draftProgress?:
+    | {
+        status: "loaded";
+        completed: number;
+        nextRequirement: CottageProfileDraftRequirement | null;
+        submissionAllowed: boolean;
+      }
+    | { status: "unavailable" };
 }
 
 export interface CottageProfileDraftValues {

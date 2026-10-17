@@ -1544,3 +1544,8 @@ GRANT SELECT ON TABLE public.account_names TO authenticated;
 
 REVOKE ALL ON FUNCTION public.save_account_name(text) FROM PUBLIC,anon,service_role;
 GRANT EXECUTE ON FUNCTION public.save_account_name(text) TO authenticated;
+
+REVOKE ALL ON SCHEMA private FROM PUBLIC,anon,authenticated,service_role;
+GRANT USAGE ON SCHEMA private TO authenticated;
+REVOKE ALL ON FUNCTION private.read_owner_cottage_profile_draft_progress(uuid[]),public.read_owner_cottage_profile_draft_progress(uuid[]) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION private.read_owner_cottage_profile_draft_progress(uuid[]),public.read_owner_cottage_profile_draft_progress(uuid[]) TO authenticated;
