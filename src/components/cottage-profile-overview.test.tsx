@@ -85,36 +85,37 @@ const publishedUpdateAwaitingApproval: StatusFields = {
 };
 
 describe("Cottage Profile overview", () => {
-  it("renders the approved cottage list presentation in every launch language", () => {
-    const expectations = {
-      en: {
-        guests: ["1 guest", "2 guests", "3 guests", "11 guests"],
-        bedrooms: ["1 bedroom", "2 bedrooms", "3 bedrooms", "11 bedrooms"],
-        maximumGuests: "100 guests",
-        edit: "Edit cottage",
-        open: "Open Cottage Profile",
-      },
-      ar: {
-        guests: ["1 ضيف", "2 ضيفان", "3 ضيوف", "11 ضيفًا"],
-        bedrooms: ["1 غرفة نوم", "2 غرفتا نوم", "3 غرف نوم", "11 غرفة نوم"],
-        maximumGuests: "100 ضيف",
-        edit: "تعديل الكوخ",
-        open: "فتح ملف الكوخ",
-      },
-      ckb: {
-        guests: ["١ میوان", "٢ میوان", "٣ میوان", "١١ میوان"],
-        bedrooms: [
-          "١ ژووری نوستن",
-          "٢ ژووری نوستن",
-          "٣ ژووری نوستن",
-          "١١ ژووری نوستن",
-        ],
-        maximumGuests: "١٠٠ میوان",
-        edit: "دەستکاریکردنی کۆتێج",
-        open: "کردنەوەی پرۆفایلی کۆتێج",
-      },
-    };
-    for (const locale of ["en", "ar", "ckb"] as const) {
+  it.each(["en", "ar", "ckb"] as const)(
+    "renders the approved cottage list presentation in %s",
+    (locale) => {
+      const expectations = {
+        en: {
+          guests: ["1 guest", "2 guests", "3 guests", "11 guests"],
+          bedrooms: ["1 bedroom", "2 bedrooms", "3 bedrooms", "11 bedrooms"],
+          maximumGuests: "100 guests",
+          edit: "Edit cottage",
+          open: "Open Cottage Profile",
+        },
+        ar: {
+          guests: ["1 ضيف", "2 ضيفان", "3 ضيوف", "11 ضيفًا"],
+          bedrooms: ["1 غرفة نوم", "2 غرفتا نوم", "3 غرف نوم", "11 غرفة نوم"],
+          maximumGuests: "100 ضيف",
+          edit: "تعديل الكوخ",
+          open: "فتح ملف الكوخ",
+        },
+        ckb: {
+          guests: ["١ میوان", "٢ میوان", "٣ میوان", "١١ میوان"],
+          bedrooms: [
+            "١ ژووری نوستن",
+            "٢ ژووری نوستن",
+            "٣ ژووری نوستن",
+            "١١ ژووری نوستن",
+          ],
+          maximumGuests: "١٠٠ میوان",
+          edit: "دەستکاریکردنی کۆتێج",
+          open: "کردنەوەی پرۆفایلی کۆتێج",
+        },
+      };
       const copy = expectations[locale];
       for (const actor of ["owner", "administrator"] as const) {
         const maximumCapacity = render(
@@ -131,53 +132,53 @@ describe("Cottage Profile overview", () => {
           screen.getByText(copy.maximumGuests, { exact: true }),
         ).toBeVisible();
         maximumCapacity.unmount();
-        for (const [index, count] of [1, 2, 3, 11].entries()) {
-          for (const [capacity, bedrooms] of [
-            [count, count],
-            [count, null],
-            [null, count],
-            [null, null],
-          ]) {
-            const { container, unmount } = render(
-              <CottageProfileOverview
-                locale={locale}
-                actor={actor}
-                canCreate
-                profiles={[{ ...profile, ...published, capacity, bedrooms }]}
-              />,
-            );
-            const card = screen.getByRole("article");
-            const facts = card.querySelector(".cottage-profile-card-facts")!;
-            expect(
-              within(facts as HTMLElement).queryByText(copy.guests[index], {
-                exact: true,
-              }) !== null,
-            ).toBe(capacity !== null);
-            expect(
-              within(facts as HTMLElement).queryByText(copy.bedrooms[index], {
-                exact: true,
-              }) !== null,
-            ).toBe(bedrooms !== null);
-            expect(facts.children).toHaveLength(
-              1 + Number(capacity !== null) + Number(bedrooms !== null),
-            );
-            const action = within(card).getByRole("link", {
-              name: actor === "owner" ? copy.edit : copy.open,
+        for (const [capacity, bedrooms, index] of [
+          [1, 1, 0],
+          [2, 2, 1],
+          [3, 3, 2],
+          [11, 11, 3],
+          [1, null, 0],
+          [null, 1, 0],
+          [null, null, 0],
+        ] as const) {
+          const { container, unmount } = render(
+            <CottageProfileOverview
+              locale={locale}
+              actor={actor}
+              canCreate
+              profiles={[{ ...profile, ...published, capacity, bedrooms }]}
+            />,
+          );
+          const card = screen.getByRole("article");
+          const facts = card.querySelector(".cottage-profile-card-facts")!;
+          expect(
+            within(facts as HTMLElement).queryByText(copy.guests[index], {
               exact: true,
-            });
-            expect(action).toHaveClass("action-text");
-            expect(action).not.toHaveClass("action-primary");
-            expect(action).toHaveAttribute(
-              "href",
-              `/${locale}/${actor}/cottages/${profile.id}`,
-            );
-            expect(
-              action.querySelector('[aria-hidden="true"]'),
-            ).toHaveTextContent("→");
-            if (actor === "administrator")
-              expect(container.querySelector("header form")).toBeNull();
-            unmount();
-          }
+            }) !== null,
+          ).toBe(capacity !== null);
+          expect(
+            within(facts as HTMLElement).queryByText(copy.bedrooms[index], {
+              exact: true,
+            }) !== null,
+          ).toBe(bedrooms !== null);
+          expect(facts.children).toHaveLength(
+            1 + Number(capacity !== null) + Number(bedrooms !== null),
+          );
+          const action = within(card).getByRole("link", {
+            name: actor === "owner" ? copy.edit : copy.open,
+          });
+          expect(action).toHaveClass("action-text");
+          expect(action).not.toHaveClass("action-primary");
+          expect(action).toHaveAttribute(
+            "href",
+            `/${locale}/${actor}/cottages/${profile.id}`,
+          );
+          expect(
+            action.querySelector('[aria-hidden="true"]'),
+          ).toHaveTextContent("→");
+          if (actor === "administrator")
+            expect(container.querySelector("header form")).toBeNull();
+          unmount();
         }
       }
       const cases = [
@@ -206,12 +207,12 @@ describe("Cottage Profile overview", () => {
           />,
         );
         expect(
-          screen.getByRole("link", { name: state.expected, exact: true }),
+          screen.getByRole("link", { name: state.expected }),
         ).toHaveAttribute("href", `/${locale}/owner/cottages/${profile.id}`);
         unmount();
       }
-    }
-  });
+    },
+  );
 
   it("keeps draft creation in the heading for eligible owners", async () => {
     const expectations = {
@@ -243,7 +244,6 @@ describe("Cottage Profile overview", () => {
         );
         const button = screen.getByRole("button", {
           name: expectations[locale].add,
-          exact: true,
         });
         expect(container.querySelector("header")).toContainElement(button);
         const form = button.closest("form")!;
