@@ -1,3 +1,9 @@
+import {
+  hasApprovedOwnerCapability,
+  hasCustomerCapability,
+} from "@/access/account-access";
+import { waitingBookingRequestCount } from "@/booking-request/booking-request-display";
+import { loadOwnerBookingRequestNotifications } from "@/booking-request/request-owner-booking-request-notifications";
 import { requireRequestAccount } from "@/access/request-account-context";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
 import {
@@ -11,22 +17,15 @@ import { notFound, unstable_rethrow } from "next/navigation";
 import { loadBookingHistory } from "@/booking-request/request-booking-history";
 import { isLocale } from "@/i18n/routing";
 import { BookingHistoryList } from "@/components/booking-history-list";
-import {
-  ownerBookingEarnings,
-  ownerBookingEarningsTotals,
-} from "@/booking-request/owner-booking-earnings";
-import { OwnerBookingEarningsSummary } from "@/components/owner-booking-earnings";
+import { BackofficeNavigation } from "@/components/backoffice-navigation";
 const copy = {
   en: {
-    empty: "No booking requests yet.",
     home: "RentCottage home",
   },
   ar: {
-    empty: "لا توجد طلبات حجز بعد.",
     home: "الصفحة الرئيسية لـ RentCottage",
   },
   ckb: {
-    empty: "هێشتا هیچ داواکارییەکی حجز نییە.",
     home: "پەڕەی سەرەکیی RentCottage",
   },
 } as const;
@@ -52,11 +51,9 @@ export default async function BookingHistoryPage({
       />
     );
   if (
-    !account.context ||
-    account.context.role === "platform_administrator" ||
-    (workspace === "owner" &&
-      (account.context.role !== "cottage_owner" ||
-        account.context.approvalState !== "approved"))
+    !(workspace === "owner"
+      ? hasApprovedOwnerCapability(account.context)
+      : hasCustomerCapability(account.context))
   )
     return (
       <AccountAccessRecovery
@@ -74,17 +71,23 @@ export default async function BookingHistoryPage({
       ? "owner-bookings-heading"
       : "customer-bookings-heading";
   let items;
+  let waitingBookingRequests: number | undefined;
   try {
     items = await loadBookingHistory(
       workspace === "owner" ? "cottage_owner" : "customer",
     );
+    if (items && workspace === "owner") {
+      const notifications = await loadOwnerBookingRequestNotifications();
+      if (notifications)
+        waitingBookingRequests = waitingBookingRequestCount(notifications);
+    }
   } catch (error) {
     unstable_rethrow(error);
     console.error("Booking History load failed", {
       code: "booking_history_failed",
     });
   }
-  if (!items)
+  if (!items || (workspace === "owner" && waitingBookingRequests === undefined))
     return (
       <AccountAccessRecovery
         locale={locale}
@@ -92,21 +95,21 @@ export default async function BookingHistoryPage({
         returnTo={returnTo}
       />
     );
-  const ownerTotals =
-    workspace === "owner"
-      ? ownerBookingEarningsTotals(
-          items.map((item) =>
-            ownerBookingEarnings(
-              item.ownerEarnings ?? { status: "unavailable" },
-            ),
-          ),
-        )
-      : null;
   return (
     <main className="results-page page page-record">
+      {workspace === "owner" ? (
+        <BackofficeNavigation
+          locale={locale}
+          area="owner"
+          current="bookings"
+          waitingBookingRequests={waitingBookingRequests}
+        />
+      ) : null}
       <section className="booking-history">
         <header>
-          <Link href={`/${locale}`}>{copy[locale].home}</Link>
+          {workspace === "customer" ? (
+            <Link href={`/${locale}`}>{copy[locale].home}</Link>
+          ) : null}
           <h1
             id={titleId}
             tabIndex={-1}
@@ -117,12 +120,9 @@ export default async function BookingHistoryPage({
           <ActionFocusTarget targetId={titleId} navigation />
         </header>
         <p>{accessMessages[locale].bookingHistoryIntro}</p>
-        {ownerTotals ? (
-          <OwnerBookingEarningsSummary locale={locale} totals={ownerTotals} />
-        ) : null}
         {items.length === 0 ? (
           <div className="empty-state">
-            <p>{copy[locale].empty}</p>
+            <p>{accessMessages[locale].bookingHistoryEmpty}</p>
             {workspace === "owner" ? (
               <ActionLink kind="secondary" href={`/${locale}/owner/cottages`}>
                 {accessMessages[locale].manageCottages}

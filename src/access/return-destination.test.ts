@@ -5,6 +5,8 @@ import {
 } from "@/cottage-discovery/discovery-query";
 import {
   accessLanguageHref,
+  accountAccessHref,
+  isOwnerEnrollmentDestination,
   administratorAccessHref,
   administratorAccessLanguageHref,
   safeAdministratorReturnDestination,
@@ -39,6 +41,9 @@ const untrustedDestinations = [
   "/ar/bookings",
   "/en/owner/cottages/invalid",
   "/en/bookings#secret",
+  "/en/owner/earnings?workspace=owner",
+  "/en/owner/earnings/extra",
+  "/ar/owner/earnings",
   "/en/results?note=private",
   "/en/\\evil.test",
   "/en/bookings\n",
@@ -106,10 +111,34 @@ describe("account return destinations", () => {
     "/en/booking-requests/RC-REQ-0123456789ABCDEF",
     "/en/owner/booking-requests/RC-REQ-0123456789ABCDEF",
     "/en/owner/application",
+    "/en/owner/earnings",
     "/en/owner/cottages",
     "/en/owner/cottages/10000000-0000-4000-8000-000000000001",
   ])("preserves permitted context %s", (destination) => {
     expect(safeReturnDestination("en", destination)).toBe(destination);
+    if (destination === "/en/owner/earnings") {
+      for (const [locale, localized, href] of [
+        [
+          "en",
+          "/en/owner/earnings",
+          "/en/access?returnTo=%2Fen%2Fowner%2Fearnings",
+        ],
+        [
+          "ar",
+          "/ar/owner/earnings",
+          "/ar/access?returnTo=%2Far%2Fowner%2Fearnings",
+        ],
+        [
+          "ckb",
+          "/ckb/owner/earnings",
+          "/ckb/access?returnTo=%2Fckb%2Fowner%2Fearnings",
+        ],
+      ] as const) {
+        expect(safeReturnDestination(locale, localized)).toBe(localized);
+        expect(accountAccessHref(locale, localized)).toBe(href);
+        expect(isOwnerEnrollmentDestination(locale, localized)).toBe(false);
+      }
+    }
   });
   it("returns to a continued results page and refuses a continuation anywhere else", () => {
     const slug = "cottage-0123456789abcdef0123456789abcdef";

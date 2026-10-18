@@ -16,10 +16,20 @@ const item: BookingHistoryItem = {
   ownerEarnings: { status: "not-captured" },
 };
 
-it("adds the shared earnings presentation only to owner booking cards", () => {
+it("history details require explicit owner earnings presentation", () => {
   const { rerender } = render(
     <BookingHistoryList locale="en" items={[item]} />,
   );
+  expect(
+    screen.queryByRole("region", { name: "Earnings and payout" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("link", { name: "Preserved Cottage" }),
+  ).toHaveAttribute(
+    "href",
+    "/en/owner/booking-requests/RC-REQ-0000000000003501",
+  );
+  rerender(<BookingHistoryList locale="en" items={[item]} showOwnerEarnings />);
   expect(
     screen.getByRole("region", { name: "Earnings and payout" }),
   ).toHaveTextContent(
@@ -36,11 +46,15 @@ it("adds the shared earnings presentation only to owner booking cards", () => {
     <BookingHistoryList
       locale="en"
       items={[{ ...item, actorRole: "customer", ownerEarnings: undefined }]}
+      showOwnerEarnings
     />,
   );
   expect(
     screen.queryByRole("region", { name: "Earnings and payout" }),
   ).toBeNull();
+  expect(
+    screen.getByRole("link", { name: "Preserved Cottage" }),
+  ).toHaveAttribute("href", "/en/booking-requests/RC-REQ-0000000000003501");
 });
 
 it("names a row's one link by the cottage alone and keeps the reference, status and date outside it", () => {

@@ -511,7 +511,7 @@ test.describe("retained cancellation and refund controls", () => {
     page,
     browser,
     baseURL,
-  }) => {
+  }, testInfo) => {
     await administrator(page);
     await page.goto(`/en/administrator/payments/${reference}`);
     const p = payoutMessages.en;
@@ -653,7 +653,7 @@ test.describe("retained cancellation and refund controls", () => {
     try {
       await participant(ownerContext, owner, baseURL);
       const ownerPage = await ownerContext.newPage();
-      await ownerPage.goto(`/en/bookings?workspace=owner`);
+      await ownerPage.goto(`/en/owner/earnings`);
       const summary = ownerPage.getByRole("region", {
         name: earningsMessages.en.summaryTitle,
       });
@@ -661,6 +661,208 @@ test.describe("retained cancellation and refund controls", () => {
       await expectAmount(summary, earningsMessages.en.expectedTotal, "IQD 0");
       await ownerPage.reload();
       await expectAmount(summary, earningsMessages.en.paidTotal, "IQD 99,000");
+      const earningsViewport = ownerPage.viewportSize();
+      if (!earningsViewport)
+        throw new Error("Earnings capture requires a configured viewport");
+      const earningsMeasurements = [];
+      for (const locale of ["en", "ar"] as const) {
+        for (const [view, viewport] of [
+          ["desktop", { width: 1440, height: 1000 }],
+          ["phone", { width: 390, height: 844 }],
+        ] as const) {
+          await ownerPage.setViewportSize(viewport);
+          await ownerPage.goto(`/${locale}/bookings?workspace=owner`);
+          await expect(
+            ownerPage.getByRole("heading", {
+              level: 1,
+              name: accessMessages[locale].ownerBookings,
+            }),
+          ).toBeVisible();
+          const navigation = ownerPage
+            .getByRole("navigation")
+            .filter({ has: ownerPage.locator(".backoffice-navigation-links") });
+          const bookings = navigation.getByRole("link", {
+            name: accessMessages[locale].ownerBookingsTab,
+            exact: false,
+          });
+          await expect(bookings).toHaveAttribute(
+            "href",
+            `/${locale}/bookings?workspace=owner`,
+          );
+          const earnings = navigation.getByRole("link", {
+            name: accessMessages[locale].ownerEarningsTab,
+            exact: true,
+          });
+          await expect(bookings).toHaveAttribute("aria-current", "page");
+          await bookings.focus();
+          await ownerPage.keyboard.press("Tab");
+          await expect(earnings).toBeFocused();
+          const measureFocus = () =>
+            earnings.evaluate((tab) => {
+              const row = tab.parentElement!;
+              const box = tab.getBoundingClientRect();
+              const rowBox = row.getBoundingClientRect();
+              const style = getComputedStyle(tab);
+              const rowStyle = getComputedStyle(row);
+              const extent =
+                parseFloat(style.outlineWidth) +
+                parseFloat(style.outlineOffset);
+              return {
+                visible:
+                  tab.matches(":focus-visible") &&
+                  style.outlineStyle === "solid" &&
+                  parseFloat(style.outlineWidth) >= 2,
+                contained:
+                  box.left - extent >= Math.max(0, rowBox.left) &&
+                  box.right + extent <= Math.min(innerWidth, rowBox.right) &&
+                  box.top - extent >= rowBox.top &&
+                  box.bottom + extent <= rowBox.bottom,
+                target: box.width >= 24 && box.height >= 24,
+                scrollsInRow: rowStyle.overflowX === "auto",
+              };
+            });
+          await expect.poll(measureFocus).toEqual({
+            visible: true,
+            contained: true,
+            target: true,
+            scrollsInRow: true,
+          });
+          const focus = await earnings.evaluate((tab) => {
+            const style = getComputedStyle(tab);
+            const row = tab.parentElement!;
+            const backgrounds = [];
+            for (
+              let element: Element | null = tab;
+              element;
+              element = element.parentElement
+            ) {
+              const background = getComputedStyle(element);
+              backgrounds.push({
+                tag: element.tagName,
+                className: element.className,
+                color: background.backgroundColor,
+                image: background.backgroundImage,
+                borderImage: background.borderImageSource,
+              });
+            }
+            return {
+              rectangle: tab.getBoundingClientRect().toJSON(),
+              row: row.getBoundingClientRect().toJSON(),
+              scrollWidth: row.scrollWidth,
+              clientWidth: row.clientWidth,
+              scrollLeft: row.scrollLeft,
+              direction: style.direction,
+              color: style.color,
+              background: style.backgroundColor,
+              outlineColor: style.outlineColor,
+              outlineWidth: style.outlineWidth,
+              outlineOffset: style.outlineOffset,
+              outlineStyle: style.outlineStyle,
+              boxShadow: style.boxShadow,
+              backgrounds,
+            };
+          });
+          await ownerPage.keyboard.press("Enter");
+          await expect(ownerPage).toHaveURL(
+            new RegExp(`/${locale}/owner/earnings$`),
+          );
+          const title = ownerPage.getByRole("heading", {
+            level: 1,
+            name: accessMessages[locale].ownerEarningsTab,
+          });
+          await expect(title).toBeVisible();
+          await expect(earnings).toHaveAttribute("aria-current", "page");
+          await expect(bookings).not.toHaveAttribute("aria-current");
+          await ownerPage.evaluate(async () => {
+            await document.fonts.ready;
+          });
+          const measureLayout = () =>
+            ownerPage.locator("main").evaluate((main, rtl) => {
+              const heading = main.querySelector("h1")!;
+              const section = main.querySelector(".owner-earnings")!;
+              const titleBox = heading.getBoundingClientRect();
+              const sectionBox = section.getBoundingClientRect();
+              const edge = rtl ? "right" : "left";
+              const blocks = Array.from(
+                section.querySelectorAll("h2, h3, p, dt, dd, a"),
+              );
+              return {
+                direction: getComputedStyle(main).direction,
+                startAligned: Math.abs(titleBox[edge] - sectionBox[edge]) < 1,
+                wraps: blocks.every(
+                  (block) => block.scrollWidth <= block.clientWidth + 1,
+                ),
+                overflow: document.documentElement.scrollWidth > innerWidth + 1,
+              };
+            }, locale === "ar");
+          await expect.poll(measureLayout).toEqual({
+            direction: locale === "ar" ? "rtl" : "ltr",
+            startAligned: true,
+            wraps: true,
+            overflow: false,
+          });
+          const layout = await measureLayout();
+          const current = await earnings.evaluate((tab) => {
+            const style = getComputedStyle(tab);
+            const row = tab.parentElement!;
+            return {
+              rectangle: tab.getBoundingClientRect().toJSON(),
+              row: row.getBoundingClientRect().toJSON(),
+              scrollWidth: row.scrollWidth,
+              clientWidth: row.clientWidth,
+              scrollLeft: row.scrollLeft,
+              current: tab.getAttribute("aria-current"),
+              color: style.color,
+              background: style.backgroundColor,
+              indicatorColor: style.borderBlockEndColor,
+              indicatorWidth: style.borderBlockEndWidth,
+              indicatorStyle: style.borderBlockEndStyle,
+            };
+          });
+          expect(current.indicatorStyle).toBe("solid");
+          expect(parseFloat(current.indicatorWidth)).toBeGreaterThanOrEqual(2);
+          expect(current.indicatorColor).not.toBe("rgba(0, 0, 0, 0)");
+          expect(current.rectangle.left).toBeGreaterThanOrEqual(
+            Math.max(0, current.row.left),
+          );
+          expect(current.rectangle.right).toBeLessThanOrEqual(
+            Math.min(viewport.width, current.row.right),
+          );
+          earningsMeasurements.push({
+            locale,
+            view,
+            viewport,
+            focus,
+            current,
+            layout,
+          });
+          await title.click();
+          await expect(earnings).not.toBeFocused();
+          const imageName = `owner-earnings-${locale}-${view}.png`;
+          const imagePath = testInfo.outputPath(imageName);
+          await ownerPage.screenshot({
+            path: imagePath,
+            fullPage: true,
+            scale: "css",
+          });
+          await testInfo.attach(imageName, {
+            path: imagePath,
+            contentType: "image/png",
+          });
+        }
+      }
+      const earningsMeasurementsPath = testInfo.outputPath(
+        "owner-earnings-measurements.json",
+      );
+      await writeFile(
+        earningsMeasurementsPath,
+        JSON.stringify(earningsMeasurements, null, 2),
+      );
+      await testInfo.attach("owner-earnings-measurements", {
+        path: earningsMeasurementsPath,
+        contentType: "application/json",
+      });
+      await ownerPage.setViewportSize(earningsViewport);
       await ownerPage.goto(`/en/owner/booking-requests/${reference}`);
       await expectAmount(
         ownerPage.getByRole("region", { name: earningsMessages.en.title }),

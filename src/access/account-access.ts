@@ -201,3 +201,11 @@ export function hasCustomerCapability(
 ): context is Exclude<AccountContext, { role: "platform_administrator" }> {
   return context?.role === "customer" || context?.role === "cottage_owner";
 }
+
+export function hasApprovedOwnerCapability(
+  context: AccountContext | undefined,
+): boolean {
+  return (
+    context?.role === "cottage_owner" && context.approvalState === "approved"
+  );
+}

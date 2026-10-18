@@ -223,8 +223,14 @@ test("same-phone reauthentication restores the same real history and owner unpai
     prepareLaterSignIn(ownerId, ownerPhone);
     const emptyOwnerContext = await browser.newContext({ baseURL });
     const emptyOwnerPage = await emptyOwnerContext.newPage();
-    await emptyOwnerPage.goto("/en/bookings?workspace=owner");
+    await emptyOwnerPage.goto("/en/owner/earnings");
+    await expect(emptyOwnerPage).toHaveURL(
+      new URL("/en/access?returnTo=%2Fen%2Fowner%2Fearnings", baseURL).href,
+    );
     await verifyPhone(emptyOwnerPage, ownerPhone);
+    await expect(emptyOwnerPage).toHaveURL(
+      new URL("/en/owner/earnings", baseURL).href,
+    );
     const emptySummary = emptyOwnerPage.getByRole("region", {
       name: "Earnings summary",
     });
@@ -242,6 +248,10 @@ test("same-phone reauthentication restores the same real history and owner unpai
     const deniedPage = await deniedContext.newPage();
     await deniedPage.goto("/en/bookings?workspace=owner");
     await verifyPhone(deniedPage, customerPhone);
+    await expect(deniedPage.locator("main").getByRole("alert")).toContainText(
+      "This booking is not available to this account.",
+    );
+    await deniedPage.goto("/en/owner/earnings");
     await expect(deniedPage.locator("main").getByRole("alert")).toContainText(
       "This booking is not available to this account.",
     );
@@ -313,6 +323,20 @@ test("same-phone reauthentication restores the same real history and owner unpai
     ).toBe("1");
     await returningContext.close();
 
+    const ownerNotifications = JSON.parse(
+      harness.runSql(`begin;
+        set local role authenticated;
+        do $$begin perform set_config('request.jwt.claims','{"sub":"${ownerId}","role":"authenticated","aal":"aal1"}',true); end$$;
+        select public.list_owner_booking_request_notifications();
+        rollback;`),
+    );
+    expect(ownerNotifications).toHaveLength(1);
+    expect(ownerNotifications[0]).toMatchObject({
+      bookingRequestReference: unpaidReference,
+      status: "pending",
+      paymentStatus: null,
+    });
+
     prepareLaterSignIn(ownerId, ownerPhone);
     const ownerContext = await browser.newContext({ baseURL });
     const ownerPage = await ownerContext.newPage();
@@ -322,6 +346,40 @@ test("same-phone reauthentication restores the same real history and owner unpai
       ownerPage.getByRole("heading", { name: "My bookings", exact: true }),
     ).toBeVisible();
     await ownerPage.goto("/en/bookings?workspace=owner");
+    await expect(
+      ownerPage.getByRole("link", {
+        name: "Bookings Pending Booking Requests: 1",
+        exact: true,
+      }),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(
+      ownerPage.getByRole("region", { name: "Earnings summary" }),
+    ).toHaveCount(0);
+    await expect(
+      ownerPage.getByRole("region", { name: "Earnings and payout" }),
+    ).toHaveCount(0);
+    await expect(
+      ownerPage.locator(
+        'a[href="/en/owner/booking-requests/RC-REQ-0000000000003501"]',
+      ),
+    ).toBeVisible();
+    await expect(
+      ownerPage.locator(
+        `a[href="/en/owner/booking-requests/${unpaidReference}"]`,
+      ),
+    ).toBeVisible();
+    await ownerPage
+      .getByRole("link", { name: "Earnings", exact: true })
+      .click();
+    await expect(ownerPage).toHaveURL(
+      new URL("/en/owner/earnings", baseURL).href,
+    );
+    await expect(
+      ownerPage.getByRole("link", {
+        name: "Bookings Pending Booking Requests: 1",
+        exact: true,
+      }),
+    ).toBeVisible();
     await expect(
       ownerPage.getByRole("region", { name: "Earnings summary" }),
     ).toContainText(
@@ -349,6 +407,12 @@ test("same-phone reauthentication restores the same real history and owner unpai
       "Payment has not been collected for this request, so it has no earnings yet.",
     );
     await ownerPage.reload();
+    await expect(
+      ownerPage.getByRole("link", {
+        name: "Bookings Pending Booking Requests: 1",
+        exact: true,
+      }),
+    ).toBeVisible();
     await expect(unpaidItem).toContainText(
       "Payment has not been collected for this request, so it has no earnings yet.",
     );
