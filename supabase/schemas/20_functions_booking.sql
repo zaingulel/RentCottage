@@ -4861,7 +4861,9 @@ begin
       when 'expiry-work' then 'expiry' when 'confirmation' then 'confirmation'
       when 'confirmation-invalidation' then 'invalidation' end);
   reason := coalesce(current_row->>'quarantine_reason', current_row->>'diagnostic_reason', current_row->>'reason', current_row->>'decline_reason');
-  source_time := nullif(coalesce(current_row->>'completed_at',current_row->>'result_recorded_at',current_row->>'settled_at',current_row->>'invalidated_at',current_row->>'confirmed_at',current_row->>'updated_at',current_row->>'created_at'),'')::timestamptz;
+  source_time := case when tg_table_name='booking_request_release_work' and current_state='quarantined'
+    then nullif(current_row->>'quarantined_at','')::timestamptz
+    else nullif(coalesce(current_row->>'completed_at',current_row->>'result_recorded_at',current_row->>'settled_at',current_row->>'invalidated_at',current_row->>'confirmed_at',current_row->>'updated_at',current_row->>'created_at'),'')::timestamptz end;
   occurrence_time := nullif(current_row->>'authoritative_outcome_at','')::timestamptz;
 
   if tg_table_name='payment_provider_operations' then

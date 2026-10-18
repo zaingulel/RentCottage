@@ -217,7 +217,7 @@ The owner-provided explanation for declining a booking request, selected from a 
 _Avoid_: Silent decline, unrecorded rejection
 
 **Request Withdrawal**:
-The customer's cancellation of a pending booking request before the owner decides. It immediately releases the pending hold; changing a request requires withdrawal and submission of a new request.
+The customer's cancellation of a pending booking request before the owner decides; changing a request requires withdrawal and submission of a new request. The pending hold is released only after the payment authorization is successfully released and remains held if the provider definitively refuses the release.
 _Avoid_: Editing a pending request, confirmed-booking cancellation
 
 **Customer Cancellation**:

@@ -49,3 +49,18 @@ If the concept you need isn't in the glossary yet, that's a signal — either yo
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
 > _Contradicts ADR-0007 (event-sourced orders) — but worth reopening because…_
+
+## Ordinary authorization release refusal
+
+A declined, withdrawn or expired Booking Request releases its Pending Hold only after successful Payment
+Authorization release. An explicitly retry-safe failure may retry. A definitive provider refusal, recorded as
+`failed` with `retrySafe=false`, atomically quarantines the ordinary release work with the finite reason
+`failed-release-observation` and the database's quarantine time. The Booking Request remains processing, the
+Pending Hold and occupancy remain held, and no release movement or completion notification is invented.
+
+Accepted provider evidence and payment history remain immutable. Automatic claims, repeated customer or owner
+actions and stale workers cannot resume quarantined release work; a later successful receipt remains evidence
+and does not resolve quarantine. The existing authenticator-verified Platform Administrator history exposes the
+reason and actual quarantine time through its support-safe projection, without private provider payloads or
+customer details. There is no administrator resolution control or automatic resolution path. Fictional-provider
+tests establish this local contract, not live Licensed Payment Provider acceptance.

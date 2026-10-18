@@ -63,7 +63,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(407);
+select plan(411);
 
 set local role anon;
 select throws_ok(
@@ -5599,6 +5599,9 @@ alter table quarantine_snapshots
   add column failed_one jsonb,
   add column pending_two jsonb;
 grant select, update on quarantine_snapshots to service_role;
+-- Distinguish the creation instant from actual refusal detection without waiting.
+update public.booking_request_release_work set created_at=now()-interval '1 day'
+where id=(select work_id from quarantine_snapshots);
 set local role service_role;
 create temporary table quarantine_permit as
 select public.save_booking_request_release_snapshot(
@@ -5657,6 +5660,64 @@ select results_eq(
     'false'::jsonb,'false'::jsonb,'null'::jsonb,0::bigint,0::bigint,1::bigint)$$,
   'ordinary release refusal is durably quarantined and never re-leased: withdraw'
 );
+insert into auth.users (id,aud,role,phone,phone_confirmed_at)
+values ('00000000-0000-0000-0000-000000006220','authenticated','authenticated','+9647500006220',now());
+insert into public.account_contexts (user_id,role)
+values ('00000000-0000-0000-0000-000000006220','platform_administrator');
+create temporary table quarantine_history_expected as
+select requests.booking_request_reference,requests.customer_name,requests.customer_user_id,
+  work.quarantined_at,work.created_at
+from public.booking_request_release_work work
+join public.booking_requests requests on requests.id=work.booking_request_id
+where work.id=(select work_id from quarantine_snapshots);
+grant select on quarantine_history_expected to authenticated;
+select ok((select created_at<>quarantined_at from quarantine_history_expected),
+  'ordinary release quarantine history fixture distinguishes creation from quarantine');
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000006220","aal":"aal2"}',true);
+set local role authenticated;
+create temporary table quarantine_support_history as
+select public.get_administrator_booking_request_payment_history(booking_request_reference) as result
+from quarantine_history_expected;
+reset role;
+select results_eq(
+  $$select event->>'kind',event->>'source',event->>'provenance',event->>'operationKind',
+      event->>'fromState',event->>'toState',event->>'outcome',event->>'reasonCode',
+      (event->>'sourceRecordedAt')::timestamptz=expected.quarantined_at,
+      event-array['id','kind','source','provenance','operationKind','operationGeneration',
+        'fromState','toState','outcome','reasonCode','recordedAt','sourceRecordedAt']='{}'::jsonb,
+      support.result::text !~ 'fixture-(request|reference|movement)-|providerIdentity|rawPayload|signedPayload|customerName|customerUserId|bookingNote|exactAddress|phone|email',
+      position(expected.customer_name in support.result::text)=0,
+      position(expected.customer_user_id::text in support.result::text)=0,
+      position('Private address' in support.result::text)=0
+    from quarantine_support_history support,quarantine_history_expected expected,
+      jsonb_array_elements(support.result->'events') event
+    where event->>'kind'='quarantine' and event->>'source'='release-work'$$,
+  $$values ('quarantine'::text,'release-work'::text,'observed'::text,'release'::text,
+    'processing'::text,'quarantined'::text,'withdrawn'::text,'failed-release-observation'::text,
+    true,true,true,true,true,true)$$,
+  'ordinary release quarantine history exposes only its reason and quarantine time'
+);
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003203","aal":"aal2"}',true);
+set local role authenticated;
+select throws_ok(
+  $$select public.get_administrator_booking_request_payment_history(
+    (select booking_request_reference from quarantine_history_expected))$$,
+  '42501','AAL2 Platform Administrator access is required',
+  'a customer cannot read ordinary release quarantine support history'
+);
+reset role;
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201","aal":"aal2"}',true);
+set local role authenticated;
+select throws_ok(
+  $$select public.get_administrator_booking_request_payment_history(
+    (select booking_request_reference from quarantine_history_expected))$$,
+  '42501','AAL2 Platform Administrator access is required',
+  'a Cottage Owner cannot read ordinary release quarantine support history'
+);
+reset role;
 create temporary table quarantine_observation as
 select ledger.id as operation_id, observations.result
 from public.payment_provider_operations ledger

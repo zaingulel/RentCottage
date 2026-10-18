@@ -255,3 +255,60 @@ it.each([
     ).toThrow("invalid");
   },
 );
+
+it("accepts the exact ordinary release quarantine support event in every locale", () => {
+  const quarantineEvent = {
+    id: "b4cc103f-6470-4305-842f-6cbca2c50622",
+    kind: "quarantine",
+    source: "release-work",
+    provenance: "observed",
+    operationKind: "release",
+    operationGeneration: 1,
+    fromState: "processing",
+    toState: "quarantined",
+    outcome: "withdrawn",
+    reasonCode: "failed-release-observation",
+    recordedAt: "2026-10-18T18:00:01.123456+00:00",
+    sourceRecordedAt: "2026-10-18T18:00:01.123123+00:00",
+  };
+  const value = {
+    ...history,
+    current: {
+      requestStatus: "processing",
+      paymentStatus: null,
+      expiryStatus: null,
+      reasonCode: null,
+      paymentRequiredDeadline: null,
+    },
+    events: [quarantineEvent],
+  };
+  expect(parseAdministratorPaymentHistory(value)).toEqual(value);
+  expect(Object.keys(administratorPaymentHistoryCodeMessages).sort()).toEqual([
+    "ar",
+    "ckb",
+    "en",
+  ]);
+  for (const messages of Object.values(
+    administratorPaymentHistoryCodeMessages,
+  )) {
+    for (const code of [
+      "quarantine",
+      "quarantined",
+      "release",
+      "failed-release-observation",
+    ] as const) {
+      expect(messages[code]).toBeTruthy();
+      expect(messages[code]).not.toBe(code);
+    }
+  }
+  for (const invalid of [
+    { ...quarantineEvent, sourceRecordedAt: "unknown" },
+    { ...quarantineEvent, customerName: "Private Customer" },
+    { ...quarantineEvent, rawPayload: "private provider payload" },
+    { ...quarantineEvent, providerReference: "hostile-provider-reference" },
+  ]) {
+    expect(() =>
+      parseAdministratorPaymentHistory({ ...value, events: [invalid] }),
+    ).toThrow("Administrator payment history data is invalid");
+  }
+});

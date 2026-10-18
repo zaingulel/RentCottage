@@ -304,6 +304,141 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.observe_booking_request_payment_history()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path TO ''
+  AS $function$
+declare current_row jsonb := to_jsonb(new);
+declare prior_row jsonb := case when tg_op='UPDATE' then to_jsonb(old) else '{}'::jsonb end;
+declare lifecycle_id uuid;
+declare request_id uuid;
+declare source_name text;
+declare event_kind text := 'state-transition';
+declare operation_name text;
+declare current_state text;
+declare prior_state text;
+declare current_outcome text;
+declare prior_outcome text;
+declare reason text;
+declare source_time timestamptz;
+declare occurrence_time timestamptz;
+declare provider_row public.payment_provider_operations;
+begin
+  source_name := case tg_table_name
+    when 'booking_request_authorization_claims' then 'authorization-claim'
+    when 'payment_provider_operations' then 'provider-operation'
+    when 'booking_request_release_work' then 'release-work'
+    when 'booking_request_release_operations' then 'release-operation'
+    when 'booking_request_capture_work' then 'capture-work'
+    when 'booking_request_payment_recovery_attempts' then 'recovery-attempt'
+    when 'booking_request_payment_recovery_operations' then 'recovery-operation'
+    when 'booking_request_payment_required_expiry_work' then 'expiry-work'
+    when 'booking_request_payment_required_expiry_operations' then 'expiry-operation'
+    when 'booking_requests' then 'booking-request'
+    when 'booking_confirmations' then 'confirmation'
+    when 'booking_request_confirmation_invalidations' then 'confirmation-invalidation'
+    when 'booking_request_payment_correction_observations' then 'provider-receipt'
+  end;
+  request_id := nullif(current_row->>'booking_request_id','')::uuid;
+  lifecycle_id := nullif(coalesce(current_row->>'payment_lifecycle_id', current_row->>'authorization_payment_lifecycle_id'),'')::uuid;
+  if tg_table_name='booking_requests' then
+    request_id := (current_row->>'id')::uuid;
+  elsif tg_table_name='payment_provider_operations' then
+    select claims.payment_lifecycle_id into lifecycle_id from public.booking_request_authorization_claims claims where claims.id=(current_row->>'claim_id')::uuid;
+  elsif tg_table_name='booking_request_release_work' then
+    select attempts.payment_lifecycle_id into lifecycle_id from public.booking_request_submission_attempts attempts where attempts.id=(current_row->>'attempt_id')::uuid;
+  elsif tg_table_name='booking_request_payment_recovery_operations' then
+    select requests.id, requests.payment_lifecycle_id into request_id,lifecycle_id
+      from public.booking_request_payment_recovery_attempts attempts join public.booking_requests requests on requests.id=attempts.booking_request_id
+      where attempts.id=(current_row->>'recovery_attempt_id')::uuid;
+  elsif tg_table_name='booking_request_payment_correction_observations' then
+    select requests.payment_lifecycle_id into lifecycle_id from public.booking_requests requests where requests.id=request_id;
+  end if;
+  if request_id is null and lifecycle_id is not null then
+    select requests.id into request_id from public.booking_requests requests where requests.payment_lifecycle_id=lifecycle_id;
+  end if;
+  if request_id is not null then
+    select requests.payment_lifecycle_id into lifecycle_id from public.booking_requests requests where requests.id=request_id;
+  end if;
+  if lifecycle_id is null then raise exception 'Payment history source has no original lifecycle' using errcode='RC409'; end if;
+
+  -- Admission alone has no execution or payment history. The first accepted
+  -- executed observation records the physical attempt; later results retain its identity.
+  if tg_table_name='payment_provider_operations' and current_row->>'current_outcome' is null then return new; end if;
+  if tg_table_name='payment_provider_operations' and tg_op='UPDATE'
+    and (current_row->>'current_outcome',current_row->>'authoritative_outcome_at',current_row->>'movement_reference')
+      is not distinct from (prior_row->>'current_outcome',prior_row->>'authoritative_outcome_at',prior_row->>'movement_reference') then
+    return new;
+  end if;
+
+  current_state := coalesce(current_row->>'state', current_row->>'status');
+  prior_state := coalesce(prior_row->>'state', prior_row->>'status');
+  current_outcome := coalesce(current_row->>'current_outcome', current_row->>'provider_outcome', current_row->>'outcome');
+  prior_outcome := coalesce(prior_row->>'current_outcome', prior_row->>'provider_outcome', prior_row->>'outcome');
+  operation_name := coalesce(current_row->>'operation_kind', current_row->>'step',
+    case source_name when 'capture-work' then 'capture' when 'release-work' then 'release'
+      when 'release-operation' then 'release' when 'authorization-claim' then 'authorization'
+      when 'expiry-work' then 'expiry' when 'confirmation' then 'confirmation'
+      when 'confirmation-invalidation' then 'invalidation' end);
+  reason := coalesce(current_row->>'quarantine_reason', current_row->>'diagnostic_reason', current_row->>'reason', current_row->>'decline_reason');
+  source_time := case when tg_table_name='booking_request_release_work' and current_state='quarantined'
+    then nullif(current_row->>'quarantined_at','')::timestamptz
+    else nullif(coalesce(current_row->>'completed_at',current_row->>'result_recorded_at',current_row->>'settled_at',current_row->>'invalidated_at',current_row->>'confirmed_at',current_row->>'updated_at',current_row->>'created_at'),'')::timestamptz end;
+  occurrence_time := nullif(current_row->>'authoritative_outcome_at','')::timestamptz;
+
+  if tg_table_name='payment_provider_operations' then
+    if (tg_op='INSERT' or prior_row->>'current_outcome' is null) and current_row->>'current_outcome'<>'not-executed' then event_kind:='physical-attempt';
+    else prior_state:=prior_outcome; current_state:=current_outcome; end if;
+  end if;
+  if tg_table_name in ('booking_request_release_work','booking_request_capture_work') then event_kind:='logical-operation'; end if;
+  if tg_table_name in ('booking_confirmations','booking_request_confirmation_invalidations') then event_kind:='terminal-outcome'; end if;
+  if tg_table_name='booking_confirmations' then
+    current_state := 'confirmed'; current_outcome := 'succeeded';
+  elsif tg_table_name='booking_request_confirmation_invalidations' then
+    current_state := 'invalidated';
+  end if;
+  if tg_op='UPDATE' and tg_table_name in ('booking_request_release_work','booking_request_capture_work')
+    and (current_row->>'lease_generation')::bigint > (prior_row->>'lease_generation')::bigint
+    and (prior_row->>'lease_generation')::bigint > 0 then
+    event_kind := 'retry';
+  end if;
+  if tg_table_name='booking_request_payment_correction_observations' then
+    select * into strict provider_row from public.payment_provider_operations where id=(current_row->>'provider_operation_id')::uuid;
+    operation_name := provider_row.operation_kind;
+    current_row := current_row || jsonb_build_object('logical_operation_id',provider_row.logical_operation_id,
+      'physical_attempt_id',provider_row.physical_attempt_id,'provider_request_id',provider_row.provider_request_id,
+      'provider_reference',provider_row.provider_reference,'movement_reference',provider_row.movement_reference,
+      'amount_fils',provider_row.amount_fils);
+    event_kind := 'receipt-observation';
+    current_outcome := case when (current_row->>'conflict')::boolean then 'conflicting' else current_row#>>'{payload,outcome}' end;
+    reason := case when (current_row->>'conflict')::boolean then 'conflicting-provider-observation' end;
+    occurrence_time := case when not (current_row->>'conflict')::boolean and current_row#>>'{payload,occurredAt}' is not null then (current_row#>>'{payload,occurredAt}')::timestamptz end;
+  end if;
+  if coalesce(current_state,'') in ('quarantined','blocked') then event_kind:='quarantine'; end if;
+  if tg_op='UPDATE' and tg_table_name<>'payment_provider_operations'
+    and (current_state,current_outcome,reason,current_row->>'lease_generation',current_row->>'generation',current_row->>'provider_operation_id')
+    is not distinct from (prior_state,prior_outcome,coalesce(prior_row->>'quarantine_reason',prior_row->>'diagnostic_reason',prior_row->>'reason',prior_row->>'decline_reason'),prior_row->>'lease_generation',prior_row->>'generation',prior_row->>'provider_operation_id') then
+    return new;
+  end if;
+  perform public.append_booking_request_payment_history(
+    lifecycle_id, request_id, event_kind, source_name, 'observed', operation_name,
+    coalesce(current_row->>'logical_operation_id',current_row->>'release_logical_operation_id',current_row->>'capture_logical_operation_id'),
+    coalesce(current_row->>'physical_attempt_id',current_row->>'release_physical_attempt_id',current_row->>'capture_physical_attempt_id'),
+    nullif(coalesce(current_row->>'operation_generation',current_row->>'lease_generation',
+      case when tg_table_name='booking_request_authorization_claims' then current_row->>'generation' end),'')::bigint,
+    case when tg_table_name='booking_request_payment_recovery_attempts' then nullif(current_row->>'generation','')::bigint end,
+    prior_state, current_state, current_outcome, reason,
+    nullif(coalesce(current_row->>'provider_operation_id',case when tg_table_name='payment_provider_operations' then current_row->>'id' end),'')::uuid,
+    current_row->>'provider_request_id',current_row->>'provider_reference',current_row->>'movement_reference',
+    nullif(current_row->>'amount_fils','')::bigint,occurrence_time,
+    nullif(current_row->>'received_at','')::timestamptz,source_time
+  );
+  return new;
+end;
+$function$;
+
 CREATE FUNCTION public.quarantine_booking_request_release_work (
   target_work_id uuid
 )
