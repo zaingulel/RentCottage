@@ -3962,9 +3962,9 @@ CREATE OR REPLACE FUNCTION "public"."get_confirmed_booking_access"("target_refer
     'actorRole', actor.role,
     'customerName', requests.customer_name,
     'coverMediaId',(select media.opaque_id
-      from public.owner_application_cottage_profiles profiles
-      join public.cottage_publication_media media on media.publication_id=profiles.current_publication_id
-      where profiles.id=requests.profile_id and public.is_cottage_publicly_discoverable(profiles.id)
+      from public.cottage_publication_media media
+      where media.publication_id=profiles.current_publication_id
+        and public.is_cottage_publicly_discoverable(profiles.id)
       order by media.position limit 1),
     'cottageName', snapshots.quote_payload ->> 'cottageName',
     'bookingPeriod', snapshots.quote_payload -> 'items',
