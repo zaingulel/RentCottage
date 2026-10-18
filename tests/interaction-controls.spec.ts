@@ -1,3 +1,5 @@
+import { writeFile } from "node:fs/promises";
+
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { build } from "esbuild";
 
@@ -173,6 +175,150 @@ async function samplePixels(
   );
 }
 
+test("normal input boundaries retain accessible contrast on every shared surface", async ({
+  page,
+}, testInfo) => {
+  const bundlePath = testInfo.outputPath("interaction-controls.js");
+  await build({
+    entryPoints: ["tests/fixtures/interaction-controls.browser.tsx"],
+    outfile: bundlePath,
+    bundle: true,
+    format: "iife",
+    platform: "browser",
+    target: "es2022",
+    jsx: "automatic",
+    define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
+  });
+  const width = testInfo.project.name === "mobile" ? 390 : 1440;
+  if (testInfo.project.name === "mobile") {
+    await page.setViewportSize({ width, height: 844 });
+  }
+  await page.goto("/api/health");
+  await page.setContent(
+    '<meta name="viewport" content="width=device-width, initial-scale=1"><div id="fixture-root"></div>',
+  );
+  await page.addStyleTag({ content: await readApplicationStylesheet() });
+  await page.addScriptTag({ path: bundlePath });
+  const surface = page.getByRole("region", { name: "Normal input boundaries" });
+  await expect(surface).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width);
+
+  function rgba(color: string) {
+    const channels = color.match(/[\d.]+/g)?.map(Number);
+    if (!channels || channels.length < 3 || channels.length > 4)
+      throw new Error(`Unsupported computed color: ${color}`);
+    return { rgb: channels.slice(0, 3), alpha: channels[3] ?? 1 };
+  }
+  function luminance(rgb: number[]) {
+    const linear = rgb.map((channel) => {
+      const value = channel / 255;
+      return value <= 0.04045
+        ? value / 12.92
+        : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+  }
+  function contrast(first: number[], second: number[]) {
+    const values = [luminance(first), luminance(second)];
+    return (Math.max(...values) + 0.05) / (Math.min(...values) + 0.05);
+  }
+  const measurements = [];
+  for (const { locale, direction } of localeFixtures) {
+    await page.evaluate(
+      ({ locale, direction }) => {
+        document.documentElement.lang = locale;
+        document.documentElement.dir = direction;
+      },
+      { locale, direction },
+    );
+    await expect(page.locator("html")).toHaveAttribute("lang", locale);
+    await expect(page.locator("html")).toHaveAttribute("dir", direction);
+    await page.evaluate(() => document.fonts.ready);
+    for (const outside of [
+      "--background",
+      "--card",
+      "--surface-raised",
+      "--surface-bright",
+      "--surface-field",
+    ]) {
+      for (const fill of ["default", "--background"]) {
+        await surface.evaluate(
+          (element, { outside, fill }) => {
+            element.style.removeProperty("--surface-field");
+            const root = getComputedStyle(document.documentElement);
+            element.style.backgroundColor = root.getPropertyValue(outside);
+            if (fill !== "default")
+              element.style.setProperty(
+                "--surface-field",
+                root.getPropertyValue(fill),
+              );
+          },
+          { outside, fill },
+        );
+        for (const name of [
+          "Boundary input",
+          "Boundary select",
+          "Boundary textarea",
+        ]) {
+          const control = surface.getByLabel(name, { exact: true });
+          await expect(control).toBeEnabled();
+          await expect(control).not.toBeFocused();
+          const actual = await control.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return {
+              border: style.borderTopColor,
+              fill: style.backgroundColor,
+              outside: getComputedStyle(element.parentElement!).backgroundColor,
+              valid: (element as HTMLInputElement).validity.valid,
+              invalid: element.getAttribute("aria-invalid"),
+              direction: style.direction,
+            };
+          });
+          expect(actual.valid).toBe(true);
+          expect(actual.invalid).not.toBe("true");
+          expect(actual.direction).toBe(direction);
+          const border = rgba(actual.border);
+          const field = rgba(actual.fill);
+          const surround = rgba(actual.outside);
+          expect(field.alpha).toBe(1);
+          expect(surround.alpha).toBe(1);
+          const painted = border.rgb.map(
+            (channel, index) =>
+              channel * border.alpha + field.rgb[index] * (1 - border.alpha),
+          );
+          const againstFill = contrast(painted, field.rgb);
+          const againstOutside = contrast(painted, surround.rgb);
+          const measurement = {
+            locale,
+            width,
+            outsideToken: outside,
+            fillToken: fill,
+            name,
+            ...actual,
+            painted,
+            againstFill,
+            againstOutside,
+          };
+          measurements.push(measurement);
+          const context = `${locale} ${width} ${outside} ${fill} ${name}`;
+          expect
+            .soft(againstFill, `${context}: field fill`)
+            .toBeGreaterThanOrEqual(3);
+          expect
+            .soft(againstOutside, `${context}: surrounding surface`)
+            .toBeGreaterThanOrEqual(3);
+        }
+      }
+    }
+  }
+  const measurementPath = testInfo.outputPath("normal-input-contrast.json");
+  await writeFile(measurementPath, JSON.stringify(measurements, null, 2));
+  await testInfo.attach("Normal input contrast measurements", {
+    path: measurementPath,
+    contentType: "application/json",
+  });
+});
+
 test("choice, option group and disclosure controls keep native behaviour, visible focus and state cues in both directions", async ({
   page,
 }, testInfo) => {
@@ -215,7 +361,6 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
   const choices = page.locator(".choice-control");
   const resting = [
     "border-top-width",
-    "border-top-color",
     "border-top-left-radius",
     "background-color",
   ];
@@ -286,8 +431,11 @@ test("choice, option group and disclosure controls keep native behaviour, visibl
     await expect(page.locator(":focus")).toHaveCount(0);
     const restingField = await computed(reference, resting);
     expect(await computed(summary, resting)).toEqual(restingField);
+    expect(await computed(summary, ["border-top-color"])).toEqual([
+      "rgba(34, 64, 47, 0.16)",
+    ]);
     expect(await computed(garden, ["background-color"])).toEqual([
-      restingField[3],
+      restingField[2],
     ]);
 
     await reference.focus();
