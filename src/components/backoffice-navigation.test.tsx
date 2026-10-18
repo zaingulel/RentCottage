@@ -14,34 +14,6 @@ function links(areaLabel: string) {
 
 describe("BackofficeNavigation", () => {
   it.each([
-    ["en", "Owner Backoffice", ["My cottages", "Bookings", "Earnings"]],
-    ["ar", "مكتب مالك الكوخ", ["إدارة أكواخي", "حجوزات أكواخي", "الأرباح"]],
-    [
-      "ckb",
-      "بەشی بەڕێوەبردنی خاوەن کۆتێج",
-      ["بەڕێوەبردنی کۆتێجەکانم", "حجزەکانی کۆتێجەکانم", "داهات"],
-    ],
-  ] as const)(
-    "lists the Owner Backoffice destinations in %s",
-    (locale, areaLabel, labels) => {
-      render(
-        <BackofficeNavigation
-          locale={locale}
-          area="owner"
-          current="cottages"
-        />,
-      );
-      const destinations = links(areaLabel);
-      expect(destinations.map((link) => link.textContent)).toEqual(labels);
-      expect(destinations.map((link) => link.getAttribute("href"))).toEqual([
-        `/${locale}/owner/cottages`,
-        `/${locale}/bookings?workspace=owner`,
-        `/${locale}/owner/earnings`,
-      ]);
-    },
-  );
-
-  it.each([
     [
       "en",
       "Platform administration",

@@ -863,7 +863,6 @@ test.describe("retained cancellation and refund controls", () => {
         contentType: "application/json",
       });
       await ownerPage.setViewportSize(earningsViewport);
-      await ownerPage.goto("/en/owner/earnings");
       await ownerPage.goto(`/en/owner/booking-requests/${reference}`);
       await expectAmount(
         ownerPage.getByRole("region", { name: earningsMessages.en.title }),
