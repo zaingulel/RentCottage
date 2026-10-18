@@ -188,6 +188,13 @@ it("shows a Customer with no bookings the empty state and one next action", asyn
   expect(
     screen.getByRole("link", { name: "Search available cottages" }),
   ).toHaveAttribute("href", "/en");
+  expect(screen.getByRole("link", { name: "RentCottage home" })).toHaveAttribute(
+    "href",
+    "/en",
+  );
+  expect(
+    screen.queryByRole("navigation", { name: "Owner Backoffice" }),
+  ).not.toBeInTheDocument();
 });
 
 it("labels retained cancelled bookings and links to their safe detail", async () => {
