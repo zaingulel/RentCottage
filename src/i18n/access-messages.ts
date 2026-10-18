@@ -15,6 +15,7 @@ export const accessMessages: Record<
     ownerBookings: string;
     ownerBookingsTab: string;
     ownerEarningsTab: string;
+    bookingHistoryEmpty: string;
     listCottage: string;
     manageCottages: string;
     ownerCottagesTab: string;
@@ -78,6 +79,7 @@ export const accessMessages: Record<
     ownerBookings: "حجوزات أكواخي",
     ownerBookingsTab: "حجوزات أكواخي",
     ownerEarningsTab: "الأرباح",
+    bookingHistoryEmpty: "لا توجد طلبات حجز بعد.",
     listCottage: "أدرج كوخك",
     manageCottages: "إدارة أكواخي",
     ownerCottagesTab: "إدارة أكواخي",
@@ -145,6 +147,7 @@ export const accessMessages: Record<
     ownerBookings: "حجزەکانی کۆتێجەکانم",
     ownerBookingsTab: "حجزەکانی کۆتێجەکانم",
     ownerEarningsTab: "داهات",
+    bookingHistoryEmpty: "هێشتا هیچ داواکارییەکی حجز نییە.",
     listCottage: "کۆتێجەکەت تۆمار بکە",
     manageCottages: "بەڕێوەبردنی کۆتێجەکانم",
     ownerCottagesTab: "بەڕێوەبردنی کۆتێجەکانم",
@@ -217,6 +220,7 @@ export const accessMessages: Record<
     ownerBookings: "Bookings for my cottages",
     ownerBookingsTab: "Bookings",
     ownerEarningsTab: "Earnings",
+    bookingHistoryEmpty: "No booking requests yet.",
     listCottage: "List your cottage",
     manageCottages: "Manage my cottages",
     ownerCottagesTab: "My cottages",

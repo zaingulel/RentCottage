@@ -683,8 +683,12 @@ test.describe("retained cancellation and refund controls", () => {
             .filter({ has: ownerPage.locator(".backoffice-navigation-links") });
           const bookings = navigation.getByRole("link", {
             name: accessMessages[locale].ownerBookingsTab,
-            exact: true,
+            exact: false,
           });
+          await expect(bookings).toHaveAttribute(
+            "href",
+            `/${locale}/bookings?workspace=owner`,
+          );
           const earnings = navigation.getByRole("link", {
             name: accessMessages[locale].ownerEarningsTab,
             exact: true,

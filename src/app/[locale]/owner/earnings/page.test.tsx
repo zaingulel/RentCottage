@@ -2,14 +2,24 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { listBookingHistory } from "@/booking-request/booking-history";
+import { listOwnerBookingRequestNotifications } from "@/booking-request/owner-booking-request-notifications";
+import { ownerBookingRequestNotificationDisplay } from "@/booking-request/booking-request-display";
+import { ownerDisplayFixtures } from "../../../../../tests/fixtures/booking-request-display.fixtures";
 import type { OwnerBookingEarningsFacts } from "@/booking-request/owner-booking-earnings";
-const { loadHistory, requireAccount } = vi.hoisted(() => ({
+const { loadHistory, loadNotifications, requireAccount } = vi.hoisted(() => ({
   loadHistory: vi.fn(),
+  loadNotifications: vi.fn(),
   requireAccount: vi.fn(),
 }));
 vi.mock("@/booking-request/request-booking-history", () => ({
   loadBookingHistory: loadHistory,
 }));
+vi.mock(
+  "@/booking-request/request-owner-booking-request-notifications",
+  () => ({
+    loadOwnerBookingRequestNotifications: loadNotifications,
+  }),
+);
 vi.mock("next/navigation", () => ({
   notFound: vi.fn(() => {
     throw new Error("not found");
@@ -68,6 +78,7 @@ const approved = {
 const page = (locale = "en") =>
   OwnerEarningsPage({ params: Promise.resolve({ locale }) });
 beforeEach(() => {
+  loadNotifications.mockReset().mockResolvedValue([]);
   loadHistory.mockReset().mockResolvedValue([ownerItem(ownerFacts)]);
   requireAccount
     .mockReset()
@@ -99,12 +110,13 @@ it("Earnings permits only approved owners and binds the owner reader", async () 
     { status: "authenticated", context: null },
     { status: "authenticated", context: { role: "customer" } },
     { status: "authenticated", context: { role: "platform_administrator" } },
-    ...["prospective", "suspended"].map((approvalState) => ({
+    ...["prospective", "expired", "suspended"].map((approvalState) => ({
       status: "authenticated",
       context: { ...approved, approvalState },
     })),
   ]) {
     loadHistory.mockClear();
+    loadNotifications.mockClear();
     requireAccount.mockResolvedValue(account);
     render(await page());
     expect(screen.getByRole("alert")).toHaveTextContent(
@@ -113,6 +125,7 @@ it("Earnings permits only approved owners and binds the owner reader", async () 
         : "This booking is not available to this account.",
     );
     expect(loadHistory).not.toHaveBeenCalled();
+    expect(loadNotifications).not.toHaveBeenCalled();
     expect(screen.queryByRole("navigation")).toBeNull();
     expect(screen.queryByText("Preserved Cottage")).toBeNull();
     cleanup();
@@ -120,6 +133,7 @@ it("Earnings permits only approved owners and binds the owner reader", async () 
   requireAccount.mockClear();
   await expect(page("invalid")).rejects.toThrow("not found");
   expect(requireAccount).not.toHaveBeenCalled();
+  expect(loadNotifications).not.toHaveBeenCalled();
 });
 
 it("Earnings preserves figures and fails visibly on invalid input", async () => {
@@ -238,13 +252,16 @@ it("Earnings preserves figures and fails visibly on invalid input", async () => 
       { ...ownerItem(ownerFacts), actorRole: "customer" },
     ]) {
       rpc.mockResolvedValue({ data: [invalid], error: null });
+      loadNotifications.mockClear();
       render(await page());
+      expect(loadNotifications).not.toHaveBeenCalled();
       expect(screen.getByRole("alert")).toHaveTextContent(
         "Account access is unavailable. Please try again.",
       );
       cleanup();
     }
     for (const outcome of ["undefined", "read-error", "projection-error"]) {
+      loadNotifications.mockClear();
       if (outcome === "undefined") loadHistory.mockResolvedValue(undefined);
       else if (outcome === "read-error")
         loadHistory.mockRejectedValue(new Error("private database diagnostic"));
@@ -256,6 +273,7 @@ it("Earnings preserves figures and fails visibly on invalid input", async () => 
       expect(screen.getByRole("alert")).toHaveTextContent(
         "Account access is unavailable. Please try again.",
       );
+      expect(loadNotifications).not.toHaveBeenCalled();
       expect(screen.queryByText("private database diagnostic")).toBeNull();
       expect(screen.queryByRole("navigation")).toBeNull();
       cleanup();
@@ -266,6 +284,93 @@ it("Earnings preserves figures and fails visibly on invalid input", async () => 
         { code: "owner_earnings_failed" },
       ]),
     );
+  } finally {
+    errorLog.mockRestore();
+  }
+});
+
+it("Earnings keeps the authoritative waiting count and fails visibly if it is unavailable", async () => {
+  const pending = {
+    ...ownerDisplayFixtures["capture-processing"],
+    status: "pending" as const,
+  };
+  loadNotifications.mockResolvedValue([
+    pending,
+    { ...pending, id: "00000000-0000-4000-8000-000000000002" },
+    ownerDisplayFixtures["payment-required-open"],
+  ]);
+  render(await page());
+  expect(
+    screen.getByRole("link", {
+      name: "Bookings Pending Booking Requests: 2",
+    }),
+  ).toHaveAttribute("href", "/en/bookings?workspace=owner");
+  expect(screen.getByRole("link", { name: "Earnings" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  expect(
+    screen.getByRole("link", { name: "Preserved Cottage" }),
+  ).toHaveAttribute(
+    "href",
+    "/en/owner/booking-requests/RC-REQ-0000000000003501",
+  );
+  expect(
+    screen.getByRole("region", { name: "Earnings summary" }),
+  ).toHaveTextContent("Expected unpaid payoutsIQD 90,000");
+  expect(loadNotifications).toHaveBeenCalledTimes(1);
+  cleanup();
+
+  loadNotifications.mockClear().mockResolvedValue([]);
+  render(await page());
+  expect(screen.getByRole("link", { name: "Bookings" })).toHaveAttribute(
+    "href",
+    "/en/bookings?workspace=owner",
+  );
+  expect(
+    screen.getByRole("region", { name: "Earnings summary" }),
+  ).toHaveTextContent("Paid payoutsIQD 0");
+  expect(loadNotifications).toHaveBeenCalledTimes(1);
+  cleanup();
+
+  const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    for (const outcome of ["undefined", "rejected", "malformed"]) {
+      errorLog.mockClear();
+      loadNotifications.mockClear();
+      if (outcome === "undefined")
+        loadNotifications.mockResolvedValue(undefined);
+      else if (outcome === "rejected")
+        loadNotifications.mockRejectedValue(
+          new Error("private notification diagnostic"),
+        );
+      else {
+        const rpc = vi
+          .fn()
+          .mockResolvedValue({ data: [{ status: "pending" }], error: null });
+        const client = { rpc } as unknown as SupabaseClient;
+        loadNotifications.mockImplementation(async () =>
+          (await listOwnerBookingRequestNotifications(client)).map(
+            ownerBookingRequestNotificationDisplay,
+          ),
+        );
+      }
+      render(await page());
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Account access is unavailable. Please try again.",
+      );
+      expect(screen.queryByRole("navigation")).toBeNull();
+      expect(screen.queryByText(/IQD/)).toBeNull();
+      expect(screen.queryByText("Preserved Cottage")).toBeNull();
+      expect(screen.queryByText("private notification diagnostic")).toBeNull();
+      expect(loadNotifications).toHaveBeenCalledTimes(1);
+      expect(errorLog.mock.calls).toEqual(
+        outcome === "undefined"
+          ? []
+          : [["Owner Earnings load failed", { code: "owner_earnings_failed" }]],
+      );
+      cleanup();
+    }
   } finally {
     errorLog.mockRestore();
   }

@@ -1,13 +1,24 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { listOwnerBookingRequestNotifications } from "@/booking-request/owner-booking-request-notifications";
+import { ownerBookingRequestNotificationDisplay } from "@/booking-request/booking-request-display";
+import { ownerDisplayFixtures } from "../../../../tests/fixtures/booking-request-display.fixtures";
 import type { OwnerBookingEarningsFacts } from "@/booking-request/owner-booking-earnings";
-const { loadHistory, requireAccount } = vi.hoisted(() => ({
+const { loadHistory, loadNotifications, requireAccount } = vi.hoisted(() => ({
   loadHistory: vi.fn(),
+  loadNotifications: vi.fn(),
   requireAccount: vi.fn(),
 }));
 vi.mock("@/booking-request/request-booking-history", () => ({
   loadBookingHistory: loadHistory,
 }));
+vi.mock(
+  "@/booking-request/request-owner-booking-request-notifications",
+  () => ({
+    loadOwnerBookingRequestNotifications: loadNotifications,
+  }),
+);
 vi.mock("next/navigation", () => ({
   notFound: vi.fn(),
   unstable_rethrow: vi.fn(),
@@ -57,6 +68,7 @@ const ownerItem = (ownerEarnings: OwnerBookingEarningsFacts) => ({
 });
 
 beforeEach(() => {
+  loadNotifications.mockReset().mockResolvedValue([]);
   loadHistory.mockReset();
   requireAccount.mockResolvedValue({
     status: "authenticated",
@@ -79,6 +91,7 @@ describe("Booking History failure", () => {
         }),
       );
       expect(screen.getByRole("alert")).toHaveTextContent(message);
+      expect(loadNotifications).not.toHaveBeenCalled();
       expect(
         screen.queryByText("private database diagnostic"),
       ).not.toBeInTheDocument();
@@ -171,6 +184,7 @@ describe("owner bookings access", () => {
       "This booking is not available to this account.",
     );
     expect(loadHistory).not.toHaveBeenCalled();
+    expect(loadNotifications).not.toHaveBeenCalled();
   });
 });
 
@@ -188,13 +202,14 @@ it("shows a Customer with no bookings the empty state and one next action", asyn
   expect(
     screen.getByRole("link", { name: "Search available cottages" }),
   ).toHaveAttribute("href", "/en");
-  expect(screen.getByRole("link", { name: "RentCottage home" })).toHaveAttribute(
-    "href",
-    "/en",
-  );
+  expect(
+    screen.getByRole("link", { name: "RentCottage home" }),
+  ).toHaveAttribute("href", "/en");
   expect(
     screen.queryByRole("navigation", { name: "Owner Backoffice" }),
   ).not.toBeInTheDocument();
+  expect(loadHistory).toHaveBeenCalledWith("customer");
+  expect(loadNotifications).not.toHaveBeenCalled();
 });
 
 it("labels retained cancelled bookings and links to their safe detail", async () => {
@@ -261,3 +276,107 @@ it.each(["completed", "no_show", "incident_pending"])(
     ).toBeVisible();
   },
 );
+
+it("owner bookings keeps the authoritative waiting count and fails visibly if it is unavailable", async () => {
+  requireAccount.mockResolvedValue({
+    status: "authenticated",
+    context: {
+      role: "cottage_owner",
+      userId: "owner",
+      approvalState: "approved",
+    },
+  });
+  loadHistory.mockResolvedValue([ownerItem(ownerFacts)]);
+  const page = () =>
+    BookingHistoryPage({
+      params: Promise.resolve({ locale: "en" }),
+      searchParams: Promise.resolve({ workspace: "owner" }),
+    });
+  const pending = {
+    ...ownerDisplayFixtures["capture-processing"],
+    status: "pending" as const,
+  };
+  loadNotifications.mockResolvedValue([
+    pending,
+    { ...pending, id: "00000000-0000-4000-8000-000000000002" },
+    ownerDisplayFixtures["payment-required-open"],
+  ]);
+  render(await page());
+  expect(
+    screen.getByRole("link", {
+      name: "Bookings Pending Booking Requests: 2",
+    }),
+  ).toHaveAttribute("href", "/en/bookings?workspace=owner");
+  expect(
+    screen.getByRole("link", {
+      name: "Bookings Pending Booking Requests: 2",
+    }),
+  ).toHaveAttribute("aria-current", "page");
+  expect(
+    screen.getByRole("link", { name: "Preserved Cottage" }),
+  ).toHaveAttribute(
+    "href",
+    "/en/owner/booking-requests/RC-REQ-0000000000003501",
+  );
+  expect(screen.queryByRole("region", { name: "Earnings summary" })).toBeNull();
+  expect(screen.getByText("Completed booking")).toBeVisible();
+  expect(loadNotifications).toHaveBeenCalledTimes(1);
+  cleanup();
+
+  loadNotifications.mockClear().mockResolvedValue([]);
+  render(await page());
+  expect(screen.getByRole("link", { name: "Bookings" })).toHaveAttribute(
+    "href",
+    "/en/bookings?workspace=owner",
+  );
+  expect(screen.getByRole("link", { name: "Preserved Cottage" })).toBeVisible();
+  expect(loadNotifications).toHaveBeenCalledTimes(1);
+  cleanup();
+
+  const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    for (const outcome of ["undefined", "rejected", "malformed"]) {
+      errorLog.mockClear();
+      loadNotifications.mockClear();
+      if (outcome === "undefined")
+        loadNotifications.mockResolvedValue(undefined);
+      else if (outcome === "rejected")
+        loadNotifications.mockRejectedValue(
+          new Error("private notification diagnostic"),
+        );
+      else {
+        const rpc = vi
+          .fn()
+          .mockResolvedValue({ data: [{ status: "pending" }], error: null });
+        const client = { rpc } as unknown as SupabaseClient;
+        loadNotifications.mockImplementation(async () =>
+          (await listOwnerBookingRequestNotifications(client)).map(
+            ownerBookingRequestNotificationDisplay,
+          ),
+        );
+      }
+      render(await page());
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Account access is unavailable. Please try again.",
+      );
+      expect(screen.queryByRole("navigation")).toBeNull();
+      expect(screen.queryByText(/IQD/)).toBeNull();
+      expect(screen.queryByText("Preserved Cottage")).toBeNull();
+      expect(screen.queryByText("private notification diagnostic")).toBeNull();
+      expect(loadNotifications).toHaveBeenCalledTimes(1);
+      expect(errorLog.mock.calls).toEqual(
+        outcome === "undefined"
+          ? []
+          : [
+              [
+                "Booking History load failed",
+                { code: "booking_history_failed" },
+              ],
+            ],
+      );
+      cleanup();
+    }
+  } finally {
+    errorLog.mockRestore();
+  }
+});

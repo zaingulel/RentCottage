@@ -323,6 +323,20 @@ test("same-phone reauthentication restores the same real history and owner unpai
     ).toBe("1");
     await returningContext.close();
 
+    const ownerNotifications = JSON.parse(
+      harness.runSql(`begin;
+        set local role authenticated;
+        do $$begin perform set_config('request.jwt.claims','{"sub":"${ownerId}","role":"authenticated","aal":"aal1"}',true); end$$;
+        select public.list_owner_booking_request_notifications();
+        rollback;`),
+    );
+    expect(ownerNotifications).toHaveLength(1);
+    expect(ownerNotifications[0]).toMatchObject({
+      bookingRequestReference: unpaidReference,
+      status: "pending",
+      paymentStatus: null,
+    });
+
     prepareLaterSignIn(ownerId, ownerPhone);
     const ownerContext = await browser.newContext({ baseURL });
     const ownerPage = await ownerContext.newPage();
@@ -332,6 +346,12 @@ test("same-phone reauthentication restores the same real history and owner unpai
       ownerPage.getByRole("heading", { name: "My bookings", exact: true }),
     ).toBeVisible();
     await ownerPage.goto("/en/bookings?workspace=owner");
+    await expect(
+      ownerPage.getByRole("link", {
+        name: "Bookings Pending Booking Requests: 1",
+        exact: true,
+      }),
+    ).toHaveAttribute("aria-current", "page");
     await expect(
       ownerPage.getByRole("region", { name: "Earnings summary" }),
     ).toHaveCount(0);
@@ -354,6 +374,12 @@ test("same-phone reauthentication restores the same real history and owner unpai
     await expect(ownerPage).toHaveURL(
       new URL("/en/owner/earnings", baseURL).href,
     );
+    await expect(
+      ownerPage.getByRole("link", {
+        name: "Bookings Pending Booking Requests: 1",
+        exact: true,
+      }),
+    ).toBeVisible();
     await expect(
       ownerPage.getByRole("region", { name: "Earnings summary" }),
     ).toContainText(
@@ -381,6 +407,12 @@ test("same-phone reauthentication restores the same real history and owner unpai
       "Payment has not been collected for this request, so it has no earnings yet.",
     );
     await ownerPage.reload();
+    await expect(
+      ownerPage.getByRole("link", {
+        name: "Bookings Pending Booking Requests: 1",
+        exact: true,
+      }),
+    ).toBeVisible();
     await expect(unpaidItem).toContainText(
       "Payment has not been collected for this request, so it has no earnings yet.",
     );

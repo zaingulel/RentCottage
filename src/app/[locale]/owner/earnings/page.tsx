@@ -1,4 +1,7 @@
 import { notFound, unstable_rethrow } from "next/navigation";
+import { hasApprovedOwnerCapability } from "@/access/account-access";
+import { waitingBookingRequestCount } from "@/booking-request/booking-request-display";
+import { loadOwnerBookingRequestNotifications } from "@/booking-request/request-owner-booking-request-notifications";
 import { requireRequestAccount } from "@/access/request-account-context";
 import { loadBookingHistory } from "@/booking-request/request-booking-history";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
@@ -12,12 +15,6 @@ import { BackofficeNavigation } from "@/components/backoffice-navigation";
 import { BookingHistoryList } from "@/components/booking-history-list";
 import { accessMessages } from "@/i18n/access-messages";
 import { isLocale } from "@/i18n/routing";
-
-const empty = {
-  en: "No booking requests yet.",
-  ar: "لا توجد طلبات حجز بعد.",
-  ckb: "هێشتا هیچ داواکارییەکی حجز نییە.",
-} as const;
 
 export default async function OwnerEarningsPage({
   params,
@@ -36,11 +33,7 @@ export default async function OwnerEarningsPage({
         returnTo={returnTo}
       />
     );
-  if (
-    !account.context ||
-    account.context.role !== "cottage_owner" ||
-    account.context.approvalState !== "approved"
-  )
+  if (!hasApprovedOwnerCapability(account.context))
     return (
       <AccountAccessRecovery
         locale={locale}
@@ -50,21 +43,26 @@ export default async function OwnerEarningsPage({
     );
   let items;
   let totals;
+  let waitingBookingRequests: number | undefined;
   try {
     items = await loadBookingHistory("cottage_owner");
-    if (items)
+    if (items) {
       totals = ownerBookingEarningsTotals(
         items.map((item) =>
           ownerBookingEarnings(item.ownerEarnings ?? { status: "unavailable" }),
         ),
       );
+      const notifications = await loadOwnerBookingRequestNotifications();
+      if (notifications)
+        waitingBookingRequests = waitingBookingRequestCount(notifications);
+    }
   } catch (error) {
     unstable_rethrow(error);
     console.error("Owner Earnings load failed", {
       code: "owner_earnings_failed",
     });
   }
-  if (!items || !totals)
+  if (!items || !totals || waitingBookingRequests === undefined)
     return (
       <AccountAccessRecovery
         locale={locale}
@@ -74,7 +72,12 @@ export default async function OwnerEarningsPage({
     );
   return (
     <main className="results-page page page-record">
-      <BackofficeNavigation locale={locale} area="owner" current="earnings" />
+      <BackofficeNavigation
+        locale={locale}
+        area="owner"
+        current="earnings"
+        waitingBookingRequests={waitingBookingRequests}
+      />
       <header className="page-heading">
         <h1 className="page-title">
           {accessMessages[locale].ownerEarningsTab}
@@ -84,7 +87,7 @@ export default async function OwnerEarningsPage({
         <OwnerBookingEarningsSummary locale={locale} totals={totals} />
         {items.length === 0 ? (
           <div className="empty-state">
-            <p>{empty[locale]}</p>
+            <p>{accessMessages[locale].bookingHistoryEmpty}</p>
             <ActionLink kind="secondary" href={`/${locale}/owner/cottages`}>
               {accessMessages[locale].manageCottages}
             </ActionLink>
