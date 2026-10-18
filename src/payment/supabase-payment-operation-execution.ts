@@ -310,6 +310,7 @@ export class SupabasePaymentOperationExecutionRepository implements PaymentOpera
   async record(
     admission: PaymentOperationAdmission,
     result: ProviderOperationResult,
+    quarantineRelease?: boolean,
   ): Promise<ProviderOperationResult> {
     if (
       [
@@ -322,10 +323,15 @@ export class SupabasePaymentOperationExecutionRepository implements PaymentOpera
     )
       throw new Error("Payment observation requires application consequences");
     const { data, error } = await this.client.rpc(
-      `record_${purposeRoutine(admission.purpose)}_observation`,
+      admission.purpose === "booking-request-release"
+        ? "record_booking_request_release_observation"
+        : `record_${purposeRoutine(admission.purpose)}_observation`,
       {
         target_operation_id: admission.operationId,
         target_result: result,
+        ...(admission.purpose === "booking-request-release"
+          ? { target_quarantine_release: quarantineRelease }
+          : {}),
       },
     );
     if (error) throw new Error("Payment operation recording is unavailable");

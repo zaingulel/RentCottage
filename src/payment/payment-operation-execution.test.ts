@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { createClient } from "@supabase/supabase-js";
+import { SupabasePaymentOperationExecutionRepository } from "./supabase-payment-operation-execution";
 
 import { createPaymentOperationExecution } from "./payment-operation-execution";
 import type {
@@ -302,4 +304,111 @@ describe("application-owned recovery and expiry recording", () => {
     expect(test.provider.execute).not.toHaveBeenCalled();
     expect(test.repository.record).not.toHaveBeenCalled();
   });
+});
+
+it("selects quarantine only for a definitive ordinary release refusal", async () => {
+  for (const purpose of [
+    "booking-request-release",
+    "booking-request-authorization",
+    "booking-request-submission-cleanup",
+    "booking-request-capture",
+  ] as const) {
+    const binding = {
+      ...request,
+      kind:
+        purpose === "booking-request-authorization"
+          ? ("authorization" as const)
+          : purpose === "booking-request-capture"
+            ? ("capture" as const)
+            : ("release" as const),
+    };
+    for (const outcome of [
+      "failed",
+      "succeeded",
+      "indeterminate",
+      "not-executed",
+    ] as const) {
+      for (const retrySafe of outcome === "failed"
+        ? [false, true, null, "false", undefined]
+        : [false]) {
+        const operationId = "11111111-1111-4111-8111-111111111111";
+        const base: ProviderOperationResult =
+          outcome === "not-executed"
+            ? {
+                outcome,
+                evidence: {
+                  operationId,
+                  eventId: "absent-event",
+                  provenance: "fictional-provider",
+                  originalOutcome: null,
+                  executedAt: null,
+                  occurredAt: null,
+                  closedAt: "2098-01-01T00:00:00Z",
+                },
+              }
+            : evidence(outcome);
+        const result = {
+          ...base,
+          ...(outcome === "failed" ? { retrySafe } : {}),
+          evidence: { ...base.evidence!, operationId },
+        } as ProviderOperationResult;
+        const calls: { routine: string; body: Record<string, unknown> }[] = [];
+        const client = createClient("http://localhost:54321", "fictional-key", {
+          auth: { persistSession: false, autoRefreshToken: false },
+          global: {
+            fetch: async (url, options) => {
+              const routine = String(url).split("/").at(-1)!;
+              calls.push({ routine, body: JSON.parse(String(options?.body)) });
+              return new Response(
+                JSON.stringify(
+                  routine === "reload_booking_request_payment_operation"
+                    ? {
+                        ...admission,
+                        operationId,
+                        purpose,
+                        binding,
+                        mode: "reconcile",
+                      }
+                    : result,
+                ),
+                { headers: { "Content-Type": "application/json" } },
+              );
+            },
+          },
+        });
+        const execution = createPaymentOperationExecution({
+          repository: new SupabasePaymentOperationExecutionRepository(client),
+          provider: { ...fixture(result).provider, query: async () => result },
+        });
+        const response = await execution.query({
+          ...binding,
+          providerRequestId: null,
+          providerReference: null,
+        });
+        if (outcome === "failed" && typeof retrySafe !== "boolean") {
+          expect(response).toEqual({ status: "unavailable" });
+          expect(calls).toHaveLength(1);
+          continue;
+        }
+        expect(response).toEqual({ status: "recorded", result });
+        expect(calls[1]).toEqual({
+          routine:
+            purpose === "booking-request-release"
+              ? "record_booking_request_release_observation"
+              : purpose === "booking-request-capture"
+                ? "record_booking_request_capture_observation"
+                : "record_booking_request_provider_operation_observation",
+          body: {
+            target_operation_id: operationId,
+            target_result: result,
+            ...(purpose === "booking-request-release"
+              ? {
+                  target_quarantine_release: outcome === "failed" && !retrySafe,
+                }
+              : {}),
+          },
+        });
+      }
+    }
+  }
 });

@@ -41,6 +41,7 @@ interface DurablePaymentSimulatorOptions {
   readonly effects: SimulatorEffectRepository;
   readonly now: () => string;
   readonly executeOutcome?: ProviderOutcome;
+  readonly failureRetrySafe?: boolean;
   readonly reconciliationOutcome?: ProviderOutcome;
 }
 
@@ -56,12 +57,14 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
   readonly #effects: SimulatorEffectRepository;
   readonly #now: () => string;
   readonly #executeOutcome: ProviderOutcome;
+  readonly #failureRetrySafe: boolean;
   readonly #reconciliationOutcome: ProviderOutcome;
 
   constructor(options: DurablePaymentSimulatorOptions) {
     this.#effects = options.effects;
     this.#now = options.now;
     this.#executeOutcome = options.executeOutcome ?? "succeeded";
+    this.#failureRetrySafe = options.failureRetrySafe ?? false;
     this.#reconciliationOutcome =
       options.reconciliationOutcome ?? this.#executeOutcome;
   }
@@ -100,7 +103,7 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
       providerReference:
         references?.providerReference ?? `sim-reference-${binding.operationId}`,
       ...(outcome === "failed"
-        ? { retrySafe: false }
+        ? { retrySafe: this.#failureRetrySafe }
         : {
             movementReference:
               references && "movementReference" in references

@@ -220,6 +220,8 @@ CREATE TABLE IF NOT EXISTS "public"."booking_request_release_work" (
     "active_operation_id" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "completed_at" timestamp with time zone,
+    "quarantined_at" timestamp with time zone,
+    "quarantine_reason" "text",
     CONSTRAINT "booking_request_release_work_check" CHECK ((("outcome" = 'declined'::"text") = ("decline_reason" IS NOT NULL))),
     CONSTRAINT "booking_request_release_work_check1" CHECK ((("state" = 'complete'::"text") = ("completed_at" IS NOT NULL))),
     CONSTRAINT "booking_request_release_work_check2" CHECK ((("lease_token" IS NULL) = ("lease_expires_at" IS NULL))),
@@ -228,7 +230,11 @@ CREATE TABLE IF NOT EXISTS "public"."booking_request_release_work" (
     CONSTRAINT "booking_request_release_work_lease_generation_check" CHECK (("lease_generation" >= 0)),
     CONSTRAINT "booking_request_release_work_outcome_check" CHECK (("outcome" = ANY (ARRAY['declined'::"text", 'withdrawn'::"text", 'expired'::"text"]))),
     CONSTRAINT "booking_request_release_work_outcome_fingerprint_check" CHECK (("outcome_fingerprint" ~ '^[0-9a-f]{64}$'::"text")),
-    CONSTRAINT "booking_request_release_work_state_check" CHECK (("state" = ANY (ARRAY['processing'::"text", 'complete'::"text"])))
+    CONSTRAINT "booking_request_release_quarantine_shape" CHECK (
+      ((state = 'quarantined') AND quarantined_at IS NOT NULL AND quarantine_reason IS NOT NULL
+        AND quarantine_reason = 'failed-release-observation' AND completed_at IS NULL AND lease_token IS NULL AND lease_expires_at IS NULL)
+      OR ((state <> 'quarantined') AND quarantined_at IS NULL AND quarantine_reason IS NULL)),
+    CONSTRAINT "booking_request_release_work_state_check" CHECK (("state" = ANY (ARRAY['processing'::"text", 'quarantined'::"text", 'complete'::"text"])))
 );
 
 ALTER TABLE "public"."booking_request_release_work" OWNER TO "postgres";

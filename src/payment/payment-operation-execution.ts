@@ -36,6 +36,7 @@ export interface PaymentOperationExecutionRepository {
   record(
     admission: PaymentOperationAdmission,
     result: ProviderOperationResult,
+    quarantineRelease?: boolean,
   ): Promise<ProviderOperationResult>;
 }
 
@@ -194,7 +195,14 @@ export function createPaymentOperationExecution({
     const recorder = needsPaymentObservation(admission.purpose)
       ? observation!
       : repository;
-    const accepted = await recorder.record(admission, received);
+    const accepted =
+      admission.purpose === "booking-request-release"
+        ? await recorder.record(
+            admission,
+            received,
+            received.outcome === "failed" && received.retrySafe === false,
+          )
+        : await recorder.record(admission, received);
     return {
       status: "recorded",
       result: validatedProviderResult(accepted, admission.operationId),

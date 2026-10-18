@@ -42,9 +42,18 @@ async function main() {
     required("SUPABASE_SECRET_KEY"),
     { auth: { autoRefreshToken: false, persistSession: false } },
   );
+  const outcome = process.env.LIFECYCLE_WORKER_OUTCOME ?? "succeeded";
+  const safety = process.env.LIFECYCLE_WORKER_FAILURE_RETRY_SAFE ?? "false";
+  if (
+    !["succeeded", "failed"].includes(outcome) ||
+    !["true", "false"].includes(safety)
+  )
+    throw new Error("Lifecycle worker payment fixture is invalid");
   const durable = new DurablePaymentSimulator({
     effects: new SupabaseSimulatorEffectRepository(client),
     now: () => new Date().toISOString(),
+    executeOutcome: outcome === "failed" ? "failed" : "succeeded",
+    failureRetrySafe: safety === "true",
   });
   const pause = process.env.LIFECYCLE_WORKER_PAUSE ?? "none";
   let intercepted = false;
@@ -103,7 +112,7 @@ async function main() {
         }
         return recording.reload(query, identity);
       },
-      async record(admission, result) {
+      async record(admission, result, quarantineRelease) {
         if (
           !intercepted &&
           admission.binding.kind === "release" &&
@@ -113,7 +122,7 @@ async function main() {
           send({ stage: "unrecorded", admission, result });
           await waitForContinue();
         }
-        return recording.record(admission, result);
+        return recording.record(admission, result, quarantineRelease);
       },
     },
     provider,

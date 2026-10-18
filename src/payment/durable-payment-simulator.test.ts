@@ -107,6 +107,31 @@ describe("isolated durable fictional provider", () => {
     expect(await test.make().query(query)).toEqual(first);
     expect(test.effects.executeOnce).toHaveBeenCalledTimes(1);
   });
+  it("preserves failed release retry safety across fresh simulator instances", async () => {
+    for (const failureRetrySafe of [undefined, false, true]) {
+      const { effects } = fixture();
+      const first = new DurablePaymentSimulator({
+        effects,
+        now: () => "2098-01-01T00:00:00Z",
+        executeOutcome: "failed",
+        failureRetrySafe,
+      });
+      const result = await first.execute(execute);
+      expect(result).toMatchObject({
+        outcome: "failed",
+        retrySafe: failureRetrySafe === true,
+      });
+      const fresh = new DurablePaymentSimulator({
+        effects,
+        now: () => "2098-01-02T00:00:00Z",
+        executeOutcome: "failed",
+        failureRetrySafe: failureRetrySafe !== true,
+      });
+      expect(await fresh.query(query)).toEqual(result);
+      expect(await fresh.execute(execute)).toEqual(result);
+      expect(effects.resolve).not.toHaveBeenCalled();
+    }
+  });
   it("a sealed absence wins against the original delayed executor", async () => {
     const test = fixture();
     const absent = await test.make().query(query);

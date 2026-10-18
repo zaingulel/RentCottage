@@ -177,11 +177,11 @@ An optional short message from the customer attached to a booking request for pr
 _Avoid_: Booking terms, unstructured guest count
 
 **Pending Hold**:
-The temporary exclusive claim a Booking Request places on every cottage shift in its requested Booking Period while the owner decision or required payment is pending. It prevents competing requests and cannot be replaced by a Private Block; after owner acceptance it remains until payment succeeds or the 20-minute Payment Required period expires.
+The temporary exclusive claim a Booking Request places on every cottage shift in its requested Booking Period, preventing competing requests and replacement by a Private Block while the owner decision or required payment is pending. After owner acceptance it remains until payment succeeds or the 20-minute Payment Required period expires; on decline, withdrawal or expiry before acceptance, release of the hold requires successful release of the Payment Authorization, and a definitive provider refusal leaves it held.
 _Avoid_: Confirmed booking, permanent block
 
 **Response Deadline**:
-The four-hour period in which a cottage owner must accept or decline a booking request before its pending hold expires and the cottage shifts become available again.
+The four-hour period in which a cottage owner must accept or decline a booking request. Once it passes, an undecided request is due to expire, subject to the Pending Hold release condition.
 _Avoid_: Indefinite pending request, manual follow-up window
 
 **Booking Request Cut-Off**:
@@ -217,7 +217,7 @@ The owner-provided explanation for declining a booking request, selected from a 
 _Avoid_: Silent decline, unrecorded rejection
 
 **Request Withdrawal**:
-The customer's cancellation of a pending booking request before the owner decides. It immediately releases the pending hold; changing a request requires withdrawal and submission of a new request.
+The customer's cancellation of a pending booking request before the owner decides, subject to the Pending Hold release condition; changing a request requires withdrawal and submission of a new request.
 _Avoid_: Editing a pending request, confirmed-booking cancellation
 
 **Customer Cancellation**:
