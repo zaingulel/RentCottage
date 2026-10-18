@@ -1,5 +1,6 @@
 import { expect, type Page, test, type TestInfo } from "@playwright/test";
 import { build } from "esbuild";
+import { writeFile } from "node:fs/promises";
 import { readApplicationStylesheet } from "./fixtures/application-stylesheet";
 import { openHeaderPanel } from "./fixtures/site-header";
 
@@ -1052,9 +1053,14 @@ test("the site header stays on one line inside 320 and 390 pixel screens for eve
 test("the landing header shades its controls and tagline over the photo in every language", async ({
   page,
 }, testInfo) => {
+  const width = testInfo.project.name === "mobile" ? 390 : 1440;
+  if (testInfo.project.name === "mobile") {
+    await page.setViewportSize({ width, height: 844 });
+  }
   for (const locale of ["en", "ar", "ckb"]) {
     const label = `${locale} ${testInfo.project.name}`;
     await page.goto(`/${locale}`);
+    await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width);
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.locator(".site-header-language-toggle").first().waitFor();
     const header = page.locator("header.site-header");
@@ -1118,5 +1124,115 @@ test("the landing header shades its controls and tagline over the photo in every
     expect(unfilled, `${label} unfilled controls`).toEqual([]);
     expect(filledCount, `${label} filled controls`).toBeGreaterThanOrEqual(2);
     expect(taglineColour, `${label} tagline colour`).toBe(true);
+
+    const languageToggle = header.getByRole("button", {
+      name: ownerSignIn[locale as keyof typeof ownerSignIn].languageButton,
+      exact: true,
+    });
+    await openHeaderPanel(page, "language");
+    await expect(languageToggle).toHaveAttribute("aria-expanded", "true");
+    await page.keyboard.press("Escape");
+    await expect(languageToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(languageToggle).toBeFocused();
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      await document
+        .querySelector<HTMLImageElement>(".retreat-hero-image")!
+        .decode();
+    });
+    const landingBand = await header.evaluate(
+      (element) => getComputedStyle(element).backgroundImage,
+    );
+
+    for (const target of [141, 0]) {
+      const frames = await page.evaluate(async (top) => {
+        const header =
+          document.querySelector<HTMLElement>("header.site-header")!;
+        const readFrame = (time: number) => {
+          const style = getComputedStyle(header);
+          return {
+            time,
+            scrollY,
+            className: header.className,
+            solid: header.classList.contains("site-header-solid"),
+            background: style.backgroundColor,
+            band: style.backgroundImage,
+            controls: [
+              ...header.querySelectorAll(
+                ".site-brand strong, .site-brand span, .site-header-language-toggle, .account-navigation > a, .site-header-toggle",
+              ),
+            ]
+              .filter((element) => {
+                const box = element.getBoundingClientRect();
+                return (
+                  box.width > 0 &&
+                  box.height > 0 &&
+                  getComputedStyle(element).visibility === "visible"
+                );
+              })
+              .map((element) => ({
+                name:
+                  element.getAttribute("aria-label") ??
+                  element.textContent?.trim(),
+                tagline: element.matches(".site-brand span"),
+                color: getComputedStyle(element).color,
+              })),
+          };
+        };
+        const frames: ReturnType<typeof readFrame>[] = [];
+        window.scrollTo({ top, behavior: "instant" });
+        await new Promise<void>((resolve) => {
+          const sample = (time: number) => {
+            const frame = readFrame(time);
+            frames.push(frame);
+            const moving = header
+              .getAnimations({ subtree: true })
+              .some(
+                (animation) =>
+                  animation.pending || animation.playState === "running",
+              );
+            if (frame.solid === top > 140 && !moving) resolve();
+            else requestAnimationFrame(sample);
+          };
+          requestAnimationFrame(sample);
+        });
+        return frames;
+      }, target);
+      const state = target === 141 ? "solid" : "landing";
+      const framesPath = testInfo.outputPath(`${locale}-${state}-frames.json`);
+      await writeFile(framesPath, JSON.stringify(frames, null, 2));
+      await testInfo.attach(`${locale}-${state}-frames`, {
+        path: framesPath,
+        contentType: "application/json",
+      });
+      const screenshotPath = testInfo.outputPath(`${locale}-${state}.png`);
+      await page.screenshot({ path: screenshotPath });
+      await testInfo.attach(`${locale}-${state}`, {
+        path: screenshotPath,
+        contentType: "image/png",
+      });
+      expect
+        .soft(
+          frames.map((frame) => ({
+            background: frame.background,
+            band: frame.band,
+            colors: frame.controls.map((control) => control.color),
+          })),
+          `${label} natural frames scrolling to ${target}`,
+        )
+        .toEqual(
+          frames.map((frame) => ({
+            background: frame.solid ? "rgb(255, 253, 247)" : "rgba(0, 0, 0, 0)",
+            band: frame.solid ? "none" : landingBand,
+            colors: frame.controls.map((control) =>
+              frame.solid
+                ? control.tagline
+                  ? "rgb(134, 91, 41)"
+                  : "rgb(34, 64, 47)"
+                : "rgb(247, 241, 225)",
+            ),
+          })),
+        );
+    }
   }
 });

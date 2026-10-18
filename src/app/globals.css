@@ -4079,7 +4079,6 @@ section.request-follow-up {
   z-index: var(--layer-header);
   background: transparent;
   color: var(--ink-on-dark);
-  transition: background 220ms ease;
 }
 
 .site-header-landing {

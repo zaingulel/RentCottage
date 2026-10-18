@@ -287,7 +287,8 @@ Anything else is a token.
     55% and fading to nothing at its bottom edge. The language button, the account links and the three-bars button
     are filled with `--shade-menu`, which keeps their text and the brand's tagline at AA contrast over any part of
     the photograph. The brand's tagline is `--ink-on-dark` there, not a muted shade. The solid header has neither
-    the band nor the fill.
+    the band nor the fill. At the existing 140-pixel scroll threshold, the background and text colours switch
+    together immediately; only the row height retains its 220ms ease transition.
   - Panels: an open panel is a card on `--surface-raised` at `--layer-menu` with the card radius, at least
     `14.5rem` wide, opening under its own button and aligned to that button's end edge, lying over the page and
     moving nothing. At the `phone` breakpoint every panel instead spans the screen directly under the header, with
