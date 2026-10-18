@@ -193,9 +193,6 @@ begin
   select description, house_rules into approved_description, approved_house_rules
     from public.cottage_publication_localizations
     where publication_id = publication.id and locale = submitted_source.source_language;
-  if not found then
-    raise exception 'Approved Cottage source evidence is unavailable' using errcode = 'RC203';
-  end if;
   reconciled_description := profile.description;
   reconciled_house_rules := profile.house_rules;
   if profile.source_language = submitted_source.source_language then

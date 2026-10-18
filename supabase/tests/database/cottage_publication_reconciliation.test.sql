@@ -350,7 +350,7 @@ select results_eq(
     where profiles.id = current_setting('test.reconciliation_profile_id')::uuid
       and localizations.locale = 'en'$$,
   $$values ('Third approved description'::text, 'Third approved rules'::text)$$,
-  'the remediation baseline uses previously corrected publication words');
+  'the remediation publishes the administrator-approved source pair');
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000006411","role":"authenticated","aal":"aal1"}', true);
