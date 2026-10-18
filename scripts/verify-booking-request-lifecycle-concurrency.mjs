@@ -1198,7 +1198,7 @@ commit;`;
     verify("pre-admitted", 1);
     await verifyCompletedRequestBeforeWork("pre-admitted", "lease");
 
-    seed("refusal-before-record", 7);
+    seed("refusal-before-record", 9);
     const refusal = startWorker(
       "refusal-before-record",
       "after-effect",
