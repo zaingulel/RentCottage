@@ -5568,6 +5568,91 @@ select results_eq(
 );
 rollback to savepoint booking_request_preexpiry_admission_reconcile;
 
+create or replace function pg_temp.ordinary_release_quarantine_case(target_outcome text)
+returns text language plpgsql security invoker as $case$
+declare prior_role text:=current_setting('role');
+begin
+  create temporary table quarantine_snapshots as
+  select attempts.id as attempt_id, work.id as work_id,
+    work.lease_generation, work.lease_token,
+    jsonb_set(attempts.payment_snapshot, '{release}', jsonb_build_object(
+      'paymentLifecycleId', attempts.payment_lifecycle_id,
+      'kind', 'release',
+      'logicalOperationId', attempts.payment_lifecycle_id::text || ':release',
+      'attemptId', attempts.payment_lifecycle_id::text || ':release:attempt-2',
+      'status', 'pending',
+      'amountFils', claims.amount_fils,
+      'providerRequestId', null, 'providerReference', null,
+      'movementReference', null, 'reconciliationRequired', false,
+      'retrySafe', false
+    )) as pending_one
+  from public.booking_request_submission_attempts attempts
+  join public.booking_request_authorization_claims claims
+    on claims.payment_lifecycle_id = attempts.payment_lifecycle_id
+  join public.booking_request_release_work work on work.attempt_id = attempts.id
+  where attempts.booking_request_id = (select id from booking_request_lifecycle_target);
+  grant select on quarantine_snapshots to service_role;
+  perform set_config('role','service_role',true);
+  create temporary table quarantine_permit as
+  select public.save_booking_request_release_snapshot(
+    work_id, lease_generation, lease_token, pending_one,
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+  ) as permit
+  from quarantine_snapshots;
+  create temporary table quarantine_request as
+  select jsonb_build_object(
+      'providerIdentity', jsonb_build_object(
+        'provider', 'fictional-payments', 'environment', 'local-test',
+        'merchantId', 'fictional-merchant', 'terminalId', 'fictional-terminal'
+      ),
+      'permitPurpose', permit ->> 'purpose',
+      'idempotencyKey', permit ->> 'idempotencyKey',
+      'requestFingerprint', permit ->> 'requestFingerprint',
+      'notAfter', permit ->> 'notAfter',
+      'paymentLifecycleId', pending_one ->> 'paymentLifecycleId',
+      'logicalOperationId', pending_one -> 'release' ->> 'logicalOperationId',
+      'physicalAttemptId', pending_one -> 'release' ->> 'attemptId',
+      'operationKind', 'release',
+      'amountFils', (pending_one -> 'release' ->> 'amountFils')::bigint,
+      'currency', 'IQD', 'claimId', null, 'claimGeneration', null,
+      'stateRevision', null, 'cleanupAttemptId', null,
+      'workId', permit ->> 'workId',
+      'leaseGeneration', (permit ->> 'leaseGeneration')::bigint,
+      'leaseToken', permit ->> 'leaseToken',
+      'operationId', permit ->> 'operationId',
+      'operationGeneration', (permit ->> 'operationGeneration')::integer
+    ) as request
+  from quarantine_snapshots, quarantine_permit;
+  grant select on quarantine_request to service_role;
+  create temporary table quarantine_result as
+  select pg_temp.payment_execute(request, 'failed', false) as result from quarantine_request;
+  perform set_config('role',prior_role,true);
+  return results_eq(
+    $$select work.state, to_jsonb(work)->>'quarantine_reason',
+        (to_jsonb(work)->>'quarantined_at') is not null,
+        work.completed_at is null, work.lease_token is null, work.lease_expires_at is null,
+        requests.status, commitments.status::text,
+        (select bool_and(occupancies.active) from public.cottage_booking_period_occupancies occupancies
+          where occupancies.booking_period_commitment_id = commitments.id),
+        attempts.state, attempts.payment_snapshot#>>'{release,status}',
+        attempts.payment_snapshot#>'{release,retrySafe}', attempts.payment_snapshot#>'{release,reconciliationRequired}',
+        attempts.payment_snapshot#>'{release,movementReference}',
+        (select count(*) from jsonb_array_elements(attempts.payment_snapshot->'movements') movement where movement->>'kind'='release'),
+        (select count(*) from public.booking_request_status_notifications notifications where notifications.booking_request_id=requests.id),
+        (select count(*) from public.booking_request_payment_history history where history.booking_request_id=requests.id and history.kind='quarantine' and history.source='release-work')
+      from public.booking_request_release_work work
+      join public.booking_requests requests on requests.id=work.booking_request_id
+      join public.booking_request_submission_attempts attempts on attempts.id=work.attempt_id
+      join public.cottage_booking_period_commitments commitments on commitments.id=requests.booking_period_commitment_id
+      where work.id=(select work_id from quarantine_snapshots)$$,
+    $$values ('quarantined'::text,'failed-release-observation'::text,true,true,true,true,
+      'processing'::text,'pending_hold'::text,true,'reconciliation_required'::text,'failed'::text,
+      'false'::jsonb,'false'::jsonb,'null'::jsonb,0::bigint,0::bigint,1::bigint)$$,
+    'ordinary release refusal is durably quarantined and never re-leased: ' || target_outcome
+  );
+end;
+$case$;
+
 savepoint ordinary_release_quarantine;
 set local role service_role;
 select public.claim_booking_request_action(
@@ -5576,90 +5661,10 @@ select public.claim_booking_request_action(
   'withdraw', null, null
 );
 reset role;
-create temporary table quarantine_snapshots as
-select attempts.id as attempt_id, work.id as work_id,
-  work.lease_generation, work.lease_token,
-  jsonb_set(attempts.payment_snapshot, '{release}', jsonb_build_object(
-    'paymentLifecycleId', attempts.payment_lifecycle_id,
-    'kind', 'release',
-    'logicalOperationId', attempts.payment_lifecycle_id::text || ':release',
-    'attemptId', attempts.payment_lifecycle_id::text || ':release:attempt-2',
-    'status', 'pending',
-    'amountFils', claims.amount_fils,
-    'providerRequestId', null, 'providerReference', null,
-    'movementReference', null, 'reconciliationRequired', false,
-    'retrySafe', false
-  )) as pending_one
-from public.booking_request_submission_attempts attempts
-join public.booking_request_authorization_claims claims
-  on claims.payment_lifecycle_id = attempts.payment_lifecycle_id
-join public.booking_request_release_work work on work.attempt_id = attempts.id
-where attempts.booking_request_id = (select id from booking_request_lifecycle_target);
-alter table quarantine_snapshots
-  add column failed_one jsonb,
-  add column pending_two jsonb;
-grant select, update on quarantine_snapshots to service_role;
 -- Distinguish the creation instant from actual refusal detection without waiting.
 update public.booking_request_release_work set created_at=now()-interval '1 day'
-where id=(select work_id from quarantine_snapshots);
-set local role service_role;
-create temporary table quarantine_permit as
-select public.save_booking_request_release_snapshot(
-  work_id, lease_generation, lease_token, pending_one,
-  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
-) as permit
-from quarantine_snapshots;
-create temporary table quarantine_request as
-select jsonb_build_object(
-    'providerIdentity', jsonb_build_object(
-      'provider', 'fictional-payments', 'environment', 'local-test',
-      'merchantId', 'fictional-merchant', 'terminalId', 'fictional-terminal'
-    ),
-    'permitPurpose', permit ->> 'purpose',
-    'idempotencyKey', permit ->> 'idempotencyKey',
-    'requestFingerprint', permit ->> 'requestFingerprint',
-    'notAfter', permit ->> 'notAfter',
-    'paymentLifecycleId', pending_one ->> 'paymentLifecycleId',
-    'logicalOperationId', pending_one -> 'release' ->> 'logicalOperationId',
-    'physicalAttemptId', pending_one -> 'release' ->> 'attemptId',
-    'operationKind', 'release',
-    'amountFils', (pending_one -> 'release' ->> 'amountFils')::bigint,
-    'currency', 'IQD', 'claimId', null, 'claimGeneration', null,
-    'stateRevision', null, 'cleanupAttemptId', null,
-    'workId', permit ->> 'workId',
-    'leaseGeneration', (permit ->> 'leaseGeneration')::bigint,
-    'leaseToken', permit ->> 'leaseToken',
-    'operationId', permit ->> 'operationId',
-    'operationGeneration', (permit ->> 'operationGeneration')::integer
-  ) as request
-from quarantine_snapshots, quarantine_permit;
-grant select on quarantine_request to service_role;
-create temporary table quarantine_result as
-select pg_temp.payment_execute(request, 'failed', false) as result from quarantine_request;
-reset role;
-select results_eq(
-  $$select work.state, to_jsonb(work)->>'quarantine_reason',
-      (to_jsonb(work)->>'quarantined_at') is not null,
-      work.completed_at is null, work.lease_token is null, work.lease_expires_at is null,
-      requests.status, commitments.status::text,
-      (select bool_and(occupancies.active) from public.cottage_booking_period_occupancies occupancies
-        where occupancies.booking_period_commitment_id = commitments.id),
-      attempts.state, attempts.payment_snapshot#>>'{release,status}',
-      attempts.payment_snapshot#>'{release,retrySafe}', attempts.payment_snapshot#>'{release,reconciliationRequired}',
-      attempts.payment_snapshot#>'{release,movementReference}',
-      (select count(*) from jsonb_array_elements(attempts.payment_snapshot->'movements') movement where movement->>'kind'='release'),
-      (select count(*) from public.booking_request_status_notifications notifications where notifications.booking_request_id=requests.id),
-      (select count(*) from public.booking_request_payment_history history where history.booking_request_id=requests.id and history.kind='quarantine' and history.source='release-work')
-    from public.booking_request_release_work work
-    join public.booking_requests requests on requests.id=work.booking_request_id
-    join public.booking_request_submission_attempts attempts on attempts.id=work.attempt_id
-    join public.cottage_booking_period_commitments commitments on commitments.id=requests.booking_period_commitment_id
-    where work.id=(select work_id from quarantine_snapshots)$$,
-  $$values ('quarantined'::text,'failed-release-observation'::text,true,true,true,true,
-    'processing'::text,'pending_hold'::text,true,'reconciliation_required'::text,'failed'::text,
-    'false'::jsonb,'false'::jsonb,'null'::jsonb,0::bigint,0::bigint,1::bigint)$$,
-  'ordinary release refusal is durably quarantined and never re-leased: withdraw'
-);
+where booking_request_id=(select id from booking_request_lifecycle_target);
+select pg_temp.ordinary_release_quarantine_case('withdraw');
 insert into auth.users (id,aud,role,phone,phone_confirmed_at)
 values ('00000000-0000-0000-0000-000000006220','authenticated','authenticated','+9647500006220',now());
 insert into public.account_contexts (user_id,role)
@@ -5985,87 +5990,7 @@ select public.claim_booking_request_action(
   'decline', 'other', null
 );
 reset role;
-create temporary table quarantine_snapshots as
-select attempts.id as attempt_id, work.id as work_id,
-  work.lease_generation, work.lease_token,
-  jsonb_set(attempts.payment_snapshot, '{release}', jsonb_build_object(
-    'paymentLifecycleId', attempts.payment_lifecycle_id,
-    'kind', 'release',
-    'logicalOperationId', attempts.payment_lifecycle_id::text || ':release',
-    'attemptId', attempts.payment_lifecycle_id::text || ':release:attempt-2',
-    'status', 'pending',
-    'amountFils', claims.amount_fils,
-    'providerRequestId', null, 'providerReference', null,
-    'movementReference', null, 'reconciliationRequired', false,
-    'retrySafe', false
-  )) as pending_one
-from public.booking_request_submission_attempts attempts
-join public.booking_request_authorization_claims claims
-  on claims.payment_lifecycle_id = attempts.payment_lifecycle_id
-join public.booking_request_release_work work on work.attempt_id = attempts.id
-where attempts.booking_request_id = (select id from booking_request_lifecycle_target);
-alter table quarantine_snapshots
-  add column failed_one jsonb,
-  add column pending_two jsonb;
-grant select, update on quarantine_snapshots to service_role;
-set local role service_role;
-create temporary table quarantine_permit as
-select public.save_booking_request_release_snapshot(
-  work_id, lease_generation, lease_token, pending_one,
-  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
-) as permit
-from quarantine_snapshots;
-create temporary table quarantine_request as
-select jsonb_build_object(
-    'providerIdentity', jsonb_build_object(
-      'provider', 'fictional-payments', 'environment', 'local-test',
-      'merchantId', 'fictional-merchant', 'terminalId', 'fictional-terminal'
-    ),
-    'permitPurpose', permit ->> 'purpose',
-    'idempotencyKey', permit ->> 'idempotencyKey',
-    'requestFingerprint', permit ->> 'requestFingerprint',
-    'notAfter', permit ->> 'notAfter',
-    'paymentLifecycleId', pending_one ->> 'paymentLifecycleId',
-    'logicalOperationId', pending_one -> 'release' ->> 'logicalOperationId',
-    'physicalAttemptId', pending_one -> 'release' ->> 'attemptId',
-    'operationKind', 'release',
-    'amountFils', (pending_one -> 'release' ->> 'amountFils')::bigint,
-    'currency', 'IQD', 'claimId', null, 'claimGeneration', null,
-    'stateRevision', null, 'cleanupAttemptId', null,
-    'workId', permit ->> 'workId',
-    'leaseGeneration', (permit ->> 'leaseGeneration')::bigint,
-    'leaseToken', permit ->> 'leaseToken',
-    'operationId', permit ->> 'operationId',
-    'operationGeneration', (permit ->> 'operationGeneration')::integer
-  ) as request
-from quarantine_snapshots, quarantine_permit;
-grant select on quarantine_request to service_role;
-create temporary table quarantine_result as
-select pg_temp.payment_execute(request, 'failed', false) as result from quarantine_request;
-reset role;
-select results_eq(
-  $$select work.state, to_jsonb(work)->>'quarantine_reason',
-      (to_jsonb(work)->>'quarantined_at') is not null,
-      work.completed_at is null, work.lease_token is null, work.lease_expires_at is null,
-      requests.status, commitments.status::text,
-      (select bool_and(occupancies.active) from public.cottage_booking_period_occupancies occupancies
-        where occupancies.booking_period_commitment_id = commitments.id),
-      attempts.state, attempts.payment_snapshot#>>'{release,status}',
-      attempts.payment_snapshot#>'{release,retrySafe}', attempts.payment_snapshot#>'{release,reconciliationRequired}',
-      attempts.payment_snapshot#>'{release,movementReference}',
-      (select count(*) from jsonb_array_elements(attempts.payment_snapshot->'movements') movement where movement->>'kind'='release'),
-      (select count(*) from public.booking_request_status_notifications notifications where notifications.booking_request_id=requests.id),
-      (select count(*) from public.booking_request_payment_history history where history.booking_request_id=requests.id and history.kind='quarantine' and history.source='release-work')
-    from public.booking_request_release_work work
-    join public.booking_requests requests on requests.id=work.booking_request_id
-    join public.booking_request_submission_attempts attempts on attempts.id=work.attempt_id
-    join public.cottage_booking_period_commitments commitments on commitments.id=requests.booking_period_commitment_id
-    where work.id=(select work_id from quarantine_snapshots)$$,
-  $$values ('quarantined'::text,'failed-release-observation'::text,true,true,true,true,
-    'processing'::text,'pending_hold'::text,true,'reconciliation_required'::text,'failed'::text,
-    'false'::jsonb,'false'::jsonb,'null'::jsonb,0::bigint,0::bigint,1::bigint)$$,
-  'ordinary release refusal is durably quarantined and never re-leased: decline'
-);
+select pg_temp.ordinary_release_quarantine_case('decline');
 rollback to savepoint ordinary_release_quarantine;
 savepoint ordinary_release_quarantine;
 update public.booking_requests set created_at = due.deadline - interval '4 hours',
@@ -6075,87 +6000,7 @@ where id = (select id from booking_request_lifecycle_target);
 set local role service_role;
 select public.claim_booking_request_expiry((select id from booking_request_lifecycle_target));
 reset role;
-create temporary table quarantine_snapshots as
-select attempts.id as attempt_id, work.id as work_id,
-  work.lease_generation, work.lease_token,
-  jsonb_set(attempts.payment_snapshot, '{release}', jsonb_build_object(
-    'paymentLifecycleId', attempts.payment_lifecycle_id,
-    'kind', 'release',
-    'logicalOperationId', attempts.payment_lifecycle_id::text || ':release',
-    'attemptId', attempts.payment_lifecycle_id::text || ':release:attempt-2',
-    'status', 'pending',
-    'amountFils', claims.amount_fils,
-    'providerRequestId', null, 'providerReference', null,
-    'movementReference', null, 'reconciliationRequired', false,
-    'retrySafe', false
-  )) as pending_one
-from public.booking_request_submission_attempts attempts
-join public.booking_request_authorization_claims claims
-  on claims.payment_lifecycle_id = attempts.payment_lifecycle_id
-join public.booking_request_release_work work on work.attempt_id = attempts.id
-where attempts.booking_request_id = (select id from booking_request_lifecycle_target);
-alter table quarantine_snapshots
-  add column failed_one jsonb,
-  add column pending_two jsonb;
-grant select, update on quarantine_snapshots to service_role;
-set local role service_role;
-create temporary table quarantine_permit as
-select public.save_booking_request_release_snapshot(
-  work_id, lease_generation, lease_token, pending_one,
-  '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
-) as permit
-from quarantine_snapshots;
-create temporary table quarantine_request as
-select jsonb_build_object(
-    'providerIdentity', jsonb_build_object(
-      'provider', 'fictional-payments', 'environment', 'local-test',
-      'merchantId', 'fictional-merchant', 'terminalId', 'fictional-terminal'
-    ),
-    'permitPurpose', permit ->> 'purpose',
-    'idempotencyKey', permit ->> 'idempotencyKey',
-    'requestFingerprint', permit ->> 'requestFingerprint',
-    'notAfter', permit ->> 'notAfter',
-    'paymentLifecycleId', pending_one ->> 'paymentLifecycleId',
-    'logicalOperationId', pending_one -> 'release' ->> 'logicalOperationId',
-    'physicalAttemptId', pending_one -> 'release' ->> 'attemptId',
-    'operationKind', 'release',
-    'amountFils', (pending_one -> 'release' ->> 'amountFils')::bigint,
-    'currency', 'IQD', 'claimId', null, 'claimGeneration', null,
-    'stateRevision', null, 'cleanupAttemptId', null,
-    'workId', permit ->> 'workId',
-    'leaseGeneration', (permit ->> 'leaseGeneration')::bigint,
-    'leaseToken', permit ->> 'leaseToken',
-    'operationId', permit ->> 'operationId',
-    'operationGeneration', (permit ->> 'operationGeneration')::integer
-  ) as request
-from quarantine_snapshots, quarantine_permit;
-grant select on quarantine_request to service_role;
-create temporary table quarantine_result as
-select pg_temp.payment_execute(request, 'failed', false) as result from quarantine_request;
-reset role;
-select results_eq(
-  $$select work.state, to_jsonb(work)->>'quarantine_reason',
-      (to_jsonb(work)->>'quarantined_at') is not null,
-      work.completed_at is null, work.lease_token is null, work.lease_expires_at is null,
-      requests.status, commitments.status::text,
-      (select bool_and(occupancies.active) from public.cottage_booking_period_occupancies occupancies
-        where occupancies.booking_period_commitment_id = commitments.id),
-      attempts.state, attempts.payment_snapshot#>>'{release,status}',
-      attempts.payment_snapshot#>'{release,retrySafe}', attempts.payment_snapshot#>'{release,reconciliationRequired}',
-      attempts.payment_snapshot#>'{release,movementReference}',
-      (select count(*) from jsonb_array_elements(attempts.payment_snapshot->'movements') movement where movement->>'kind'='release'),
-      (select count(*) from public.booking_request_status_notifications notifications where notifications.booking_request_id=requests.id),
-      (select count(*) from public.booking_request_payment_history history where history.booking_request_id=requests.id and history.kind='quarantine' and history.source='release-work')
-    from public.booking_request_release_work work
-    join public.booking_requests requests on requests.id=work.booking_request_id
-    join public.booking_request_submission_attempts attempts on attempts.id=work.attempt_id
-    join public.cottage_booking_period_commitments commitments on commitments.id=requests.booking_period_commitment_id
-    where work.id=(select work_id from quarantine_snapshots)$$,
-  $$values ('quarantined'::text,'failed-release-observation'::text,true,true,true,true,
-    'processing'::text,'pending_hold'::text,true,'reconciliation_required'::text,'failed'::text,
-    'false'::jsonb,'false'::jsonb,'null'::jsonb,0::bigint,0::bigint,1::bigint)$$,
-  'ordinary release refusal is durably quarantined and never re-leased: expiry'
-);
+select pg_temp.ordinary_release_quarantine_case('expiry');
 rollback to savepoint ordinary_release_quarantine;
 savepoint booking_request_failed_release_retry;
 set local role service_role;

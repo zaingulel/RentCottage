@@ -6605,6 +6605,7 @@ begin
     end if;
     raise exception 'Quarantined Booking Request release evidence cannot change' using errcode = 'RC409';
   end if;
+  -- Raising below rolls back this helper's writes; the recorder or lease path persists quarantine.
   if public.quarantine_booking_request_release_work(work.id) then
     raise exception 'Unsafe Booking Request release cannot be retried' using errcode = 'RC409';
   end if;
@@ -8290,7 +8291,7 @@ begin
   ledger:=public.lock_payment_observation_source(target_operation_id,array['booking-request-release']);
   perform public.validate_payment_provider_observation(target_result,ledger.id);
   unsafe_release:=target_result->>'outcome'='failed' and target_result->'retrySafe'='false'::jsonb;
-  if target_quarantine_release is null or target_quarantine_release is distinct from coalesce(unsafe_release,false) then
+  if target_quarantine_release is distinct from unsafe_release then
     raise exception 'Ordinary release consequence contradicts provider evidence' using errcode='RC409';
   end if;
   if not exists (
