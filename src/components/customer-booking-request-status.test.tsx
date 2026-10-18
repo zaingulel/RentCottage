@@ -789,7 +789,9 @@ it("shows the current cover beside retained booking identity", () => {
       request={{ ...request, coverMediaUrl }}
     />,
   );
-  const identity = view.container.querySelector(".booking-cottage-identity")!;
+  const identity = view.container.querySelector<HTMLDivElement>(
+    ".booking-cottage-identity",
+  )!;
   expect(identity.querySelector("img")).toHaveProperty(
     "src",
     new URL(coverMediaUrl, window.location.href).href,

@@ -691,7 +691,9 @@ it("shows the current cover beside retained booking identity", () => {
     />,
   );
   const card = screen.getByRole("article", { name: "RC-REQ-AAAAAAAAAAAAAAAA" });
-  const identity = card.querySelector(".booking-cottage-identity")!;
+  const identity = card.querySelector<HTMLDivElement>(
+    ".booking-cottage-identity",
+  )!;
   expect(identity.querySelector("img")).toHaveProperty(
     "src",
     new URL(coverMediaUrl, window.location.href).href,
