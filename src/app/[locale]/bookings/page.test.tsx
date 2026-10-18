@@ -88,93 +88,74 @@ describe("Booking History failure", () => {
   });
 });
 
-describe("owner earnings history", () => {
-  it("shows aggregate totals and per-booking earnings for an approved owner", async () => {
-    requireAccount.mockResolvedValue({
-      status: "authenticated",
-      context: {
-        role: "cottage_owner",
-        userId: "owner",
-        approvalState: "approved",
-      },
-    });
-    loadHistory.mockResolvedValue([
-      ownerItem(ownerFacts),
-      {
-        ...ownerItem({ status: "not-captured" }),
-        bookingRequestId: "60000000-0000-4000-8000-000000003503",
-      },
-    ]);
-    render(
-      await BookingHistoryPage({
-        params: Promise.resolve({ locale: "en" }),
-        searchParams: Promise.resolve({ workspace: "owner" }),
-      }),
-    );
-    const summary = screen.getByRole("region", { name: "Earnings summary" });
-    expect(summary).toHaveTextContent("Expected unpaid payoutsIQD 90,000");
-    expect(summary).toHaveTextContent("Paid payoutsIQD 0");
-    expect(screen.getByText("Eligible for payout")).toBeVisible();
-    expect(
-      screen.getByText(
-        "Payment has not been collected for this request, so it has no earnings yet.",
+it("owner bookings retains records without earnings", async () => {
+  requireAccount.mockResolvedValue({
+    status: "authenticated",
+    context: {
+      role: "cottage_owner",
+      userId: "owner",
+      approvalState: "approved",
+    },
+  });
+  loadHistory.mockResolvedValue([
+    ownerItem(ownerFacts),
+    {
+      ...ownerItem({ status: "not-captured" }),
+      bookingRequestId: "60000000-0000-4000-8000-000000003503",
+      bookingRequestReference: "RC-REQ-0000000000003503",
+    },
+    {
+      ...ownerItem({ status: "unavailable" }),
+      bookingRequestId: "60000000-0000-4000-8000-000000003504",
+      bookingRequestReference: "RC-REQ-0000000000003504",
+    },
+  ]);
+  const { container } = render(
+    await BookingHistoryPage({
+      params: Promise.resolve({ locale: "en" }),
+      searchParams: Promise.resolve({ workspace: "owner" }),
+    }),
+  );
+  expect(screen.queryByRole("region", { name: "Earnings summary" })).toBeNull();
+  expect(
+    screen.queryByRole("region", { name: "Earnings and payout" }),
+  ).toBeNull();
+  expect(
+    screen
+      .getAllByRole("link", { name: "Preserved Cottage" })
+      .map((link) => link.getAttribute("href")),
+  ).toEqual([
+    "/en/owner/booking-requests/RC-REQ-0000000000003501",
+    "/en/owner/booking-requests/RC-REQ-0000000000003503",
+    "/en/owner/booking-requests/RC-REQ-0000000000003504",
+  ]);
+  expect(screen.getAllByText("BOOKING-35")).toHaveLength(3);
+  expect(screen.getAllByText("Completed booking")).toHaveLength(3);
+  expect(
+    screen
+      .getAllByRole("listitem")
+      .every(
+        (row) =>
+          row.querySelector("time")?.getAttribute("datetime") ===
+          "2101-01-01T05:00:00Z",
       ),
-    ).toBeVisible();
-    expect(loadHistory).toHaveBeenCalledWith("cottage_owner");
-  });
+  ).toBe(true);
+  expect(container.querySelector("main")?.firstElementChild).toBe(
+    screen.getByRole("navigation", { name: "Owner Backoffice" }),
+  );
+  expect(
+    screen.getByRole("link", { name: "Bookings", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  expect(screen.queryByRole("link", { name: "RentCottage home" })).toBeNull();
+  expect(screen.getByRole("heading", { level: 1 })).toHaveAttribute(
+    "id",
+    "owner-bookings-heading",
+  );
+  expect(loadHistory).toHaveBeenCalledWith("cottage_owner");
+});
 
-  it("shows truthful zero totals for an empty approved-owner history", async () => {
-    requireAccount.mockResolvedValue({
-      status: "authenticated",
-      context: {
-        role: "cottage_owner",
-        userId: "owner",
-        approvalState: "approved",
-      },
-    });
-    loadHistory.mockResolvedValue([]);
-    render(
-      await BookingHistoryPage({
-        params: Promise.resolve({ locale: "ckb" }),
-        searchParams: Promise.resolve({ workspace: "owner" }),
-      }),
-    );
-    const summary = screen.getByRole("region", { name: "پوختەی داهات" });
-    expect(summary).toHaveTextContent("IQD ٠");
-    expect(screen.getByText("هێشتا هیچ داواکارییەکی حجز نییە.")).toBeVisible();
-    expect(
-      screen.getByRole("link", { name: "بەڕێوەبردنی کۆتێجەکانم" }),
-    ).toHaveAttribute("href", "/ckb/owner/cottages");
-  });
-
-  it("suppresses partial totals when one owner record is unavailable", async () => {
-    requireAccount.mockResolvedValue({
-      status: "authenticated",
-      context: {
-        role: "cottage_owner",
-        userId: "owner",
-        approvalState: "approved",
-      },
-    });
-    loadHistory.mockResolvedValue([
-      ownerItem(ownerFacts),
-      {
-        ...ownerItem({ status: "unavailable" }),
-        bookingRequestId: "60000000-0000-4000-8000-000000003503",
-      },
-    ]);
-    render(
-      await BookingHistoryPage({
-        params: Promise.resolve({ locale: "ar" }),
-        searchParams: Promise.resolve({ workspace: "owner" }),
-      }),
-    );
-    const summary = screen.getByRole("region", { name: "ملخص الأرباح" });
-    expect(summary).toHaveTextContent("إجمالي الأرباح غير متاح");
-    expect(summary).not.toHaveTextContent("IQD");
-  });
-
-  it("keeps the approved-owner gate in front of earnings", async () => {
+describe("owner bookings access", () => {
+  it("keeps the approved-owner gate in front of owner records", async () => {
     requireAccount.mockResolvedValue({
       status: "authenticated",
       context: { role: "customer", userId: "customer" },

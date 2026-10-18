@@ -118,7 +118,7 @@ window.renderBookingHistory = ({ locale, role }) => {
       {role === "cottage_owner" ? (
         <OwnerBookingEarningsSummary locale={locale} totals={totals} />
       ) : null}
-      <BookingHistoryList items={items} locale={locale} />
+      <BookingHistoryList showOwnerEarnings items={items} locale={locale} />
     </>,
   );
 };

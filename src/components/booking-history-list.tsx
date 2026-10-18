@@ -10,15 +10,17 @@ import { OwnerBookingEarningsDetails } from "./owner-booking-earnings";
 export function BookingHistoryList({
   items,
   locale,
+  showOwnerEarnings = false,
 }: {
   readonly items: readonly BookingHistoryItem[];
   readonly locale: Locale;
+  readonly showOwnerEarnings?: boolean;
 }) {
   return (
     <ul className="list-rows">
       {items.map((item) => {
         const earnings =
-          item.actorRole === "cottage_owner"
+          showOwnerEarnings && item.actorRole === "cottage_owner"
             ? ownerBookingEarnings(
                 item.ownerEarnings ?? { status: "unavailable" },
               )

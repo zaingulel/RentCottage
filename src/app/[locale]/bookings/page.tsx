@@ -11,11 +11,7 @@ import { notFound, unstable_rethrow } from "next/navigation";
 import { loadBookingHistory } from "@/booking-request/request-booking-history";
 import { isLocale } from "@/i18n/routing";
 import { BookingHistoryList } from "@/components/booking-history-list";
-import {
-  ownerBookingEarnings,
-  ownerBookingEarningsTotals,
-} from "@/booking-request/owner-booking-earnings";
-import { OwnerBookingEarningsSummary } from "@/components/owner-booking-earnings";
+import { BackofficeNavigation } from "@/components/backoffice-navigation";
 const copy = {
   en: {
     empty: "No booking requests yet.",
@@ -92,21 +88,16 @@ export default async function BookingHistoryPage({
         returnTo={returnTo}
       />
     );
-  const ownerTotals =
-    workspace === "owner"
-      ? ownerBookingEarningsTotals(
-          items.map((item) =>
-            ownerBookingEarnings(
-              item.ownerEarnings ?? { status: "unavailable" },
-            ),
-          ),
-        )
-      : null;
   return (
     <main className="results-page page page-record">
+      {workspace === "owner" ? (
+        <BackofficeNavigation locale={locale} area="owner" current="bookings" />
+      ) : null}
       <section className="booking-history">
         <header>
-          <Link href={`/${locale}`}>{copy[locale].home}</Link>
+          {workspace === "customer" ? (
+            <Link href={`/${locale}`}>{copy[locale].home}</Link>
+          ) : null}
           <h1
             id={titleId}
             tabIndex={-1}
@@ -117,9 +108,6 @@ export default async function BookingHistoryPage({
           <ActionFocusTarget targetId={titleId} navigation />
         </header>
         <p>{accessMessages[locale].bookingHistoryIntro}</p>
-        {ownerTotals ? (
-          <OwnerBookingEarningsSummary locale={locale} totals={ownerTotals} />
-        ) : null}
         {items.length === 0 ? (
           <div className="empty-state">
             <p>{copy[locale].empty}</p>

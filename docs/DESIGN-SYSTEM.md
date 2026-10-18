@@ -332,7 +332,8 @@ Anything else is a token.
   name. The site header's globe, three bars and person are the only three. There is no icon library and no icon font.
 - Backoffice navigation: `BackofficeNavigation` in
   [backoffice-navigation.tsx](../src/components/backoffice-navigation.tsx) is the one navigation of the Owner
-  Backoffice and the Platform Administrator pages, and owns each area's list of destinations. It is a server
+  Backoffice and the Platform Administrator pages, and owns each area's list of destinations. The owner's
+  sections are My cottages, Bookings and Earnings, in that order. It is a server
   component whose row of tabs is the client component `BackofficeNavigationLinks` in
   [backoffice-navigation-links.tsx](../src/components/backoffice-navigation-links.tsx), which brings the focused
   tab, and on first render the current tab, wholly into view inside the row with room for its focus ring, without
@@ -353,6 +354,11 @@ Anything else is a token.
   count is shown as no pill only where the page lists no requests either, never in place of a failed load. The
   block has no direction selector. A page renders at most one and
   never adds a brand link, which the site header owns; a page with no access check of its own does not render it.
+- Owner Earnings: `main.results-page.page.page-record` places Backoffice navigation first, then
+  `header.page-heading` with one `h1.page-title`, then `section.owner-earnings`. The section is a grid with
+  `--space-4` gap containing the existing earnings summary and booking record rows, or the localized empty
+  sentence and Manage my cottages action. Financial panels keep their existing styles and status wording.
+  The 760px record column, start alignment and inherited direction follow the shared page pattern.
 - Read back and confirm: [cottage-location-fields.tsx](../src/components/cottage-location-fields.tsx) is the
   pattern for a value the interface cannot show and a mistake in which is costly. The entry is read back in words
   in a `role="status"` element named by `aria-label`, with its numbers in `<bdi dir="ltr">`; a problem is a

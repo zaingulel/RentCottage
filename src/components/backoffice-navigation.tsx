@@ -12,7 +12,11 @@ import type { Locale } from "@/i18n/routing";
 import { BackofficeNavigationLinks } from "./backoffice-navigation-links";
 
 type BackofficeNavigationProps = { locale: Locale; nested?: boolean } & (
-  | { area: "owner"; current: "cottages"; waitingBookingRequests?: number }
+  | {
+      area: "owner";
+      current: "cottages" | "bookings" | "earnings";
+      waitingBookingRequests?: number;
+    }
   | {
       area: "administrator";
       waitingBookingRequests?: never;
@@ -47,6 +51,11 @@ export function BackofficeNavigation({
             key: "bookings",
             href: `/${locale}/bookings?workspace=owner`,
             label: access.ownerBookingsTab,
+          },
+          {
+            key: "earnings",
+            href: `/${locale}/owner/earnings`,
+            label: access.ownerEarningsTab,
           },
         ]
       : [

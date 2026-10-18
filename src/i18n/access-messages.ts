@@ -14,6 +14,7 @@ export const accessMessages: Record<
     messages: string;
     ownerBookings: string;
     ownerBookingsTab: string;
+    ownerEarningsTab: string;
     listCottage: string;
     manageCottages: string;
     ownerCottagesTab: string;
@@ -76,6 +77,7 @@ export const accessMessages: Record<
     messages: "الرسائل",
     ownerBookings: "حجوزات أكواخي",
     ownerBookingsTab: "حجوزات أكواخي",
+    ownerEarningsTab: "الأرباح",
     listCottage: "أدرج كوخك",
     manageCottages: "إدارة أكواخي",
     ownerCottagesTab: "إدارة أكواخي",
@@ -142,6 +144,7 @@ export const accessMessages: Record<
     messages: "نامەکان",
     ownerBookings: "حجزەکانی کۆتێجەکانم",
     ownerBookingsTab: "حجزەکانی کۆتێجەکانم",
+    ownerEarningsTab: "داهات",
     listCottage: "کۆتێجەکەت تۆمار بکە",
     manageCottages: "بەڕێوەبردنی کۆتێجەکانم",
     ownerCottagesTab: "بەڕێوەبردنی کۆتێجەکانم",
@@ -213,6 +216,7 @@ export const accessMessages: Record<
     messages: "Messages",
     ownerBookings: "Bookings for my cottages",
     ownerBookingsTab: "Bookings",
+    ownerEarningsTab: "Earnings",
     listCottage: "List your cottage",
     manageCottages: "Manage my cottages",
     ownerCottagesTab: "My cottages",

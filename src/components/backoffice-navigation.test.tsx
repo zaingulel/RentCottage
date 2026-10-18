@@ -14,12 +14,12 @@ function links(areaLabel: string) {
 
 describe("BackofficeNavigation", () => {
   it.each([
-    ["en", "Owner Backoffice", ["My cottages", "Bookings"]],
-    ["ar", "مكتب مالك الكوخ", ["إدارة أكواخي", "حجوزات أكواخي"]],
+    ["en", "Owner Backoffice", ["My cottages", "Bookings", "Earnings"]],
+    ["ar", "مكتب مالك الكوخ", ["إدارة أكواخي", "حجوزات أكواخي", "الأرباح"]],
     [
       "ckb",
       "بەشی بەڕێوەبردنی خاوەن کۆتێج",
-      ["بەڕێوەبردنی کۆتێجەکانم", "حجزەکانی کۆتێجەکانم"],
+      ["بەڕێوەبردنی کۆتێجەکانم", "حجزەکانی کۆتێجەکانم", "داهات"],
     ],
   ] as const)(
     "lists the Owner Backoffice destinations in %s",
@@ -36,6 +36,7 @@ describe("BackofficeNavigation", () => {
       expect(destinations.map((link) => link.getAttribute("href"))).toEqual([
         `/${locale}/owner/cottages`,
         `/${locale}/bookings?workspace=owner`,
+        `/${locale}/owner/earnings`,
       ]);
     },
   );
@@ -239,4 +240,71 @@ describe("BackofficeNavigation", () => {
     );
     expectNoCount();
   });
+});
+
+it("owner navigation reaches and marks Earnings", () => {
+  const { rerender } = render(
+    <BackofficeNavigation locale="en" area="owner" current="cottages" />,
+  );
+  for (const [locale, areaLabel, labels, hrefs] of [
+    [
+      "en",
+      "Owner Backoffice",
+      ["My cottages", "Bookings", "Earnings"],
+      [
+        "/en/owner/cottages",
+        "/en/bookings?workspace=owner",
+        "/en/owner/earnings",
+      ],
+    ],
+    [
+      "ar",
+      "مكتب مالك الكوخ",
+      ["إدارة أكواخي", "حجوزات أكواخي", "الأرباح"],
+      [
+        "/ar/owner/cottages",
+        "/ar/bookings?workspace=owner",
+        "/ar/owner/earnings",
+      ],
+    ],
+    [
+      "ckb",
+      "بەشی بەڕێوەبردنی خاوەن کۆتێج",
+      ["بەڕێوەبردنی کۆتێجەکانم", "حجزەکانی کۆتێجەکانم", "داهات"],
+      [
+        "/ckb/owner/cottages",
+        "/ckb/bookings?workspace=owner",
+        "/ckb/owner/earnings",
+      ],
+    ],
+  ] as const) {
+    for (const [index, current] of (
+      ["cottages", "bookings", "earnings"] as const
+    ).entries()) {
+      rerender(
+        <BackofficeNavigation locale={locale} area="owner" current={current} />,
+      );
+      const destinations = links(areaLabel);
+      expect(destinations.map((link) => link.textContent)).toEqual(labels);
+      expect(destinations.map((link) => link.getAttribute("href"))).toEqual(
+        hrefs,
+      );
+      expect(
+        destinations.map((link) => link.getAttribute("aria-current")),
+      ).toEqual([0, 1, 2].map((item) => (item === index ? "page" : null)));
+    }
+    rerender(
+      <BackofficeNavigation
+        locale={locale}
+        area="owner"
+        current="earnings"
+        waitingBookingRequests={2}
+      />,
+    );
+    expect(links(areaLabel)[1]).toHaveTextContent(locale === "ckb" ? "٢" : "2");
+    expect(links(areaLabel)[2]).toHaveAccessibleName(labels[2]);
+    expect(
+      links(areaLabel)[2].querySelector(".backoffice-navigation-count"),
+    ).toBeNull();
+  }
 });

@@ -223,8 +223,14 @@ test("same-phone reauthentication restores the same real history and owner unpai
     prepareLaterSignIn(ownerId, ownerPhone);
     const emptyOwnerContext = await browser.newContext({ baseURL });
     const emptyOwnerPage = await emptyOwnerContext.newPage();
-    await emptyOwnerPage.goto("/en/bookings?workspace=owner");
+    await emptyOwnerPage.goto("/en/owner/earnings");
+    await expect(emptyOwnerPage).toHaveURL(
+      new URL("/en/access?returnTo=%2Fen%2Fowner%2Fearnings", baseURL).href,
+    );
     await verifyPhone(emptyOwnerPage, ownerPhone);
+    await expect(emptyOwnerPage).toHaveURL(
+      new URL("/en/owner/earnings", baseURL).href,
+    );
     const emptySummary = emptyOwnerPage.getByRole("region", {
       name: "Earnings summary",
     });
@@ -242,6 +248,10 @@ test("same-phone reauthentication restores the same real history and owner unpai
     const deniedPage = await deniedContext.newPage();
     await deniedPage.goto("/en/bookings?workspace=owner");
     await verifyPhone(deniedPage, customerPhone);
+    await expect(deniedPage.locator("main").getByRole("alert")).toContainText(
+      "This booking is not available to this account.",
+    );
+    await deniedPage.goto("/en/owner/earnings");
     await expect(deniedPage.locator("main").getByRole("alert")).toContainText(
       "This booking is not available to this account.",
     );
@@ -322,6 +332,28 @@ test("same-phone reauthentication restores the same real history and owner unpai
       ownerPage.getByRole("heading", { name: "My bookings", exact: true }),
     ).toBeVisible();
     await ownerPage.goto("/en/bookings?workspace=owner");
+    await expect(
+      ownerPage.getByRole("region", { name: "Earnings summary" }),
+    ).toHaveCount(0);
+    await expect(
+      ownerPage.getByRole("region", { name: "Earnings and payout" }),
+    ).toHaveCount(0);
+    await expect(
+      ownerPage.locator(
+        'a[href="/en/owner/booking-requests/RC-REQ-0000000000003501"]',
+      ),
+    ).toBeVisible();
+    await expect(
+      ownerPage.locator(
+        `a[href="/en/owner/booking-requests/${unpaidReference}"]`,
+      ),
+    ).toBeVisible();
+    await ownerPage
+      .getByRole("link", { name: "Earnings", exact: true })
+      .click();
+    await expect(ownerPage).toHaveURL(
+      new URL("/en/owner/earnings", baseURL).href,
+    );
     await expect(
       ownerPage.getByRole("region", { name: "Earnings summary" }),
     ).toContainText(
