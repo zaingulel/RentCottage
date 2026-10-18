@@ -5742,9 +5742,12 @@ select is(public.claim_booking_request_action(
     (select owner_user_id from booking_request_lifecycle_target),
     (select id from booking_request_lifecycle_target),'decline','other',null)->>'status',
   'processing','owner decline cannot revive quarantined ordinary release work');
-select is(public.claim_due_booking_request_releases(50)::text like '%"workId": "'||
-  (select work_id::text from quarantine_snapshots)||'"%',false,
-  'automatic due claims never return quarantined ordinary release work');
+select ok(not exists (
+  select 1
+  from jsonb_array_elements(public.claim_due_booking_request_releases(50)) as claimed_release
+  where claimed_release ->> 'bookingRequestReference' =
+    (select booking_request_reference from booking_request_lifecycle_target)
+), 'automatic due claims never return quarantined ordinary release work');
 select throws_ok((select format('select public.finalize_booking_request_release(%L::uuid,%L::bigint,%L::uuid)',
   work_id,lease_generation,lease_token) from quarantine_snapshots),
   'RC409',null,'a stale worker cannot finalize quarantined ordinary release work');
