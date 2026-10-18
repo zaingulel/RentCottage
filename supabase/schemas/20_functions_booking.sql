@@ -1907,8 +1907,10 @@ begin
   end if;
   for target_request in
     select requests.id, requests.status from public.booking_requests requests
-    where requests.status = 'processing'
-       or (requests.status = 'pending' and requests.response_deadline <= clock_timestamp())
+    where (requests.status = 'processing'
+       or (requests.status = 'pending' and requests.response_deadline <= clock_timestamp()))
+      and not exists (select 1 from public.booking_request_release_work release_work
+        where release_work.booking_request_id = requests.id and release_work.state = 'quarantined')
     order by requests.response_deadline, requests.id
     limit target_limit
     for update of requests skip locked
@@ -3567,7 +3569,9 @@ begin
     'status', work.outcome,
     'bookingRequestReference', target_request.booking_request_reference
   ); end if;
-  if work.lease_generation <> target_lease_generation
+  if work.state <> 'processing'
+    or work.lease_token is null or work.lease_expires_at is null
+    or work.lease_generation <> target_lease_generation
     or work.lease_token <> target_lease_token
     or finalized_at >= work.lease_expires_at then
     raise exception 'Booking Request release lease is stale or expired'
@@ -4213,6 +4217,10 @@ begin
     'status', work.outcome,
     'bookingRequestReference', target_request.booking_request_reference
   ); end if;
+  if work.state = 'quarantined' or public.quarantine_booking_request_release_work(work.id) then
+    return jsonb_build_object('status', 'processing',
+      'bookingRequestReference', target_request.booking_request_reference);
+  end if;
   if work.lease_token is not null and leased_at < work.lease_expires_at then
     return jsonb_build_object(
       'status', 'processing',
@@ -6586,7 +6594,20 @@ begin
   where attempts.id = work.attempt_id for update;
   select * into claim from public.booking_request_authorization_claims claims
   where claims.attempt_id = attempt.id for update;
+  if work.state = 'quarantined' then
+    if target_payment_snapshot is not distinct from attempt.payment_snapshot
+      and target_provider_identity is not distinct from jsonb_build_object(
+        'provider', attempt.authorization_provider, 'environment', attempt.authorization_environment,
+        'merchantId', attempt.authorization_merchant_id, 'terminalId', attempt.authorization_terminal_id) then
+      return null;
+    end if;
+    raise exception 'Quarantined Booking Request release evidence cannot change' using errcode = 'RC409';
+  end if;
+  if public.quarantine_booking_request_release_work(work.id) then
+    raise exception 'Unsafe Booking Request release cannot be retried' using errcode = 'RC409';
+  end if;
   if work.state <> 'processing'
+    or work.lease_token is null or work.lease_expires_at is null
     or work.lease_generation <> target_lease_generation
     or work.lease_token <> target_lease_token
     or recorded_at >= work.lease_expires_at then
@@ -7722,6 +7743,12 @@ begin
     and public.booking_request_payment_quarantined((ledger.admission#>>'{permit,binding,bookingRequestId}')::uuid) then
     return jsonb_build_object('status','not-admitted');
   end if;
+  if ledger.admission->>'purpose' = 'booking-request-release' and exists (
+    select 1 from public.booking_request_release_work release_work
+    where release_work.id = (ledger.admission#>>'{permit,workId}')::uuid
+      and release_work.state = 'quarantined') then
+    return jsonb_build_object('status','not-admitted');
+  end if;
   return public.payment_operation_admission(ledger);
 end;
 $$;
@@ -7844,6 +7871,10 @@ declare ledger public.payment_provider_operations;
 declare result jsonb;
 begin
   ledger:=public.lock_payment_observation_source(target_operation_id,array['booking-request-authorization','booking-request-submission-cleanup','booking-request-release']);
+  if ledger.admission->>'purpose' = 'booking-request-release'
+    and target_result->>'outcome' = 'failed' and target_result->'retrySafe' = 'false'::jsonb then
+    raise exception 'Ordinary release refusal requires an explicit quarantine consequence' using errcode = 'RC409';
+  end if;
   ledger:=public.accept_payment_provider_observation(ledger.id,target_result);
   if ledger.admission->>'purpose'='booking-request-release' and ledger.current_outcome='not-executed' then
     update public.booking_request_release_operations operations set state='retryable',provider_outcome='not_executed',retry_safe=true,
@@ -8184,3 +8215,98 @@ begin
   return result;
 end;
 $$;
+
+
+CREATE OR REPLACE FUNCTION public.quarantine_booking_request_release_work(target_work_id uuid) RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare work public.booking_request_release_work;
+declare operation public.booking_request_release_operations;
+declare ledger public.payment_provider_operations;
+declare quarantined_time timestamptz := clock_timestamp();
+begin
+  select * into work from public.booking_request_release_work release_work where release_work.id=target_work_id for update;
+  if not found or work.state='complete' then return false; end if;
+  if work.state='quarantined' then return true; end if;
+  perform 1 from public.booking_request_submission_attempts attempts where attempts.id=work.attempt_id for update;
+  perform 1 from public.booking_request_authorization_claims claims where claims.attempt_id=work.attempt_id for update;
+  -- Retained provider evidence, never the retry flag in a historical snapshot, fences admission.
+  select provider_ledger.* into ledger from public.payment_provider_operations provider_ledger
+    join public.booking_request_release_operations operations on operations.work_id=work.id
+      and provider_ledger.admission#>>'{permit,operationId}'=operations.id::text
+      and provider_ledger.admission#>>'{permit,workId}'=work.id::text
+      and operations.attempt_id=work.attempt_id
+      and (provider_ledger.provider,provider_ledger.environment,provider_ledger.merchant_id,provider_ledger.terminal_id,
+        provider_ledger.provider_idempotency_key,provider_ledger.request_fingerprint,provider_ledger.payment_lifecycle_id,
+        provider_ledger.logical_operation_id,provider_ledger.physical_attempt_id,provider_ledger.amount_fils,provider_ledger.currency)
+      is not distinct from (operations.provider,operations.environment,operations.merchant_id,operations.terminal_id,
+        operations.provider_idempotency_key,operations.request_fingerprint,operations.payment_lifecycle_id,
+        operations.logical_operation_id,operations.physical_attempt_id,operations.amount_fils,operations.currency)
+    join public.booking_request_authorization_claims claims on claims.id=provider_ledger.claim_id and claims.attempt_id=work.attempt_id
+    where provider_ledger.admission->>'purpose'='booking-request-release' and provider_ledger.current_outcome='failed'
+      and public.payment_provider_recorded_result(provider_ledger)->'retrySafe'='false'::jsonb
+    order by operations.operation_generation limit 1;
+  if not found or exists (
+    select 1 from public.payment_provider_operations provider_ledger
+    join public.booking_request_release_operations operations on operations.work_id=work.id
+      and provider_ledger.admission#>>'{permit,operationId}'=operations.id::text
+      and provider_ledger.admission#>>'{permit,workId}'=work.id::text
+      and (provider_ledger.provider,provider_ledger.environment,provider_ledger.merchant_id,provider_ledger.terminal_id,
+        provider_ledger.provider_idempotency_key,provider_ledger.request_fingerprint,provider_ledger.payment_lifecycle_id,
+        provider_ledger.logical_operation_id,provider_ledger.physical_attempt_id,provider_ledger.amount_fils,provider_ledger.currency)
+      is not distinct from (operations.provider,operations.environment,operations.merchant_id,operations.terminal_id,
+        operations.provider_idempotency_key,operations.request_fingerprint,operations.payment_lifecycle_id,
+        operations.logical_operation_id,operations.physical_attempt_id,operations.amount_fils,operations.currency)
+    where provider_ledger.admission->>'purpose'='booking-request-release' and provider_ledger.current_outcome='succeeded'
+      and public.payment_provider_recorded_result(provider_ledger)->>'outcome'='succeeded'
+  ) then return false; end if;
+  select * into operation from public.booking_request_release_operations operations
+    where operations.id=(ledger.admission#>>'{permit,operationId}')::uuid for update;
+  if operation.id=work.active_operation_id and operation.state in ('executing','reconcile_required') then
+    update public.booking_request_release_operations set state='reconcile_required',provider_outcome='failed',retry_safe=false,
+      provider_request_id=ledger.provider_request_id,provider_reference=ledger.provider_reference,movement_reference=null,
+      result_recorded_at=ledger.recorded_at,updated_at=quarantined_time where id=operation.id;
+    update public.booking_request_submission_attempts set payment_snapshot=jsonb_set(payment_snapshot,'{release}',
+      (payment_snapshot->'release')||jsonb_build_object('status','failed','retrySafe',false,'reconciliationRequired',false,
+        'providerRequestId',ledger.provider_request_id,'providerReference',ledger.provider_reference,'movementReference',null))
+      where id=work.attempt_id and payment_snapshot#>>'{release,attemptId}'=operation.physical_attempt_id
+        and payment_snapshot#>>'{release,logicalOperationId}'=operation.logical_operation_id;
+  end if;
+  update public.booking_request_submission_attempts set state='reconciliation_required',updated_at=quarantined_time where id=work.attempt_id;
+  update public.booking_request_release_work set state='quarantined',quarantined_at=quarantined_time,
+    quarantine_reason='failed-release-observation',lease_token=null,lease_expires_at=null where id=work.id;
+  return true;
+end;
+$$;
+
+CREATE OR REPLACE FUNCTION public.record_booking_request_release_observation(target_operation_id uuid,target_result jsonb,target_quarantine_release boolean) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare ledger public.payment_provider_operations;
+declare unsafe_release boolean;
+begin
+  ledger:=public.lock_payment_observation_source(target_operation_id,array['booking-request-release']);
+  perform public.validate_payment_provider_observation(target_result,ledger.id);
+  unsafe_release:=target_result->>'outcome'='failed' and target_result->'retrySafe'='false'::jsonb;
+  if target_quarantine_release is null or target_quarantine_release is distinct from coalesce(unsafe_release,false) then
+    raise exception 'Ordinary release consequence contradicts provider evidence' using errcode='RC409';
+  end if;
+  if not exists (
+    select 1 from public.booking_request_release_operations operations
+    join public.booking_request_release_work work on work.id=operations.work_id and work.attempt_id=operations.attempt_id
+    join public.booking_request_authorization_claims claims on claims.attempt_id=work.attempt_id and claims.id=ledger.claim_id
+    where operations.id=(ledger.admission#>>'{permit,operationId}')::uuid and work.id=(ledger.admission#>>'{permit,workId}')::uuid
+      and (ledger.provider,ledger.environment,ledger.merchant_id,ledger.terminal_id,ledger.provider_idempotency_key,
+        ledger.request_fingerprint,ledger.payment_lifecycle_id,ledger.logical_operation_id,ledger.physical_attempt_id,ledger.amount_fils,ledger.currency)
+      is not distinct from (operations.provider,operations.environment,operations.merchant_id,operations.terminal_id,operations.provider_idempotency_key,
+        operations.request_fingerprint,operations.payment_lifecycle_id,operations.logical_operation_id,operations.physical_attempt_id,operations.amount_fils,operations.currency)
+  ) then raise exception 'Ordinary release observation binding is invalid' using errcode='RC409'; end if;
+  if not target_quarantine_release then
+    return public.record_booking_request_provider_operation_observation(ledger.id,target_result);
+  end if;
+  ledger:=public.accept_payment_provider_observation(ledger.id,target_result);
+  perform public.quarantine_booking_request_release_work((ledger.admission#>>'{permit,workId}')::uuid);
+  return public.payment_provider_recorded_result(ledger);
+end;
+$$;
+
+ALTER FUNCTION public.quarantine_booking_request_release_work(uuid) OWNER TO postgres;
+ALTER FUNCTION public.record_booking_request_release_observation(uuid,jsonb,boolean) OWNER TO postgres;

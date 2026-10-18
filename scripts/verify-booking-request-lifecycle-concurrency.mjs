@@ -537,7 +537,12 @@ try {
     return { bookingRequestId, customerId };
   }
 
-  function startWorker(label, pause = "none") {
+  function startWorker(
+    label,
+    pause = "none",
+    outcome = "succeeded",
+    failureRetrySafe = false,
+  ) {
     const target = fixture(label);
     const child = spawn(process.execPath, [workerBundle], {
       env: {
@@ -547,6 +552,8 @@ try {
         LIFECYCLE_BOOKING_REQUEST_ID: target.bookingRequestId,
         LIFECYCLE_CUSTOMER_ID: target.customerId,
         LIFECYCLE_WORKER_PAUSE: pause,
+        LIFECYCLE_WORKER_OUTCOME: outcome,
+        LIFECYCLE_WORKER_FAILURE_RETRY_SAFE: String(failureRetrySafe),
       },
       stdio: ["ignore", "pipe", "pipe", "ipc"],
     });
@@ -1191,6 +1198,46 @@ commit;`;
     verify("pre-admitted", 1);
     await verifyCompletedRequestBeforeWork("pre-admitted", "lease");
 
+    seed("refusal-before-record", 7);
+    const refusal = startWorker(
+      "refusal-before-record",
+      "after-effect",
+      "failed",
+    );
+    await waitForStage(refusal, "effect");
+    expireLease("refusal-before-record");
+    const refusalTakeover = await finishWorker(
+      startWorker("refusal-before-record"),
+    );
+    assert.equal(refusalTakeover.result.status, "processing");
+    refusal.child.send("continue");
+    assert.equal((await finishWorker(refusal)).result.status, "processing");
+    assert.equal(
+      (await finishWorker(startWorker("refusal-before-record"))).result.status,
+      "processing",
+    );
+    assert.equal(
+      harness.runSql(`
+      select requests.status||'|'||work.state||'|'||work.quarantine_reason||'|'||
+        (work.quarantined_at is not null and work.lease_token is null and work.completed_at is null)||'|'||
+        commitments.status||'|'||
+        (select bool_and(active) from public.cottage_booking_period_occupancies where booking_period_commitment_id=fixture.commitment_id)||'|'||
+        (select count(*) from public.payment_provider_operations where payment_lifecycle_id=fixture.payment_lifecycle_id and operation_kind='release')||'|'||
+        (select sum(effect.physical_execution_count) from public.simulated_payment_effects effect join public.payment_provider_operations ledger on ledger.id=effect.operation_id where ledger.payment_lifecycle_id=fixture.payment_lifecycle_id)||'|'||
+        (select count(*) from jsonb_array_elements(attempts.payment_snapshot->'movements') movement where movement->>'kind'='release')||'|'||
+        (select count(*) from public.booking_request_status_notifications where booking_request_id=requests.id)||'|'||
+        (select count(*) from public.booking_request_payment_history where booking_request_id=requests.id and kind='quarantine' and source='release-work')
+      from public.test_booking_request_lifecycle_fences fixture
+      join public.booking_requests requests on requests.id=fixture.booking_request_id
+      join public.booking_request_release_work work on work.booking_request_id=requests.id
+      join public.booking_request_submission_attempts attempts on attempts.id=work.attempt_id
+      join public.cottage_booking_period_commitments commitments on commitments.id=fixture.commitment_id
+      where fixture.label='refusal-before-record';
+    `),
+      "processing|quarantined|failed-release-observation|true|pending_hold|true|1|1|0|0|1",
+      "Refusal survives effect-before-record takeover, stale recording and fresh workers without a new effect or released hold",
+    );
+
     seed("post-expiry", 2);
     const rejected = startWorker("post-expiry", "before-admission");
     await waitForStage(rejected, "permitted");
@@ -1305,7 +1352,7 @@ commit;`;
     verify("effect-deadline", 2);
 
     console.log(
-      "Booking Request release concurrency passed: separate Node workers with separate Supabase clients used the production repository and DurablePaymentSimulator; an effect before lease loss reconciled once; an intent without shared admission was reconstructed and closed after takeover, then retried only after recorded absence; the original caller could not execute afterward. Fresh-process closure could not authorize retry before explicit recording; both opposing effect/absence insert orders waited and retained one winner; an already admitted executor blocked on the effect key across its deadline produced durable zero-execution closure.",
+      "Booking Request release concurrency passed: separate Node workers with separate Supabase clients used the production repository and DurablePaymentSimulator; an effect before lease loss reconciled once; a refused effect before recording survived takeover and stale recording in one terminal quarantine with no new effect; an intent without shared admission was reconstructed and closed after takeover, then retried only after recorded absence; the original caller could not execute afterward. Fresh-process closure could not authorize retry before explicit recording; both opposing effect/absence insert orders waited and retained one winner; an already admitted executor blocked on the effect key across its deadline produced durable zero-execution closure.",
     );
   } catch (error) {
     failure = error;
