@@ -6574,7 +6574,7 @@ begin
     or next_release -> 'status' = 'null'::jsonb
     or next_release -> 'amountFils' = 'null'::jsonb
     or next_release -> 'reconciliationRequired' = 'null'::jsonb
-    or next_release -> 'retrySafe' = 'null'::jsonb then
+    or jsonb_typeof(next_release -> 'retrySafe') is distinct from 'boolean' then
     raise exception 'Booking Request release evidence is invalid'
       using errcode = '22023';
   end if;
@@ -6780,6 +6780,7 @@ begin
     and next_release -> 'movementReference' = 'null'::jsonb
     and operation.state in ('executing', 'reconcile_required')
     and provider_operation.current_outcome = 'failed'
+    and public.payment_provider_recorded_result(provider_operation) -> 'retrySafe' = 'true'::jsonb
     and provider_operation.request_fingerprint = operation.request_fingerprint
     and provider_operation.payment_lifecycle_id = operation.payment_lifecycle_id
     and provider_operation.logical_operation_id = operation.logical_operation_id
@@ -7759,6 +7760,8 @@ begin
     raise exception 'Payment observation violates its admitted execution window' using errcode='RC409'; end if;
   if ledger.current_outcome is not null and (
     (ledger.current_outcome<>'indeterminate' and ledger.current_outcome is distinct from target_result->>'outcome')
+    or (ledger.admission->>'purpose'='booking-request-release' and ledger.current_outcome='failed'
+      and public.payment_provider_recorded_result(ledger)->'retrySafe' is distinct from target_result->'retrySafe')
     or ledger.original_outcome is distinct from coalesce(evidence->>'originalOutcome','not-executed')
     or ledger.executed_at is distinct from execution_time
     or (ledger.provider_request_id,ledger.provider_reference) is distinct from
@@ -7849,7 +7852,9 @@ begin
         and operations.state in ('executing','reconcile_required');
   end if;
   result:=public.payment_provider_recorded_result(ledger);
-  if ledger.current_outcome='failed' then result:=result||jsonb_build_object('retrySafe',ledger.operation_kind='release'); end if;
+  if ledger.current_outcome='failed' and ledger.admission->>'purpose'<>'booking-request-release' then
+    result:=result||jsonb_build_object('retrySafe',ledger.operation_kind='release');
+  end if;
   return result;
 end;
 $$;

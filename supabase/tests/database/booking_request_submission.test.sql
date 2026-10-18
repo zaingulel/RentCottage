@@ -1,7 +1,7 @@
 begin;
 -- BEGIN PAYMENT EVIDENCE FIXTURE
 -- Test arrangement: admission, isolated effect, and explicit recording.
-create or replace function pg_temp.payment_fixture_result(admission jsonb, outcome text) returns jsonb language plpgsql as $$
+create or replace function pg_temp.payment_fixture_result(admission jsonb, outcome text, failure_retry_safe boolean default false) returns jsonb language plpgsql as $$
 declare effect_binding jsonb:=admission-array['purpose','binding','mode'];
 declare observed jsonb;
 declare proposed jsonb;
@@ -13,7 +13,7 @@ begin
   proposed:=jsonb_build_object('outcome',outcome,'providerRequestId','fixture-request-'||operation_id,'providerReference','fixture-reference-'||operation_id,
     'evidence',jsonb_build_object('operationId',operation_id,'eventId','fixture-'||operation_id||'-'||outcome,'provenance','fictional-provider',
       'originalOutcome',outcome,'executedAt',clock_timestamp(),'occurredAt',case when outcome<>'indeterminate' then clock_timestamp() end,'closedAt',null))
-    ||case when outcome='failed' then jsonb_build_object('retrySafe',false) else jsonb_build_object('movementReference','fixture-movement-'||operation_id) end;
+    ||case when outcome='failed' then jsonb_build_object('retrySafe',failure_retry_safe) else jsonb_build_object('movementReference','fixture-movement-'||operation_id) end;
   if admission->>'mode'='execute' then observed:=public.persist_simulated_payment_effect(effect_binding,proposed);
   else
     observed:=public.seal_simulated_payment_absence(effect_binding);
@@ -34,18 +34,18 @@ begin
   return observed-'evidence';
 end;
 $$;
-create or replace function pg_temp.payment_fixture_execute(routine text,permit jsonb,outcome text) returns jsonb language plpgsql as $$
+create or replace function pg_temp.payment_fixture_execute(routine text,permit jsonb,outcome text,failure_retry_safe boolean default false) returns jsonb language plpgsql as $$
 declare prior_role text:=current_setting('role'); declare admission jsonb; declare result jsonb;
 begin
   if prior_role='none' then perform set_config('role','service_role',true); end if;
   execute format('select public.%I($1)',routine) into admission using permit;
-  result:=pg_temp.payment_fixture_result(admission,outcome);
+  result:=pg_temp.payment_fixture_result(admission,outcome,failure_retry_safe);
   perform set_config('role',prior_role,true);
   return result;
 end;
 $$;
-create or replace function pg_temp.payment_execute(operation jsonb,outcome text) returns jsonb language sql as $$
-  select pg_temp.payment_fixture_execute('admit_booking_request_provider_operation',operation,outcome);
+create or replace function pg_temp.payment_execute(operation jsonb,outcome text,failure_retry_safe boolean default false) returns jsonb language sql as $$
+  select pg_temp.payment_fixture_execute('admit_booking_request_provider_operation',operation,outcome,failure_retry_safe);
 $$;
 create or replace function pg_temp.payment_query(operation jsonb,request_id text,reference text,outcome text) returns jsonb language plpgsql as $$
 declare prior_role text:=current_setting('role'); declare result jsonb;
@@ -58,7 +58,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(360);
+select plan(369);
 
 set local role anon;
 select throws_ok(
@@ -5648,9 +5648,8 @@ select throws_ok(
   'RC409', null,
   'operation N plus one cannot start before N is durably retryable'
 );
-create temporary table failed_release_retry_provider_result as
-select pg_temp.payment_execute(
-  jsonb_build_object(
+create temporary table failed_release_retry_request as
+select jsonb_build_object(
     'providerIdentity', jsonb_build_object(
       'provider', 'fictional-payments', 'environment', 'local-test',
       'merchantId', 'fictional-merchant', 'terminalId', 'fictional-terminal'
@@ -5671,13 +5670,116 @@ select pg_temp.payment_execute(
     'leaseToken', permit ->> 'leaseToken',
     'operationId', permit ->> 'operationId',
     'operationGeneration', (permit ->> 'operationGeneration')::integer
-  ), 'failed'
-) as result
+  ) as request
 from failed_release_retry_snapshots, failed_release_retry_permit;
-select is(
-  (select result ->> 'outcome' from failed_release_retry_provider_result),
-  'failed',
-  'the provider ledger proves attempt N failed before retry is allowed'
+grant select on failed_release_retry_request to service_role;
+savepoint ordinary_release_retry_safety;
+create temporary table ordinary_release_refusal as
+select pg_temp.payment_execute(request, 'failed') as result
+from failed_release_retry_request;
+grant select on ordinary_release_refusal to service_role;
+reset role;
+create temporary table ordinary_release_refusal_observation as
+select observations.operation_id, observations.result
+from public.payment_provider_observations observations
+join public.payment_provider_operations operations on operations.id = observations.operation_id
+where operations.admission #>> '{permit,operationId}' =
+  (select permit ->> 'operationId' from failed_release_retry_permit);
+grant select on ordinary_release_refusal_observation to service_role;
+select results_eq(
+  $$select refusal.result -> 'retrySafe', observation.result -> 'retrySafe'
+    from ordinary_release_refusal refusal, ordinary_release_refusal_observation observation$$,
+  $$values ('false'::jsonb, 'false'::jsonb)$$,
+  'ordinary release recording preserves provider retry safety'
+);
+set local role service_role;
+select throws_ok(
+  (select format('select public.record_booking_request_provider_operation_observation(%L::uuid,%L::jsonb)',
+    operation_id, jsonb_set(result, '{retrySafe}', 'true'::jsonb))
+    from ordinary_release_refusal_observation),
+  'RC409', null,
+  'the same ordinary release event cannot change accepted retry safety'
+);
+select throws_ok(
+  (select format('select public.record_booking_request_provider_operation_observation(%L::uuid,%L::jsonb)',
+    operation_id, jsonb_set(jsonb_set(result, '{retrySafe}', 'true'::jsonb),
+      '{evidence,eventId}', '"changed-safety-event"'::jsonb))
+    from ordinary_release_refusal_observation),
+  'RC409', null,
+  'a later ordinary release event cannot change accepted retry safety'
+);
+select throws_ok(
+  (select format('select public.record_booking_request_provider_operation_observation(%L::uuid,%L::jsonb)',
+    operation_id, jsonb_set(result, '{retrySafe}', safety))
+    from ordinary_release_refusal_observation),
+  'RC409', null,
+  'ordinary release observation rejects ' || label || ' retry safety'
+)
+from (values ('null'::jsonb, 'null'), ('"true"'::jsonb, 'string')) malformed(safety, label);
+savepoint ordinary_release_snapshot_safety;
+select throws_ok(
+  (select format('select public.save_booking_request_release_snapshot(%L::uuid,%L::bigint,%L::uuid,%L::jsonb,%L::jsonb)',
+    work_id, lease_generation, lease_token,
+    jsonb_set(pending_one, '{release}',
+      (pending_one -> 'release') || jsonb_build_object(
+        'status', 'failed', 'providerRequestId', result ->> 'providerRequestId',
+        'providerReference', result ->> 'providerReference', 'retrySafe', 'false'::jsonb)),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}')
+    from failed_release_retry_snapshots, ordinary_release_refusal),
+  '22023', null,
+  'an unsafe recorded ordinary release cannot become retryable with false snapshot safety'
+);
+rollback to savepoint ordinary_release_snapshot_safety;
+savepoint ordinary_release_snapshot_safety;
+select throws_ok(
+  (select format('select public.save_booking_request_release_snapshot(%L::uuid,%L::bigint,%L::uuid,%L::jsonb,%L::jsonb)',
+    work_id, lease_generation, lease_token,
+    jsonb_set(pending_one, '{release}',
+      (pending_one -> 'release') || jsonb_build_object(
+        'status', 'failed', 'providerRequestId', result ->> 'providerRequestId',
+        'providerReference', result ->> 'providerReference', 'retrySafe', 'null'::jsonb)),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}')
+    from failed_release_retry_snapshots, ordinary_release_refusal),
+  '22023', null,
+  'an unsafe recorded ordinary release cannot become retryable with null snapshot safety'
+);
+rollback to savepoint ordinary_release_snapshot_safety;
+savepoint ordinary_release_snapshot_safety;
+select throws_ok(
+  (select format('select public.save_booking_request_release_snapshot(%L::uuid,%L::bigint,%L::uuid,%L::jsonb,%L::jsonb)',
+    work_id, lease_generation, lease_token,
+    jsonb_set(pending_one, '{release}',
+      (pending_one -> 'release') || jsonb_build_object(
+        'status', 'failed', 'providerRequestId', result ->> 'providerRequestId',
+        'providerReference', result ->> 'providerReference', 'retrySafe', '"true"'::jsonb)),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}')
+    from failed_release_retry_snapshots, ordinary_release_refusal),
+  '22023', null,
+  'an unsafe recorded ordinary release cannot become retryable with string snapshot safety'
+);
+rollback to savepoint ordinary_release_snapshot_safety;
+savepoint ordinary_release_snapshot_safety;
+select throws_ok(
+  (select format('select public.save_booking_request_release_snapshot(%L::uuid,%L::bigint,%L::uuid,%L::jsonb,%L::jsonb)',
+    work_id, lease_generation, lease_token,
+    jsonb_set(pending_one, '{release}',
+      (pending_one -> 'release') || jsonb_build_object(
+        'status', 'failed', 'providerRequestId', result ->> 'providerRequestId',
+        'providerReference', result ->> 'providerReference', 'retrySafe', 'true'::jsonb)),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}')
+    from failed_release_retry_snapshots, ordinary_release_refusal),
+  '22023', null,
+  'an unsafe recorded ordinary release cannot become retryable with forged true snapshot safety'
+);
+rollback to savepoint ordinary_release_snapshot_safety;
+rollback to savepoint ordinary_release_retry_safety;
+create temporary table failed_release_retry_provider_result as
+select pg_temp.payment_execute(request, 'failed', true) as result
+from failed_release_retry_request;
+select results_eq(
+  $$select result ->> 'outcome', result -> 'retrySafe' from failed_release_retry_provider_result$$,
+  $$values ('failed'::text, 'true'::jsonb)$$,
+  'the provider ledger proves attempt N failed safely before retry is allowed'
 );
 update failed_release_retry_snapshots snapshots set failed_one =
   jsonb_set(jsonb_set(jsonb_set(jsonb_set(pending_one,
