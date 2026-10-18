@@ -72,7 +72,7 @@ export default async function CustomerBookingRequestPage({
         <section role="alert">
           <header className="page-heading">
             <ActionLink kind="text" href={`/${locale}/bookings`}>
-              {accessMessages[locale].myBookings}
+              {accessMessages[locale].backToBookings}
             </ActionLink>
             <h1
               id="customer-booking-request-unavailable-title"

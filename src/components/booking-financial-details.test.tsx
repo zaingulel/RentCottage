@@ -581,10 +581,10 @@ describe("administrator payout investigation", () => {
 });
 
 it("cancelled participant headings return before the title", () => {
-  for (const [locale, customerName, ownerName] of [
-    ["en", "My bookings", "Bookings for my cottages"],
-    ["ar", "حجوزاتي", "حجوزات أكواخي"],
-    ["ckb", "حجزەکانم", "حجزەکانی کۆتێجەکانم"],
+  for (const [locale, name] of [
+    ["en", "Back to bookings"],
+    ["ar", "العودة إلى الحجوزات"],
+    ["ckb", "گەڕانەوە بۆ حجزەکان"],
   ] as const) {
     for (const actorRole of [
       "customer",
@@ -624,7 +624,7 @@ it("cancelled participant headings return before the title", () => {
         expect(title).toHaveClass("page-title");
         expect(within(heading).getAllByRole("link")).toHaveLength(1);
         const link = within(heading).getByRole("link", {
-          name: actorRole === "customer" ? customerName : ownerName,
+          name,
         });
         expect(link).toBeVisible();
         expect(link).toHaveAttribute(
@@ -644,10 +644,10 @@ it("cancelled participant headings return before the title", () => {
 });
 
 it("cancelled participant pages open with their return heading", () => {
-  for (const [locale, lifecycleName, customerName, ownerName] of [
-    ["en", "Booking lifecycle", "My bookings", "Bookings for my cottages"],
-    ["ar", "دورة حياة الحجز", "حجوزاتي", "حجوزات أكواخي"],
-    ["ckb", "دۆخی ژیانی حجز", "حجزەکانم", "حجزەکانی کۆتێجەکانم"],
+  for (const [locale, lifecycleName, name] of [
+    ["en", "Booking lifecycle", "Back to bookings"],
+    ["ar", "دورة حياة الحجز", "العودة إلى الحجوزات"],
+    ["ckb", "دۆخی ژیانی حجز", "گەڕانەوە بۆ حجزەکان"],
   ] as const) {
     for (const actorRole of [
       "customer",
@@ -681,7 +681,7 @@ it("cancelled participant pages open with their return heading", () => {
           const title = within(panel).getByRole("heading", { level: 1 });
           expect(firstHeading).toBe(title);
           const link = within(title.closest("header")!).getByRole("link", {
-            name: actorRole === "customer" ? customerName : ownerName,
+            name,
           });
           expect(
             link.compareDocumentPosition(title) &

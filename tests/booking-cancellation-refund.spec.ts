@@ -1042,7 +1042,7 @@ test.describe("retained cancellation and refund controls", () => {
         expect(replayed[key]).toEqual(linked[key]);
       await page
         .getByRole("link", {
-          name: accessMessages[locale].myBookings,
+          name: accessMessages[locale].backToBookings,
           exact: true,
         })
         .click();
@@ -1068,7 +1068,7 @@ test.describe("retained cancellation and refund controls", () => {
         await observeRecordHeading(
           page,
           testInfo,
-          accessMessages[locale].myBookings,
+          accessMessages[locale].backToBookings,
           `/${locale}/bookings`,
           `heading-cancelled-${locale}-a11y`,
         );

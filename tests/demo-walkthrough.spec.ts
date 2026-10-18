@@ -1297,7 +1297,9 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
         "The paid Booking is retained and its participant conversation unlocks contact-safe messaging",
       duration: 1_400,
     });
-    await customerDetails.getByRole("link", { name: "My bookings" }).click();
+    await customerDetails
+      .getByRole("link", { name: "Back to bookings" })
+      .click();
     await expectScene(page.getByRole("heading", { name: "My bookings" }));
     const customerHistory = page.locator(
       `a[href="/en/booking-requests/${requestReference}"]`,
@@ -1369,9 +1371,7 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
       "Cottage Owner phone",
     ).scrollIntoViewIfNeeded();
     await expectScene(detailValue(ownerDetails, "Cottage Owner phone"), 2_000);
-    await ownerDetails
-      .getByRole("link", { name: "Bookings for my cottages" })
-      .click();
+    await ownerDetails.getByRole("link", { name: "Back to bookings" }).click();
     await expectScene(
       page.getByRole("heading", { name: "Bookings for my cottages" }),
     );

@@ -66,7 +66,7 @@ export default async function OwnerConfirmedBookingPage({
               kind="text"
               href={`/${locale}/bookings?workspace=owner`}
             >
-              {accessMessages[locale].ownerBookings}
+              {accessMessages[locale].backToBookings}
             </ActionLink>
             <h1
               id="owner-booking-request-unavailable-title"

@@ -100,9 +100,7 @@ export function BookingFinancialDetails({
               kind="text"
               href={`/${locale}/bookings${view.actorRole === "cottage_owner" ? "?workspace=owner" : ""}`}
             >
-              {view.actorRole === "customer"
-                ? accessMessages[locale].myBookings
-                : accessMessages[locale].ownerBookings}
+              {accessMessages[locale].backToBookings}
             </ActionLink>
           ) : null}
           <h1

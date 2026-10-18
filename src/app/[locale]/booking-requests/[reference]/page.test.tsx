@@ -306,9 +306,9 @@ it("keeps request details visible when delivery status cannot load", async () =>
 
 it("Customer request headings return to My bookings", async () => {
   for (const [locale, name] of [
-    ["en", "My bookings"],
-    ["ar", "حجوزاتي"],
-    ["ckb", "حجزەکانم"],
+    ["en", "Back to bookings"],
+    ["ar", "العودة إلى الحجوزات"],
+    ["ckb", "گەڕانەوە بۆ حجزەکان"],
   ] as const) {
     const states = [
       ...(

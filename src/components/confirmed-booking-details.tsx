@@ -156,9 +156,7 @@ export function ConfirmedBookingDetails({
           kind="text"
           href={`/${locale}/bookings${access.actorRole === "cottage_owner" ? "?workspace=owner" : ""}`}
         >
-          {access.actorRole === "customer"
-            ? accessMessages[locale].myBookings
-            : accessMessages[locale].ownerBookings}
+          {accessMessages[locale].backToBookings}
         </ActionLink>
         <h1
           id="confirmed-booking-heading"

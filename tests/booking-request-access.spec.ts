@@ -569,7 +569,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
     const returnLink = await observeRecordHeading(
       page,
       testInfo,
-      accessMessages[locale].myBookings,
+      accessMessages[locale].backToBookings,
       `/${locale}/bookings`,
       `heading-customer-request-${locale}-a11y`,
     );
@@ -640,7 +640,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
     const returnLink = await observeRecordHeading(
       ownerPage,
       testInfo,
-      accessMessages[locale].ownerBookings,
+      accessMessages[locale].backToBookings,
       `/${locale}/bookings?workspace=owner`,
       `heading-owner-request-${locale}-a11y`,
     );
@@ -1415,7 +1415,9 @@ test("a verified Customer double-submit creates one Pending request and one mini
       ).toBeVisible();
       await expect(page.getByRole("status")).toContainText("Delivered");
       expect(paidIdentity()).toEqual(identityBeforeRetry);
-      await page.getByRole("link", { name: "My bookings" }).click();
+      await page
+        .getByRole("link", { name: accessMessages.en.backToBookings })
+        .click();
       await expect(
         page.getByRole("heading", { name: "My bookings" }),
       ).toBeVisible();
@@ -1436,7 +1438,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       ).toBeVisible();
       await expect(ownerPage.getByRole("status")).toContainText("Delivered");
       await ownerPage
-        .getByRole("link", { name: "Bookings for my cottages" })
+        .getByRole("link", { name: accessMessages.en.backToBookings })
         .click();
       const ownerHistoryLink = ownerPage.locator(
         `a[href="/en/owner/booking-requests/${requestReference}"]`,

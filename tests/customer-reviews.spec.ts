@@ -2217,15 +2217,26 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
       await observeRecordHeading(
         page,
         testInfo,
-        accessMessages.en.ownerBookings,
+        accessMessages.en.backToBookings,
         "/en/bookings?workspace=owner",
         "heading-owner-completed-en-a11y",
       );
       await observeCompletedRecord("en");
-      if (testInfo.project.name === "desktop")
+      if (testInfo.project.name === "desktop") {
+        const returnLink = heading.getByRole("link", {
+          name: accessMessages.en.backToBookings,
+          exact: true,
+        });
+        await returnLink.evaluate((link) => (link as HTMLElement).blur());
+        await expect
+          .poll(() =>
+            returnLink.evaluate((link) => link.matches(":focus-visible")),
+          )
+          .toBe(false);
         await page.screenshot({
           path: testInfo.outputPath("heading-owner-completed-en.png"),
         });
+      }
     }
     const ownerReview = page.getByRole("region", {
       name: "Customer review",
@@ -2519,15 +2530,26 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
       await observeRecordHeading(
         page,
         testInfo,
-        accessMessages[locale].ownerBookings,
+        accessMessages[locale].backToBookings,
         `/${locale}/bookings?workspace=owner`,
         `heading-owner-completed-${locale}-a11y`,
       );
       await observeCompletedRecord(locale);
-      if (testInfo.project.name === "mobile" && locale === "ar")
+      if (testInfo.project.name === "mobile" && locale === "ar") {
+        const returnLink = heading.getByRole("link", {
+          name: accessMessages[locale].backToBookings,
+          exact: true,
+        });
+        await returnLink.evaluate((link) => (link as HTMLElement).blur());
+        await expect
+          .poll(() =>
+            returnLink.evaluate((link) => link.matches(":focus-visible")),
+          )
+          .toBe(false);
         await page.screenshot({
           path: testInfo.outputPath("heading-owner-completed-ar.png"),
         });
+      }
       await expect(
         page.getByRole("heading", { name: replyTitle }),
       ).toBeVisible();

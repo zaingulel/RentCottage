@@ -50,9 +50,9 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 it.each([
-  ["en", "Booking details are unavailable", "Bookings for my cottages"],
-  ["ar", "تفاصيل الحجز غير متاحة", "حجوزات أكواخي"],
-  ["ckb", "وردەکارییەکانی حجز بەردەست نییە", "حجزەکانی کۆتێجەکانم"],
+  ["en", "Booking details are unavailable", "Back to bookings"],
+  ["ar", "تفاصيل الحجز غير متاحة", "العودة إلى الحجوزات"],
+  ["ckb", "وردەکارییەکانی حجز بەردەست نییە", "گەڕانەوە بۆ حجزەکان"],
 ])(
   "shows financial-load failure and a recovery link in %s",
   async (locale, message, linkLabel) => {
@@ -220,9 +220,9 @@ it("shows no review section outside a Confirmed Booking", async () => {
 
 it("owner request headings return to owner bookings", async () => {
   for (const [locale, name] of [
-    ["en", "Bookings for my cottages"],
-    ["ar", "حجوزات أكواخي"],
-    ["ckb", "حجزەکانی کۆتێجەکانم"],
+    ["en", "Back to bookings"],
+    ["ar", "العودة إلى الحجوزات"],
+    ["ckb", "گەڕانەوە بۆ حجزەکان"],
   ] as const) {
     const states = [
       ...(

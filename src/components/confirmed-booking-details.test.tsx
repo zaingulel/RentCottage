@@ -149,10 +149,9 @@ describe("confirmed booking details", () => {
     expect(
       screen.getByRole("button", { name: "دووبارە هەوڵدانەوەی ئاگادارکردن" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "حجزەکانم" })).toHaveAttribute(
-      "href",
-      "/ckb/bookings",
-    );
+    expect(
+      screen.getByRole("link", { name: "گەڕانەوە بۆ حجزەکان" }),
+    ).toHaveAttribute("href", "/ckb/bookings");
   });
   it("does not offer retry for uncertain delivery", () => {
     render(
@@ -333,10 +332,10 @@ it("shows the persisted lifecycle beside the retained booking reference", () => 
 });
 
 it("confirmed headings return before the title", () => {
-  for (const [locale, customerName, ownerName] of [
-    ["en", "My bookings", "Bookings for my cottages"],
-    ["ar", "حجوزاتي", "حجوزات أكواخي"],
-    ["ckb", "حجزەکانم", "حجزەکانی کۆتێجەکانم"],
+  for (const [locale, name] of [
+    ["en", "Back to bookings"],
+    ["ar", "العودة إلى الحجوزات"],
+    ["ckb", "گەڕانەوە بۆ حجزەکان"],
   ] as const) {
     for (const actorRole of ["customer", "cottage_owner"] as const) {
       for (const lifecycleStatus of ["confirmed", "completed"] as const) {
@@ -369,7 +368,7 @@ it("confirmed headings return before the title", () => {
         const links = within(heading).getAllByRole("link");
         expect(links).toHaveLength(1);
         const link = within(heading).getByRole("link", {
-          name: actorRole === "customer" ? customerName : ownerName,
+          name,
         });
         expect(link).toBeVisible();
         expect(link).toHaveAttribute(

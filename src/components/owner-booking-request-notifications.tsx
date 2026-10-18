@@ -327,7 +327,7 @@ export function OwnerBookingRequestNotifications({
       >
         {presentation === "page" ? (
           <ActionLink kind="text" href={`/${locale}/bookings?workspace=owner`}>
-            {accessMessages[locale].ownerBookings}
+            {accessMessages[locale].backToBookings}
           </ActionLink>
         ) : null}
         <Heading
