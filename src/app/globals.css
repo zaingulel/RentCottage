@@ -40,6 +40,7 @@
   --ink-on-progress-note: #f7d8af;
 
   /* Lines and accents */
+  --line-control: #748074;
   --line-on-dark: rgb(247 241 225 / 22%);
   --line-on-dark-strong: rgb(247 241 225 / 45%);
   --line-on-progress: rgb(255 255 255 / 16%);
@@ -269,7 +270,7 @@ textarea {
 .form-control {
   width: 100%;
   min-height: 2.75rem;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: var(--radius-control);
   background: var(--surface-field);
   padding: var(--space-3);

@@ -52,6 +52,8 @@ the code keeps them.
     photograph alike; the one exception is `--ink-on-green-bright`, the white label of the solid green buttons and
     links that the administrator review list, the publication review and the cottage profile overview style for
     themselves. `--ink-on-dark-soft` is the supporting paragraph there.
+  - `--line-control` is the muted-green normal boundary of a form input, select or textarea. It reaches 3:1
+    against the field fill and adjacent light surfaces.
   - `--line-panel` is the outline of a panel and of a message.
   - `--line-action` is the outline of a secondary button and of a toggle at rest.
   - `--elevation-contact` and `--elevation-cast` are the two layers of the card shadow, tinted with the `--ink`
@@ -240,21 +242,20 @@ Anything else is a token.
     grid stays content-width except for View cottage in a Search result footer at the `phone` breakpoint.
     Customer status Withdraw and the separate Messages action also fill their footers at `phone`; Withdraw is
     content-width at the desktop inline end, while recovery keeps its full-width treatment.
-  - `FormControl`: an input, select or textarea with `.form-control`, which shows `aria-invalid` as an error
-    border.
+  - `FormControl`: an input, select or textarea with `.form-control` and a `1px` solid `--line-control` normal
+    border, which shows `aria-invalid` as an error border.
   - `FormControl` with `type="date"` is the date field. It keeps the platform's date picker; the date text and the
     calendar glyph the browser draws inside the field are not restyled.
   - `ChoiceControl`: a native checkbox or radio button inside its label (`.choice-control`). The label is the
-    touch target. The mark has the form field's fill and focus treatment and a full-strength `--green` border,
-    because the field's `--line` hairline is too faint to show a mark this small. No state is shown by colour
-    alone: a checked checkbox is filled and carries a drawn tick, a checked radio button carries a drawn dot, a
-    disabled mark has a dashed border, and `aria-invalid` thickens the border as well as colouring it, beside a
-    `.field-error` message.
+    touch target. The mark has the form field's fill and focus treatment and a full-strength `--green` border.
+    No state is shown by colour alone: a checked checkbox is filled and carries a drawn tick, a checked radio
+    button carries a drawn dot, a disabled mark has a dashed border, and `aria-invalid` thickens the border
+    as well as colouring it, beside a `.field-error` message.
   - `OptionGroup`: a native `fieldset` and `legend` around a set of choices (`.option-group`), one per line
     (`.option-group-stack`) or wrapping along a row (`.option-group-wrap`). An option is a row of mark and text.
   - `Disclosure`: native `details` and `summary` (`.disclosure`). The summary is a bordered control with the form
-    field's border, corner, fill and focus treatment, and a drawn chevron that points down when closed and up when
-    open.
+    field's corner, fill and focus treatment, its `--line` border, and a drawn chevron that points down
+    when closed and up when open.
   - `ActionFeedback`: the success or error message after an action (`.action-feedback`).
 - `.field-error` in `src/app/globals.css` styles the message beside an invalid field.
 - [use-exclusive-action.ts](../src/components/use-exclusive-action.ts) blocks a second submit while one is in

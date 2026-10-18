@@ -208,5 +208,19 @@ createRoot(rootElement).render(
       Secondary
     </ActionButton>
     <BusyActionFixture />
+    <section aria-label="Normal input boundaries" lang="en">
+      <label htmlFor="boundary-input">Boundary input</label>
+      <FormControl kind="input" id="boundary-input" defaultValue="Sample" />
+      <label htmlFor="boundary-select">Boundary select</label>
+      <FormControl kind="select" id="boundary-select" defaultValue="sample">
+        <option value="sample">Sample</option>
+      </FormControl>
+      <label htmlFor="boundary-textarea">Boundary textarea</label>
+      <FormControl
+        kind="textarea"
+        id="boundary-textarea"
+        defaultValue="Sample"
+      />
+    </section>
   </>,
 );

@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { accessMessages } from "../src/i18n/access-messages";
 import { cottageShiftScheduleMessages } from "../src/i18n/cottage-shift-schedule-messages";
 import { openHeaderPanel } from "./fixtures/site-header";
+import { writeFile } from "node:fs/promises";
 import { createHmac } from "node:crypto";
 import { createRequire } from "node:module";
 import { crc32 } from "node:zlib";
@@ -2074,8 +2075,15 @@ test("an approved owner continues the first Cottage Profile and submits a privat
               };
             });
           });
+        const measurementsPath = testInfo.outputPath(
+          `${locale}-schedule-${state}-controls.json`,
+        );
+        await writeFile(
+          measurementsPath,
+          JSON.stringify(measurements, null, 2),
+        );
         await testInfo.attach(`${locale}-schedule-${state}-controls`, {
-          body: JSON.stringify(measurements, null, 2),
+          path: measurementsPath,
           contentType: "application/json",
         });
         expect(measurements).toHaveLength(8);
@@ -2099,18 +2107,19 @@ test("an approved owner continues the first Cottage Profile and submits a privat
             "rgb(255, 252, 245) 0px 0px 0px 2px, rgb(34, 64, 47) 0px 0px 0px 4px",
           );
           expect(focused.innerBandContrast).toBeGreaterThanOrEqual(3);
-          if (
-            (locale === "en" && testInfo.project.name === "desktop") ||
-            (locale === "ar" && testInfo.project.name === "mobile")
-          ) {
-            await testInfo.attach(
-              `${locale}-${testInfo.project.name}-schedule-focus`,
-              {
-                body: await scheduleForm.screenshot(),
-                contentType: "image/png",
-              },
-            );
-          }
+        }
+        if (
+          (state === "normal" || state === "focus") &&
+          ((locale === "en" && testInfo.project.name === "desktop") ||
+            (locale === "ar" && testInfo.project.name === "mobile"))
+        ) {
+          const screenshotName = `${locale}-${testInfo.project.name}-schedule-${state}`;
+          const screenshotPath = testInfo.outputPath(`${screenshotName}.png`);
+          await scheduleForm.screenshot({ path: screenshotPath });
+          await testInfo.attach(screenshotName, {
+            path: screenshotPath,
+            contentType: "image/png",
+          });
         }
       }
     });
