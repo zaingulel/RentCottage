@@ -8219,6 +8219,18 @@ end;
 $$;
 
 
+CREATE OR REPLACE FUNCTION public.booking_request_release_binding_matches(target_ledger public.payment_provider_operations,target_operation public.booking_request_release_operations) RETURNS boolean
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+  select row((target_ledger).provider,(target_ledger).environment,(target_ledger).merchant_id,(target_ledger).terminal_id,
+    (target_ledger).provider_idempotency_key,(target_ledger).request_fingerprint,(target_ledger).payment_lifecycle_id,
+    (target_ledger).logical_operation_id,(target_ledger).physical_attempt_id,(target_ledger).amount_fils,(target_ledger).currency)
+  is not distinct from row((target_operation).provider,(target_operation).environment,(target_operation).merchant_id,(target_operation).terminal_id,
+    (target_operation).provider_idempotency_key,(target_operation).request_fingerprint,(target_operation).payment_lifecycle_id,
+    (target_operation).logical_operation_id,(target_operation).physical_attempt_id,(target_operation).amount_fils,(target_operation).currency);
+$$;
+
+ALTER FUNCTION public.booking_request_release_binding_matches(public.payment_provider_operations,public.booking_request_release_operations) OWNER TO postgres;
+
 CREATE OR REPLACE FUNCTION public.quarantine_booking_request_release_work(target_work_id uuid) RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 declare work public.booking_request_release_work;
@@ -8237,12 +8249,7 @@ begin
       and provider_ledger.admission#>>'{permit,operationId}'=operations.id::text
       and provider_ledger.admission#>>'{permit,workId}'=work.id::text
       and operations.attempt_id=work.attempt_id
-      and (provider_ledger.provider,provider_ledger.environment,provider_ledger.merchant_id,provider_ledger.terminal_id,
-        provider_ledger.provider_idempotency_key,provider_ledger.request_fingerprint,provider_ledger.payment_lifecycle_id,
-        provider_ledger.logical_operation_id,provider_ledger.physical_attempt_id,provider_ledger.amount_fils,provider_ledger.currency)
-      is not distinct from (operations.provider,operations.environment,operations.merchant_id,operations.terminal_id,
-        operations.provider_idempotency_key,operations.request_fingerprint,operations.payment_lifecycle_id,
-        operations.logical_operation_id,operations.physical_attempt_id,operations.amount_fils,operations.currency)
+      and public.booking_request_release_binding_matches(provider_ledger,operations)
     join public.booking_request_authorization_claims claims on claims.id=provider_ledger.claim_id and claims.attempt_id=work.attempt_id
     where provider_ledger.admission->>'purpose'='booking-request-release' and provider_ledger.current_outcome='failed'
       and public.payment_provider_recorded_result(provider_ledger)->'retrySafe'='false'::jsonb
@@ -8252,12 +8259,7 @@ begin
     join public.booking_request_release_operations operations on operations.work_id=work.id
       and provider_ledger.admission#>>'{permit,operationId}'=operations.id::text
       and provider_ledger.admission#>>'{permit,workId}'=work.id::text
-      and (provider_ledger.provider,provider_ledger.environment,provider_ledger.merchant_id,provider_ledger.terminal_id,
-        provider_ledger.provider_idempotency_key,provider_ledger.request_fingerprint,provider_ledger.payment_lifecycle_id,
-        provider_ledger.logical_operation_id,provider_ledger.physical_attempt_id,provider_ledger.amount_fils,provider_ledger.currency)
-      is not distinct from (operations.provider,operations.environment,operations.merchant_id,operations.terminal_id,
-        operations.provider_idempotency_key,operations.request_fingerprint,operations.payment_lifecycle_id,
-        operations.logical_operation_id,operations.physical_attempt_id,operations.amount_fils,operations.currency)
+      and public.booking_request_release_binding_matches(provider_ledger,operations)
     where provider_ledger.admission->>'purpose'='booking-request-release' and provider_ledger.current_outcome='succeeded'
       and public.payment_provider_recorded_result(provider_ledger)->>'outcome'='succeeded'
   ) then return false; end if;
@@ -8296,10 +8298,7 @@ begin
     join public.booking_request_release_work work on work.id=operations.work_id and work.attempt_id=operations.attempt_id
     join public.booking_request_authorization_claims claims on claims.attempt_id=work.attempt_id and claims.id=ledger.claim_id
     where operations.id=(ledger.admission#>>'{permit,operationId}')::uuid and work.id=(ledger.admission#>>'{permit,workId}')::uuid
-      and (ledger.provider,ledger.environment,ledger.merchant_id,ledger.terminal_id,ledger.provider_idempotency_key,
-        ledger.request_fingerprint,ledger.payment_lifecycle_id,ledger.logical_operation_id,ledger.physical_attempt_id,ledger.amount_fils,ledger.currency)
-      is not distinct from (operations.provider,operations.environment,operations.merchant_id,operations.terminal_id,operations.provider_idempotency_key,
-        operations.request_fingerprint,operations.payment_lifecycle_id,operations.logical_operation_id,operations.physical_attempt_id,operations.amount_fils,operations.currency)
+      and public.booking_request_release_binding_matches(ledger,operations)
   ) then raise exception 'Ordinary release observation binding is invalid' using errcode='RC409'; end if;
   if not target_quarantine_release then
     return public.record_booking_request_provider_operation_observation(ledger.id,target_result);

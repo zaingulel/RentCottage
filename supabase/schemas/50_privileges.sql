@@ -1550,6 +1550,7 @@ GRANT USAGE ON SCHEMA private TO authenticated;
 REVOKE ALL ON FUNCTION private.read_owner_cottage_profile_draft_progress(uuid[]),public.read_owner_cottage_profile_draft_progress(uuid[]) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION private.read_owner_cottage_profile_draft_progress(uuid[]),public.read_owner_cottage_profile_draft_progress(uuid[]) TO authenticated;
 
+REVOKE ALL ON FUNCTION public.booking_request_release_binding_matches(public.payment_provider_operations,public.booking_request_release_operations) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.quarantine_booking_request_release_work(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.record_booking_request_release_observation(uuid,jsonb,boolean) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.record_booking_request_release_observation(uuid,jsonb,boolean) TO service_role;

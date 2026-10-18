@@ -63,7 +63,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(411);
+select plan(416);
 
 set local role anon;
 select throws_ok(
@@ -5724,6 +5724,41 @@ from public.payment_provider_operations ledger
 join public.payment_provider_observations observations on observations.operation_id=ledger.id
 where ledger.admission#>>'{permit,workId}'=(select work_id::text from quarantine_snapshots);
 grant select on quarantine_observation, quarantine_snapshots, quarantine_result to service_role;
+select results_eq(
+  $$with binding as (
+      select ledger,operations as operation
+      from quarantine_observation observation
+      join public.payment_provider_operations ledger on ledger.id=observation.operation_id
+      join public.booking_request_release_operations operations
+        on operations.id=(ledger.admission#>>'{permit,operationId}')::uuid
+    )
+    select variant.ordinal,(select count(*) from binding)=1,
+      public.booking_request_release_binding_matches(binding.ledger,
+        jsonb_populate_record(binding.operation,variant.patch))
+    from binding
+    cross join lateral (values
+      (0,'{}'::jsonb),
+      (1,jsonb_build_object('provider',(binding.ledger).provider||'-binding-provider')),
+      (2,jsonb_build_object('environment',(binding.ledger).environment||'-binding-environment')),
+      (3,jsonb_build_object('merchant_id',(binding.ledger).merchant_id||'-binding-merchant')),
+      (4,jsonb_build_object('terminal_id',(binding.ledger).terminal_id||'-binding-terminal')),
+      (5,jsonb_build_object('provider_idempotency_key',(binding.ledger).provider_idempotency_key||'-binding-idempotency')),
+      (6,jsonb_build_object('request_fingerprint',(binding.ledger).request_fingerprint||'-binding-fingerprint')),
+      (7,jsonb_build_object('payment_lifecycle_id',case
+        when (binding.ledger).payment_lifecycle_id='11111111-1111-4111-8111-111111111111'::uuid
+        then '22222222-2222-4222-8222-222222222222'::uuid
+        else '11111111-1111-4111-8111-111111111111'::uuid end)),
+      (8,jsonb_build_object('logical_operation_id',(binding.ledger).logical_operation_id||'-binding-logical')),
+      (9,jsonb_build_object('physical_attempt_id',(binding.ledger).physical_attempt_id||'-binding-attempt')),
+      (10,jsonb_build_object('amount_fils',(binding.ledger).amount_fils+1)),
+      (11,jsonb_build_object('currency','USD'))
+    ) as variant(ordinal,patch)
+    order by variant.ordinal$$,
+  $$values (0,true,true),(1,true,false),(2,true,false),(3,true,false),
+    (4,true,false),(5,true,false),(6,true,false),(7,true,false),
+    (8,true,false),(9,true,false),(10,true,false),(11,true,false)$$,
+  'release binding requires every retained identity, amount and currency field'
+);
 create temporary table quarantine_saved as
 select to_jsonb(work) as work, to_jsonb(attempts) as attempt
 from public.booking_request_release_work work
@@ -5791,6 +5826,12 @@ select results_eq(
 select is((select count(*) from public.booking_request_payment_history history
   where history.booking_request_id=(select id from booking_request_lifecycle_target) and history.kind='quarantine' and history.source='release-work'),
   1::bigint,'repeated refusal creates exactly one durable quarantine event');
+select ok(binding.signature is not null
+  and not has_function_privilege('anon',binding.signature,'EXECUTE')
+  and not has_function_privilege('authenticated',binding.signature,'EXECUTE')
+  and not has_function_privilege('service_role',binding.signature,'EXECUTE'),
+  'release binding predicate exists without an API execute grant')
+from (select to_regprocedure('public.booking_request_release_binding_matches(public.payment_provider_operations,public.booking_request_release_operations)') as signature) binding;
 select ok(not has_function_privilege('anon','public.record_booking_request_release_observation(uuid,jsonb,boolean)','EXECUTE')
   and not has_function_privilege('authenticated','public.record_booking_request_release_observation(uuid,jsonb,boolean)','EXECUTE')
   and has_function_privilege('service_role','public.record_booking_request_release_observation(uuid,jsonb,boolean)','EXECUTE')
@@ -5807,6 +5848,19 @@ select throws_ok($$select public.record_booking_request_release_observation(null
 set local role service_role;
 select throws_ok($$select public.quarantine_booking_request_release_work(null)$$,'42501',null,
   'service callers cannot invoke the internal quarantine safety helper');
+reset role;
+set local role anon;
+select throws_ok($$select public.booking_request_release_binding_matches(
+  null::public.payment_provider_operations,null::public.booking_request_release_operations)$$,'42501',null,
+  'anonymous callers cannot invoke release binding');
+set local role authenticated;
+select throws_ok($$select public.booking_request_release_binding_matches(
+  null::public.payment_provider_operations,null::public.booking_request_release_operations)$$,'42501',null,
+  'authenticated callers cannot invoke release binding');
+set local role service_role;
+select throws_ok($$select public.booking_request_release_binding_matches(
+  null::public.payment_provider_operations,null::public.booking_request_release_operations)$$,'42501',null,
+  'service callers cannot invoke release binding');
 reset role;
 -- Explicit historical arrangement: retain the accepted false receipt while reproducing
 -- the former true snapshot/terminal operation shape. This is not a new-flow fixture.
