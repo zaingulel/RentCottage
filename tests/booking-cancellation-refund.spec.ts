@@ -717,14 +717,12 @@ test.describe("retained cancellation and refund controls", () => {
                 scrollsInRow: rowStyle.overflowX === "auto",
               };
             });
-          await expect
-            .poll(measureFocus)
-            .toEqual({
-              visible: true,
-              contained: true,
-              target: true,
-              scrollsInRow: true,
-            });
+          await expect.poll(measureFocus).toEqual({
+            visible: true,
+            contained: true,
+            target: true,
+            scrollsInRow: true,
+          });
           const focus = await earnings.evaluate((tab) => {
             const style = getComputedStyle(tab);
             const row = tab.parentElement!;
@@ -793,14 +791,12 @@ test.describe("retained cancellation and refund controls", () => {
                 overflow: document.documentElement.scrollWidth > innerWidth + 1,
               };
             }, locale === "ar");
-          await expect
-            .poll(measureLayout)
-            .toEqual({
-              direction: locale === "ar" ? "rtl" : "ltr",
-              startAligned: true,
-              wraps: true,
-              overflow: false,
-            });
+          await expect.poll(measureLayout).toEqual({
+            direction: locale === "ar" ? "rtl" : "ltr",
+            startAligned: true,
+            wraps: true,
+            overflow: false,
+          });
           const layout = await measureLayout();
           const current = await earnings.evaluate((tab) => {
             const style = getComputedStyle(tab);

@@ -143,9 +143,10 @@ it("owner bookings retains records without earnings", async () => {
   expect(container.querySelector("main")?.firstElementChild).toBe(
     screen.getByRole("navigation", { name: "Owner Backoffice" }),
   );
-  expect(
-    screen.getByRole("link", { name: "Bookings", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
+  expect(screen.getByRole("link", { name: "Bookings" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
   expect(screen.queryByRole("link", { name: "RentCottage home" })).toBeNull();
   expect(screen.getByRole("heading", { level: 1 })).toHaveAttribute(
     "id",
