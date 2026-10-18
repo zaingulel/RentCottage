@@ -3961,6 +3961,11 @@ CREATE OR REPLACE FUNCTION "public"."get_confirmed_booking_access"("target_refer
     'confirmedAt', to_char(confirmations.confirmed_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
     'actorRole', actor.role,
     'customerName', requests.customer_name,
+    'coverMediaId',(select media.opaque_id
+      from public.owner_application_cottage_profiles profiles
+      join public.cottage_publication_media media on media.publication_id=profiles.current_publication_id
+      where profiles.id=requests.profile_id and public.is_cottage_publicly_discoverable(profiles.id)
+      order by media.position limit 1),
     'cottageName', snapshots.quote_payload ->> 'cottageName',
     'bookingPeriod', snapshots.quote_payload -> 'items',
     'partySize', requests.party_size,
@@ -4044,6 +4049,11 @@ CREATE OR REPLACE FUNCTION "public"."get_customer_booking_request"("target_refer
     'paymentRequiredWindow',public.booking_request_payment_required_window(requests),
     'paymentRequiredExpiry',public.booking_request_payment_required_expiry_status(requests),
     'paymentRecovery',public.booking_request_payment_recovery_status(requests),
+    'coverMediaId',(select media.opaque_id
+      from public.owner_application_cottage_profiles profiles
+      join public.cottage_publication_media media on media.publication_id=profiles.current_publication_id
+      where profiles.id=requests.profile_id and public.is_cottage_publicly_discoverable(profiles.id)
+      order by media.position limit 1),
     'cottageName',snapshots.quote_payload->>'cottageName','bookingPeriod',snapshots.quote_payload->'items',
     'partySize',requests.party_size,'bookingPriceIqd',(snapshots.quote_payload->>'bookingPriceIqd')::bigint,
     'serviceFeeIqd',(snapshots.quote_payload->>'serviceFeeIqd')::bigint,

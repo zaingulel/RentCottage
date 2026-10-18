@@ -40,6 +40,9 @@ const baseRequest = {
   ],
 };
 
+const rawRequest = { ...baseRequest, coverMediaId: null };
+const expectedRequest = { ...baseRequest, coverMediaUrl: null };
+
 function clientReturning(data: unknown) {
   return {
     rpc: vi.fn().mockResolvedValue({ data, error: null }),
@@ -56,7 +59,7 @@ describe("Customer Booking Request database projection", () => {
       await expect(
         getCustomerBookingRequest(
           clientReturning({
-            ...baseRequest,
+            ...rawRequest,
             status: "accepted",
             paymentStatus: "payment-required",
             paymentRequiredWindow: {
@@ -90,7 +93,7 @@ describe("Customer Booking Request database projection", () => {
       await expect(
         getCustomerBookingRequest(
           clientReturning({
-            ...baseRequest,
+            ...rawRequest,
             status: "accepted",
             paymentStatus: "payment-required",
             paymentRequiredWindow,
@@ -104,7 +107,7 @@ describe("Customer Booking Request database projection", () => {
     "retains authoritative %s evidence",
     async (paymentStatus) => {
       const result = await getCustomerBookingRequest(
-        clientReturning({ ...baseRequest, status: "accepted", paymentStatus }),
+        clientReturning({ ...rawRequest, status: "accepted", paymentStatus }),
         reference,
       );
       expect(result).toMatchObject({ status: "accepted", paymentStatus });
@@ -115,7 +118,7 @@ describe("Customer Booking Request database projection", () => {
     async (paymentStatus) => {
       await expect(
         getCustomerBookingRequest(
-          clientReturning({ ...baseRequest, paymentStatus }),
+          clientReturning({ ...rawRequest, paymentStatus }),
           reference,
         ),
       ).rejects.toThrow("invalid");
@@ -125,7 +128,7 @@ describe("Customer Booking Request database projection", () => {
     await expect(
       getCustomerBookingRequest(
         clientReturning({
-          ...baseRequest,
+          ...rawRequest,
           status: "pending",
           paymentStatus: "paid-confirmed",
         }),
@@ -145,7 +148,7 @@ describe("Customer Booking Request database projection", () => {
     async (invalid) => {
       await expect(
         getCustomerBookingRequest(
-          clientReturning({ ...baseRequest, ...invalid }),
+          clientReturning({ ...rawRequest, ...invalid }),
           reference,
         ),
       ).rejects.toThrow("Booking Request status data is invalid");
@@ -156,7 +159,7 @@ describe("Customer Booking Request database projection", () => {
     await expect(
       getCustomerBookingRequest(
         clientReturning({
-          ...baseRequest,
+          ...rawRequest,
           declineReason: "plausible_but_unknown",
         }),
         reference,
@@ -168,7 +171,7 @@ describe("Customer Booking Request database projection", () => {
     await expect(
       getCustomerBookingRequest(
         clientReturning({
-          ...baseRequest,
+          ...rawRequest,
           statusNotifications: [
             { ...baseRequest.statusNotifications[0], status: "processing" },
           ],
@@ -180,7 +183,7 @@ describe("Customer Booking Request database projection", () => {
 
   it("allocates an exact request, booking item and receipt projection", async () => {
     const raw = {
-      ...baseRequest,
+      ...rawRequest,
       customerPhone: "+9647000000000",
       paymentSnapshot: { private: true },
       responseDeadline: "2099-08-21T12:00:00",
@@ -201,7 +204,7 @@ describe("Customer Booking Request database projection", () => {
     );
 
     expect(result).toEqual({
-      ...baseRequest,
+      ...expectedRequest,
       responseDeadline: "2099-08-21T12:00:00",
     });
     expect(result).not.toBe(raw);
@@ -218,7 +221,7 @@ describe("Customer Booking Request database projection", () => {
   ])("fails closed on invalid customer money %#", async (invalidMoney) => {
     await expect(
       getCustomerBookingRequest(
-        clientReturning({ ...baseRequest, ...invalidMoney }),
+        clientReturning({ ...rawRequest, ...invalidMoney }),
         reference,
       ),
     ).rejects.toThrow("Booking Request status data is invalid");
@@ -228,7 +231,7 @@ describe("Customer Booking Request database projection", () => {
     await expect(
       getCustomerBookingRequest(
         clientReturning({
-          ...baseRequest,
+          ...rawRequest,
           serviceFeeIqd: 0,
           customerTotalIqd: baseRequest.bookingPriceIqd,
         }),
@@ -245,7 +248,7 @@ describe("Customer Booking Request database projection", () => {
     async (declineNote) => {
       await expect(
         getCustomerBookingRequest(
-          clientReturning({ ...baseRequest, declineNote }),
+          clientReturning({ ...rawRequest, declineNote }),
           reference,
         ),
       ).rejects.toThrow("Booking Request status data is invalid");
@@ -264,7 +267,7 @@ it.each([
   async (status) => {
     await expect(
       getCustomerBookingRequest(
-        clientReturning({ ...baseRequest, paymentRecovery: { status } }),
+        clientReturning({ ...rawRequest, paymentRecovery: { status } }),
         reference,
       ),
     ).rejects.toThrow("data is invalid");
@@ -282,7 +285,7 @@ it.each([
     await expect(
       getCustomerBookingRequest(
         clientReturning({
-          ...baseRequest,
+          ...rawRequest,
           status: "accepted",
           paymentStatus: "payment-required",
           paymentRequiredWindow: {
@@ -309,7 +312,7 @@ describe("Payment Required expiry projection", () => {
     async (status) => {
       const expiry = { status, deadline: window.deadline };
       const raw = {
-        ...baseRequest,
+        ...rawRequest,
         status: status === "expired" ? "expired" : "accepted",
         paymentStatus: status === "expired" ? null : "payment-required",
         paymentRequiredWindow: status === "expired" ? null : window,
@@ -338,7 +341,7 @@ describe("Payment Required expiry projection", () => {
     "rejects malformed or contradictory expiry evidence %#",
     async (paymentRequiredExpiry) => {
       const raw = {
-        ...baseRequest,
+        ...rawRequest,
         status: "accepted",
         paymentStatus: "payment-required",
         paymentRequiredWindow: window,
@@ -351,7 +354,7 @@ describe("Payment Required expiry projection", () => {
   );
   it("requires confirmed payment to have no residual expiry projection", async () => {
     const raw = {
-      ...baseRequest,
+      ...rawRequest,
       status: "accepted",
       paymentStatus: "paid-confirmed",
       paymentRequiredExpiry: {
@@ -363,4 +366,52 @@ describe("Payment Required expiry projection", () => {
       getCustomerBookingRequest(clientReturning(raw), reference),
     ).rejects.toThrow("invalid");
   });
+});
+
+it("normalizes only a valid current public cover identifier", async () => {
+  const raw = baseRequest;
+  for (const [coverMediaId, coverMediaUrl] of [
+    [
+      "41000000-0000-4000-8000-000000003202",
+      "/api/cottage-media/41000000-0000-4000-8000-000000003202",
+    ],
+    [null, null],
+  ] as const) {
+    await expect
+      .soft(
+        getCustomerBookingRequest(
+          clientReturning({ ...raw, coverMediaId }),
+          reference,
+        ),
+        `valid current public cover ${coverMediaId}`,
+      )
+      .resolves.toEqual({ ...raw, coverMediaUrl });
+  }
+  for (const coverMediaId of [
+    undefined,
+    "",
+    "not-a-uuid",
+    "https://example.com/photo.jpg",
+    "javascript:alert(1)",
+    "../private/photo",
+    42,
+    [],
+    {},
+  ]) {
+    await expect
+      .soft(
+        getCustomerBookingRequest(
+          clientReturning({ ...raw, coverMediaId }),
+          reference,
+        ),
+        `malformed current public cover ${JSON.stringify(coverMediaId)}`,
+      )
+      .rejects.toThrow("Booking Request status data is invalid");
+  }
+  await expect
+    .soft(
+      getCustomerBookingRequest(clientReturning(raw), reference),
+      "missing current public cover field",
+    )
+    .rejects.toThrow("Booking Request status data is invalid");
 });

@@ -47,6 +47,7 @@ export interface CustomerBookingRequest {
       | "confirmed";
   } | null;
   readonly cottageName: string;
+  readonly coverMediaUrl: string | null;
   readonly bookingPeriod: BookingQuoteItem[];
   readonly partySize: number;
   readonly bookingPriceIqd: number;
@@ -110,6 +111,9 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
           "quarantined",
           "confirmed",
         ].includes(paymentRecovery.status))) ||
+    (request.coverMediaId !== null &&
+      (typeof request.coverMediaId !== "string" ||
+        !uuid.test(request.coverMediaId))) ||
     typeof request.cottageName !== "string" ||
     !Array.isArray(request.bookingPeriod) ||
     !validateQuotedItems(request.bookingPeriod as BookingQuoteItem[]) ||
@@ -173,6 +177,10 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
             paymentRecovery as CustomerBookingRequest["paymentRecovery"],
         }),
     cottageName: request.cottageName,
+    coverMediaUrl:
+      request.coverMediaId === null
+        ? null
+        : `/api/cottage-media/${request.coverMediaId}`,
     bookingPeriod,
     partySize: request.partySize as number,
     bookingPriceIqd: request.bookingPriceIqd as number,

@@ -14,6 +14,7 @@ const base = {
   actorRole: "customer" as const,
   customerName: "Fictional Customer",
   cottageName: "Preserved Cottage",
+  coverMediaUrl: null,
   bookingPeriod: [
     {
       serviceDay: "2101-01-01",
@@ -530,7 +531,9 @@ it("confirmed record composition preserves facts and escapes source text", () =>
         );
         const region = screen.getByRole("region");
         const header = region.querySelector("header")!;
-        const supporting = header.querySelector("p")!;
+        const supporting = header.querySelector(
+          ".confirmed-booking-identity-text",
+        )!;
         expect(
           Array.from(supporting.children, (child) => child.textContent),
         ).toEqual([cottageName, bookingReference]);
@@ -622,5 +625,60 @@ it("confirmed record composition preserves facts and escapes source text", () =>
         view.unmount();
       }
     }
+  }
+});
+
+it("shows the current cover beside retained booking identity", () => {
+  const coverMediaUrl =
+    "/api/cottage-media/41000000-0000-4000-8000-000000003202";
+  for (const [actorRole, lifecycleStatus] of [
+    ["customer", "confirmed"],
+    ["cottage_owner", "completed"],
+  ] as const) {
+    const access =
+      actorRole === "customer"
+        ? { ...base, coverMediaUrl }
+        : {
+            ...base,
+            coverMediaUrl,
+            actorRole,
+            pricing: {
+              bookingPriceIqd: 110000,
+              marketplaceCommissionFils: 11000000,
+              ownerNetFils: 99000000,
+            },
+          };
+    const view = render(
+      <ConfirmedBookingDetails
+        locale="en"
+        access={access}
+        notification={pending}
+        navigation={null}
+        lifecycleStatus={lifecycleStatus}
+      />,
+    );
+    const identity = view.container.querySelector(".booking-cottage-identity")!;
+    expect(identity.querySelector("img")).toHaveProperty(
+      "src",
+      new URL(coverMediaUrl, window.location.href).href,
+    );
+    expect(identity.querySelector("img")).toHaveAttribute("alt", "");
+    expect(within(identity).getByText("Preserved Cottage")).toBeVisible();
+    expect(within(identity).getByText("CONFIRMED-BOOKING-35")).toBeVisible();
+    expect(identity.querySelector("a, button")).toBeNull();
+    expect(screen.getByText("Preserved House Rules")).toBeVisible();
+    view.rerender(
+      <ConfirmedBookingDetails
+        locale="en"
+        access={{ ...access, coverMediaUrl: null }}
+        notification={pending}
+        navigation={null}
+        lifecycleStatus={lifecycleStatus}
+      />,
+    );
+    expect(view.container.querySelector("img")).toBeNull();
+    expect(within(identity).getByText("Preserved Cottage")).toBeVisible();
+    expect(within(identity).getByText("CONFIRMED-BOOKING-35")).toBeVisible();
+    view.unmount();
   }
 });

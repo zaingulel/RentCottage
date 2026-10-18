@@ -13,7 +13,7 @@ import { selectPaymentRequiredExpiry } from "../src/booking-request/booking-requ
 import { bookingRequestPaymentFactsFrom } from "../src/booking-request/supabase-booking-request-payment-observation";
 import { bookingTermsFixture } from "../src/booking-request/booking-terms-fixture";
 import { paidConfirmationNotice } from "../src/notification/paid-confirmation-notice";
-import { expect, test, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 import { createRequire } from "node:module";
 import { createClient } from "@supabase/supabase-js";
 
@@ -108,6 +108,101 @@ test("a verified Customer double-submit creates one Pending request and one mini
   if (!profile?.current_shift_schedule_id) {
     throw new Error("Published Booking Request fixture is unavailable");
   }
+  const { data: publications, error: publicationError } =
+    await fixtureOwner.rpc("get_current_cottage_publication", {
+      target_profile_id: profile.id,
+      target_locale: "en",
+    });
+  expect(publicationError).toBeNull();
+  expect(publications).toHaveLength(1);
+  expect(Array.isArray(publications[0].media_ids)).toBe(true);
+  expect(publications[0].media_ids.length).toBeGreaterThan(0);
+  const expectedCoverSrc = `/api/cottage-media/${publications[0].media_ids[0]}`;
+  const observeCoverIdentity = async (
+    surface: Page,
+    locale: "en" | "ar" | "ckb",
+    reference: string,
+  ) => {
+    const configuredViewport = surface.viewportSize();
+    if (!configuredViewport)
+      throw new Error("Cover observation requires a configured viewport");
+    const identity = surface
+      .getByRole("main")
+      .locator(".booking-cottage-identity");
+    await expect(identity).toHaveCount(1);
+    const image = identity.locator("img");
+    await expect(image).toHaveCount(1);
+    await expect(image).toHaveJSProperty(
+      "src",
+      new URL(expectedCoverSrc, surface.url()).href,
+    );
+    await expect(image).toHaveAttribute("alt", "");
+    await expect
+      .poll(() =>
+        image.evaluate((element) => {
+          const image = element as HTMLImageElement;
+          return image.complete && image.naturalWidth > 0;
+        }),
+      )
+      .toBe(true);
+    await expect(
+      surface.getByRole("main").getByText(cottageName, { exact: true }),
+    ).toHaveCount(1);
+    await expect(
+      identity.getByText(cottageName, { exact: true }),
+    ).toBeVisible();
+    await expect(identity.locator("bdi")).toHaveText(reference);
+    await expect(identity.locator("a, button")).toHaveCount(0);
+    await expect(surface.locator("html")).toHaveAttribute(
+      "dir",
+      locale === "en" ? "ltr" : "rtl",
+    );
+    await surface.evaluate(() => document.fonts.ready);
+    await expect
+      .poll(() =>
+        identity.evaluate((row, viewport) => {
+          const image = row.querySelector("img")!;
+          const text = row.querySelector(
+            ".booking-cottage-identity-text, .confirmed-booking-identity-text",
+          )!;
+          const imageBox = image.getBoundingClientRect();
+          const textBox = text.getBoundingClientRect();
+          const rtl = getComputedStyle(row).direction === "rtl";
+          const side = viewport.width <= 640 ? 64 : 80;
+          const boxes = [row, image, text, ...text.children].map((element) =>
+            element.getBoundingClientRect(),
+          );
+          return {
+            photoSize:
+              Math.abs(imageBox.width - side) < 1 &&
+              Math.abs(imageBox.height - side) < 1,
+            inlineStart: rtl
+              ? imageBox.left >= textBox.right
+              : imageBox.right <= textBox.left,
+            centered:
+              Math.abs(
+                imageBox.top +
+                  imageBox.height / 2 -
+                  (textBox.top + textBox.height / 2),
+              ) < 1,
+            completeIdentity: text.scrollWidth <= text.clientWidth + 1,
+            fitsViewport:
+              innerWidth <= viewport.width + 1 &&
+              document.documentElement.scrollWidth <= viewport.width + 1 &&
+              boxes.every(
+                (box) => box.left >= -1 && box.right <= viewport.width + 1,
+              ),
+          };
+        }, configuredViewport),
+      )
+      .toEqual({
+        photoSize: true,
+        inlineStart: true,
+        centered: true,
+        completeIdentity: true,
+        fitsViewport: true,
+      });
+  };
   const { data: shifts, error: shiftsError } = await fixtureOwner
     .from("cottage_shifts")
     .select("id,position")
@@ -478,6 +573,11 @@ test("a verified Customer double-submit creates one Pending request and one mini
     .getByText(/^RC-REQ-[A-F0-9]{16}$/)
     .innerText();
   expect(requestReference).toMatch(/^RC-REQ-[A-F0-9]{16}$/);
+  const coverResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === expectedCoverSrc &&
+      response.request().resourceType() === "image",
+  );
   const unpaidResponse = await page.goto(
     `/en/booking-requests/${requestReference}`,
   );
@@ -489,9 +589,12 @@ test("a verified Customer double-submit creates one Pending request and one mini
   await expect(progress).toBeVisible();
   await expect(page.getByText("IQD 185,000", { exact: true })).toBeVisible();
   await expect(page.getByText(requestReference, { exact: true })).toBeVisible();
-  await expect(
-    page.getByText("Cottage", { exact: true }).locator("..").locator("dd"),
-  ).toHaveText(cottageName);
+  await observeCoverIdentity(page, "en", requestReference);
+  const loadedCoverResponse = await coverResponse;
+  expect(loadedCoverResponse.ok()).toBe(true);
+  const coverHeaders = await loadedCoverResponse.allHeaders();
+  expect(coverHeaders["cache-control"]).toContain("private");
+  expect(coverHeaders["cache-control"]).toContain("no-store");
   await expect(
     page
       .getByText("Customer Total", { exact: true })
@@ -573,6 +676,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       `/${locale}/bookings`,
       `heading-customer-request-${locale}-a11y`,
     );
+    await observeCoverIdentity(page, locale, requestReference);
     if (
       (testInfo.project.name === "desktop" && locale === "en") ||
       (testInfo.project.name === "mobile" && locale === "ar")
@@ -644,6 +748,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       `/${locale}/bookings?workspace=owner`,
       `heading-owner-request-${locale}-a11y`,
     );
+    await observeCoverIdentity(ownerPage, locale, requestReference);
     if (testInfo.project.name === "mobile" && locale === "ckb")
       await ownerPage.screenshot({
         path: testInfo.outputPath("heading-owner-request-ckb.png"),
@@ -1168,9 +1273,17 @@ test("a verified Customer double-submit creates one Pending request and one mini
             state !== "paid-confirmed-incomplete"
           )
             await expect(currentOwnerNotice.getByRole("button")).toHaveCount(0);
+          const originalConfirmedCover =
+            state === "paid-confirmed" && reference === requestReference;
+          const confirmedReference = originalConfirmedCover
+            ? await customerView
+                .locator(".confirmed-booking-identity-text bdi")
+                .innerText()
+            : null;
           for (const viewport of [
             { width: 390, height: 844 },
             { width: 1440, height: 1000 },
+            ...(originalConfirmedCover ? [{ width: 320, height: 844 }] : []),
           ]) {
             for (const surface of [customerView, ownerView]) {
               await surface.setViewportSize({
@@ -1185,6 +1298,33 @@ test("a verified Customer double-submit creates one Pending request and one mini
                     document.documentElement.clientWidth,
                 ),
               ).toBe(true);
+              if (originalConfirmedCover && confirmedReference !== null) {
+                await observeCoverIdentity(
+                  surface,
+                  copy.locale,
+                  confirmedReference,
+                );
+                if (
+                  surface === ownerView &&
+                  ((copy.locale === "en" && viewport.width === 1440) ||
+                    (copy.locale === "ar" && viewport.width === 390))
+                ) {
+                  await surface.evaluate(() => {
+                    if (document.activeElement instanceof HTMLElement)
+                      document.activeElement.blur();
+                  });
+                  await surface
+                    .locator("header.page-heading")
+                    .scrollIntoViewIfNeeded();
+                  await surface.screenshot({
+                    path: testInfo.outputPath(
+                      copy.locale === "en"
+                        ? "booking-cover-confirmed-en-desktop.png"
+                        : "booking-cover-confirmed-ar-phone.png",
+                    ),
+                  });
+                }
+              }
             }
           }
           // Drain page requests before closing their local proxy streams.

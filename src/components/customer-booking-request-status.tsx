@@ -24,6 +24,7 @@ import { formatIqd, formatIraqDateTime } from "@/i18n/format";
 import { accessMessages } from "@/i18n/access-messages";
 import type { Locale } from "@/i18n/routing";
 
+import { BookingCottageThumbnail } from "./booking-cottage-thumbnail";
 import { BookingRequestProgress } from "./booking-request-progress";
 import {
   ActionLink,
@@ -250,12 +251,29 @@ function CustomerBookingRequestStatusView({
         />
       </div>
       <div className="card customer-booking-request-details">
-        <strong>{request.bookingRequestReference}</strong>
-        <dl className="fact-list">
-          <div>
-            <dt>{copy.cottage}</dt>
-            <dd>{request.cottageName}</dd>
+        {request.coverMediaUrl !== null ? (
+          <div className="booking-cottage-identity">
+            <BookingCottageThumbnail
+              key={request.coverMediaUrl}
+              src={request.coverMediaUrl}
+            />
+            <div className="booking-cottage-identity-text">
+              <h2>{request.cottageName}</h2>
+              <p>
+                <bdi>{request.bookingRequestReference}</bdi>
+              </p>
+            </div>
           </div>
+        ) : (
+          <strong>{request.bookingRequestReference}</strong>
+        )}
+        <dl className="fact-list">
+          {request.coverMediaUrl === null ? (
+            <div>
+              <dt>{copy.cottage}</dt>
+              <dd>{request.cottageName}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>{copy.period}</dt>
             <dd>

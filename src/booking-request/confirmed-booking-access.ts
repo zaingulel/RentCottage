@@ -25,6 +25,7 @@ const sharedKeys = new Set([
   "actorRole",
   "customerName",
   "cottageName",
+  "coverMediaId",
   "bookingPeriod",
   "partySize",
   "pricing",
@@ -46,6 +47,7 @@ interface ConfirmedBookingAccessBase {
   readonly confirmedAt: string;
   readonly customerName: string;
   readonly cottageName: string;
+  readonly coverMediaUrl: string | null;
   readonly bookingPeriod: readonly BookingQuoteItem[];
   readonly partySize: number;
   readonly houseRules: string;
@@ -186,6 +188,9 @@ function confirmedBookingAccessFrom(
     access.customerName.length > 120 ||
     access.customerName !== access.customerName.trim() ||
     !isContactSafeBookingRequestText(access.customerName) ||
+    (access.coverMediaId !== null &&
+      (typeof access.coverMediaId !== "string" ||
+        !uuidPattern.test(access.coverMediaId))) ||
     typeof access.cottageName !== "string" ||
     !access.cottageName.trim() ||
     !Array.isArray(access.bookingPeriod) ||
@@ -219,6 +224,10 @@ function confirmedBookingAccessFrom(
     confirmedAt: access.confirmedAt,
     customerName: access.customerName,
     cottageName: access.cottageName,
+    coverMediaUrl:
+      access.coverMediaId === null
+        ? null
+        : `/api/cottage-media/${access.coverMediaId}`,
     bookingPeriod: cloneBookingPeriod(
       access.bookingPeriod as readonly BookingQuoteItem[],
     ),

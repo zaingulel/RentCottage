@@ -51,6 +51,7 @@ const request = {
   bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
   status: "pending" as const,
   cottageName: "Fictional Riverside Cottage",
+  coverMediaUrl: null,
   bookingPeriod: [
     {
       serviceDay: "2099-08-21",

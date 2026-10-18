@@ -11,6 +11,7 @@ import {
   ActionLink,
   Disclosure,
 } from "./interaction-controls";
+import { BookingCottageThumbnail } from "./booking-cottage-thumbnail";
 import { NotificationRetryControl } from "./notification-retry-control";
 
 const messages = {
@@ -166,12 +167,20 @@ export function ConfirmedBookingDetails({
           {bookingLifecycleMessages[locale][lifecycleStatus]}
         </h1>
         <ActionFocusTarget targetId="confirmed-booking-heading" navigation />
-        <p>
-          <span>{access.cottageName}</span>
-          <strong>
-            <bdi>{access.bookingReference}</bdi>
-          </strong>
-        </p>
+        <div className="booking-cottage-identity">
+          {access.coverMediaUrl !== null ? (
+            <BookingCottageThumbnail
+              key={access.coverMediaUrl}
+              src={access.coverMediaUrl}
+            />
+          ) : null}
+          <p className="confirmed-booking-identity-text">
+            <span>{access.cottageName}</span>
+            <strong>
+              <bdi>{access.bookingReference}</bdi>
+            </strong>
+          </p>
+        </div>
       </header>
       <div className="card confirmed-booking-record">
         <div className="confirmed-booking-group">

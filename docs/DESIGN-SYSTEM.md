@@ -448,11 +448,26 @@ its own; the block it sits in sets the space around it.
   filters follow document order in one column. Complete query guidance wraps in a paragraph below its field,
   associated through `aria-describedby` alongside any existing error association. Records results use two equal
   columns, one at `phone`; title links start-align even when wrapping. Review filters use the base filter grid; records-specific columns and slot positions belong only to `.recordsFilters` and its descendants.
+- Booking cottage identity: `.booking-cottage-identity` places a decorative current-public cover at inline
+  start beside retained name/reference text, with inherited direction, vertically centered alignment,
+  `--space-4` gap and shrinkable children. `.booking-cottage-thumbnail` is a nonshrinking `5rem` (80-pixel)
+  square, `4rem` (64 pixels) at `phone`, with `object-fit: cover` and `--radius-card`, without a border,
+  shadow, placeholder or control. `BookingCottageThumbnail` uses an unoptimized direct source and empty
+  alternative text; a load failure removes the image while identity stays visible, and a new source resets
+  failure. `.booking-cottage-identity-text` is a grid with `--space-1` gap, zero heading/paragraph margins,
+  `min-inline-size: 0` and naturally wrapping text. Customer and page-only Owner request headers use a cottage
+  `h2` in `--display` at `--font-size-4`, then the existing reference in `bdi`, in `--muted` at `--font-size-2`.
+  The Owner photo header places identity before its existing status in a grid with `--space-3` gap; ordinary
+  pending status start-aligns and payment status keeps its stretched block. Only a page header with a cover
+  omits the duplicate Cottage fact, retaining its complete name once in the header. Owner section/list layouts retain
+  their own patterns. These photos are current-public decoration; textual booking facts remain preserved snapshots.
 - Confirmed Booking: `section.confirmed-booking-details` is unboxed and fills the page column. Its
   `header.page-heading` retains the return link, title and focus target, with `--space-2` gaps and `--space-5`
   before the facts card. The supporting paragraph has two naturally wrapping blocks: the cottage name in bold
   `--ink` at `--font-size-3`, then the retained strong reference in normal-weight `--muted` at `--font-size-2`,
-  isolated by `bdi`, with `--space-1` between them. `div.card.confirmed-booking-record` has `--space-5` padding,
+  isolated by `bdi`, with `--space-1` between them. The paragraph is `.confirmed-booking-identity-text`,
+  inside the shared identity row below the title, beside the optional current-public thumbnail. With no photo,
+  its two text lines retain the same typography with no empty image track. `div.card.confirmed-booking-record` has `--space-5` padding,
   `--space-4` at `phone`. Four ordinary wrappers each hold a native `dl.fact-list`, in order: customer/Booking
   Period/party; original price and role-specific money; practical access; confirmation notice, fictional-delivery
   explanation and retry. Wrappers have `--space-5` separation; each after the first has a `1px` `--line` top rule
@@ -595,8 +610,9 @@ its own; the block it sits in sets the space around it.
 - Status banner: `p.status-banner` is the page-level status of a record page. It follows the page title, at most
   one per page, and keeps `role="status"` and `aria-live="polite"`. Customer Booking Request status places the
   title on parchment above an unboxed `--space-5` stack: status/progress in one lifted group, reference/all facts
-  in a second, and Messages/action in a third. There is no photograph: the reference stands alone and Cottage
-  is the first fact. The details group has `--space-5` padding, a rule between reference and facts, and Customer
+  in a second, and Messages/action in a third. With a current public cover, the details header uses the
+  Booking cottage identity pattern and keeps the cottage name there once, omitting its duplicate Cottage fact.
+  With no cover, the reference stands alone and Cottage is the first fact. The details group has `--space-5` padding, a rule between reference and facts, and Customer
   Total between two rules with its value in `--display`. Its action footer aligns to the inline end; Messages
   is a `--space-5`-padded heading/action row with errors spanning both columns, stacking at `phone`. All
   deadlines, notes, errors and notification details remain readable. The quote/form, its pre-live gate and

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ActionFocusTarget, ActionLink } from "./interaction-controls";
 import { useBookingRequestRefresh } from "@/booking-request/use-booking-request-refresh";
+import { BookingCottageThumbnail } from "./booking-cottage-thumbnail";
 import { BookingRequestStatusContent } from "./booking-request-status-content";
 import {
   isPaymentDisplayStatus,
@@ -42,13 +43,17 @@ export function OwnerBookingRequestCard({
   notification,
   refresh,
   focusSuccessorId,
+  presentation = "section",
 }: {
   locale: Locale;
   notification: OwnerBookingRequestNotificationDisplay;
   refresh?: () => void;
   focusSuccessorId?: string;
+  presentation?: "page" | "section";
 }) {
   const copy = ownerBookingRequestMessages[locale];
+  const coverMediaUrl =
+    presentation === "page" ? notification.coverMediaUrl : null;
   const [status, setStatus] = useState<BookingRequestDisplayStatus>(
     notification.status,
   );
@@ -67,13 +72,32 @@ export function OwnerBookingRequestCard({
       ) : null}
       <header
         className={
-          isPaymentDisplayStatus(status) ||
-          notification.paymentRequiredExpiry !== null
-            ? "booking-request-payment-header"
-            : undefined
+          [
+            isPaymentDisplayStatus(status) ||
+            notification.paymentRequiredExpiry !== null
+              ? "booking-request-payment-header"
+              : null,
+            coverMediaUrl !== null
+              ? "owner-booking-request-header-with-cover"
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ") || undefined
         }
       >
-        <strong>{notification.bookingRequestReference}</strong>
+        {coverMediaUrl !== null ? (
+          <div className="booking-cottage-identity">
+            <BookingCottageThumbnail key={coverMediaUrl} src={coverMediaUrl} />
+            <div className="booking-cottage-identity-text">
+              <h2>{notification.cottageName}</h2>
+              <p>
+                <bdi>{notification.bookingRequestReference}</bdi>
+              </p>
+            </div>
+          </div>
+        ) : (
+          <strong>{notification.bookingRequestReference}</strong>
+        )}
         <span
           role="status"
           aria-live="polite"
@@ -94,10 +118,12 @@ export function OwnerBookingRequestCard({
         </span>
       </header>
       <dl className="fact-list">
-        <div>
-          <dt>{copy.cottage}</dt>
-          <dd>{notification.cottageName}</dd>
-        </div>
+        {coverMediaUrl === null ? (
+          <div>
+            <dt>{copy.cottage}</dt>
+            <dd>{notification.cottageName}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>{copy.customer}</dt>
           <dd>{notification.customerName}</dd>
@@ -362,6 +388,7 @@ export function OwnerBookingRequestNotifications({
           <OwnerBookingRequestCard
             locale={locale}
             notification={notification}
+            presentation={presentation}
             key={`${notification.bookingRequestReference}:${notification.status}`}
             refresh={refresh}
             focusSuccessorId={focusSuccessorId}

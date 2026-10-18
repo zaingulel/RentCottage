@@ -1994,6 +1994,16 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
       await test.step("completed booking record has readable groups", async () => {
         const region = page.locator("section.confirmed-booking-details");
         await expect(region.getByRole("heading", { level: 1 })).toBeVisible();
+        const identity = region.locator(".confirmed-booking-identity-text");
+        await expect(region.locator(".booking-cottage-thumbnail")).toHaveCount(
+          0,
+        );
+        await expect(
+          identity.getByText("Fictional Preserved Cottage", { exact: true }),
+        ).toBeVisible();
+        await expect(identity.locator("bdi")).toHaveText(
+          `CUSTOMER-REVIEW-HOLD-${namespace}`,
+        );
         const configuredViewport = page.viewportSize();
         if (!configuredViewport)
           throw new Error("Booking record requires a configured viewport");
@@ -2003,7 +2013,9 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
             throw new Error("Booking record requires a configured viewport");
           return region.evaluate((section, viewport) => {
             const header = section.querySelector("header")!;
-            const metadata = header.querySelector("p")!;
+            const metadata = header.querySelector(
+              ".confirmed-booking-identity-text",
+            )!;
             const card = section.querySelector(".confirmed-booking-record")!;
             const groups = Array.from(
               card.querySelectorAll(":scope > .confirmed-booking-group"),
@@ -2186,6 +2198,17 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
             await expect
               .poll(async () => (await measure()).checks)
               .toEqual(expectedChecks);
+            await expect(
+              region.locator(".booking-cottage-thumbnail"),
+            ).toHaveCount(0);
+            await expect(
+              identity.getByText("Fictional Preserved Cottage", {
+                exact: true,
+              }),
+            ).toBeVisible();
+            await expect(identity.locator("bdi")).toHaveText(
+              `CUSTOMER-REVIEW-HOLD-${namespace}`,
+            );
             observations.push(await measure());
           } finally {
             await page.setViewportSize(configuredViewport);

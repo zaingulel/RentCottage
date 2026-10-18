@@ -1,5 +1,5 @@
 begin;
-select plan(50);
+select plan(55);
 
 select has_function(
   'public',
@@ -176,6 +176,109 @@ select is(public.get_confirmed_booking_access('82000000-0000-4000-8000-000000003
 select is(public.get_booking_confirmation_notification_status('82000000-0000-4000-8000-000000003502')->>'state', 'pending', 'paid details remain available with truthful pending notice status before first drain');
 select is(jsonb_array_length(public.list_booking_history('customer'))::text, '1', 'the Customer history contains only their request');
 reset role;
+
+select ok(
+  (select result ? 'coverMediaId' and result -> 'coverMediaId' = 'null'::jsonb
+    from customer_access),
+  'Confirmed current public cover is explicit null without a publication'
+);
+savepoint confirmed_current_public_cover;
+set session_replication_role = replica;
+insert into public.cottage_shift_schedule_revisions (id, profile_id, revision)
+values (
+  '30000000-0000-4000-8000-000000003501',
+  '20000000-0000-4000-8000-000000003501', 1
+);
+insert into public.cottage_publication_snapshots (
+  id, profile_id, review_cycle_id, publication_number, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities
+) values (
+  '66000000-0000-4000-8000-000000003501',
+  '20000000-0000-4000-8000-000000003501',
+  '64000000-0000-4000-8000-000000003501',
+  1, 'Changed current Cottage name', 'Baghdad', 'Karrada', 8, 3, 2, array['garden']
+);
+insert into public.cottage_marketplace_listings (profile_id, public_slug, state)
+values (
+  '20000000-0000-4000-8000-000000003501',
+  'cottage-20000000000040008000000000003501', 'published'
+);
+update public.owner_application_cottage_profiles
+set current_publication_id = '66000000-0000-4000-8000-000000003501',
+  current_shift_schedule_id = '30000000-0000-4000-8000-000000003501'
+where id = '20000000-0000-4000-8000-000000003501';
+set session_replication_role = origin;
+set local role authenticated;
+select ok(
+  projection.result ? 'coverMediaId'
+    and projection.result -> 'coverMediaId' = 'null'::jsonb,
+  'Confirmed current public cover is explicit null without media'
+) from (
+  select public.get_confirmed_booking_access('RC-REQ-0000000000003501') as result
+) projection;
+reset role;
+set session_replication_role = replica;
+-- Position 2 precedes position 1 so heap order cannot stand in for cover order.
+insert into public.cottage_publication_media (
+  publication_id, photo_id, opaque_id, object_path, media_type, position
+) values (
+  '66000000-0000-4000-8000-000000003501',
+  '40000000-0000-4000-8000-000000003502',
+  '41000000-0000-4000-8000-000000003501',
+  'private/confirmation/cover-3501.webp', 'image/webp', 2
+), (
+  '66000000-0000-4000-8000-000000003501',
+  '40000000-0000-4000-8000-000000003503',
+  '41000000-0000-4000-8000-000000003502',
+  'private/confirmation/cover-3502.webp', 'image/webp', 1
+);
+set session_replication_role = origin;
+set local role authenticated;
+select is(
+  public.get_confirmed_booking_access('RC-REQ-0000000000003501')->>'coverMediaId',
+  '41000000-0000-4000-8000-000000003502',
+  'current public cover follows publication visibility'
+);
+reset role;
+set session_replication_role = replica;
+insert into public.cottage_publication_snapshots (
+  id, profile_id, review_cycle_id, publication_number, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities
+) values (
+  '66000000-0000-4000-8000-000000003502',
+  '20000000-0000-4000-8000-000000003501',
+  '64000000-0000-4000-8000-000000003502',
+  2, 'Changed current Cottage name', 'Baghdad', 'Karrada', 8, 3, 2, array['garden']
+);
+insert into public.cottage_publication_media (
+  publication_id, photo_id, opaque_id, object_path, media_type, position
+) values (
+  '66000000-0000-4000-8000-000000003502',
+  '40000000-0000-4000-8000-000000003502',
+  '41000000-0000-4000-8000-000000003503',
+  'private/confirmation/cover-3501.webp', 'image/webp', 1
+);
+update public.owner_application_cottage_profiles
+set current_publication_id = '66000000-0000-4000-8000-000000003502'
+where id = '20000000-0000-4000-8000-000000003501';
+set session_replication_role = origin;
+set local role authenticated;
+select is(
+  public.get_confirmed_booking_access('RC-REQ-0000000000003501')->>'coverMediaId',
+  '41000000-0000-4000-8000-000000003503',
+  'Confirmed current public cover follows a replacement publication instead of old media'
+);
+reset role;
+update public.cottage_marketplace_listings set state = 'paused'
+where profile_id = '20000000-0000-4000-8000-000000003501';
+set local role authenticated;
+select is(
+  public.get_confirmed_booking_access('RC-REQ-0000000000003501')->'coverMediaId',
+  'null'::jsonb,
+  'Confirmed current public cover is null while paused'
+);
+reset role;
+rollback to savepoint confirmed_current_public_cover;
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000003501', true);
 set local role authenticated;
