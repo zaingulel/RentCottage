@@ -35,6 +35,9 @@ const shared = {
   ownerPhone: "+9647700000035",
 };
 
+const rawShared = { ...shared, coverMediaId: null };
+const expectedShared = { ...shared, coverMediaUrl: null };
+
 function clientReturning(data: unknown, error: unknown = null) {
   return {
     rpc: vi.fn().mockResolvedValue({ data, error }),
@@ -44,7 +47,7 @@ function clientReturning(data: unknown, error: unknown = null) {
 describe("Confirmed Booking access repository", () => {
   it("parses the Customer's paid confirmation and Customer pricing", async () => {
     const client = clientReturning({
-      ...shared,
+      ...rawShared,
       actorRole: "customer",
       pricing: {
         bookingPriceIqd: 100_003,
@@ -56,7 +59,7 @@ describe("Confirmed Booking access repository", () => {
     await expect(
       getConfirmedBookingAccess(client, requestReference),
     ).resolves.toEqual({
-      ...shared,
+      ...expectedShared,
       actorRole: "customer",
       pricing: {
         bookingPriceIqd: 100_003,
@@ -73,7 +76,7 @@ describe("Confirmed Booking access repository", () => {
     await expect(
       getConfirmedBookingAccess(
         clientReturning({
-          ...shared,
+          ...rawShared,
           actorRole: "customer",
           pricing: {
             bookingPriceIqd: 100_003,
@@ -87,7 +90,7 @@ describe("Confirmed Booking access repository", () => {
         requestReference,
       ),
     ).resolves.toEqual({
-      ...shared,
+      ...expectedShared,
       actorRole: "customer",
       pricing: {
         bookingPriceIqd: 100_003,
@@ -101,7 +104,7 @@ describe("Confirmed Booking access repository", () => {
     await expect(
       getConfirmedBookingAccess(
         clientReturning({
-          ...shared,
+          ...rawShared,
           actorRole: "cottage_owner",
           pricing: {
             bookingPriceIqd: 100_003,
@@ -125,7 +128,7 @@ describe("Confirmed Booking access repository", () => {
     await expect(
       getConfirmedBookingAccess(
         clientReturning({
-          ...shared,
+          ...rawShared,
           actorRole: "customer",
           pricing: {
             bookingPriceIqd: 100_003,
@@ -166,7 +169,7 @@ describe("Confirmed Booking access repository", () => {
       await expect(
         getConfirmedBookingAccess(
           clientReturning({
-            ...shared,
+            ...rawShared,
             actorRole: "customer",
             pricing: {
               bookingPriceIqd: 100_003,
@@ -203,4 +206,60 @@ describe("Confirmed Booking access repository", () => {
       ),
     ).rejects.toThrow("Confirmed Booking access is unavailable");
   });
+});
+
+it("normalizes only a valid current public cover identifier", async () => {
+  const raw = {
+    ...shared,
+    actorRole: "customer",
+    pricing: {
+      bookingPriceIqd: 100_003,
+      serviceFeeIqd: 5_000,
+      customerTotalIqd: 105_003,
+    },
+  };
+  for (const [coverMediaId, coverMediaUrl] of [
+    [
+      "41000000-0000-4000-8000-000000003202",
+      "/api/cottage-media/41000000-0000-4000-8000-000000003202",
+    ],
+    [null, null],
+  ] as const) {
+    await expect
+      .soft(
+        getConfirmedBookingAccess(
+          clientReturning({ ...raw, coverMediaId }),
+          requestReference,
+        ),
+        `valid current public cover ${coverMediaId}`,
+      )
+      .resolves.toEqual({ ...raw, coverMediaUrl });
+  }
+  for (const coverMediaId of [
+    undefined,
+    "",
+    "not-a-uuid",
+    "https://example.com/photo.jpg",
+    "javascript:alert(1)",
+    "../private/photo",
+    42,
+    [],
+    {},
+  ]) {
+    await expect
+      .soft(
+        getConfirmedBookingAccess(
+          clientReturning({ ...raw, coverMediaId }),
+          requestReference,
+        ),
+        `malformed current public cover ${JSON.stringify(coverMediaId)}`,
+      )
+      .rejects.toThrow("Confirmed Booking access data is invalid");
+  }
+  await expect
+    .soft(
+      getConfirmedBookingAccess(clientReturning(raw), requestReference),
+      "missing current public cover field",
+    )
+    .rejects.toThrow("Confirmed Booking access data is invalid");
 });

@@ -79,6 +79,9 @@ export function CustomerReviewTranslationReports({
     return (
       <main className={`page results-page ${styles.administratorPage}`}>
         <header className="page-heading">
+          <ActionLink kind="text" href={moderationHref}>
+            {copy.administratorTitle}
+          </ActionLink>
           <h1 className="page-title">{copy.translationReportsTitle}</h1>
         </header>
         {result.status === "invalid" ? (
@@ -109,14 +112,14 @@ export function CustomerReviewTranslationReports({
         nested
       />
       <header className="page-heading">
+        <ActionLink kind="text" href={moderationHref}>
+          {copy.administratorTitle}
+        </ActionLink>
         <h1 className="page-title">{copy.translationReportsTitle}</h1>
       </header>
       {result.items.length === 0 ? (
         <div className="empty-state">
           <p>{copy.translationReportsEmpty}</p>
-          <ActionLink kind="secondary" href={moderationHref}>
-            {copy.administratorTitle}
-          </ActionLink>
         </div>
       ) : (
         <div className={styles.list}>

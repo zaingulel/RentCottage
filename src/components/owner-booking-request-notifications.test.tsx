@@ -656,3 +656,80 @@ it("keeps elapsed and attention states held and refreshing until one unpaid-expi
     vi.useRealTimers();
   }
 });
+
+it("default owner list retains its section heading", () => {
+  for (const [locale, title] of [
+    ["en", "Pending Booking Requests"],
+    ["ar", "طلبات الحجز قيد الانتظار"],
+    ["ckb", "داواکارییە چاوەڕوانەکانی حجز"],
+  ] as const) {
+    const view = render(
+      <OwnerBookingRequestNotifications
+        locale={locale}
+        notifications={[pendingNotification]}
+      />,
+    );
+    const heading = screen.getByRole("heading", { level: 2, name: title });
+    expect(heading).toBeVisible();
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+    expect(
+      within(heading.parentElement!).queryByRole("link"),
+    ).not.toBeInTheDocument();
+    view.unmount();
+  }
+});
+
+it("shows the current cover beside retained booking identity", () => {
+  const coverMediaUrl =
+    "/api/cottage-media/41000000-0000-4000-8000-000000003202";
+  const notification = { ...pendingNotification, coverMediaUrl };
+  const view = render(
+    <OwnerBookingRequestNotifications
+      locale="en"
+      notifications={[notification]}
+      presentation="page"
+    />,
+  );
+  const card = screen.getByRole("article", { name: "RC-REQ-AAAAAAAAAAAAAAAA" });
+  const identity = card.querySelector<HTMLDivElement>(
+    ".booking-cottage-identity",
+  )!;
+  expect(identity.querySelector("img")).toHaveProperty(
+    "src",
+    new URL(coverMediaUrl, window.location.href).href,
+  );
+  expect(identity.querySelector("img")).toHaveAttribute("alt", "");
+  expect(
+    within(identity).getByRole("heading", { level: 2, name: "Quiet Garden" }),
+  ).toBeVisible();
+  expect(identity.querySelector("bdi")).toHaveTextContent(
+    "RC-REQ-AAAAAAAAAAAAAAAA",
+  );
+  expect(screen.getAllByText("Quiet Garden", { exact: true })).toHaveLength(1);
+  expect(identity.querySelector("a, button")).toBeNull();
+  expect(within(card).getByText("IQD 90,002.7")).toBeVisible();
+  view.rerender(
+    <OwnerBookingRequestNotifications
+      locale="en"
+      notifications={[notification]}
+    />,
+  );
+  expect(view.container.querySelector("img")).toBeNull();
+  expect(screen.getByText("Cottage").nextElementSibling).toHaveTextContent(
+    "Quiet Garden",
+  );
+  expect(card.querySelector("header > strong")).toHaveTextContent(
+    "RC-REQ-AAAAAAAAAAAAAAAA",
+  );
+  view.rerender(
+    <OwnerBookingRequestNotifications
+      locale="en"
+      notifications={[pendingNotification]}
+      presentation="page"
+    />,
+  );
+  expect(view.container.querySelector("img")).toBeNull();
+  expect(screen.getByText("Cottage").nextElementSibling).toHaveTextContent(
+    "Quiet Garden",
+  );
+});

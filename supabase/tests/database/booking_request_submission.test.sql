@@ -58,7 +58,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(355);
+select plan(360);
 
 set local role anon;
 select throws_ok(
@@ -6080,6 +6080,38 @@ select results_eq(
 );
 rollback to savepoint terminal_reconciliation_markers_are_monotonic;
 
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003202"}',
+  true
+);
+select ok(
+  projection.result ? 'coverMediaId'
+    and projection.result -> 'coverMediaId' = 'null'::jsonb,
+  'Customer current public cover is explicit null without media'
+) from (
+  select public.get_customer_booking_request(
+    (select booking_request_reference from booking_request_lifecycle_target)
+  ) as result
+) projection;
+reset role;
+savepoint customer_cover_without_publication;
+update public.owner_application_cottage_profiles set current_publication_id = null
+where id = '30000000-0000-4000-8000-000000003201';
+set local role authenticated;
+select ok(
+  projection.result ? 'coverMediaId'
+    and projection.result -> 'coverMediaId' = 'null'::jsonb,
+  'Customer current public cover is explicit null without a publication'
+) from (
+  select public.get_customer_booking_request(
+    (select booking_request_reference from booking_request_lifecycle_target)
+  ) as result
+) projection;
+reset role;
+rollback to savepoint customer_cover_without_publication;
+
 insert into public.cottage_profile_photos (
   id, profile_id, owner_user_id, actor_user_id, object_path,
   original_filename, media_type, size_bytes, state
@@ -6170,6 +6202,18 @@ select is(
   'null'::jsonb,
   'the owner projection carries no photo identifier once the Cottage is paused'
 );
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003202"}',
+  true
+);
+select is(
+  public.get_customer_booking_request(
+    (select booking_request_reference from booking_request_lifecycle_target)
+  ) -> 'coverMediaId',
+  'null'::jsonb,
+  'Customer current public cover is null while paused'
+);
 reset role;
 rollback to savepoint owner_projection_paused_cottage;
 
@@ -6214,6 +6258,52 @@ select ok(
   ]),
   'the owning Customer receives a constrained status projection without private Owner or payment data'
 );
+select is(
+  (select result ->> 'coverMediaId' from customer_projection),
+  '41000000-0000-4000-8000-000000003202',
+  'current public cover follows publication visibility'
+);
+savepoint customer_cover_replaced_publication;
+insert into public.cottage_profile_review_cycles (
+  id, profile_id, owner_user_id, source_revision_id, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities,
+  cycle_number, state, decided_at
+)
+select '64000000-0000-4000-8000-000000003202', profile_id, owner_user_id,
+  source_revision_id, name, governorate, approximate_location, capacity,
+  bedrooms, bathrooms, amenities, 2, state, decided_at
+from public.cottage_profile_review_cycles
+where id = '64000000-0000-4000-8000-000000003201';
+insert into public.cottage_publication_snapshots (
+  id, profile_id, review_cycle_id, publication_number, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities
+)
+select '66000000-0000-4000-8000-000000003202', profile_id,
+  '64000000-0000-4000-8000-000000003202', 2, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities
+from public.cottage_publication_snapshots
+where id = '66000000-0000-4000-8000-000000003201';
+insert into public.cottage_publication_media (
+  publication_id, photo_id, opaque_id, object_path, media_type, position
+) values (
+  '66000000-0000-4000-8000-000000003202',
+  '40000000-0000-4000-8000-000000003201',
+  '41000000-0000-4000-8000-000000003203',
+  'private/submission/cover-3201.webp', 'image/webp', 1
+);
+update public.owner_application_cottage_profiles
+set current_publication_id = '66000000-0000-4000-8000-000000003202'
+where id = '30000000-0000-4000-8000-000000003201';
+set local role authenticated;
+select is(
+  public.get_customer_booking_request(
+    (select booking_request_reference from booking_request_lifecycle_target)
+  ) ->> 'coverMediaId',
+  '41000000-0000-4000-8000-000000003203',
+  'Customer current public cover follows a replacement publication instead of old media'
+);
+reset role;
+rollback to savepoint customer_cover_replaced_publication;
 set local role authenticated;
 select set_config(
   'request.jwt.claims',

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ActionFocusTarget, ActionLink } from "./interaction-controls";
 import { useBookingRequestRefresh } from "@/booking-request/use-booking-request-refresh";
+import { BookingCottageThumbnail } from "./booking-cottage-thumbnail";
 import { BookingRequestStatusContent } from "./booking-request-status-content";
 import {
   isPaymentDisplayStatus,
@@ -24,6 +25,7 @@ import {
   ownerRequestPeriod,
   ownerRequestTimeLeft,
 } from "@/i18n/owner-booking-request-messages";
+import { accessMessages } from "@/i18n/access-messages";
 import type { Locale } from "@/i18n/routing";
 import {
   BookingRequestDecisionControls,
@@ -41,13 +43,17 @@ export function OwnerBookingRequestCard({
   notification,
   refresh,
   focusSuccessorId,
+  presentation = "section",
 }: {
   locale: Locale;
   notification: OwnerBookingRequestNotificationDisplay;
   refresh?: () => void;
   focusSuccessorId?: string;
+  presentation?: "page" | "section";
 }) {
   const copy = ownerBookingRequestMessages[locale];
+  const coverMediaUrl =
+    presentation === "page" ? notification.coverMediaUrl : null;
   const [status, setStatus] = useState<BookingRequestDisplayStatus>(
     notification.status,
   );
@@ -66,13 +72,32 @@ export function OwnerBookingRequestCard({
       ) : null}
       <header
         className={
-          isPaymentDisplayStatus(status) ||
-          notification.paymentRequiredExpiry !== null
-            ? "booking-request-payment-header"
-            : undefined
+          [
+            isPaymentDisplayStatus(status) ||
+            notification.paymentRequiredExpiry !== null
+              ? "booking-request-payment-header"
+              : null,
+            coverMediaUrl !== null
+              ? "owner-booking-request-header-with-cover"
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ") || undefined
         }
       >
-        <strong>{notification.bookingRequestReference}</strong>
+        {coverMediaUrl !== null ? (
+          <div className="booking-cottage-identity">
+            <BookingCottageThumbnail key={coverMediaUrl} src={coverMediaUrl} />
+            <div className="booking-cottage-identity-text">
+              <h2>{notification.cottageName}</h2>
+              <p>
+                <bdi>{notification.bookingRequestReference}</bdi>
+              </p>
+            </div>
+          </div>
+        ) : (
+          <strong>{notification.bookingRequestReference}</strong>
+        )}
         <span
           role="status"
           aria-live="polite"
@@ -93,10 +118,12 @@ export function OwnerBookingRequestCard({
         </span>
       </header>
       <dl className="fact-list">
-        <div>
-          <dt>{copy.cottage}</dt>
-          <dd>{notification.cottageName}</dd>
-        </div>
+        {coverMediaUrl === null ? (
+          <div>
+            <dt>{copy.cottage}</dt>
+            <dd>{notification.cottageName}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>{copy.customer}</dt>
           <dd>{notification.customerName}</dd>
@@ -277,11 +304,13 @@ export function OwnerBookingRequestNotifications({
   notifications,
   focusSuccessorId = "owner-booking-requests-heading",
   waitingPresentation = "card",
+  presentation = "section",
 }: {
   locale: Locale;
   notifications: OwnerBookingRequestNotificationDisplay[] | undefined;
   focusSuccessorId?: string;
   waitingPresentation?: "card" | "row";
+  presentation?: "page" | "section";
 }) {
   const copy = ownerBookingRequestMessages[locale];
   const refresh = useBookingRequestRefresh(
@@ -302,6 +331,8 @@ export function OwnerBookingRequestNotifications({
     ({ status, paymentRequiredExpiry }) =>
       isPaymentDisplayStatus(status) || paymentRequiredExpiry !== null,
   );
+  const Heading = presentation === "page" ? "h1" : "h2";
+  const HeadingWrapper = presentation === "page" ? "header" : "div";
   const rows =
     waitingPresentation === "row"
       ? notifications.filter(isWaitingBookingRequest)
@@ -317,16 +348,27 @@ export function OwnerBookingRequestNotifications({
       className="owner-booking-requests"
       aria-labelledby="owner-booking-requests-heading"
     >
-      <div>
-        <h2
+      <HeadingWrapper
+        className={presentation === "page" ? "page-heading" : undefined}
+      >
+        {presentation === "page" ? (
+          <ActionLink kind="text" href={`/${locale}/bookings?workspace=owner`}>
+            {accessMessages[locale].backToBookings}
+          </ActionLink>
+        ) : null}
+        <Heading
           id="owner-booking-requests-heading"
           tabIndex={-1}
-          className="section-title action-focus-target"
+          className={
+            presentation === "page"
+              ? "page-title action-focus-target"
+              : "section-title action-focus-target"
+          }
         >
           {containsPaymentDisplayState ? copy.paymentTitle : copy.title}
-        </h2>
+        </Heading>
         <p>{containsPaymentDisplayState ? copy.paymentIntro : copy.intro}</p>
-      </div>
+      </HeadingWrapper>
       {notifications.length === 0 ? <p>{copy.empty}</p> : null}
       {rows.length > 0 ? (
         <div className="request-rows">
@@ -346,6 +388,7 @@ export function OwnerBookingRequestNotifications({
           <OwnerBookingRequestCard
             locale={locale}
             notification={notification}
+            presentation={presentation}
             key={`${notification.bookingRequestReference}:${notification.status}`}
             refresh={refresh}
             focusSuccessorId={focusSuccessorId}

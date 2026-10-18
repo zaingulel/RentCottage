@@ -579,3 +579,126 @@ describe("administrator payout investigation", () => {
     },
   );
 });
+
+it("cancelled participant headings return before the title", () => {
+  for (const [locale, name] of [
+    ["en", "Back to bookings"],
+    ["ar", "العودة إلى الحجوزات"],
+    ["ckb", "گەڕانەوە بۆ حجزەکان"],
+  ] as const) {
+    for (const actorRole of [
+      "customer",
+      "cottage_owner",
+      "platform_administrator",
+    ] as const) {
+      const view = render(
+        <BookingFinancialDetails
+          locale={locale}
+          view={{
+            ...financial,
+            actorRole,
+            lifecycle: { ...financial.lifecycle, status: "cancelled" },
+            cancellation: {
+              occurredAt: "2100-12-02T12:00:00Z",
+              obligation: financial.captured,
+            },
+          }}
+        />,
+      );
+      const titles = screen.getAllByRole("heading", { level: 1 });
+      expect(titles).toHaveLength(1);
+      const title = titles[0];
+      const heading = title.closest("header")!;
+      expect(title).toHaveAttribute(
+        "id",
+        "booking-financial-RC-REQ-0000000000001001",
+      );
+      expect(title).toHaveAttribute("tabindex", "-1");
+      expect(within(heading).getByText("BOOKING-38").tagName).toBe("STRONG");
+      if (actorRole === "platform_administrator") {
+        expect(within(heading).queryByRole("link")).not.toBeInTheDocument();
+        expect(heading).not.toHaveClass("page-heading");
+        expect(title).not.toHaveClass("page-title");
+      } else {
+        expect(heading).toHaveClass("page-heading");
+        expect(title).toHaveClass("page-title");
+        expect(within(heading).getAllByRole("link")).toHaveLength(1);
+        const link = within(heading).getByRole("link", {
+          name,
+        });
+        expect(link).toBeVisible();
+        expect(link).toHaveAttribute(
+          "href",
+          actorRole === "customer"
+            ? `/${locale}/bookings`
+            : `/${locale}/bookings?workspace=owner`,
+        );
+        expect(
+          link.compareDocumentPosition(title) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+      }
+      view.unmount();
+    }
+  }
+});
+
+it("cancelled participant pages open with their return heading", () => {
+  for (const [locale, lifecycleName, name] of [
+    ["en", "Booking lifecycle", "Back to bookings"],
+    ["ar", "دورة حياة الحجز", "العودة إلى الحجوزات"],
+    ["ckb", "دۆخی ژیانی حجز", "گەڕانەوە بۆ حجزەکان"],
+  ] as const) {
+    for (const actorRole of [
+      "customer",
+      "cottage_owner",
+      "platform_administrator",
+    ] as const) {
+      for (const cancelled of [true, false]) {
+        const view = render(
+          <BookingFinancialDetails
+            locale={locale}
+            view={{
+              ...financial,
+              actorRole,
+              lifecycle: {
+                ...financial.lifecycle,
+                status: cancelled ? "cancelled" : "confirmed",
+              },
+              cancellation: cancelled
+                ? {
+                    occurredAt: "2100-12-02T12:00:00Z",
+                    obligation: financial.captured,
+                  }
+                : null,
+            }}
+          />,
+        );
+        const lifecycle = screen.getByRole("region", { name: lifecycleName });
+        const panel = lifecycle.parentElement!;
+        const firstHeading = within(panel).getAllByRole("heading")[0];
+        if (cancelled && actorRole !== "platform_administrator") {
+          const title = within(panel).getByRole("heading", { level: 1 });
+          expect(firstHeading).toBe(title);
+          const link = within(title.closest("header")!).getByRole("link", {
+            name,
+          });
+          expect(
+            link.compareDocumentPosition(title) &
+              Node.DOCUMENT_POSITION_FOLLOWING,
+          ).toBeTruthy();
+          expect(
+            title.compareDocumentPosition(lifecycle) &
+              Node.DOCUMENT_POSITION_FOLLOWING,
+          ).toBeTruthy();
+        } else {
+          expect(firstHeading).toBe(
+            within(lifecycle).getByRole("heading", { name: lifecycleName }),
+          );
+          expect(panel.firstElementChild).toBe(lifecycle);
+        }
+        view.unmount();
+      }
+    }
+  }
+});

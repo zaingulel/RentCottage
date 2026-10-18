@@ -21,10 +21,13 @@ import {
   bookingRequestPaymentRequiredExpiryMessages,
 } from "@/i18n/booking-request-status-messages";
 import { formatIqd, formatIraqDateTime } from "@/i18n/format";
+import { accessMessages } from "@/i18n/access-messages";
 import type { Locale } from "@/i18n/routing";
 
+import { BookingCottageThumbnail } from "./booking-cottage-thumbnail";
 import { BookingRequestProgress } from "./booking-request-progress";
 import {
+  ActionLink,
   ActionButton,
   ActionFeedback,
   ActionFocusTarget,
@@ -209,14 +212,22 @@ function CustomerBookingRequestStatusView({
       {focusSuccessorId && (status === "processing" || !pending) ? (
         <ActionFocusTarget targetId={focusSuccessorId} />
       ) : null}
-      <h1
-        id="customer-booking-request-title"
-        tabIndex={-1}
-        className="page-title action-focus-target"
-      >
-        {copy.title}
-      </h1>
-      <ActionFocusTarget targetId="customer-booking-request-title" navigation />
+      <header className="page-heading">
+        <ActionLink kind="text" href={`/${locale}/bookings`}>
+          {accessMessages[locale].backToBookings}
+        </ActionLink>
+        <h1
+          id="customer-booking-request-title"
+          tabIndex={-1}
+          className="page-title action-focus-target"
+        >
+          {copy.title}
+        </h1>
+        <ActionFocusTarget
+          targetId="customer-booking-request-title"
+          navigation
+        />
+      </header>
       <div className="card customer-booking-request-progress">
         <p className="status-banner" role="status" aria-live="polite">
           <BookingRequestStatusContent
@@ -240,12 +251,29 @@ function CustomerBookingRequestStatusView({
         />
       </div>
       <div className="card customer-booking-request-details">
-        <strong>{request.bookingRequestReference}</strong>
-        <dl className="fact-list">
-          <div>
-            <dt>{copy.cottage}</dt>
-            <dd>{request.cottageName}</dd>
+        {request.coverMediaUrl !== null ? (
+          <div className="booking-cottage-identity">
+            <BookingCottageThumbnail
+              key={request.coverMediaUrl}
+              src={request.coverMediaUrl}
+            />
+            <div className="booking-cottage-identity-text">
+              <h2>{request.cottageName}</h2>
+              <p>
+                <bdi>{request.bookingRequestReference}</bdi>
+              </p>
+            </div>
           </div>
+        ) : (
+          <strong>{request.bookingRequestReference}</strong>
+        )}
+        <dl className="fact-list">
+          {request.coverMediaUrl === null ? (
+            <div>
+              <dt>{copy.cottage}</dt>
+              <dd>{request.cottageName}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>{copy.period}</dt>
             <dd>

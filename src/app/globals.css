@@ -3266,6 +3266,17 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
   font-weight: 700;
 }
 
+.owner-booking-request-card > header.owner-booking-request-header-with-cover {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.owner-booking-request-header-with-cover
+  > span:not(.booking-request-payment-status) {
+  justify-self: start;
+}
+
 .owner-booking-request-card > .fact-list {
   margin-block: var(--space-4);
 }
@@ -3330,7 +3341,6 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
   }
 }
 
-.confirmed-booking-details,
 .booking-request-progress-card,
 .booking-history {
   width: min(100%, 52rem);
@@ -3341,20 +3351,104 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
   background: var(--surface-bright);
 }
 
-.confirmed-booking-details > header {
+.booking-cottage-identity {
   display: flex;
-  align-items: start;
-  justify-content: space-between;
+  align-items: center;
   gap: var(--space-4);
+  min-inline-size: 0;
 }
 
-.confirmed-booking-details > header p,
-.confirmed-booking-details > header h1 {
-  margin-block: 0 var(--space-1);
+.booking-cottage-thumbnail {
+  flex-shrink: 0;
+  inline-size: 5rem;
+  block-size: 5rem;
+  object-fit: cover;
+  border-radius: var(--radius-card);
 }
 
-.confirmed-booking-details .fact-list {
-  margin-block-start: var(--space-6);
+.booking-cottage-identity-text {
+  display: grid;
+  gap: var(--space-1);
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.booking-cottage-identity-text > h2,
+.booking-cottage-identity-text > p,
+.confirmed-booking-identity-text {
+  margin: 0;
+}
+
+.booking-cottage-identity-text > h2 {
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: var(--font-size-4);
+}
+
+.booking-cottage-identity-text > p {
+  color: var(--muted);
+  font-size: var(--font-size-2);
+}
+
+@media (max-width: 40rem) {
+  .booking-cottage-thumbnail {
+    inline-size: 4rem;
+    block-size: 4rem;
+  }
+}
+
+.confirmed-booking-details,
+.confirmed-booking-details .page-heading,
+.confirmed-booking-identity-text,
+.confirmed-booking-record,
+.confirmed-booking-group,
+.confirmed-booking-record .fact-list > div > * {
+  min-inline-size: 0;
+}
+
+.confirmed-booking-identity-text > * {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.confirmed-booking-identity-text > span {
+  color: var(--ink);
+  font-size: var(--font-size-3);
+  font-weight: 700;
+}
+
+.confirmed-booking-identity-text > strong {
+  margin-block-start: var(--space-1);
+  color: var(--muted);
+  font-size: var(--font-size-2);
+  font-weight: 400;
+}
+
+.confirmed-booking-record {
+  padding: var(--space-5);
+}
+
+.confirmed-booking-group + .confirmed-booking-group {
+  margin-block-start: var(--space-5);
+  padding-block-start: var(--space-5);
+  border-block-start: 1px solid var(--line);
+}
+
+.confirmed-booking-final-money > dt,
+.confirmed-booking-final-money > dd {
+  font-weight: 700;
+}
+
+.confirmed-booking-final-money > dd {
+  font-size: var(--font-size-4);
+}
+
+.confirmed-booking-incomplete {
+  margin-block: 0 var(--space-4);
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--surface-notice);
+  color: var(--ink);
 }
 
 .confirmed-booking-details .fact-list dd {
@@ -3365,6 +3459,19 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
   display: inline-block;
 }
 
+.confirmed-booking-details .fact-list dd > span {
+  white-space: normal;
+}
+
+.confirmed-booking-details .fact-list dd > span + span {
+  margin-block-start: var(--space-3);
+}
+
+.confirmed-booking-details .fact-list dd > span > strong,
+.confirmed-booking-details .fact-list dd > span > span {
+  display: block;
+}
+
 .confirmed-booking-details dd > small {
   display: block;
   margin-block-start: var(--space-2);
@@ -3372,7 +3479,13 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
 }
 
 .confirmed-booking-details .disclosure {
-  margin-block-start: var(--space-4);
+  margin-block-start: var(--space-5);
+}
+
+@media (max-width: 40rem) {
+  .confirmed-booking-record {
+    padding: var(--space-4);
+  }
 }
 
 .confirmed-booking-details .disclosure > p {
@@ -3750,10 +3863,6 @@ section.request-follow-up {
     gap: var(--space-1);
   }
 
-  .confirmed-booking-details > header {
-    display: grid;
-  }
-
   .booking-request-progress {
     grid-template-columns: 1fr;
     gap: var(--booking-progress-row-gap);
@@ -3794,6 +3903,10 @@ section.request-follow-up {
   gap: var(--space-5);
 }
 
+.customer-booking-request-status > .page-heading {
+  margin-block-end: 0;
+}
+
 .customer-booking-request-progress,
 .customer-booking-request-details {
   display: grid;
@@ -3816,6 +3929,11 @@ section.request-follow-up {
   padding-block: var(--space-4);
   padding-inline: var(--space-5);
   border-radius: 0;
+}
+
+.customer-booking-request-details > .booking-cottage-identity {
+  padding-block-end: var(--space-5);
+  border-block-end: 1px solid var(--line);
 }
 
 .customer-booking-request-details > strong {

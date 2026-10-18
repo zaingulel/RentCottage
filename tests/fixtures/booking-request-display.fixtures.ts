@@ -45,6 +45,7 @@ const restrictedFields = {
 
 const customerDisplay = {
   ...sharedRequest,
+  coverMediaUrl: null,
   ...restrictedFields,
   partySize: 4,
   bookingPriceIqd: 100_003,

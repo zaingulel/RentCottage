@@ -33,6 +33,7 @@ const request = {
   bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
   status: "pending" as const,
   cottageName: "Quiet Garden",
+  coverMediaUrl: null,
   bookingPeriod: [
     {
       serviceDay: "2099-08-21",
@@ -81,7 +82,9 @@ describe("Customer Booking Request status", () => {
     expect(screen.getByText("Payment deadline").nextSibling).toHaveTextContent(
       "12:20",
     );
-    expect(vi.getTimerCount()).toBe(1);
+    vi.runOnlyPendingTimers();
+    expect(refresh).toHaveBeenCalledOnce();
+    refresh.mockClear();
     view.rerender(
       <CustomerBookingRequestStatus
         locale="en"
@@ -92,7 +95,8 @@ describe("Customer Booking Request status", () => {
       "payment deadline has passed",
     );
     expect(screen.getByRole("status")).toHaveTextContent("remain held");
-    expect(vi.getTimerCount()).toBe(1);
+    vi.runOnlyPendingTimers();
+    expect(refresh).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
   it("shows the request details as a fact list with each label directly before its value", () => {
@@ -211,25 +215,29 @@ describe("Customer Booking Request status", () => {
     const view = render(
       <CustomerBookingRequestStatus locale="en" request={request} />,
     );
-    expect(vi.getTimerCount()).toBe(1);
-    vi.advanceTimersToNextTimer();
+    vi.runOnlyPendingTimers();
     expect(refresh).toHaveBeenCalledOnce();
+    refresh.mockClear();
     view.rerender(
       <CustomerBookingRequestStatus
         locale="en"
         request={{ ...request, status: "paid-confirmed" }}
       />,
     );
-    expect(vi.getTimerCount()).toBe(0);
+    vi.runOnlyPendingTimers();
+    expect(refresh).not.toHaveBeenCalled();
     view.rerender(
       <CustomerBookingRequestStatus
         locale="en"
         request={{ ...request, status: "capture-processing" }}
       />,
     );
-    expect(vi.getTimerCount()).toBe(1);
+    vi.runOnlyPendingTimers();
+    expect(refresh).toHaveBeenCalledOnce();
+    refresh.mockClear();
     view.unmount();
-    expect(vi.getTimerCount()).toBe(0);
+    vi.runOnlyPendingTimers();
+    expect(refresh).not.toHaveBeenCalled();
   });
   it("shows a contact-safe processing state while authoritative withdrawal settles", async () => {
     let finish!: (value: {
@@ -666,6 +674,7 @@ describe("Customer payment recovery command identity", () => {
 it("keeps elapsed and attention states held and refreshing until one unpaid-expiry notice arrives", () => {
   vi.useFakeTimers();
   try {
+    refresh.mockClear();
     let fixture: (typeof customerDisplayFixtures)[
       | "payment-expiry-processing"
       | "payment-expiry-attention-required"] =
@@ -674,8 +683,8 @@ it("keeps elapsed and attention states held and refreshing until one unpaid-expi
       <CustomerBookingRequestStatus locale="en" request={fixture} />,
     );
     expect(screen.getByRole("status")).toHaveTextContent("remain held");
-    vi.advanceTimersToNextTimer();
-    expect(refresh).toHaveBeenCalled();
+    vi.runOnlyPendingTimers();
+    expect(refresh).toHaveBeenCalledOnce();
     fixture = customerDisplayFixtures["payment-expiry-attention-required"];
     view.rerender(
       <CustomerBookingRequestStatus locale="en" request={fixture} />,
@@ -687,8 +696,9 @@ it("keeps elapsed and attention states held and refreshing until one unpaid-expi
     expect(screen.getByRole("status")).toHaveTextContent("remain held");
     expect(screen.getByRole("status")).not.toHaveTextContent("released");
     refresh.mockClear();
-    vi.advanceTimersToNextTimer();
+    vi.runOnlyPendingTimers();
     expect(refresh).toHaveBeenCalledOnce();
+    refresh.mockClear();
     const completed = customerDisplayFixtures["payment-expiry-expired"];
     view.rerender(
       <CustomerBookingRequestStatus locale="en" request={completed} />,
@@ -710,7 +720,8 @@ it("keeps elapsed and attention states held and refreshing until one unpaid-expi
       ),
     ).toHaveLength(1);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    expect(vi.getTimerCount()).toBe(0);
+    vi.runOnlyPendingTimers();
+    expect(refresh).not.toHaveBeenCalled();
     view.unmount();
   } finally {
     vi.useRealTimers();
@@ -767,4 +778,75 @@ it("keeps a quarantined open payment window free of retry controls", () => {
   );
   expect(screen.getByRole("status")).toHaveTextContent("Payment needs review");
   expect(screen.queryByRole("button")).not.toBeInTheDocument();
+});
+
+it("shows the current cover beside retained booking identity", () => {
+  const coverMediaUrl =
+    "/api/cottage-media/41000000-0000-4000-8000-000000003202";
+  const view = render(
+    <CustomerBookingRequestStatus
+      locale="en"
+      request={{ ...request, coverMediaUrl }}
+    />,
+  );
+  const identity = view.container.querySelector<HTMLDivElement>(
+    ".booking-cottage-identity",
+  )!;
+  expect(identity.querySelector("img")).toHaveProperty(
+    "src",
+    new URL(coverMediaUrl, window.location.href).href,
+  );
+  expect(identity.querySelector("img")).toHaveAttribute("alt", "");
+  expect(
+    within(identity).getByRole("heading", { level: 2, name: "Quiet Garden" }),
+  ).toBeVisible();
+  expect(identity.querySelector("bdi")).toHaveTextContent(
+    "RC-REQ-AAAAAAAAAAAAAAAA",
+  );
+  expect(screen.getAllByText("Quiet Garden", { exact: true })).toHaveLength(1);
+  expect(identity.querySelector("a, button")).toBeNull();
+  expect(screen.getByText("IQD 105,003")).toBeVisible();
+  view.rerender(<CustomerBookingRequestStatus locale="en" request={request} />);
+  expect(view.container.querySelector("img")).toBeNull();
+  expect(screen.getByText("Cottage").nextElementSibling).toHaveTextContent(
+    "Quiet Garden",
+  );
+  expect(screen.getByText("RC-REQ-AAAAAAAAAAAAAAAA").tagName).toBe("STRONG");
+});
+
+it("hides a failed cover without losing booking identity and accepts a replacement cover", () => {
+  const coverMediaUrl =
+    "/api/cottage-media/41000000-0000-4000-8000-000000003202";
+  const replacementUrl =
+    "/api/cottage-media/41000000-0000-4000-8000-000000003203";
+  const view = render(
+    <CustomerBookingRequestStatus
+      locale="en"
+      request={{ ...request, coverMediaUrl }}
+    />,
+  );
+  fireEvent.error(view.container.querySelector("img")!);
+  expect(view.container.querySelector("img")).toBeNull();
+  expect(
+    screen.getByRole("heading", { level: 2, name: "Quiet Garden" }),
+  ).toBeVisible();
+  expect(screen.getByText("RC-REQ-AAAAAAAAAAAAAAAA")).toBeVisible();
+  expect(
+    view.container.querySelector(
+      ".booking-cottage-identity a, .booking-cottage-identity button",
+    ),
+  ).toBeNull();
+  view.rerender(
+    <CustomerBookingRequestStatus
+      locale="en"
+      request={{ ...request, coverMediaUrl: replacementUrl }}
+    />,
+  );
+  expect(view.container.querySelector("img")).toHaveProperty(
+    "src",
+    new URL(replacementUrl, window.location.href).href,
+  );
+  expect(view.container.querySelector("img")).toHaveAttribute("alt", "");
+  expect(screen.getAllByText("Quiet Garden", { exact: true })).toHaveLength(1);
+  expect(screen.getByText("RC-REQ-AAAAAAAAAAAAAAAA")).toBeVisible();
 });

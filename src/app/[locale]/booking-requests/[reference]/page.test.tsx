@@ -41,12 +41,17 @@ vi.mock("@/components/confirmed-booking-details", () => ({
   ConfirmedBookingDetails: () => <section>Confirmed booking details</section>,
 }));
 import CustomerBookingRequestPage from "./page";
+import {
+  customerDisplayFixtures,
+  customerRecoveryDisplayFixtures,
+} from "../../../../../tests/fixtures/booking-request-display.fixtures";
 
 const request = {
   id: "00000000-0000-4000-8000-000000000033",
   bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
   status: "pending" as const,
   cottageName: "Fictional Riverside Cottage",
+  coverMediaUrl: null,
   bookingPeriod: [
     {
       serviceDay: "2099-08-21",
@@ -298,4 +303,56 @@ it("keeps request details visible when delivery status cannot load", async () =>
       "Notification delivery status is unavailable. Your request details remain available.",
     ),
   ).toBeVisible();
+});
+
+it("Customer request headings return to My bookings", async () => {
+  for (const [locale, name] of [
+    ["en", "Back to bookings"],
+    ["ar", "العودة إلى الحجوزات"],
+    ["ckb", "گەڕانەوە بۆ حجزەکان"],
+  ] as const) {
+    const states = [
+      ...(
+        ["pending", "accepted", "declined", "withdrawn", "expired"] as const
+      ).map((status) => ({
+        outcome: "pending",
+        request: { ...request, status },
+        delivery,
+      })),
+      ...Object.values(customerDisplayFixtures).map((request) => ({
+        outcome: "pending",
+        request,
+        delivery,
+      })),
+      ...Object.values(customerRecoveryDisplayFixtures).map((request) => ({
+        outcome: "pending",
+        request,
+        delivery,
+      })),
+      { outcome: "unavailable" },
+    ];
+    for (const state of states) {
+      loadDetails.mockResolvedValue(state);
+      const view = render(
+        await CustomerBookingRequestPage({
+          params: Promise.resolve({
+            locale,
+            reference: request.bookingRequestReference,
+          }),
+        }),
+      );
+      const titles = screen.getAllByRole("heading", { level: 1 });
+      expect(titles).toHaveLength(1);
+      const title = titles[0];
+      const heading = title.closest("header");
+      expect(heading).toHaveClass("page-heading");
+      const link = within(heading!).getByRole("link", { name });
+      expect(link).toBeVisible();
+      expect(link).toHaveAttribute("href", `/${locale}/bookings`);
+      expect(
+        link.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      view.unmount();
+    }
+  }
 });

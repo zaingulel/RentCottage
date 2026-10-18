@@ -214,7 +214,9 @@ Anything else is a token.
 - Page heading: `header.page-heading` opens a page on the template. It holds, top to bottom, a back link as
   `ActionLink kind="text"`, the page title, and an optional plain `p` in `--muted` with no margin. Its items start
   at the same inline edge, `--space-2` apart, and the block has `--space-5` below it.
-  A page that opens with the Backoffice navigation has no back link; its heading starts at the page title.
+  Omit the back link only when the Backoffice navigation already reaches the same destination; then the heading
+  starts at the page title. The Customer Booking Request status stack and cancelled financial panels supply
+  the following `--space-5` gap, so their headings have no bottom margin.
 - A page may put one small label above its title. Its style is the `.results-intro p` rule, which only the
   not-found screen still uses as a label: `--font-size-1`, bold, in `--ink-accent`, with the title `--space-1`
   below it. No page on the template carries a label; the first that does moves that rule's declarations to a
@@ -428,7 +430,8 @@ its own; the block it sits in sets the space around it.
   same record follow inside the `li`.
 - Card: `article.card` presents one record among several in a grid or list on a page that uses the Page template.
   The same `.card` surface also applies to the public cottage booking aside, cottage editor field groups and the
-  Customer Booking Request status/progress, reference/details and separate Messages groups, and to Platform
+  Customer Booking Request status/progress, reference/details and separate Messages groups, the Confirmed Booking
+  facts container, and Platform
   Administrator account/approval summaries, Owner Application facts/evidence/action groups and current-payment
   facts. It is a `--card` surface with `--radius-card` corners and the `--shadow-card` elevation shadow. It shows no
   border: its `1px` border is `transparent`, so the card keeps an edge where the browser forces colours and removes
@@ -445,6 +448,38 @@ its own; the block it sits in sets the space around it.
   filters follow document order in one column. Complete query guidance wraps in a paragraph below its field,
   associated through `aria-describedby` alongside any existing error association. Records results use two equal
   columns, one at `phone`; title links start-align even when wrapping. Review filters use the base filter grid; records-specific columns and slot positions belong only to `.recordsFilters` and its descendants.
+- Booking cottage identity: `.booking-cottage-identity` places a decorative current-public cover at inline
+  start beside retained name/reference text, with inherited direction, vertically centered alignment,
+  `--space-4` gap and shrinkable children. `.booking-cottage-thumbnail` is a nonshrinking `5rem` (80-pixel)
+  square, `4rem` (64 pixels) at `phone`, with `object-fit: cover` and `--radius-card`, without a border,
+  shadow, placeholder or control. `BookingCottageThumbnail` uses an unoptimized direct source and empty
+  alternative text; a load failure removes the image while identity stays visible, and a new source resets
+  failure. `.booking-cottage-identity-text` is a grid with `--space-1` gap, zero heading/paragraph margins,
+  `min-inline-size: 0` and naturally wrapping text. Customer and page-only Owner request headers use a cottage
+  `h2` in `--display` at `--font-size-4`, then the existing reference in `bdi`, in `--muted` at `--font-size-2`.
+  The Owner photo header places identity before its existing status in a grid with `--space-3` gap; ordinary
+  pending status start-aligns and payment status keeps its stretched block. Only a page header with a cover
+  omits the duplicate Cottage fact, retaining its complete name once in the header. Owner section/list layouts retain
+  their own patterns. These photos are current-public decoration; textual booking facts remain preserved snapshots.
+- Confirmed Booking: `section.confirmed-booking-details` is unboxed and fills the page column. Its
+  `header.page-heading` retains the return link, title and focus target, with `--space-2` gaps and `--space-5`
+  before the facts card. The supporting paragraph has two naturally wrapping blocks: the cottage name in bold
+  `--ink` at `--font-size-3`, then the retained strong reference in normal-weight `--muted` at `--font-size-2`,
+  isolated by `bdi`, with `--space-1` between them. The paragraph is `.confirmed-booking-identity-text`,
+  inside the shared identity row below the title, beside the optional current-public thumbnail. With no photo,
+  its two text lines retain the same typography with no empty image track. `div.card.confirmed-booking-record` has `--space-5` padding,
+  `--space-4` at `phone`. Four ordinary wrappers each hold a native `dl.fact-list`, in order: customer/Booking
+  Period/party; original price and role-specific money; practical access; confirmation notice, fictional-delivery
+  explanation and retry. Wrappers have `--space-5` separation; each after the first has a `1px` `--line` top rule
+  and `--space-5` top padding. Reuse fact-list columns and phone stacking. The final money label and value are
+  bold; its value uses body type at `--font-size-4`. Original owner share retains that meaning.
+  The conditional incomplete-details status paragraph precedes the practical-access list, using `--ink` on
+  `--surface-notice`, `--radius-card` and `--space-4` padding and bottom separation. Booking Period entries put
+  the bold original name on one block line and both unchanged Iraq timestamps with their range dash on the next,
+  retaining name/start/end direction isolation and `--space-3` between entries. Each complete timestamp retains its existing
+  inline-block boundary; the range can wrap between those timestamp boxes. Cross-midnight endpoints remain complete. Terms Disclosure follows every fact inside the card, with `--space-5` above it.
+  Children shrink and text wraps down to 320 CSS pixels without clipping, ellipses or fixed heights. Customer
+  progress, shared chrome and following review panels retain their own patterns.
 - Search result: each result uses the card surface with an `18rem` photo beside its details, moving above them at
   `tablet`. Without a photo, omit the empty frame and use the full detail width. The detail header places its
   overview at the inline start and From Price at the inline end, in `--display`, `--green` and `--font-size-5`,
@@ -575,8 +610,9 @@ its own; the block it sits in sets the space around it.
 - Status banner: `p.status-banner` is the page-level status of a record page. It follows the page title, at most
   one per page, and keeps `role="status"` and `aria-live="polite"`. Customer Booking Request status places the
   title on parchment above an unboxed `--space-5` stack: status/progress in one lifted group, reference/all facts
-  in a second, and Messages/action in a third. There is no photograph: the reference stands alone and Cottage
-  is the first fact. The details group has `--space-5` padding, a rule between reference and facts, and Customer
+  in a second, and Messages/action in a third. With a current public cover, the details header uses the
+  Booking cottage identity pattern and keeps the cottage name there once, omitting its duplicate Cottage fact.
+  With no cover, the reference stands alone and Cottage is the first fact. The details group has `--space-5` padding, a rule between reference and facts, and Customer
   Total between two rules with its value in `--display`. Its action footer aligns to the inline end; Messages
   is a `--space-5`-padded heading/action row with errors spanning both columns, stacking at `phone`. All
   deadlines, notes, errors and notification details remain readable. The quote/form, its pre-live gate and
@@ -591,7 +627,8 @@ its own; the block it sits in sets the space around it.
 - Empty state: `div.empty-state` fills a list or record area that has nothing to show. It is a `--card` block with
   a `1px` `--line` border, `--radius-card` corners and `--space-5` padding, holding one `p` with a single sentence
   saying what is absent and, `--space-3` below it, one next action as a secondary content-width `ActionLink`. It
-  is not an error; a failure uses `role="alert"`.
+  is not an error; a failure uses `role="alert"`. The translation-report empty state keeps only its sentence,
+  because the heading already provides its next action.
 - New work that shows facts, a list of records, a card, a status, a section title or an empty list reuses these. A screen
   with its own rules for one of them keeps those rules until it is moved onto the pattern.
 

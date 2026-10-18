@@ -1,3 +1,4 @@
+import { observeRecordHeading } from "./fixtures/record-heading";
 import {
   expect,
   test,
@@ -8,6 +9,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { readFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import * as OTPAuth from "otpauth";
@@ -22,6 +24,7 @@ import { administratorQueuesMessages } from "../src/i18n/administrator-queues-me
 import { administratorRecordsMessages } from "../src/i18n/administrator-records-messages";
 import { administratorTotalsMessages } from "../src/i18n/administrator-totals-messages";
 import { bookingManagementMessages as messages } from "../src/i18n/booking-management-messages";
+import { accessMessages } from "../src/i18n/access-messages";
 import { bookingLifecycleMessages } from "../src/i18n/booking-lifecycle-messages";
 import { ownerBookingEarningsMessages as earningsMessages } from "../src/i18n/owner-booking-earnings-messages";
 import { ownerBookingEarnings } from "../src/booking-request/owner-booking-earnings";
@@ -788,7 +791,10 @@ test.describe("retained cancellation and refund controls", () => {
         exact: true,
       });
       await expect(confirmed).toContainText(browserQuote.cottageName);
-      await expect(confirmed).toHaveCSS("border-top-style", "solid");
+      await expect(confirmed.locator(".confirmed-booking-record")).toHaveCSS(
+        "border-top-style",
+        "solid",
+      );
       await assertMobile();
       const before = observeConnectedStay();
       for (const key of [
@@ -833,7 +839,7 @@ test.describe("retained cancellation and refund controls", () => {
               .poll(() =>
                 period.locator("dd > span").evaluateAll((entries) =>
                   entries.flatMap((entry) =>
-                    Array.from(entry.querySelectorAll(":scope > bdi"))
+                    Array.from(entry.querySelectorAll("bdi"))
                       .slice(1)
                       .map((timestamp) => timestamp.getClientRects().length),
                   ),
@@ -845,7 +851,7 @@ test.describe("retained cancellation and refund controls", () => {
               .evaluateAll((entries) =>
                 entries.map((entry) =>
                   Array.from(
-                    entry.querySelectorAll(":scope > bdi"),
+                    entry.querySelectorAll("bdi"),
                     (value) => value.textContent ?? "",
                   ),
                 ),
@@ -1034,7 +1040,12 @@ test.describe("retained cancellation and refund controls", () => {
         expect(replayed[key]).toEqual(before[key]);
       for (const key of ["attempts", "links", "conversations", "messages"])
         expect(replayed[key]).toEqual(linked[key]);
-      await page.getByRole("link", { name: copy.history, exact: true }).click();
+      await page
+        .getByRole("link", {
+          name: accessMessages[locale].backToBookings,
+          exact: true,
+        })
+        .click();
       await expect(page).toHaveURL(`/${locale}/bookings`);
       const retainedBooking = page.getByRole("link", {
         name: new RegExp(browserQuote.cottageName),
@@ -1050,6 +1061,76 @@ test.describe("retained cancellation and refund controls", () => {
       await expect(
         page.getByRole("heading", { name: copy.cancelled, exact: true }),
       ).toBeVisible();
+      const cancelledHeadingViewport = page.viewportSize()!;
+      try {
+        if (locale === "ar")
+          await page.setViewportSize({ width: 390, height: 844 });
+        await observeRecordHeading(
+          page,
+          testInfo,
+          accessMessages[locale].backToBookings,
+          `/${locale}/bookings`,
+          `heading-cancelled-${locale}-a11y`,
+        );
+        const heading = page.getByRole("main").locator("header.page-heading");
+        await expect
+          .poll(() =>
+            heading.evaluate((header) => {
+              const next = header.nextElementSibling;
+              if (!next)
+                throw new Error("Cancelled heading has no following content");
+              return (
+                next.getBoundingClientRect().top -
+                header.getBoundingClientRect().bottom
+              );
+            }),
+          )
+          .toBeCloseTo(24, 1);
+        const gapPath = testInfo.outputPath(
+          `heading-cancelled-${locale}-gap.json`,
+        );
+        await writeFile(
+          gapPath,
+          JSON.stringify(
+            await heading.evaluate((header) => {
+              const next = header.nextElementSibling;
+              const parent = header.parentElement;
+              if (!next || !parent)
+                throw new Error("Cancelled heading layout is missing");
+              const headerRectangle = header.getBoundingClientRect();
+              const nextRectangle = next.getBoundingClientRect();
+              return {
+                gap: nextRectangle.top - headerRectangle.bottom,
+                header: headerRectangle.toJSON(),
+                next: nextRectangle.toJSON(),
+                parent: parent.getBoundingClientRect().toJSON(),
+                panelHtml: parent.outerHTML,
+                language: document.documentElement.lang,
+                direction: document.documentElement.dir,
+                stylesheetHrefs: Array.from(
+                  document.querySelectorAll<HTMLLinkElement>(
+                    'link[rel~="stylesheet"][href]',
+                  ),
+                  (link) => link.href,
+                ),
+              };
+            }),
+            null,
+            2,
+          ),
+        );
+        await testInfo.attach(`heading-cancelled-${locale}-gap`, {
+          path: gapPath,
+          contentType: "application/json",
+        });
+        if (locale === "ar")
+          await page.screenshot({
+            path: testInfo.outputPath("heading-cancelled-ar.png"),
+          });
+      } finally {
+        if (locale === "ar")
+          await page.setViewportSize(cancelledHeadingViewport);
+      }
       await expect(
         page.getByText("Fictional private address", { exact: true }),
       ).toHaveCount(0);

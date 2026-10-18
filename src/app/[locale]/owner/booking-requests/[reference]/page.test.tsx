@@ -50,9 +50,9 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 it.each([
-  ["en", "Booking details are unavailable", "Your cottages"],
-  ["ar", "تفاصيل الحجز غير متاحة", "أكواخك"],
-  ["ckb", "وردەکارییەکانی حجز بەردەست نییە", "کۆتێجەکانت"],
+  ["en", "Booking details are unavailable", "Back to bookings"],
+  ["ar", "تفاصيل الحجز غير متاحة", "العودة إلى الحجوزات"],
+  ["ckb", "وردەکارییەکانی حجز بەردەست نییە", "گەڕانەوە بۆ حجزەکان"],
 ])(
   "shows financial-load failure and a recovery link in %s",
   async (locale, message, linkLabel) => {
@@ -63,7 +63,7 @@ it.each([
     ).toBeVisible();
     expect(screen.getByRole("link", { name: linkLabel })).toHaveAttribute(
       "href",
-      `/${locale}/owner/cottages`,
+      `/${locale}/bookings?workspace=owner`,
     );
     expect(screen.getByRole("main")).toHaveClass("page", "page-record");
     expect(
@@ -132,7 +132,7 @@ it("replaces an unpaid request with its authoritative payment status", async () 
   expect(
     within(screen.getByRole("article")).getByRole("status"),
   ).toHaveTextContent("Payment confirmation pending");
-  vi.advanceTimersToNextTimer();
+  vi.runOnlyPendingTimers();
   expect(refresh).toHaveBeenCalledOnce();
   view.rerender(await Page({ params: params("en") }));
   expect(
@@ -216,4 +216,47 @@ it("shows no review section outside a Confirmed Booking", async () => {
     screen.getByRole("article", { name: "RC-REQ-AAAAAAAAAAAAAAAA" }),
   ).toBeVisible();
   expect(screen.queryByRole("region", { name: "Customer review" })).toBeNull();
+});
+
+it("owner request headings return to owner bookings", async () => {
+  for (const [locale, name] of [
+    ["en", "Back to bookings"],
+    ["ar", "العودة إلى الحجوزات"],
+    ["ckb", "گەڕانەوە بۆ حجزەکان"],
+  ] as const) {
+    const states = [
+      ...(
+        ["pending", "accepted", "declined", "withdrawn", "expired"] as const
+      ).map((status) => ({
+        outcome: "pending",
+        request: { ...ownerDisplayFixtures["capture-processing"], status },
+        delivery,
+      })),
+      ...Object.values(ownerDisplayFixtures).map((request) => ({
+        outcome: "pending",
+        request,
+        delivery,
+      })),
+      { outcome: "unavailable" },
+    ];
+    for (const state of states) {
+      loadDetails.mockResolvedValue(state);
+      const view = render(await Page({ params: params(locale) }));
+      const titles = screen.getAllByRole("heading", { level: 1 });
+      expect(titles).toHaveLength(1);
+      const title = titles[0];
+      const heading = title.closest("header");
+      expect(heading).toHaveClass("page-heading");
+      const link = within(heading!).getByRole("link", { name });
+      expect(link).toBeVisible();
+      expect(link).toHaveAttribute(
+        "href",
+        `/${locale}/bookings?workspace=owner`,
+      );
+      expect(
+        link.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      view.unmount();
+    }
+  }
 });

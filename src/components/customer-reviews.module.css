@@ -140,6 +140,10 @@
   overflow-wrap: anywhere;
 }
 
+.administratorPage > :global(nav.backoffice-navigation) {
+  inline-size: 100%;
+}
+
 .administratorPage > :global(.page-heading) {
   margin-block-end: 0;
 }

@@ -10,6 +10,7 @@ export const accessMessages: Record<
     accessTitle: string;
     accessIntro: string;
     myBookings: string;
+    backToBookings: string;
     messages: string;
     ownerBookings: string;
     ownerBookingsTab: string;
@@ -71,6 +72,7 @@ export const accessMessages: Record<
     accessIntro:
       "تحقق من هاتفك للعودة إلى حجوزاتك. يُنشأ حساب للأرقام الجديدة.",
     myBookings: "حجوزاتي",
+    backToBookings: "العودة إلى الحجوزات",
     messages: "الرسائل",
     ownerBookings: "حجوزات أكواخي",
     ownerBookingsTab: "حجوزات أكواخي",
@@ -136,6 +138,7 @@ export const accessMessages: Record<
     accessIntro:
       "ژمارەکەت پشتڕاست بکەرەوە بۆ گەڕانەوە بۆ حجزەکانت. بۆ ژمارەی نوێ هەژمار دروست دەکرێت.",
     myBookings: "حجزەکانم",
+    backToBookings: "گەڕانەوە بۆ حجزەکان",
     messages: "نامەکان",
     ownerBookings: "حجزەکانی کۆتێجەکانم",
     ownerBookingsTab: "حجزەکانی کۆتێجەکانم",
@@ -206,6 +209,7 @@ export const accessMessages: Record<
     accessIntro:
       "Verify your phone to return to your bookings. New numbers create an account.",
     myBookings: "My bookings",
+    backToBookings: "Back to bookings",
     messages: "Messages",
     ownerBookings: "Bookings for my cottages",
     ownerBookingsTab: "Bookings",
