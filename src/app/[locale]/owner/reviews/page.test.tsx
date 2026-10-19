@@ -92,13 +92,11 @@ it("Reviews permits only approved owners and renders the bounded reader", async 
       screen.getByRole("heading", {
         level: 2,
         name: `${reviewTitle}: Garden cottage`,
-        exact: true,
       }),
     ).toBeVisible();
     expect(
       screen.getByRole("region", {
         name: `${reviewTitle}: Garden cottage`,
-        exact: true,
       }),
     ).toBeVisible();
     expect(screen.getByText("A peaceful garden.")).toHaveAttribute(
