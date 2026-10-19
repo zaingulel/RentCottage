@@ -28,12 +28,18 @@ export function CustomerReviewOwnerReply({
   locale,
   bookingRequestReference,
   initialResult,
+  idPrefix = "customer-review",
 }: {
   locale: Locale;
   bookingRequestReference: string;
   initialResult: OwnerCustomerReviewResult;
+  idPrefix?: string;
 }) {
   const copy = customerReviewMessages[locale];
+  const headingId = `${idPrefix}-owner-heading`;
+  const bodyId = `${idPrefix}-reply-body`;
+  const bodyHelpId = `${idPrefix}-reply-body-help`;
+  const languageId = `${idPrefix}-reply-language`;
   const [body, setBody] = useState("");
   const [language, setLanguage] = useState<CustomerReviewLanguage>(locale);
   const [notice, setNotice] = useState<FormNotice>();
@@ -92,20 +98,15 @@ export function CustomerReviewOwnerReply({
       : null;
 
   return (
-    <section
-      className={styles.section}
-      aria-labelledby="customer-review-owner-heading"
-    >
+    <section className={styles.section} aria-labelledby={headingId}>
       <h2
-        id="customer-review-owner-heading"
+        id={headingId}
         tabIndex={-1}
         className="section-title action-focus-target"
       >
         {copy.ownerTitle}
       </h2>
-      {!pending ? (
-        <ActionFocusTarget targetId="customer-review-owner-heading" />
-      ) : null}
+      {!pending ? <ActionFocusTarget targetId={headingId} /> : null}
       {initialResult.status === "access-required" ? (
         <p>{copy.ownerAccessRequired}</p>
       ) : null}
@@ -161,22 +162,20 @@ export function CustomerReviewOwnerReply({
             void submit();
           }}
         >
-          <label htmlFor="customer-review-reply-body">{copy.replyBody}</label>
+          <label htmlFor={bodyId}>{copy.replyBody}</label>
           <FormControl
             kind="textarea"
-            id="customer-review-reply-body"
-            aria-describedby="customer-review-reply-body-help"
+            id={bodyId}
+            aria-describedby={bodyHelpId}
             disabled={pending}
             value={body}
             onChange={(event) => setBody(event.target.value)}
           />
-          <small id="customer-review-reply-body-help">{copy.replyHelp}</small>
-          <label htmlFor="customer-review-reply-language">
-            {copy.language}
-          </label>
+          <small id={bodyHelpId}>{copy.replyHelp}</small>
+          <label htmlFor={languageId}>{copy.language}</label>
           <FormControl
             kind="select"
-            id="customer-review-reply-language"
+            id={languageId}
             disabled={pending}
             value={language}
             onChange={(event) => {
@@ -192,7 +191,7 @@ export function CustomerReviewOwnerReply({
             kind="primary"
             type="submit"
             pending={pending}
-            focusSuccessorId="customer-review-owner-heading"
+            focusSuccessorId={headingId}
           >
             {pending ? copy.submitting : copy.replySubmit}
           </ActionButton>

@@ -114,7 +114,7 @@ describe("Customer review Server Actions", () => {
       originalLanguage: "ckb",
       originalBody: null,
     });
-    expect(revalidatePath).toHaveBeenCalledTimes(12);
+    expect(revalidatePath).toHaveBeenCalledTimes(15);
     expect(revalidatePath.mock.calls).toContainEqual([
       "/ckb/booking-requests/RC-REQ-0123456789ABCDEF",
     ]);
@@ -188,7 +188,7 @@ describe("Customer review Server Actions", () => {
       reviewId: "11111111-1111-4111-8111-111111111111",
       reason: "Contains personal contact details",
     });
-    expect(revalidatePath).toHaveBeenCalledTimes(12);
+    expect(revalidatePath).toHaveBeenCalledTimes(15);
     expect(revalidatePath.mock.calls).toContainEqual([
       `/en/booking-requests/${affectedBookingReference}`,
     ]);
@@ -316,7 +316,7 @@ describe("Customer review Server Actions", () => {
       originalLanguage: "ar",
       originalBody: "شكراً لزيارتكم",
     });
-    expect(revalidatePath).toHaveBeenCalledTimes(12);
+    expect(revalidatePath).toHaveBeenCalledTimes(15);
     expect(revalidatePath.mock.calls).toContainEqual([
       "/ar/owner/booking-requests/RC-REQ-0123456789ABCDEF",
     ]);
@@ -500,28 +500,34 @@ describe("Customer review Server Actions", () => {
       "/en/booking-requests/RC-REQ-0123456789ABCDEF",
       "/en/owner/booking-requests/RC-REQ-0123456789ABCDEF",
       "/en/cottages/cottage-deadbeefdeadbeefdeadbeefdead0029/reviews",
+      "/en/owner/reviews",
       "/en/administrator/reviews",
       "/ar/booking-requests/RC-REQ-0123456789ABCDEF",
       "/ar/owner/booking-requests/RC-REQ-0123456789ABCDEF",
       "/ar/cottages/cottage-deadbeefdeadbeefdeadbeefdead0029/reviews",
+      "/ar/owner/reviews",
       "/ar/administrator/reviews",
       "/ckb/booking-requests/RC-REQ-0123456789ABCDEF",
       "/ckb/owner/booking-requests/RC-REQ-0123456789ABCDEF",
       "/ckb/cottages/cottage-deadbeefdeadbeefdeadbeefdead0029/reviews",
+      "/ckb/owner/reviews",
       "/ckb/administrator/reviews",
     ];
     const pathsForDatabaseReference = [
       "/en/booking-requests/RC-REQ-FEDCBA9876543210",
       "/en/owner/booking-requests/RC-REQ-FEDCBA9876543210",
       "/en/cottages/cottage-deadbeefdeadbeefdeadbeefdead0029/reviews",
+      "/en/owner/reviews",
       "/en/administrator/reviews",
       "/ar/booking-requests/RC-REQ-FEDCBA9876543210",
       "/ar/owner/booking-requests/RC-REQ-FEDCBA9876543210",
       "/ar/cottages/cottage-deadbeefdeadbeefdeadbeefdead0029/reviews",
+      "/ar/owner/reviews",
       "/ar/administrator/reviews",
       "/ckb/booking-requests/RC-REQ-FEDCBA9876543210",
       "/ckb/owner/booking-requests/RC-REQ-FEDCBA9876543210",
       "/ckb/cottages/cottage-deadbeefdeadbeefdeadbeefdead0029/reviews",
+      "/ckb/owner/reviews",
       "/ckb/administrator/reviews",
     ];
     const revalidated = () =>

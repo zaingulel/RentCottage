@@ -29,6 +29,7 @@ function revalidateCustomerReviewPaths(
       `/${locale}/owner/booking-requests/${bookingRequestReference}`,
     );
     revalidatePath(`/${locale}/cottages/${publicSlug}/reviews`);
+    revalidatePath(`/${locale}/owner/reviews`);
     revalidatePath(`/${locale}/administrator/reviews`);
   }
 }
