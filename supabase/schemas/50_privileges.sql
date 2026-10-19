@@ -1504,6 +1504,7 @@ REVOKE ALL ON FUNCTION public.list_public_customer_reviews(text,timestamptz,uuid
 REVOKE ALL ON FUNCTION public.list_administrator_customer_reviews(timestamptz,uuid,integer,text,date,date) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.hide_customer_review(uuid,text) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.submit_customer_review_reply(text,public.cottage_profile_source_language,text) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.list_owner_customer_reviews(timestamptz,uuid,integer) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.get_owner_customer_review(text) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.hide_customer_review_reply(uuid,text) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.customer_review_translation_actor_is_eligible(uuid) FROM PUBLIC,anon,authenticated,service_role;
@@ -1519,6 +1520,7 @@ GRANT EXECUTE ON FUNCTION public.list_public_customer_reviews(text,timestamptz,u
 GRANT EXECUTE ON FUNCTION public.list_administrator_customer_reviews(timestamptz,uuid,integer,text,date,date) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.hide_customer_review(uuid,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.submit_customer_review_reply(text,public.cottage_profile_source_language,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.list_owner_customer_reviews(timestamptz,uuid,integer) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_owner_customer_review(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.hide_customer_review_reply(uuid,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.prepare_customer_review_translation(uuid,uuid,text,public.cottage_profile_source_language,text,text,text) TO service_role;

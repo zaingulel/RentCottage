@@ -20,6 +20,7 @@ export async function createRequestCustomerReview() {
     submit: repository.submit.bind(repository),
     getOwn: repository.getOwn.bind(repository),
     listPublic: repository.listPublic.bind(repository),
+    listOwner: repository.listOwner.bind(repository),
     listAdministrator: repository.listAdministrator.bind(repository),
     hide: repository.hide.bind(repository),
     getOwnerReview: repository.getOwnerReview.bind(repository),

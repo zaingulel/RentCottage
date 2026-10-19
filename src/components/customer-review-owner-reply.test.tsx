@@ -61,6 +61,120 @@ describe("CustomerReviewOwnerReply", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("scopes multiple reply forms and their focus successors to their own booking", async () => {
+    submitReply.mockResolvedValue({
+      status: "replied",
+      reviewId: "22222222-2222-4222-8222-222222222222",
+      submittedAt: "2026-09-22T12:00:00.000Z",
+    });
+    const view = (secondReply: OwnerCustomerReviewReply | null) => (
+      <>
+        <CustomerReviewOwnerReply
+          locale="en"
+          bookingRequestReference="RC-REQ-AAAAAAAAAAAAAAAA"
+          initialResult={reviewed(null)}
+          idPrefix="owner-review-first"
+        />
+        <CustomerReviewOwnerReply
+          locale="en"
+          bookingRequestReference="RC-REQ-BBBBBBBBBBBBBBBB"
+          initialResult={reviewed(secondReply)}
+          idPrefix="owner-review-second"
+        />
+      </>
+    );
+    const { container, rerender } = render(view(null));
+    const [first, second] = screen.getAllByRole("region", {
+      name: "Customer review",
+    });
+    const firstBody = within(first).getByLabelText("Public reply");
+    const secondBody = within(second).getByLabelText("Public reply");
+    const firstLanguage = within(first).getByLabelText("Original language");
+    const secondLanguage = within(second).getByLabelText("Original language");
+    expect(first).toHaveAttribute(
+      "aria-labelledby",
+      "owner-review-first-owner-heading",
+    );
+    expect(second).toHaveAttribute(
+      "aria-labelledby",
+      "owner-review-second-owner-heading",
+    );
+    expect(within(first).getByRole("heading", { level: 2 })).toHaveAttribute(
+      "id",
+      "owner-review-first-owner-heading",
+    );
+    expect(within(second).getByRole("heading", { level: 2 })).toHaveAttribute(
+      "id",
+      "owner-review-second-owner-heading",
+    );
+    expect(firstBody).toHaveAttribute("id", "owner-review-first-reply-body");
+    expect(secondBody).toHaveAttribute("id", "owner-review-second-reply-body");
+    expect(firstLanguage).toHaveAttribute(
+      "id",
+      "owner-review-first-reply-language",
+    );
+    expect(secondLanguage).toHaveAttribute(
+      "id",
+      "owner-review-second-reply-language",
+    );
+    expect(firstBody).toHaveAttribute(
+      "aria-describedby",
+      "owner-review-first-reply-body-help",
+    );
+    expect(secondBody).toHaveAttribute(
+      "aria-describedby",
+      "owner-review-second-reply-body-help",
+    );
+    expect(first.querySelector("small")).toHaveAttribute(
+      "id",
+      "owner-review-first-reply-body-help",
+    );
+    expect(second.querySelector("small")).toHaveAttribute(
+      "id",
+      "owner-review-second-reply-body-help",
+    );
+    expect(secondBody).toHaveAccessibleDescription(
+      "Up to 2,000 characters. You can reply once, and a published reply cannot be edited or deleted. Do not include contact details or links.",
+    );
+    const ids = Array.from(
+      container.querySelectorAll("[id]"),
+      (element) => element.id,
+    );
+    expect(new Set(ids).size).toBe(ids.length);
+
+    fireEvent.change(secondBody, { target: { value: "شكراً لزيارتكم" } });
+    fireEvent.change(secondLanguage, { target: { value: "ar" } });
+    const publish = within(second).getByRole("button", {
+      name: "Publish reply",
+    });
+    publish.focus();
+    fireEvent.click(publish);
+    await waitFor(() =>
+      expect(within(second).getByRole("status")).toHaveTextContent(
+        "Your reply was published.",
+      ),
+    );
+    expect(submitReply).toHaveBeenCalledExactlyOnceWith({
+      bookingRequestReference: "RC-REQ-BBBBBBBBBBBBBBBB",
+      originalLanguage: "ar",
+      originalBody: "شكراً لزيارتكم",
+    });
+    expect(firstBody).toHaveValue("");
+    expect(firstLanguage).toHaveValue("en");
+    expect(within(first).queryByRole("status")).toBeNull();
+
+    rerender(view(storedReply));
+    expect(within(first).getByRole("textbox")).toBe(firstBody);
+    expect(within(second).queryByRole("textbox")).toBeNull();
+    expect(
+      within(second).getByText("Thank you for staying with us"),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(within(second).getByRole("heading", { level: 2 })).toHaveFocus(),
+    );
+    expect(within(first).getByRole("heading", { level: 2 })).not.toHaveFocus();
+  });
+
   it("requires a reply body and sends only mutation facts", async () => {
     submitReply.mockResolvedValue({
       status: "replied",

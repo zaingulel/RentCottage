@@ -934,6 +934,10 @@ input[type="file"].form-control::file-selector-button {
     gap: var(--space-5);
   }
 
+  .backoffice-navigation-owner .backoffice-navigation-links {
+    gap: var(--space-2);
+  }
+
   .owner-application-layout,
   .owner-application-header {
     width: min(100% - 1.25rem, 78rem);
@@ -2566,17 +2570,24 @@ form.cottage-profile-editor > fieldset,
   padding: var(--space-3);
 }
 
-.cottage-inventory-state select {
+select:not([multiple]):is(:not([size]), [size="0"], [size="1"]) {
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23616b64' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5'/%3E%3C/svg%3E");
-  background-position: right 1rem center;
+  background-position: right var(--space-4) center;
   background-repeat: no-repeat;
   background-size: 1rem;
   padding-inline-end: var(--space-7);
 }
 
-[dir="rtl"] .cottage-inventory-state select {
-  background-position: left 1rem center;
+[dir="rtl"] select:not([multiple]):is(:not([size]), [size="0"], [size="1"]) {
+  background-position: left var(--space-4) center;
+}
+
+@media (forced-colors: active) {
+  select:not([multiple]):is(:not([size]), [size="0"], [size="1"]) {
+    appearance: auto;
+    background-image: none;
+  }
 }
 
 .cottage-inventory-override {

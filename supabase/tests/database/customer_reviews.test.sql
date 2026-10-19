@@ -53,7 +53,8 @@ create function pg_temp.seed_completion_booking(
   start_day date,
   confirm_booking boolean default true,
   target_namespace text default '10',
-  target_shared_cottage_namespace text default null
+  target_shared_cottage_namespace text default null,
+  target_shared_owner_namespace text default null
 ) returns void language plpgsql as $seed_function$
 declare fixture text := $fixture$
 -- BEGIN CONFIRMATION FIXTURE
@@ -191,6 +192,27 @@ begin
       '6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d',
       capture_fingerprint
     );
+  end if;
+  if target_shared_owner_namespace is not null then
+    if target_shared_owner_namespace !~ '^[0-9]{2}$'
+      or target_shared_owner_namespace=target_namespace
+      or target_shared_cottage_namespace is not null
+    then
+      raise exception 'Shared review owner fixture namespace is invalid';
+    end if;
+    target_owner_id:='10000000-0000-4000-8000-'||suffix||'01';
+    shared_owner_id:='10000000-0000-4000-8000-00000000'||target_shared_owner_namespace||'01';
+    if not exists(select 1 from public.account_contexts
+      where user_id=shared_owner_id::uuid and role='cottage_owner'
+        and owner_approval_state='approved') then
+      raise exception 'Shared review owner fixture is unavailable';
+    end if;
+    fixture:=replace(fixture,format('(%L,%L,%L,%L,now()),%s',
+      target_owner_id,'authenticated','authenticated',
+      '+964750000'||target_namespace||'01',chr(10)),'');
+    fixture:=replace(fixture,format('(%L,%L,%L),%s',
+      target_owner_id,'cottage_owner','approved',chr(10)),'');
+    fixture:=replace(fixture,target_owner_id,shared_owner_id);
   end if;
   if target_shared_cottage_namespace is not null then
     if target_shared_cottage_namespace !~ '^[0-9]{2}$'
@@ -3418,6 +3440,186 @@ select ok(
     from pg_indexes where indexname='customer_reviews_administrator_cursor_idx'),
   'review keys and both deterministic cursor indexes are present'
 );
+
+
+select pg_temp.seed_completion_booking(
+  ((clock_timestamp() at time zone 'Asia/Baghdad')::date - 6),true,'40',null,'10'
+);
+select pg_temp.seed_completion_booking(
+  ((clock_timestamp() at time zone 'Asia/Baghdad')::date - 9),true,'41','10'
+);
+select pg_temp.seed_completion_booking(
+  ((clock_timestamp() at time zone 'Asia/Baghdad')::date - 6),true,'42'
+);
+set local role service_role;
+select public.commit_booking_completion(requests.id,(
+  select value->>'revision' from public.list_due_booking_completions(50) value
+  where value->>'bookingRequestId'=requests.id::text
+)) from (values ('60000000-0000-4000-8000-000000004001'::uuid),
+  ('60000000-0000-4000-8000-000000004101'::uuid),
+  ('60000000-0000-4000-8000-000000004201'::uuid)) requests(id);
+reset role;
+create temp table owner_review_list_timestamp as select clock_timestamp() value;
+grant select on owner_review_list_timestamp to authenticated;
+select ok((select count(*)=3
+  and count(distinct requests.profile_id)=3
+  and bool_and(public.booking_request_payment_status(requests)='paid-confirmed')
+  and bool_and(public.booking_completion_eligibility_at(requests.id,
+    (select value from owner_review_list_timestamp))->>'status'='completed')
+  and bool_and((public.booking_completion_eligibility_at(requests.id,
+    (select value from owner_review_list_timestamp))->>'reviewAvailable')::boolean)
+  from public.booking_requests requests where requests.id in (
+    '60000000-0000-4000-8000-000000004001','60000000-0000-4000-8000-000000004101',
+    '60000000-0000-4000-8000-000000004201')),
+  'owner list fixtures have guarded paid completed review-eligible origins');
+insert into public.customer_reviews(id,booking_request_id,booking_confirmation_id,
+  profile_id,author_user_id,rating,original_language,original_body,submitted_at)
+select ('88000000-0000-4000-8000-'||right(requests.id::text,12))::uuid,
+  requests.id,confirmations.id,requests.profile_id,requests.customer_user_id,
+  4,'en','A safe fixture review.',(select value from owner_review_list_timestamp)
+from public.booking_requests requests
+join public.booking_confirmations confirmations on confirmations.booking_request_id=requests.id
+where requests.id in ('60000000-0000-4000-8000-000000004001',
+  '60000000-0000-4000-8000-000000004101','60000000-0000-4000-8000-000000004201');
+
+insert into auth.users(id,aud,role,phone,phone_confirmed_at)
+values ('10000000-0000-4000-8000-000000009998','authenticated','authenticated','+9647500099998',now());
+
+create function pg_temp.owner_list_denied() returns boolean language plpgsql as $$
+begin
+  perform public.list_owner_customer_reviews();
+  return false;
+exception when insufficient_privilege then return true;
+end;
+$$;
+
+select lives_ok($test$
+do $body$
+declare result jsonb; actor_id text; approval public.owner_approval_state;
+begin
+  perform set_config('request.jwt.claims','{}',true);
+  perform set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+  set local role authenticated;
+  result:=public.list_owner_customer_reviews();
+  if result->>'status'<>'success' or jsonb_array_length(result->'items')<>3
+    or result#>>'{items,0,reviewId}'<>'88000000-0000-4000-8000-000000004101'
+    or result#>>'{items,1,reviewId}'<>'88000000-0000-4000-8000-000000004001'
+    or result#>>'{items,2,bookingRequestReference}'<>'RC-REQ-0000000000001001'
+  then raise exception 'own cottages or foreign isolation failed: %',result; end if;
+  reset role;
+  if not has_function_privilege('authenticated','public.list_owner_customer_reviews(timestamptz,uuid,integer)','EXECUTE')
+    or has_function_privilege('anon','public.list_owner_customer_reviews(timestamptz,uuid,integer)','EXECUTE')
+    or has_function_privilege('service_role','public.list_owner_customer_reviews(timestamptz,uuid,integer)','EXECUTE')
+    or exists(select 1 from pg_proc routines cross join lateral aclexplode(routines.proacl) privileges
+      where routines.oid='public.list_owner_customer_reviews(timestamptz,uuid,integer)'::regprocedure
+        and privileges.grantee=0 and privileges.privilege_type='EXECUTE')
+    or has_table_privilege('authenticated','public.customer_reviews','SELECT')
+  then raise exception 'owner list grants are not narrow'; end if;
+  perform set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001101',true);
+  set local role authenticated;
+  if public.list_owner_customer_reviews()<>'{"status":"success","items":[],"nextCursor":null}'::jsonb
+  then raise exception 'approved empty owner failed'; end if;
+  reset role;
+  foreach actor_id in array array['','10000000-0000-4000-8000-000000009999',
+    '10000000-0000-4000-8000-000000009998',
+    '10000000-0000-4000-8000-000000004002','10000000-0000-4000-8000-000000003801'] loop
+    perform set_config('request.jwt.claim.sub',actor_id,true);
+    set local role authenticated;
+    if not pg_temp.owner_list_denied() then raise exception 'denied actor admitted: %',actor_id; end if;
+    reset role;
+  end loop;
+  perform set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001101',true);
+  for approval in select unnest(enum_range(null::public.owner_approval_state)) loop
+    if approval='approved' then continue; end if;
+    update public.account_contexts set owner_approval_state=approval
+    where user_id='10000000-0000-4000-8000-000000001101';
+    set local role authenticated;
+    if not pg_temp.owner_list_denied() then raise exception 'nonapproved empty owner admitted: %',approval; end if;
+    reset role;
+  end loop;
+  update public.account_contexts set owner_approval_state='approved'
+  where user_id='10000000-0000-4000-8000-000000001101';
+  update auth.users set phone_confirmed_at=null where id='10000000-0000-4000-8000-000000001101';
+  set local role authenticated;
+  if not pg_temp.owner_list_denied() then raise exception 'unconfirmed empty owner admitted'; end if;
+  reset role;
+  update auth.users set phone_confirmed_at=now() where id='10000000-0000-4000-8000-000000001101';
+end;
+$body$;
+$test$,'owner review list enforces current owner authority and cottage isolation');
+
+insert into public.customer_review_replies(review_id,author_user_id,original_language,original_body)
+values ('88000000-0000-4000-8000-000000004001','10000000-0000-4000-8000-000000001001','en','Thank you for visiting.'),
+  ('88000000-0000-4000-8000-000000004101','10000000-0000-4000-8000-000000001001','en','Thank you for staying.');
+insert into public.customer_review_reply_hides(review_id,administrator_user_id,reason)
+values ('88000000-0000-4000-8000-000000004101','10000000-0000-4000-8000-000000003801','Private reply hide reason');
+insert into public.customer_review_hides(review_id,administrator_user_id,reason)
+values ('88000000-0000-4000-8000-000000004001','10000000-0000-4000-8000-000000003801','Private review hide reason');
+select lives_ok($test$
+do $body$
+declare result jsonb; item jsonb; cursor jsonb:=null; seen text[]:=array[]::text[];
+  invalid_input record; denied boolean;
+begin
+  perform set_config('request.jwt.claims','{}',true);
+  perform set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+  set local role authenticated;
+  result:=public.list_owner_customer_reviews(null,null,50);
+  if (select array_agg(key order by key) from jsonb_object_keys(result) key)
+      <>array['items','nextCursor','status']
+    or result->'nextCursor'<>'null'::jsonb
+    or jsonb_array_length(result->'items')<>3
+    or result#>'{items,0,review}'<>jsonb_build_object('status','reviewed',
+      'rating',4,'originalLanguage','en','originalBody','A safe fixture review.',
+      'submittedAt',(select value from owner_review_list_timestamp),'reply',
+      jsonb_build_object('originalLanguage','en','originalBody','Thank you for staying.',
+        'submittedAt',result#>'{items,0,review,reply,submittedAt}','moderationState','hidden'))
+    or result#>'{items,1,review}'<>jsonb_build_object('status','review-hidden','reply',
+      jsonb_build_object('originalLanguage','en','originalBody','Thank you for visiting.',
+        'submittedAt',result#>'{items,1,review,reply,submittedAt}','moderationState','unhidden'))
+    or result#>'{items,2,review}'<>'{"status":"review-hidden","reply":null}'::jsonb
+  then raise exception 'moderation projection failed: %',result; end if;
+  for item in select value from jsonb_array_elements(result->'items') loop
+    if (select array_agg(key order by key) from jsonb_object_keys(item) key)
+      <>array['bookingRequestReference','cottageName','review','reviewId','submittedAt']
+      or item->>'cottageName'<>'Preserved Cottage'
+    then raise exception 'unsafe list projection: %',item; end if;
+  end loop;
+  loop
+    result:=public.list_owner_customer_reviews((cursor->>'submittedAt')::timestamptz,
+      (cursor->>'reviewId')::uuid,1);
+    if jsonb_array_length(result->'items')<>1 then raise exception 'incomplete page'; end if;
+    seen:=array_append(seen,result#>>'{items,0,reviewId}');
+    if cardinality(seen)>3 then raise exception 'cursor did not advance'; end if;
+    cursor:=result->'nextCursor';
+    exit when cursor='null'::jsonb;
+    if cursor<>jsonb_build_object('submittedAt',result#>'{items,0,submittedAt}',
+      'reviewId',result#>'{items,0,reviewId}') then raise exception 'cursor not last emitted row'; end if;
+  end loop;
+  if seen<>array['88000000-0000-4000-8000-000000004101',
+    '88000000-0000-4000-8000-000000004001',
+    (select value->>'reviewId' from own_review_expected)]
+  then raise exception 'tied timestamp ordering failed: %',seen; end if;
+  if public.list_owner_customer_reviews('1900-01-01',
+    '88000000-0000-4000-8000-000000004001',1)
+    <>'{"status":"success","items":[],"nextCursor":null}'::jsonb
+  then raise exception 'exhausted page failed'; end if;
+  for invalid_input in select * from (values
+    (null::timestamptz,null::uuid,0),(null::timestamptz,null::uuid,51),
+    (null::timestamptz,null::uuid,null::integer),
+    (now(),null::uuid,20),(null::timestamptz,'88000000-0000-4000-8000-000000004001'::uuid,20)
+  ) inputs(before_at,before_id,page_limit) loop
+    denied:=false;
+    begin
+      perform public.list_owner_customer_reviews(invalid_input.before_at,
+        invalid_input.before_id,invalid_input.page_limit);
+    exception when invalid_parameter_value then denied:=true;
+    end;
+    if not denied then raise exception 'invalid page admitted'; end if;
+  end loop;
+  reset role;
+end;
+$body$;
+$test$,'owner review list preserves hidden states and complete cursor pages');
 
 select * from finish();
 rollback;

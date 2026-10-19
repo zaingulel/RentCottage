@@ -14,7 +14,7 @@ import { BackofficeNavigationLinks } from "./backoffice-navigation-links";
 type BackofficeNavigationProps = { locale: Locale; nested?: boolean } & (
   | {
       area: "owner";
-      current: "cottages" | "bookings" | "earnings";
+      current: "cottages" | "bookings" | "earnings" | "reviews";
       waitingBookingRequests?: number;
     }
   | {
@@ -57,6 +57,11 @@ export function BackofficeNavigation({
             href: `/${locale}/owner/earnings`,
             label: access.ownerEarningsTab,
           },
+          {
+            key: "reviews",
+            href: `/${locale}/owner/reviews`,
+            label: access.ownerReviewsTab,
+          },
         ]
       : [
           {
@@ -93,7 +98,7 @@ export function BackofficeNavigation({
 
   return (
     <nav
-      className="backoffice-navigation"
+      className={`backoffice-navigation${area === "owner" ? " backoffice-navigation-owner" : ""}`}
       aria-labelledby="backoffice-navigation-area"
     >
       <span id="backoffice-navigation-area" className="visually-hidden">

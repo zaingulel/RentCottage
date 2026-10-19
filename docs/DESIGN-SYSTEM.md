@@ -243,7 +243,12 @@ Anything else is a token.
     Customer status Withdraw and the separate Messages action also fill their footers at `phone`; Withdraw is
     content-width at the desktop inline end, while recovery keeps its full-width treatment.
   - `FormControl`: an input, select or textarea with `.form-control` and a `1px` solid `--line-control` normal
-    border, which shows `aria-invalid` as an error border.
+    border, which shows `aria-invalid` as an error border. Native single-choice dropdowns, including raw app
+    selects, use the existing 16px chevron with `appearance: none`, a non-repeating 1rem background image centred
+    vertically and `--space-4` from inline end, and `--space-7` end padding to keep text clear. This applies to
+    selects without `multiple` whose `size` is absent, `0` or `1`; multiple selects and explicit listboxes retain
+    native presentation. Forced colors restores `appearance: auto` and removes the image, retaining end padding
+    and native selection and focus.
   - `FormControl` with `type="date"` is the date field. It keeps the platform's date picker; the date text and the
     calendar glyph the browser draws inside the field are not restyled.
   - `ChoiceControl`: a native checkbox or radio button inside its label (`.choice-control`). The label is the
@@ -333,7 +338,7 @@ Anything else is a token.
 - Backoffice navigation: `BackofficeNavigation` in
   [backoffice-navigation.tsx](../src/components/backoffice-navigation.tsx) is the one navigation of the Owner
   Backoffice and the Platform Administrator pages, and owns each area's list of destinations. The owner's
-  sections are My cottages, Bookings and Earnings, in that order. It is a server
+  sections are My cottages, Bookings, Earnings and Reviews, in that order. It is a server
   component whose row of tabs is the client component `BackofficeNavigationLinks` in
   [backoffice-navigation-links.tsx](../src/components/backoffice-navigation-links.tsx), which brings the focused
   tab, and on first render the current tab, wholly into view inside the row with room for its focus ring, without
@@ -347,7 +352,8 @@ Anything else is a token.
   cream band that reaches both screen edges, with its tabs on one line that scrolls sideways inside the bar with a
   hidden scrollbar and never scrolls the page. The bar is `display: flow-root` so the row's negative margins stay
   inside it and the current tab's indicator meets the band's hairline, and `min-inline-size: 0` so it shrinks inside a
-  grid or flex parent. The owner's Bookings tab may carry `span.backoffice-navigation-count`,
+  grid or flex parent. At `phone`, only the owner's tab row uses `--space-2` between destinations; administrator and
+  wider rows keep the shared gap. The owner's Bookings tab may carry `span.backoffice-navigation-count`,
   a `--gold` pill with the number in `--ink` at `--font-size-1`, shown only when at least one Booking Request is
   waiting. The number is preceded by visually hidden text, so the tab is announced with its name and the count. A
   page passes the count through `waitingBookingRequests` and the navigation loads nothing itself. An unavailable
@@ -649,8 +655,9 @@ its own; the block it sits in sets the space around it.
   and new work keeps it that way. The two drawn glyphs are the one exception: the tick on a checked checkbox and
   the chevron on a disclosure are each two physical borders of a rotated box, so they are drawn the same way in
   every direction.
-- A property with no logical form is mirrored with a direction selector. The one case today is the
-  `background-position` of `.cottage-inventory-state select`, flipped under `[dir="rtl"]`.
+- A property with no logical form is mirrored with a direction selector. The shared native dropdown
+  `background-position` places its chevron at the right in English and the left under `[dir="rtl"]`, each
+  `--space-4` from inline end.
 - Direction- or language-specific adjustments use `[dir="rtl"]` or `html[lang="…"]` selectors in
   `src/app/globals.css`, as the `html[lang="ckb"]` profile and booking summary headings do.
 - Fonts are self-hosted `@font-face` rules in [fonts.css](../src/app/fonts.css), imported by `globals.css`, not

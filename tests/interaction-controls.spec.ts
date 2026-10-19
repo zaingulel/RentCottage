@@ -223,6 +223,8 @@ test("normal input boundaries retain accessible contrast on every shared surface
     return (Math.max(...values) + 0.05) / (Math.min(...values) + 0.05);
   }
   const measurements = [];
+  const selectMeasurements = [];
+  const selectInteractions = [];
   for (const { locale, direction } of localeFixtures) {
     await page.evaluate(
       ({ locale, direction }) => {
@@ -234,6 +236,231 @@ test("normal input boundaries retain accessible contrast on every shared surface
     await expect(page.locator("html")).toHaveAttribute("lang", locale);
     await expect(page.locator("html")).toHaveAttribute("dir", direction);
     await page.evaluate(() => document.fonts.ready);
+    for (const name of [
+      "Inventory availability select",
+      "Boundary select",
+      "Raw select",
+      "Inventory weekday select",
+    ]) {
+      const control = surface.getByRole("combobox", { name, exact: true });
+      await control.selectOption("sample");
+      for (const state of ["sample", "long"] as const) {
+        if (state === "long") {
+          if (testInfo.project.name === "mobile")
+            await control.selectOption("long");
+          else {
+            await control.focus();
+            await control.press("Home");
+            await control.press("ArrowDown");
+            await expect(control).toBeFocused();
+            expect(
+              await control.evaluate((element) =>
+                element.matches(":focus-visible"),
+              ),
+            ).toBe(true);
+            await expect(control).not.toHaveCSS("outline-style", "none");
+            await control.screenshot({
+              path: testInfo.outputPath(
+                `select-focused-${locale}-${name.toLowerCase().replaceAll(" ", "-")}.png`,
+              ),
+              scale: "css",
+            });
+          }
+          await expect(control).toHaveValue("long");
+          await expect(control.locator("option:checked")).toHaveText(
+            "A longer option describing the cottage availability for this weekday",
+          );
+          await expect(control).toHaveCSS("padding-inline-end", "48px");
+          await expect
+            .poll(() =>
+              page.evaluate(
+                () => document.documentElement.scrollWidth <= innerWidth,
+              ),
+            )
+            .toBe(true);
+          selectInteractions.push({
+            locale,
+            width,
+            name,
+            mode: "normal",
+            value: await control.inputValue(),
+            styles: await computed(control, [
+              "padding-inline-end",
+              "outline-style",
+              "outline-color",
+              "outline-width",
+              "outline-offset",
+              "box-shadow",
+            ]),
+          });
+        }
+        await expect(control).toBeEnabled();
+        await control.scrollIntoViewIfNeeded();
+        await control.evaluate((element: HTMLElement) => element.blur());
+        await expect(control).not.toBeFocused();
+        const frame = await control.evaluate((element) => {
+          const bounds = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return {
+            left: bounds.left,
+            right: bounds.right,
+            top: bounds.top,
+            bottom: bounds.bottom,
+            centreY: bounds.top + bounds.height / 2,
+            paddingEdge:
+              style.direction === "rtl"
+                ? bounds.left + Number.parseFloat(style.borderLeftWidth)
+                : bounds.right - Number.parseFloat(style.borderRightWidth),
+            viewport: { width: innerWidth, height: innerHeight },
+          };
+        });
+        expect(frame.viewport.width).toBe(width);
+        expect(frame.left).toBeGreaterThanOrEqual(0);
+        expect(frame.right).toBeLessThanOrEqual(width);
+        expect(frame.top).toBeGreaterThanOrEqual(0);
+        expect(frame.bottom).toBeLessThanOrEqual(frame.viewport.height);
+        const stripTop = Math.floor(frame.centreY) - 8;
+        expect(stripTop).toBeGreaterThan(frame.top);
+        expect(stripTop + 15).toBeLessThan(frame.bottom);
+        const points = Array.from({ length: 16 }, (_, row) =>
+          Array.from({ length: 46 }, (_, column) => {
+            const inset = column + 2;
+            return {
+              x: Math.floor(
+                frame.paddingEdge + (direction === "rtl" ? inset : -inset),
+              ),
+              y: stripTop + row,
+              inset,
+            };
+          }),
+        ).flat();
+        const [fill, ...pixels] = await samplePixels(page, [
+          { x: (frame.left + frame.right) / 2, y: frame.top + 3 },
+          ...points,
+        ]);
+        const ink = points.filter((_, index) =>
+          pixels[index].some(
+            (channel, channelIndex) =>
+              Math.abs(channel - fill[channelIndex]) > 40,
+          ),
+        );
+        const minInset = ink.length
+          ? Math.min(...ink.map((point) => point.inset))
+          : null;
+        const maxInset = ink.length
+          ? Math.max(...ink.map((point) => point.inset))
+          : null;
+        const bounds =
+          minInset === null || maxInset === null
+            ? null
+            : {
+                minInset,
+                maxInset,
+                width: maxInset - minInset + 1,
+                midpoint: (minInset + maxInset) / 2,
+                top: Math.min(...ink.map((point) => point.y)),
+                bottom: Math.max(...ink.map((point) => point.y)),
+              };
+        selectMeasurements.push({
+          state,
+          locale,
+          direction,
+          width,
+          name,
+          frame,
+          fill,
+          inkPixels: ink.length,
+          bounds,
+        });
+        const selectMeasurementPath = testInfo.outputPath("select-inset.json");
+        await writeFile(
+          selectMeasurementPath,
+          JSON.stringify(selectMeasurements, null, 2),
+        );
+        await control.screenshot({
+          path: testInfo.outputPath(
+            `select-inset-${locale}-${state}-${name.toLowerCase().replaceAll(" ", "-")}.png`,
+          ),
+          scale: "css",
+        });
+        const context = `${locale} ${width} ${state} ${name} rendered glyph ${JSON.stringify(bounds)}`;
+        expect(
+          bounds,
+          `${context}: visible unambiguous indicator`,
+        ).not.toBeNull();
+        if (!bounds)
+          throw new Error(`${context}: no distinguishable select indicator`);
+        const assertion =
+          name === "Inventory availability select" ? expect : expect.soft;
+        assertion(
+          bounds.width,
+          `${context}: glyph width`,
+        ).toBeGreaterThanOrEqual(7);
+        assertion(bounds.width, `${context}: glyph width`).toBeLessThanOrEqual(
+          12,
+        );
+        assertion(
+          bounds.midpoint,
+          `${context}: inset centre`,
+        ).toBeGreaterThanOrEqual(22);
+        assertion(
+          bounds.midpoint,
+          `${context}: inset centre`,
+        ).toBeLessThanOrEqual(26);
+      }
+    }
+    if (testInfo.project.name === "desktop") {
+      try {
+        await page.emulateMedia({ forcedColors: "active" });
+        for (const name of ["Boundary select", "Raw select"]) {
+          const control = surface.getByRole("combobox", { name, exact: true });
+          await expect(control).toBeVisible();
+          await expect(control).toBeEnabled();
+          await expect(control).toHaveCSS("appearance", "auto");
+          await expect(control).toHaveCSS("background-image", "none");
+          await control.focus();
+          await control.press("Home");
+          await control.press("ArrowDown");
+          await expect(control).toHaveValue("long");
+          await expect(control).toBeFocused();
+          expect(
+            await control.evaluate((element) =>
+              element.matches(":focus-visible"),
+            ),
+          ).toBe(true);
+          await expect(control).not.toHaveCSS("outline-style", "none");
+          selectInteractions.push({
+            locale,
+            width,
+            name,
+            mode: "forced-colors",
+            value: await control.inputValue(),
+            styles: await computed(control, [
+              "appearance",
+              "background-image",
+              "padding-inline-end",
+              "outline-style",
+              "outline-color",
+              "outline-width",
+              "outline-offset",
+              "box-shadow",
+            ]),
+          });
+          await control.screenshot({
+            path: testInfo.outputPath(
+              `select-forced-colors-${locale}-${name.toLowerCase().replaceAll(" ", "-")}.png`,
+            ),
+            scale: "css",
+          });
+        }
+      } finally {
+        await page.emulateMedia({ forcedColors: "none" });
+        await page.evaluate(() => {
+          if (document.activeElement instanceof HTMLElement)
+            document.activeElement.blur();
+        });
+      }
+    }
     for (const outside of [
       "--background",
       "--card",
@@ -311,6 +538,18 @@ test("normal input boundaries retain accessible contrast on every shared surface
       }
     }
   }
+  const interactionPath = testInfo.outputPath(
+    "select-native-interactions.json",
+  );
+  await writeFile(interactionPath, JSON.stringify(selectInteractions, null, 2));
+  await testInfo.attach("Select native interaction measurements", {
+    path: interactionPath,
+    contentType: "application/json",
+  });
+  await testInfo.attach("Select indicator pixel measurements", {
+    path: testInfo.outputPath("select-inset.json"),
+    contentType: "application/json",
+  });
   const measurementPath = testInfo.outputPath("normal-input-contrast.json");
   await writeFile(measurementPath, JSON.stringify(measurements, null, 2));
   await testInfo.attach("Normal input contrast measurements", {

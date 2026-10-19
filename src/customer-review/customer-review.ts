@@ -377,6 +377,25 @@ export type OwnerCustomerReviewResult =
       status: "no-review" | "access-required" | "invalid" | "unavailable";
     }>;
 
+export type OwnerCustomerReviewListItem = Readonly<{
+  reviewId: string;
+  submittedAt: string;
+  bookingRequestReference: string;
+  cottageName: string;
+  review: Extract<
+    OwnerCustomerReviewResult,
+    { status: "reviewed" | "review-hidden" }
+  >;
+}>;
+
+export type OwnerCustomerReviewListResult =
+  | Readonly<{
+      status: "success";
+      items: readonly OwnerCustomerReviewListItem[];
+      nextCursor: CustomerReviewCursor | null;
+    }>
+  | Readonly<{ status: "access-required" | "invalid" | "unavailable" }>;
+
 export type CustomerReviewHide = Readonly<{
   administratorUserId: string;
   reason: string;
