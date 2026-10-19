@@ -352,7 +352,8 @@ Anything else is a token.
   cream band that reaches both screen edges, with its tabs on one line that scrolls sideways inside the bar with a
   hidden scrollbar and never scrolls the page. The bar is `display: flow-root` so the row's negative margins stay
   inside it and the current tab's indicator meets the band's hairline, and `min-inline-size: 0` so it shrinks inside a
-  grid or flex parent. The owner's Bookings tab may carry `span.backoffice-navigation-count`,
+  grid or flex parent. At `phone`, only the owner's tab row uses `--space-2` between destinations; administrator and
+  wider rows keep the shared gap. The owner's Bookings tab may carry `span.backoffice-navigation-count`,
   a `--gold` pill with the number in `--ink` at `--font-size-1`, shown only when at least one Booking Request is
   waiting. The number is preceded by visually hidden text, so the tab is announced with its name and the count. A
   page passes the count through `waitingBookingRequests` and the navigation loads nothing itself. An unavailable

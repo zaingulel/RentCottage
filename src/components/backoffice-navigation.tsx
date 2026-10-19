@@ -98,7 +98,7 @@ export function BackofficeNavigation({
 
   return (
     <nav
-      className="backoffice-navigation"
+      className={`backoffice-navigation${area === "owner" ? " backoffice-navigation-owner" : ""}`}
       aria-labelledby="backoffice-navigation-area"
     >
       <span id="backoffice-navigation-area" className="visually-hidden">
