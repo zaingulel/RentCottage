@@ -190,12 +190,15 @@ select ok((select description is null and description_hidden
   from public.get_current_cottage_publication('30000000-0000-4000-8000-000000002401', locale)),
   'independently public publication output suppresses hidden content with an explicit flag in ' || locale::text)
   from unnest(array['en','ar','ckb']::public.cottage_profile_source_language[]) locale;
-select ok(public.get_public_cottage_profile(locale, current_setting('test.visibility_slug'),
-  current_setting('test.visibility_search')::jsonb) @> jsonb_build_object(
-    'description', null, 'descriptionHidden', true, 'mediaIds', jsonb_build_array(current_setting('test.visibility_visible_media')),
-    'name', 'Shaqlawa Garden', 'capacity', 8, 'houseRules', case locale when 'en' then 'No smoking' else 'Translated rules ' || locale::text end),
+select ok(projection.result @> jsonb_build_object(
+    'description', null, 'descriptionHidden', true,
+    'name', 'Shaqlawa Garden', 'capacity', 8,
+    'houseRules', case locale when 'en' then 'No smoking' else 'Translated rules ' || locale::text end)
+  and projection.result->'mediaIds' = jsonb_build_array(current_setting('test.visibility_visible_media')),
   'detail suppresses hidden text and photo while retaining facts in ' || locale::text)
-  from unnest(array['en','ar','ckb']::public.cottage_profile_source_language[]) locale;
+  from unnest(array['en','ar','ckb']::public.cottage_profile_source_language[]) locale
+  cross join lateral public.get_public_cottage_profile(
+    locale, current_setting('test.visibility_slug'), current_setting('test.visibility_search')::jsonb) as projection(result);
 select is(public.search_public_cottages('en', current_setting('test.visibility_search')::jsonb, null, 12)
   -> 'items' -> 0 -> 'mediaIds', jsonb_build_array(current_setting('test.visibility_visible_media')),
   'search omits the hidden approved photo');
