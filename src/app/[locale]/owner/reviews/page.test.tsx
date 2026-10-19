@@ -265,6 +265,11 @@ it("Reviews preserves locale, hidden state, paging and visible failures", async 
           createReviews.mockResolvedValueOnce(undefined);
         else listOwner.mockResolvedValueOnce({ status: outcome });
         render(await page(locale));
+        if (outcome === "throw")
+          expect(errorLog.mock.calls).toEqual([
+            ["customer-review-owner-list-unavailable"],
+          ]);
+        else expect(errorLog).not.toHaveBeenCalled();
         expect(screen.getByRole("alert")).toHaveTextContent(unavailable);
         expect(screen.getByRole("link", { name: retry })).toHaveAttribute(
           "href",

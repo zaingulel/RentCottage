@@ -208,13 +208,51 @@ createRoot(rootElement).render(
       Secondary
     </ActionButton>
     <BusyActionFixture />
-    <section aria-label="Normal input boundaries" lang="en">
+    <section
+      aria-label="Normal input boundaries"
+      lang="en"
+      style={{ inlineSize: "min(100%, 24rem)" }}
+    >
       <label htmlFor="boundary-input">Boundary input</label>
       <FormControl kind="input" id="boundary-input" defaultValue="Sample" />
       <label htmlFor="boundary-select">Boundary select</label>
       <FormControl kind="select" id="boundary-select" defaultValue="sample">
         <option value="sample">Sample</option>
+        <option value="long">
+          A longer option describing the cottage availability for this weekday
+        </option>
       </FormControl>
+      <label htmlFor="raw-select">Raw select</label>
+      <select
+        id="raw-select"
+        defaultValue="sample"
+        style={{ inlineSize: "100%" }}
+      >
+        <option value="sample">Sample</option>
+        <option value="long">
+          A longer option describing the cottage availability for this weekday
+        </option>
+      </select>
+      <div className="cottage-inventory-unit">
+        <label htmlFor="weekday-select">Inventory weekday select</label>
+        <select id="weekday-select" defaultValue="sample">
+          <option value="sample">Sample</option>
+          <option value="long">
+            A longer option describing the cottage availability for this weekday
+          </option>
+        </select>
+      </div>
+      <div className="cottage-inventory-state">
+        <label htmlFor="availability-select">
+          Inventory availability select
+        </label>
+        <select id="availability-select" defaultValue="sample">
+          <option value="sample">Sample</option>
+          <option value="long">
+            A longer option describing the cottage availability for this weekday
+          </option>
+        </select>
+      </div>
       <label htmlFor="boundary-textarea">Boundary textarea</label>
       <FormControl
         kind="textarea"

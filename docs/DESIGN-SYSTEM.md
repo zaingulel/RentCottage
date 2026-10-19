@@ -243,7 +243,12 @@ Anything else is a token.
     Customer status Withdraw and the separate Messages action also fill their footers at `phone`; Withdraw is
     content-width at the desktop inline end, while recovery keeps its full-width treatment.
   - `FormControl`: an input, select or textarea with `.form-control` and a `1px` solid `--line-control` normal
-    border, which shows `aria-invalid` as an error border.
+    border, which shows `aria-invalid` as an error border. Native single-choice dropdowns, including raw app
+    selects, use the existing 16px chevron with `appearance: none`, a non-repeating 1rem background image centred
+    vertically and `--space-4` from inline end, and `--space-7` end padding to keep text clear. This applies to
+    selects without `multiple` whose `size` is absent, `0` or `1`; multiple selects and explicit listboxes retain
+    native presentation. Forced colors restores `appearance: auto` and removes the image, retaining end padding
+    and native selection and focus.
   - `FormControl` with `type="date"` is the date field. It keeps the platform's date picker; the date text and the
     calendar glyph the browser draws inside the field are not restyled.
   - `ChoiceControl`: a native checkbox or radio button inside its label (`.choice-control`). The label is the
@@ -649,8 +654,9 @@ its own; the block it sits in sets the space around it.
   and new work keeps it that way. The two drawn glyphs are the one exception: the tick on a checked checkbox and
   the chevron on a disclosure are each two physical borders of a rotated box, so they are drawn the same way in
   every direction.
-- A property with no logical form is mirrored with a direction selector. The one case today is the
-  `background-position` of `.cottage-inventory-state select`, flipped under `[dir="rtl"]`.
+- A property with no logical form is mirrored with a direction selector. The shared native dropdown
+  `background-position` places its chevron at the right in English and the left under `[dir="rtl"]`, each
+  `--space-4` from inline end.
 - Direction- or language-specific adjustments use `[dir="rtl"]` or `html[lang="…"]` selectors in
   `src/app/globals.css`, as the `html[lang="ckb"]` profile and booking summary headings do.
 - Fonts are self-hosted `@font-face` rules in [fonts.css](../src/app/fonts.css), imported by `globals.css`, not
