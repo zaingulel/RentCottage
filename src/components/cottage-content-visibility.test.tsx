@@ -73,8 +73,7 @@ it("published content controls report persisted hide and restore outcomes", asyn
     });
     expect(
       within(hostilePhoto).getByRole("heading", {
-        name: hostileFilename,
-        exact: true,
+        name: (accessibleName) => accessibleName === hostileFilename,
       }),
     ).toBeVisible();
     expect(

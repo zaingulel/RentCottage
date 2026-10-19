@@ -12,8 +12,8 @@ import {
 import type { CottageContentVisibility as Visibility } from "@/cottage-profile/cottage-profile";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
+import { AdministratorReason } from "./administrator-reason";
 import { ActionButton, ActionFeedback } from "./interaction-controls";
-import { AdministratorReason } from "./cottage-profile-editor";
 
 const idle: CottageContentVisibilityActionState = { status: "idle" };
 const idlePreview: CottagePhotoPreviewState = { status: "idle" };

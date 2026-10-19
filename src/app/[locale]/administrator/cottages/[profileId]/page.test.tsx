@@ -34,16 +34,9 @@ vi.mock("@/cottage-profile/request-cottage-profile", () => ({
 vi.mock("@/cottage-publication/request-cottage-publication", () => ({
   createRequestCottagePublication: createCottagePublication,
 }));
-vi.mock("@/components/cottage-profile-editor", async (importOriginal) => {
-  const actual =
-    await importOriginal<
-      typeof import("@/components/cottage-profile-editor")
-    >();
-  return {
-    ...actual,
-    CottageProfileEditor: () => <div>profile editor</div>,
-  };
-});
+vi.mock("@/components/cottage-profile-editor", () => ({
+  CottageProfileEditor: () => <div>profile editor</div>,
+}));
 vi.mock("@/components/cottage-profile-lifecycle-controls", () => ({
   CottageProfileLifecycleControls: ({ eligible }: { eligible: boolean }) => (
     <div>lifecycle eligible {String(eligible)}</div>
