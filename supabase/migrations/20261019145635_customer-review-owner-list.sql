@@ -72,9 +72,6 @@ begin
 end;
 $function$;
 
-REVOKE ALL ON FUNCTION public.list_owner_customer_reviews(timestamp WITH time zone, uuid, integer) FROM PUBLIC;
-
-GRANT ALL ON FUNCTION public.list_owner_customer_reviews(timestamp WITH time zone, uuid, integer) TO authenticated;
 ALTER FUNCTION public.list_owner_customer_reviews(timestamptz,uuid,integer) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.list_owner_customer_reviews(timestamptz,uuid,integer) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.list_owner_customer_reviews(timestamptz,uuid,integer) TO authenticated;
