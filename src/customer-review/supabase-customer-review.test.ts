@@ -39,6 +39,133 @@ describe("Supabase Customer review repository", () => {
     vi.clearAllMocks();
     runtimeEnabled.mockReturnValue(true);
   });
+  it("owner review list validates its exact bounded projection", async () => {
+    const input = { beforeAt: null, beforeId: null, limit: 2 };
+    const submittedAt = "2026-09-21T12:00:00.000Z";
+    const reply = {
+      originalLanguage: "en",
+      originalBody: "Thank you for visiting.",
+      submittedAt,
+      moderationState: "hidden",
+    };
+    const review = {
+      status: "reviewed",
+      rating: 4,
+      originalLanguage: "en",
+      originalBody: "A peaceful stay.",
+      submittedAt,
+      reply,
+    };
+    const item = {
+      reviewId,
+      submittedAt,
+      bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+      cottageName: "Preserved Cottage",
+      review,
+    };
+    const hiddenItem = {
+      ...item,
+      reviewId: laterReviewId,
+      bookingRequestReference: "RC-REQ-FEDCBA9876543210",
+      review: { status: "review-hidden", reply: null },
+    };
+    const page = {
+      status: "success",
+      items: [item, hiddenItem],
+      nextCursor: { submittedAt, reviewId: laterReviewId },
+    };
+    const client = clientWith(page);
+    const repository = new SupabaseCustomerReviewRepository(client as never);
+    await expect(repository.listOwner(input)).resolves.toEqual(page);
+    expect(client.rpc).toHaveBeenCalledExactlyOnceWith(
+      "list_owner_customer_reviews",
+      { target_before_at: null, target_before_id: null, target_limit: 2 },
+    );
+    const continued = { beforeAt: submittedAt, beforeId: laterReviewId, limit: 1 };
+    await repository.listOwner(continued);
+    expect(client.rpc).toHaveBeenLastCalledWith("list_owner_customer_reviews", {
+      target_before_at: submittedAt,
+      target_before_id: laterReviewId,
+      target_limit: 1,
+    });
+    const read = (data: unknown, error: unknown = null) =>
+      new SupabaseCustomerReviewRepository(clientWith(data, error) as never)
+        .listOwner(input);
+    await expect(read({ status: "success", items: [], nextCursor: null }))
+      .resolves.toEqual({ status: "success", items: [], nextCursor: null });
+    for (const validReview of [
+      { ...review, originalBody: null, reply: null },
+      { ...review, reply: { ...reply, moderationState: "unhidden" } },
+      { status: "review-hidden", reply },
+    ]) {
+      const valid = { status: "success", items: [{ ...item, review: validReview }], nextCursor: null };
+      await expect(read(valid)).resolves.toEqual(valid);
+    }
+    const unicodeTitle = { status: "success", items: [{ ...item, cottageName: "🏡".repeat(120) }], nextCursor: null };
+    await expect(read(unicodeTitle)).resolves.toEqual(unicodeTitle);
+    for (const invalidItem of [
+      { ...item, reviewId: "invalid" },
+      { ...item, submittedAt: "yesterday" },
+      { ...item, bookingRequestReference: "invalid" },
+      { ...item, cottageName: null },
+      { ...item, cottageName: 42 },
+      { ...item, cottageName: { privateAddress: "private" } },
+      { ...item, cottageName: "  " },
+      { ...item, cottageName: "a".repeat(121) },
+      { ...item, cottageName: "🏡".repeat(121) },
+      { ...item, customerName: "private" },
+      { ...item, snapshot: { exactAddress: "private" } },
+      { ...item, review: { ...review, customerUserId: reviewId } },
+      { ...item, review: { ...review, rating: 0 } },
+      { ...item, review: { ...review, originalLanguage: "fr" } },
+      { ...item, review: { ...review, originalBody: "x".repeat(2001) } },
+      { ...item, review: { ...review, reply: { ...reply, reason: "private" } } },
+      { ...item, review: { ...review, reply: { ...reply, originalBody: "" } } },
+      { ...item, review: { ...review, reply: { ...reply, moderationState: "unknown" } } },
+      { ...item, review: { status: "no-review" } },
+      { ...hiddenItem, review: { status: "review-hidden", reply: null, originalBody: "hidden" } },
+      { ...hiddenItem, review: { status: "review-hidden", reply: { ...reply, authorUserId: reviewId } } },
+    ]) {
+      await expect(read({ status: "success", items: [item, invalidItem], nextCursor: null }))
+        .resolves.toEqual({ status: "unavailable" });
+    }
+    for (const malformed of [
+      null, [], { status: "success" },
+      { ...page, privateAddress: "private" },
+      { ...page, items: [item, hiddenItem, item] },
+      { ...page, items: "invalid" },
+      { ...page, nextCursor: undefined },
+      { ...page, nextCursor: { submittedAt, reviewId: "invalid" } },
+      { ...page, nextCursor: { submittedAt: "invalid", reviewId } },
+      { ...page, nextCursor: { submittedAt, reviewId, private: "value" } },
+    ]) {
+      await expect(read(malformed)).resolves.toEqual({ status: "unavailable" });
+    }
+    for (const [code, status] of [["42501", "access-required"], ["22023", "invalid"], ["XX000", "unavailable"]]) {
+      await expect(read(null, { code })).resolves.toEqual({ status });
+    }
+    const failingClient = { rpc: vi.fn().mockRejectedValue(new Error("Transport unavailable")) };
+    await expect(new SupabaseCustomerReviewRepository(failingClient as never).listOwner(input))
+      .resolves.toEqual({ status: "unavailable" });
+    for (const invalidInput of [
+      { ...input, limit: 0 }, { ...input, limit: 51 }, { ...input, limit: 1.5 },
+      { ...input, beforeAt: submittedAt }, { ...input, beforeId: reviewId },
+      { ...input, beforeAt: "invalid", beforeId: reviewId },
+      { ...input, actorUserId: reviewId },
+    ]) {
+      const invalidClient = clientWith(page);
+      await expect(new SupabaseCustomerReviewRepository(invalidClient as never).listOwner(invalidInput))
+        .resolves.toEqual({ status: "invalid" });
+      expect(invalidClient.rpc).not.toHaveBeenCalled();
+    }
+    createRequestClient.mockResolvedValue(client);
+    const request = await createRequestCustomerReview();
+    await expect(request?.listOwner(input)).resolves.toEqual(page);
+    expect(createRequestClient).toHaveBeenCalledOnce();
+    runtimeEnabled.mockReturnValue(false);
+    await expect(createRequestCustomerReview()).resolves.toBeUndefined();
+  });
+
   it("submits the original review through the request-authorized RPC", async () => {
     const client = clientWith({
       status: "submitted",
@@ -980,7 +1107,7 @@ describe("Supabase Customer review repository", () => {
     expect(unreached.rpc).not.toHaveBeenCalled();
   });
 
-  it("uses the anonymous or authenticated request client for all eight operations", async () => {
+  it("uses the anonymous or authenticated request client for review operations", async () => {
     const client = {
       auth: {
         getUser: vi.fn().mockResolvedValue({

@@ -33,6 +33,8 @@ import type {
   HideCustomerReviewInput,
   HideCustomerReviewResult,
   OwnCustomerReviewResult,
+  OwnerCustomerReviewListItem,
+  OwnerCustomerReviewListResult,
   OwnerCustomerReviewReply,
   OwnerCustomerReviewResult,
   PublicCustomerReview,
@@ -388,6 +390,56 @@ function parseOwnerReviewResult(value: unknown): OwnerCustomerReviewResult {
     }
   }
   return { status: "unavailable" };
+}
+
+function parseOwnerListResult(
+  value: unknown,
+  limit: number,
+): OwnerCustomerReviewListResult {
+  if (
+    !isRecord(value) ||
+    value.status !== "success" ||
+    !hasExactKeys(value, ["status", "items", "nextCursor"]) ||
+    !Array.isArray(value.items) ||
+    value.items.length > limit
+  ) {
+    return { status: "unavailable" };
+  }
+  const nextCursor = parseCursor(value.nextCursor);
+  if (nextCursor === undefined) return { status: "unavailable" };
+  const items: OwnerCustomerReviewListItem[] = [];
+  for (const entry of value.items) {
+    if (
+      !isRecord(entry) ||
+      !hasExactKeys(entry, [
+        "reviewId",
+        "submittedAt",
+        "bookingRequestReference",
+        "cottageName",
+        "review",
+      ]) ||
+      !isCustomerReviewUuid(entry.reviewId) ||
+      !isCustomerReviewTimestamp(entry.submittedAt) ||
+      !isBookingRequestReference(entry.bookingRequestReference) ||
+      typeof entry.cottageName !== "string" ||
+      entry.cottageName.trim().length === 0 ||
+      [...entry.cottageName].length > 120
+    ) {
+      return { status: "unavailable" };
+    }
+    const review = parseOwnerReviewResult(entry.review);
+    if (review.status !== "reviewed" && review.status !== "review-hidden") {
+      return { status: "unavailable" };
+    }
+    items.push({
+      reviewId: entry.reviewId,
+      submittedAt: entry.submittedAt,
+      bookingRequestReference: entry.bookingRequestReference,
+      cottageName: entry.cottageName,
+      review,
+    });
+  }
+  return { status: "success", items, nextCursor };
 }
 
 function parseHide(value: unknown): CustomerReviewHide | null | undefined {
@@ -869,6 +921,23 @@ export class SupabaseCustomerReviewRepository {
       return { status: "unavailable" };
     }
     return parseHideResult(data);
+  }
+
+  async listOwner(
+    input: CustomerReviewPageInput,
+  ): Promise<OwnerCustomerReviewListResult> {
+    if (!isCustomerReviewPageInput(input)) return { status: "invalid" };
+    const response = await callRpc(this.client, "list_owner_customer_reviews", {
+      target_before_at: input.beforeAt,
+      target_before_id: input.beforeId,
+      target_limit: input.limit,
+    });
+    if (!response) return { status: "unavailable" };
+    const { data, error } = response;
+    if (errorCode(error) === "42501") return { status: "access-required" };
+    if (errorCode(error) === "22023") return { status: "invalid" };
+    if (error !== null) return { status: "unavailable" };
+    return parseOwnerListResult(data, input.limit);
   }
 
   async getOwnerReview(
