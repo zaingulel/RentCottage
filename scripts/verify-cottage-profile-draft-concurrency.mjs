@@ -598,6 +598,22 @@ try {
     }
   } finally {
     harness.markTimingPhase("cleanup");
+    harness.runSql(`
+      delete from public.cottage_marketplace_listings listing
+      using public.owner_application_cottage_profiles profile
+      where listing.profile_id = profile.id
+        and profile.owner_user_id = '${raceOwnerUserId}';
+    `);
+    assert.equal(
+      harness.runSql(`
+        select count(*)
+        from public.cottage_marketplace_listings listing
+        join public.owner_application_cottage_profiles profile
+          on profile.id = listing.profile_id
+        where profile.owner_user_id = '${raceOwnerUserId}';
+      `),
+      "0",
+    );
     const columns = Object.keys(runtimeControl)
       .filter((column) => column !== "singleton")
       .map((column) => `"${column}"`)
