@@ -119,6 +119,11 @@ const administratorReturnNamespaces = {
   worker: "75",
 } as const;
 const replyNamespaces = { mobile: "76", desktop: "77", worker: "78" } as const;
+const ownerReviewsNamespaces = {
+  mobile: ["79", "80", "81"],
+  desktop: ["82", "83", "84"],
+  worker: ["85", "86", "87"],
+} as const;
 const password = "Local-test-password-2026";
 
 const administratorReturnLocales = [
@@ -2931,5 +2936,440 @@ test.describe("administrator review return", () => {
         await expect(protectedRow).toContainText(protectedReviewBody);
       });
     }
+  }
+});
+
+test("Cottage Owner finds reviews and replies from the workspace list", async ({
+  page,
+  browser,
+}, testInfo) => {
+  requireLocalDatabase();
+  const allocated =
+    ownerReviewsNamespaces[
+      testInfo.project.name as keyof typeof ownerReviewsNamespaces
+    ];
+  if (!allocated) throw new Error("Owner Reviews browser project is unmapped");
+  const harness = createLocalSupabaseConcurrencyHarness();
+  harness.guardDisposableLocalDatabase();
+  const requestIds = allocated.map(
+    (namespace) => `60000000-0000-4000-8000-00000000${namespace}01`,
+  );
+  expect(
+    harness.runSql(
+      `select count(*) from public.booking_requests where id in (${requestIds.map((id) => `'${id}'`).join(",")});`,
+    ),
+  ).toBe("0");
+  let root: Awaited<ReturnType<typeof seedFixture>> | undefined;
+  let shared: Awaited<ReturnType<typeof seedFixture>> | undefined;
+  let foreign: Awaited<ReturnType<typeof seedFixture>> | undefined;
+  const origin =
+    process.env.PLAYWRIGHT_SERVER === "worker"
+      ? `http://127.0.0.1:${process.env.PLAYWRIGHT_WORKER_PORT ?? "8788"}`
+      : `http://127.0.0.1:${process.env.PLAYWRIGHT_NEXT_PORT ?? "3000"}`;
+  const visitorContext = await browser.newContext({ baseURL: origin });
+  const administratorContext = await browser.newContext({ baseURL: origin });
+  try {
+    root = await seedFixture(allocated[0]);
+    shared = await seedFixture(allocated[1], {
+      sharedCottage: {
+        namespace: allocated[0],
+        ownerUserId: root.identities.owner,
+        profileId: root.ids.profileId,
+        publicSlug: root.publicSlug,
+      },
+    });
+    foreign = await seedFixture(allocated[2]);
+    const bodies = [
+      "A peaceful garden for our family.",
+      "A welcoming cottage beside the trees.",
+      "Foreign owner review must remain private here.",
+    ];
+    const fixtures = [root, shared, foreign];
+    const reviewIds: string[] = [];
+    for (const [index, fixture] of fixtures.entries()) {
+      const customer = await signedInPhoneClient(fixture.phones.customer);
+      const eligible = await customer.rpc("get_customer_review", {
+        target_reference: fixture.ids.bookingReference,
+      });
+      expect(eligible.error).toBeNull();
+      expect(eligible.data).toMatchObject({ status: "eligible" });
+      const submitted = await customer.rpc("submit_customer_review", {
+        target_reference: fixture.ids.bookingReference,
+        target_rating: 5,
+        target_original_language: "en",
+        target_original_body: bodies[index],
+      });
+      expect(submitted.error).toBeNull();
+      expect(submitted.data).toMatchObject({ status: "submitted" });
+      reviewIds.push(submitted.data.reviewId);
+    }
+    const owner = await signedInPhoneClient(root.phones.owner);
+    const listed = await owner.rpc("list_owner_customer_reviews", {
+      target_before_at: null,
+      target_before_id: null,
+      target_limit: 20,
+    });
+    expect(listed.error).toBeNull();
+    expect(
+      listed.data.items.map((item: { reviewId: string }) => item.reviewId),
+    ).toEqual([reviewIds[1], reviewIds[0]]);
+    expect(listed.data.nextCursor).toBeNull();
+    const listPath = (locale: Locale) => `/${locale}/owner/reviews`;
+    await signInPhone(page, root.phones.owner, "/en/owner/cottages");
+    const rows = page.getByRole("main").locator("ul.list-rows > li");
+    for (const [locale, title, area, noReply] of [
+      ["en", "Reviews", "Owner Backoffice", "No reply yet"],
+      ["ar", "التقييمات", "مكتب مالك الكوخ", "لم يتم الرد بعد"],
+      [
+        "ckb",
+        "هەڵسەنگاندنەکان",
+        "بەشی بەڕێوەبردنی خاوەن کۆتێج",
+        "هێشتا وەڵام نەدراوەتەوە",
+      ],
+    ] as const) {
+      if (locale !== "en") await page.goto(`/${locale}/owner/cottages`);
+      const tab = page
+        .getByRole("navigation", { name: area })
+        .getByRole("link", { name: title, exact: true });
+      if (testInfo.project.name === "mobile") await tab.tap();
+      else {
+        await tab.focus();
+        await page.keyboard.press("Enter");
+      }
+      await expect(page).toHaveURL(listPath(locale));
+      await expect(
+        page.getByRole("heading", { level: 1, name: title }),
+      ).toBeVisible();
+      await expect(tab).toHaveAttribute("aria-current", "page");
+      await expect(page.locator("html")).toHaveAttribute(
+        "dir",
+        locale === "en" ? "ltr" : "rtl",
+      );
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(0)).toContainText(bodies[1]);
+      await expect(rows.nth(1)).toContainText(bodies[0]);
+      await expect(
+        rows.nth(0).getByText(noReply, { exact: true }),
+      ).toBeVisible();
+      await expect(
+        rows.nth(1).getByText(noReply, { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByText(bodies[2])).toHaveCount(0);
+      await expect(
+        rows.nth(1).getByRole("link", { name: "Fictional Preserved Cottage" }),
+      ).toHaveAttribute(
+        "href",
+        `/${locale}/owner/booking-requests/${root.ids.bookingReference}`,
+      );
+      const replyField = rows.nth(1).getByRole("textbox");
+      await replyField.focus();
+      await page.keyboard.press("Tab");
+      await expect(rows.nth(1).getByRole("combobox")).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(rows.nth(1).getByRole("button")).toBeFocused();
+      const observation = await page.getByRole("main").evaluate((main) => ({
+        locale: document.documentElement.lang,
+        viewport: { width: innerWidth, height: innerHeight },
+        scrollWidth: document.documentElement.scrollWidth,
+        elements: Array.from(
+          main.querySelectorAll(
+            "h1,h2,p,small,a,button,textarea,select,.status-badge",
+          ),
+          (element) => {
+            const style = getComputedStyle(element);
+            const backgrounds = [];
+            for (
+              let ancestor: Element | null = element;
+              ancestor;
+              ancestor = ancestor.parentElement
+            )
+              backgrounds.push({
+                tag: ancestor.tagName,
+                background: getComputedStyle(ancestor).backgroundColor,
+              });
+            return {
+              tag: element.tagName,
+              text: element.textContent,
+              id: element.id,
+              label: element.getAttribute("aria-label"),
+              labelledBy: element.getAttribute("aria-labelledby"),
+              describedBy: element.getAttribute("aria-describedby"),
+              rect: element.getBoundingClientRect().toJSON(),
+              color: style.color,
+              background: style.backgroundColor,
+              border: style.borderColor,
+              outline: {
+                color: style.outlineColor,
+                width: style.outlineWidth,
+                offset: style.outlineOffset,
+              },
+              shadow: style.boxShadow,
+              fontSize: style.fontSize,
+              fontWeight: style.fontWeight,
+              focused: element.matches(":focus-visible"),
+              backgrounds,
+            };
+          },
+        ),
+      }));
+      expect(observation.scrollWidth).toBeLessThanOrEqual(
+        observation.viewport.width + 1,
+      );
+      await testInfo.attach(`owner-reviews-${locale}-rendered-a11y`, {
+        body: JSON.stringify(observation, null, 2),
+        contentType: "application/json",
+      });
+      if (
+        testInfo.project.name === "mobile" ||
+        (locale === "en" &&
+          (testInfo.project.name === "desktop" ||
+            testInfo.project.name === "worker"))
+      )
+        await page.screenshot({
+          path: testInfo.outputPath(
+            `owner-reviews-${testInfo.project.name}-${locale}.png`,
+          ),
+          fullPage: true,
+        });
+    }
+    await page.goto(listPath("en"));
+    const firstForm = rows.nth(0);
+    const secondForm = rows.nth(1);
+    const field = secondForm.getByLabel("Public reply");
+    const publish = secondForm.getByRole("button", { name: "Publish reply" });
+    await field.fill("Call +9647501234567");
+    await publish.click();
+    await expect(secondForm.getByRole("alert")).toContainText(
+      "Remove contact details",
+    );
+    await expect(firstForm.getByLabel("Public reply")).toHaveValue("");
+    await expect(
+      secondForm.getByRole("button", { name: "Publish reply" }),
+    ).toBeFocused();
+    await testInfo.attach("owner-reviews-refusal-a11y", {
+      body: JSON.stringify(
+        await secondForm.getByRole("alert").evaluate((element) => ({
+          role: element.getAttribute("role"),
+          text: element.textContent,
+          color: getComputedStyle(element).color,
+          background: getComputedStyle(element).backgroundColor,
+          rect: element.getBoundingClientRect().toJSON(),
+        })),
+      ),
+      contentType: "application/json",
+    });
+    if (testInfo.project.name === "desktop")
+      await page.screenshot({
+        path: testInfo.outputPath("owner-reviews-contact-refused-focus.png"),
+        fullPage: true,
+      });
+    const replyBody = "Thank you for enjoying our garden.";
+    await field.fill(replyBody);
+    await publish.focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      secondForm.getByRole("heading", { name: "Your reply" }),
+    ).toBeVisible();
+    await expect(
+      secondForm.getByText("Replied", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      secondForm.getByRole("heading", { name: "Customer review", exact: true }),
+    ).toBeFocused();
+    await testInfo.attach("owner-reviews-published-focus-a11y", {
+      body: JSON.stringify(
+        await secondForm
+          .getByRole("heading", { name: "Customer review", exact: true })
+          .evaluate((element) => {
+            const style = getComputedStyle(element);
+            const backgrounds = [];
+            for (
+              let ancestor: Element | null = element;
+              ancestor;
+              ancestor = ancestor.parentElement
+            )
+              backgrounds.push(getComputedStyle(ancestor).backgroundColor);
+            return {
+              rect: element.getBoundingClientRect().toJSON(),
+              focused: element.matches(":focus-visible"),
+              color: style.color,
+              border: style.borderColor,
+              outline: {
+                color: style.outlineColor,
+                width: style.outlineWidth,
+                offset: style.outlineOffset,
+              },
+              shadow: style.boxShadow,
+              backgrounds,
+            };
+          }),
+      ),
+      contentType: "application/json",
+    });
+    await expect(secondForm.getByRole("textbox")).toHaveCount(0);
+    await expect(firstForm.getByRole("textbox")).toHaveValue("");
+    await page.reload();
+    await expect(secondForm.getByText(replyBody)).toBeVisible();
+    const stored = await owner.rpc("get_owner_customer_review", {
+      target_reference: root.ids.bookingReference,
+    });
+    expect(stored.error).toBeNull();
+    expect(stored.data.reply.originalBody).toBe(replyBody);
+    const untouched = await owner.rpc("get_owner_customer_review", {
+      target_reference: shared.ids.bookingReference,
+    });
+    expect(untouched.error).toBeNull();
+    expect(untouched.data.reply).toBeNull();
+    await secondForm
+      .getByRole("link", { name: "Fictional Preserved Cottage" })
+      .click();
+    await expect(page).toHaveURL(
+      `/en/owner/booking-requests/${root.ids.bookingReference}`,
+    );
+    await expect(
+      page
+        .getByRole("region", { name: "Customer review", exact: true })
+        .getByText(replyBody),
+    ).toBeVisible();
+    const visitor = await visitorContext.newPage();
+    const publicPath = `/en/cottages/${root.publicSlug}/reviews`;
+    await visitor.goto(publicPath);
+    await expect(
+      visitor
+        .getByRole("article")
+        .filter({ hasText: bodies[0] })
+        .getByText(replyBody),
+    ).toBeVisible();
+    await page.goto(listPath("en"));
+    await page.getByRole("main").evaluate((main) => {
+      main.style.zoom = "2";
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth + 1,
+        ),
+      )
+      .toBe(true);
+    await expect(secondForm.getByText(replyBody)).toBeVisible();
+    await testInfo.attach("owner-reviews-200-percent", {
+      body: JSON.stringify(
+        await page.getByRole("main").evaluate((main) => ({
+          zoom: getComputedStyle(main).zoom,
+          viewport: innerWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+          heading: main.querySelector("h1")!.getBoundingClientRect().toJSON(),
+        })),
+      ),
+      contentType: "application/json",
+    });
+    await page.getByRole("main").evaluate((main) => {
+      main.style.zoom = "";
+    });
+    const administrator = await provisionAdministrator(
+      `owner-reviews-${testInfo.project.name}`,
+    );
+    const administratorPage = await administratorContext.newPage();
+    await administratorPage.goto("/en/administrator/reviews");
+    const secret = await beginAdministratorMfa(
+      administratorPage,
+      administrator.email,
+      administratorReturnLocales[0],
+    );
+    await administratorPage.getByLabel("Authenticator app code").fill(
+      new OTPAuth.TOTP({
+        secret: OTPAuth.Secret.fromBase32(secret),
+      }).generate(),
+    );
+    await administratorPage.getByRole("button", { name: "Verify" }).click();
+    await expect(administratorPage).toHaveURL("/en/administrator/reviews");
+    const review = await openAdministratorReview(
+      administratorPage,
+      root.ids.bookingReference,
+    );
+    const replyRegion = review.getByRole("region", {
+      name: "Cottage Owner reply",
+    });
+    const replyReason = "Private workspace reply moderation fixture";
+    await replyRegion
+      .getByLabel("Reason for hiding the reply")
+      .fill(replyReason);
+    await replyRegion
+      .getByRole("button", { name: "Hide reply", exact: true })
+      .click();
+    await expect(replyRegion.getByRole("status")).toContainText(
+      "The reply was hidden.",
+    );
+    await page.reload();
+    await expect(secondForm.getByRole("status")).toHaveText(
+      "Hidden by RentCottage",
+    );
+    await expect(secondForm.getByText(replyBody)).toBeVisible();
+    await expect(page.getByText(replyReason)).toHaveCount(0);
+    await visitor.reload();
+    await expect(visitor.getByText(replyBody)).toHaveCount(0);
+    await expect(visitor.getByText(bodies[0])).toBeVisible();
+    const reviewReason = "Private workspace review moderation fixture";
+    await review
+      .getByLabel("Reason for hiding", { exact: true })
+      .fill(reviewReason);
+    await review
+      .getByRole("button", { name: "Hide review", exact: true })
+      .click();
+    await expect(
+      review.getByRole("status").filter({ hasText: "The review was hidden." }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(secondForm).toContainText(
+      "This review was hidden by RentCottage and is not shown to visitors.",
+    );
+    await expect(secondForm.getByText(bodies[0])).toHaveCount(0);
+    await expect(secondForm.getByText(replyBody)).toBeVisible();
+    await expect(page.getByText(reviewReason)).toHaveCount(0);
+    await expect(page.getByText(bodies[2])).toHaveCount(0);
+    const ownerMarkup = await page.content();
+    for (const privateText of [
+      reviewReason,
+      replyReason,
+      bodies[0],
+      bodies[2],
+      foreign.identities.owner,
+      foreign.identities.customer,
+      "Fictional private address",
+    ])
+      expect(ownerMarkup).not.toContain(privateText);
+    await visitor.reload();
+    await expect(visitor.getByText(bodies[0])).toHaveCount(0);
+    await expect(visitor.getByText(replyBody)).toHaveCount(0);
+    harness.runSql(
+      `update public.account_contexts set owner_approval_state='suspended' where user_id='${root.identities.owner}';`,
+    );
+    const denied = await owner.rpc("list_owner_customer_reviews", {
+      target_limit: 20,
+    });
+    expect(denied.error?.code).toBe("42501");
+    await page.reload();
+    await expect(page.getByRole("main").getByRole("alert")).toContainText(
+      "This booking is not available to this account.",
+    );
+    await expect(page.getByText(bodies[1])).toHaveCount(0);
+    await expect(page.getByRole("textbox")).toHaveCount(0);
+  } finally {
+    for (const attachment of testInfo.attachments) {
+      if (attachment.contentType === "application/json" && attachment.body) {
+        await writeFile(
+          testInfo.outputPath(`${attachment.name}.json`),
+          attachment.body,
+        );
+      }
+    }
+    await visitorContext.close();
+    await administratorContext.close();
+    if (shared)
+      harness.runSql(reviewFixtureCleanup(allocated[1], shared.identities));
+    if (root)
+      harness.runSql(reviewFixtureCleanup(allocated[0], root.identities));
+    if (foreign)
+      harness.runSql(reviewFixtureCleanup(allocated[2], foreign.identities));
   }
 });

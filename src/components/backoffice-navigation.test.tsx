@@ -222,36 +222,44 @@ it("owner navigation reaches and marks Earnings", () => {
     [
       "en",
       "Owner Backoffice",
-      ["My cottages", "Bookings", "Earnings"],
+      ["My cottages", "Bookings", "Earnings", "Reviews"],
       [
         "/en/owner/cottages",
         "/en/bookings?workspace=owner",
         "/en/owner/earnings",
+        "/en/owner/reviews",
       ],
     ],
     [
       "ar",
       "مكتب مالك الكوخ",
-      ["إدارة أكواخي", "حجوزات أكواخي", "الأرباح"],
+      ["إدارة أكواخي", "حجوزات أكواخي", "الأرباح", "التقييمات"],
       [
         "/ar/owner/cottages",
         "/ar/bookings?workspace=owner",
         "/ar/owner/earnings",
+        "/ar/owner/reviews",
       ],
     ],
     [
       "ckb",
       "بەشی بەڕێوەبردنی خاوەن کۆتێج",
-      ["بەڕێوەبردنی کۆتێجەکانم", "حجزەکانی کۆتێجەکانم", "داهات"],
+      [
+        "بەڕێوەبردنی کۆتێجەکانم",
+        "حجزەکانی کۆتێجەکانم",
+        "داهات",
+        "هەڵسەنگاندنەکان",
+      ],
       [
         "/ckb/owner/cottages",
         "/ckb/bookings?workspace=owner",
         "/ckb/owner/earnings",
+        "/ckb/owner/reviews",
       ],
     ],
   ] as const) {
     for (const [index, current] of (
-      ["cottages", "bookings", "earnings"] as const
+      ["cottages", "bookings", "earnings", "reviews"] as const
     ).entries()) {
       rerender(
         <BackofficeNavigation locale={locale} area="owner" current={current} />,
@@ -263,7 +271,7 @@ it("owner navigation reaches and marks Earnings", () => {
       );
       expect(
         destinations.map((link) => link.getAttribute("aria-current")),
-      ).toEqual([0, 1, 2].map((item) => (item === index ? "page" : null)));
+      ).toEqual([0, 1, 2, 3].map((item) => (item === index ? "page" : null)));
     }
     rerender(
       <BackofficeNavigation

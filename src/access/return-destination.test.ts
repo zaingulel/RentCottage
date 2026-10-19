@@ -64,6 +64,41 @@ const untrustedAdministratorDestinations = [
 ];
 
 describe("account return destinations", () => {
+  it("owner Reviews return destinations remain local and exact", () => {
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      const destination = `/${locale}/owner/reviews`;
+      expect(safeReturnDestination(locale, destination)).toBe(destination);
+      expect(accountAccessHref(locale, destination)).toBe(
+        `/${locale}/access?returnTo=${encodeURIComponent(destination)}`,
+      );
+      expect(isOwnerEnrollmentDestination(locale, destination)).toBe(false);
+      expect(accessLanguageHref(locale, "ar", destination)).toBe(
+        "/ar/access?returnTo=%2Far%2Fowner%2Freviews",
+      );
+      for (const invalid of [
+        undefined,
+        [destination],
+        `https://evil.test${destination}`,
+        `//evil.test${destination}`,
+        `${destination}/extra`,
+        `${destination}?beforeAt=2026-10-18T12:00:00Z&beforeId=10000000-0000-4000-8000-000000000001`,
+        `${destination}?token=private`,
+        `${destination}%3Ftoken=private`,
+        `${destination}#private`,
+        `${destination}\n`,
+        `/${locale}/owner\\reviews`,
+        `/${locale}/%6fwner/reviews`,
+      ]) {
+        expect(safeReturnDestination(locale, invalid)).toBe(
+          `/${locale}/bookings`,
+        );
+      }
+    }
+    expect(safeReturnDestination("en", "/ar/owner/reviews")).toBe(
+      "/en/bookings",
+    );
+  });
+
   it("allows optional discovery filters but requires complete booking return context", () => {
     const slug = "cottage-0123456789abcdef0123456789abcdef";
     const conversation = "10000000-0000-4000-8000-000000000001";

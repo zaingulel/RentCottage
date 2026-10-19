@@ -14,7 +14,7 @@ import { BackofficeNavigationLinks } from "./backoffice-navigation-links";
 type BackofficeNavigationProps = { locale: Locale; nested?: boolean } & (
   | {
       area: "owner";
-      current: "cottages" | "bookings" | "earnings";
+      current: "cottages" | "bookings" | "earnings" | "reviews";
       waitingBookingRequests?: number;
     }
   | {
@@ -56,6 +56,11 @@ export function BackofficeNavigation({
             key: "earnings",
             href: `/${locale}/owner/earnings`,
             label: access.ownerEarningsTab,
+          },
+          {
+            key: "reviews",
+            href: `/${locale}/owner/reviews`,
+            label: access.ownerReviewsTab,
           },
         ]
       : [

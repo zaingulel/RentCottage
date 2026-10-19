@@ -10,7 +10,7 @@ const uuid =
 const publicRoute =
   /^(?:|\/results|\/(?:cottages|quote|request)\/[a-z0-9]+(?:-[a-z0-9]+)*)$/;
 const privateRoute = new RegExp(
-  `^(?:/account|/bookings|/messages(?:/${uuid})?|/(?:owner/)?booking-requests/RC-REQ-[A-F0-9]{16}|/owner/earnings|/owner/application|/owner/cottages(?:/${uuid})?)$`,
+  `^(?:/account|/bookings|/messages(?:/${uuid})?|/(?:owner/)?booking-requests/RC-REQ-[A-F0-9]{16}|/owner/earnings|/owner/reviews|/owner/application|/owner/cottages(?:/${uuid})?)$`,
 );
 const uuidPattern = new RegExp(`^${uuid}$`, "i");
 

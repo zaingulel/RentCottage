@@ -333,7 +333,7 @@ Anything else is a token.
 - Backoffice navigation: `BackofficeNavigation` in
   [backoffice-navigation.tsx](../src/components/backoffice-navigation.tsx) is the one navigation of the Owner
   Backoffice and the Platform Administrator pages, and owns each area's list of destinations. The owner's
-  sections are My cottages, Bookings and Earnings, in that order. It is a server
+  sections are My cottages, Bookings, Earnings and Reviews, in that order. It is a server
   component whose row of tabs is the client component `BackofficeNavigationLinks` in
   [backoffice-navigation-links.tsx](../src/components/backoffice-navigation-links.tsx), which brings the focused
   tab, and on first render the current tab, wholly into view inside the row with room for its focus ring, without
