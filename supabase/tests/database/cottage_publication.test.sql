@@ -731,9 +731,9 @@ select results_eq(
     ('cottage_publication_snapshots', false)$$,
   'anonymous callers have no direct SELECT privilege on any publication table');
 select results_eq(
-  $$select name, description, house_rules, cardinality(media_ids)
+  $$select name, description, house_rules, cardinality(media_ids), description_hidden
     from public.get_current_cottage_publication('30000000-0000-4000-8000-000000002401', 'ar')$$,
-  $$values ('Later Private Name'::text, 'تغيير خاص لاحق'::text, 'قواعد خاصة جديدة'::text, 1)$$,
+  $$values ('Later Private Name'::text, 'تغيير خاص لاحق'::text, 'قواعد خاصة جديدة'::text, 1, false)$$,
   'anonymous projection returns only approved current localized content and opaque media identifiers');
 select throws_ok(
   $$select object_path from public.cottage_publication_media$$,

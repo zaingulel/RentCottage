@@ -360,7 +360,7 @@ select results_eq(
       }'::jsonb
     )) keys(key)$$,
   $$values (array['amenities','approximateLocation','bathrooms','bedrooms',
-    'capacity','description','governorate','houseRules','inventory','mediaIds','name',
+    'capacity','description','descriptionHidden','governorate','houseRules','inventory','mediaIds','name',
     'slug']::text[])$$,
   'anonymous Cottage Profiles return only their exact safe projection'
 );

@@ -1,7 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
+const navigation = vi.hoisted(() => ({ replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
 
 import { PublicCottageProfileView } from "./public-cottage-profile";
 
@@ -24,6 +25,7 @@ const cottage = {
   bedrooms: 2,
   bathrooms: 1,
   description: "A quiet garden house.",
+  descriptionHidden: false,
   houseRules: "No parties.",
   inventory: [
     {
@@ -49,6 +51,65 @@ const cottage = {
 };
 
 describe("PublicCottageProfileView", () => {
+  it("hidden descriptions keep booking facts and controls visible", () => {
+    for (const [locale, sentence] of [
+      ["en", "The description is temporarily hidden."],
+      ["ar", "الوصف مخفي مؤقتًا."],
+      ["ckb", "وەسفەکە کاتییانە شاردراوەتەوە."],
+    ] as const) {
+      const view = render(
+        <PublicCottageProfileView
+          locale={locale}
+          result={{
+            status: "loaded",
+            cottage: { ...cottage, description: null, descriptionHidden: true },
+          }}
+          query={query}
+          resultsQueryString="from=2026-09-22&to=2026-09-23&guests=4"
+        />,
+      );
+      expect(screen.getByText(sentence)).toBeVisible();
+      expect(screen.queryByText("A quiet garden house.")).toBeNull();
+      expect(screen.getByText("No parties.")).toBeVisible();
+      expect(
+        screen.getByRole("heading", { name: "Garden House" }),
+      ).toBeVisible();
+      expect(screen.getByText(/Shaqlawa/)).toBeVisible();
+      const period = screen.getByRole("button", {
+        name: '<script>alert("period")</script>',
+      });
+      expect(period).toBeEnabled();
+      fireEvent.click(period);
+      expect(navigation.replace).toHaveBeenLastCalledWith(
+        expect.stringContaining(`/${locale}/cottages/garden-house?`),
+        { scroll: false },
+      );
+      view.rerender(
+        <PublicCottageProfileView
+          locale={locale}
+          result={{
+            status: "loaded",
+            cottage: { ...cottage, description: null, descriptionHidden: true },
+          }}
+          query={{
+            ...query,
+            selections: [
+              { serviceDay: "2026-09-22", kind: "shift", position: 1 },
+            ],
+          }}
+          resultsQueryString="from=2026-09-22&to=2026-09-23&guests=4"
+        />,
+      );
+      expect(
+        screen.getByRole("button", {
+          name: '<script>alert("period")</script>',
+        }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByText(sentence)).toBeVisible();
+      view.unmount();
+    }
+  });
+
   it("renders explicit options with no implicit selection or aggregate and disabled onward actions", () => {
     render(
       <PublicCottageProfileView

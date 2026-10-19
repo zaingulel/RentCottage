@@ -10,6 +10,7 @@ import { ActionFocusTarget, ActionLink } from "./interaction-controls";
 
 const copy = {
   ar: {
+    descriptionHidden: "الوصف مخفي مؤقتًا.",
     back: "العودة إلى النتائج",
     unavailable: "تعذر تحميل البيت الآن.",
     location: "الموقع التقريبي",
@@ -20,6 +21,7 @@ const copy = {
     rules: "قواعد البيت",
   },
   ckb: {
+    descriptionHidden: "وەسفەکە کاتییانە شاردراوەتەوە.",
     back: "گەڕانەوە بۆ ئەنجامەکان",
     unavailable: "ئێستا ناتوانرێت کۆتێجەکە باربکرێت.",
     location: "شوێنی نزیکەیی",
@@ -30,6 +32,7 @@ const copy = {
     rules: "یاساکانی کۆتێج",
   },
   en: {
+    descriptionHidden: "The description is temporarily hidden.",
     back: "Back to results",
     unavailable: "This cottage could not be loaded right now.",
     location: "Approximate location",
@@ -151,7 +154,11 @@ export function PublicCottageProfileView({
         </aside>
         <div className="profile-copy">
           <section className="profile-section">
-            <p>{cottage.description}</p>
+            <p>
+              {cottage.descriptionHidden
+                ? messages.descriptionHidden
+                : cottage.description}
+            </p>
           </section>
           <section className="profile-section">
             <h2 className="section-title">{messages.amenities}</h2>

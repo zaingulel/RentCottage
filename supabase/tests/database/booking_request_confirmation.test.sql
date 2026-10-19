@@ -48,7 +48,7 @@ create or replace function pg_temp.capture_execute(permit jsonb,outcome text def
   select pg_temp.payment_fixture_execute('admit_booking_request_capture',permit,outcome);
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
-select plan(42);
+select plan(45);
 
 -- BEGIN CONFIRMATION FIXTURE
 -- BEGIN CAPTURE RECOVERY SOURCE
@@ -246,5 +246,52 @@ select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000001001
 select is(public.list_owner_booking_request_notifications()#>>'{0,paymentStatus}', 'paid-confirmed',
   'The authenticated Owner sees the same paid-confirmed projection');
 reset role;
+select jsonb_build_object(
+  'snapshots',(select jsonb_agg(to_jsonb(s) order by id) from public.booking_snapshots s),
+  'receipts',(select jsonb_agg(to_jsonb(r) order by id) from public.booking_receipts r)
+) as proof
+\gset job628_confirmed_before_
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+select public.get_confirmed_booking_access('RC-REQ-0000000000001001') as result
+\gset job628_confirmed_before_
+reset role;
+savepoint job628_confirmed_cover;
+insert into public.cottage_profile_source_revisions(id,profile_id,owner_user_id,source_language,description,house_rules,revision)
+values ('63000000-0000-4000-8000-000000006628','20000000-0000-4000-8000-000000001001','10000000-0000-4000-8000-000000001001','en','Published description','Published rules',1);
+insert into public.cottage_profile_review_cycles(id,profile_id,owner_user_id,source_revision_id,name,governorate,approximate_location,capacity,bedrooms,bathrooms,amenities,cycle_number,state,decided_at)
+values ('64000000-0000-4000-8000-000000006628','20000000-0000-4000-8000-000000001001','10000000-0000-4000-8000-000000001001','63000000-0000-4000-8000-000000006628','Confirmation Cottage','Baghdad','Karrada',8,3,2,array['garden'],1,'approved',now());
+insert into public.cottage_publication_snapshots(id,profile_id,review_cycle_id,publication_number,name,governorate,approximate_location,capacity,bedrooms,bathrooms,amenities)
+values ('66000000-0000-4000-8000-000000006628','20000000-0000-4000-8000-000000001001','64000000-0000-4000-8000-000000006628',1,'Confirmation Cottage','Baghdad','Karrada',8,3,2,array['garden']);
+insert into public.cottage_profile_photos(id,profile_id,owner_user_id,actor_user_id,object_path,original_filename,media_type,size_bytes,state,public_hidden)
+values ('40000000-0000-4000-8000-000000006628','20000000-0000-4000-8000-000000001001','10000000-0000-4000-8000-000000001001','10000000-0000-4000-8000-000000001001','private/confirmation/first.webp','first.webp','image/webp',128,'ready',true),
+  ('40000000-0000-4000-8000-000000006629','20000000-0000-4000-8000-000000001001','10000000-0000-4000-8000-000000001001','10000000-0000-4000-8000-000000001001','private/confirmation/second.webp','second.webp','image/webp',128,'ready',false);
+insert into public.cottage_publication_media(publication_id,photo_id,opaque_id,object_path,media_type,position)
+values ('66000000-0000-4000-8000-000000006628','40000000-0000-4000-8000-000000006628','41000000-0000-4000-8000-000000006628','private/confirmation/first.webp','image/webp',1),
+  ('66000000-0000-4000-8000-000000006628','40000000-0000-4000-8000-000000006629','41000000-0000-4000-8000-000000006629','private/confirmation/second.webp','image/webp',2);
+update public.owner_application_cottage_profiles
+set current_publication_id='66000000-0000-4000-8000-000000006628',current_shift_schedule_id='30000000-0000-4000-8000-000000001001'
+where id='20000000-0000-4000-8000-000000001001';
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+select public.get_confirmed_booking_access('RC-REQ-0000000000001001') as result
+\gset job628_confirmed_hidden_
+reset role;
+select jsonb_build_object(
+  'snapshots',(select jsonb_agg(to_jsonb(s) order by id) from public.booking_snapshots s),
+  'receipts',(select jsonb_agg(to_jsonb(r) order by id) from public.booking_receipts r)
+) as proof
+\gset job628_confirmed_hidden_
+rollback to savepoint job628_confirmed_cover;
+release savepoint job628_confirmed_cover;
+select is(:'job628_confirmed_hidden_result'::jsonb ->> 'coverMediaId','41000000-0000-4000-8000-000000006629',
+  'confirmed Booking access cover skips the hidden first public photo');
+select ok(jsonb_array_length(:'job628_confirmed_before_proof'::jsonb -> 'snapshots')=1
+  and jsonb_array_length(:'job628_confirmed_before_proof'::jsonb -> 'receipts')=2
+  and :'job628_confirmed_hidden_proof'::jsonb=:'job628_confirmed_before_proof'::jsonb,
+  'hidden confirmed cover preserves nonempty complete Booking Snapshots and both Booking Receipts');
+select ok(:'job628_confirmed_before_result'::jsonb ->> 'receiptId' is not null
+  and (:'job628_confirmed_hidden_result'::jsonb - 'coverMediaId')=(:'job628_confirmed_before_result'::jsonb - 'coverMediaId'),
+  'hidden confirmed cover leaves every preserved access receipt field unchanged');
 select * from finish();
 rollback;

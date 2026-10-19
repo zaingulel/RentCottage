@@ -221,6 +221,7 @@ try {
           '[{"name":"Day","startTime":"08:00","endTime":"14:00"},{"name":"Evening","startTime":"18:00","endTime":"23:00"}]'
         );
         perform public.prepare_cottage_profile_photo_upload(profile.id, 'race.webp', 'image/webp', 128);
+        perform public.prepare_cottage_profile_photo_upload(profile.id, 'race-second.webp', 'image/webp', 128);
       end;
       $$;
       reset role;
@@ -233,10 +234,9 @@ try {
       select set_config('request.jwt.claims', '{"sub":"${administratorUserId}","role":"service_role","aal":"aal2"}', true);
       do $$
       begin
-        perform public.register_cottage_profile_photo(
-          (select id from public.cottage_profile_photos
-            where profile_id = current_setting('test.reconciliation_race_profile_id')::uuid)
-        );
+        perform public.register_cottage_profile_photo(id)
+          from public.cottage_profile_photos
+          where profile_id = current_setting('test.reconciliation_race_profile_id')::uuid;
       end;
       $$;
       set local role authenticated;
@@ -408,6 +408,194 @@ try {
     console.log(
       "owner-save-vs-remediation-approval: observed PostgreSQL Lock wait; later owner description survived, untouched House Rules reconciled, and each operation advanced the version once.",
     );
+
+    const visibilityFacts = () =>
+      JSON.parse(
+        harness.runSql(`
+      select jsonb_build_object(
+        'publicationId', profiles.current_publication_id,
+        'photoIds', (select jsonb_agg(media.photo_id order by media.position)
+          from public.cottage_publication_media media where media.publication_id=profiles.current_publication_id),
+        'visibleCount', (select count(*) from public.cottage_publication_media media
+          join public.cottage_profile_photos photos on photos.id=media.photo_id
+          where media.publication_id=profiles.current_publication_id and not photos.public_hidden),
+        'hiddenCount', (select count(*) from public.cottage_publication_media media
+          join public.cottage_profile_photos photos on photos.id=media.photo_id
+          where media.publication_id=profiles.current_publication_id and photos.public_hidden)
+      ) from public.owner_application_cottage_profiles profiles where profiles.id='${fixture.profileId}';
+    `),
+      );
+    const setPhotoVisibility = (publicationId, photoId, hidden) => `
+      select public.set_administrator_cottage_photo_hidden('${fixture.profileId}', '${publicationId}',
+        '${photoId}', ${hidden}, 'Concurrent visibility review');
+    `;
+    const initialVisibility = visibilityFacts();
+    assert.equal(initialVisibility.visibleCount, 2);
+    const [firstPhotoId, secondPhotoId] = initialVisibility.photoIds;
+    assert.equal(initialVisibility.photoIds.length, 2);
+
+    for (const name of [
+      "competing-photo-hides",
+      "hide-before-publication-approval",
+      "publication-approval-before-hide",
+      "restore-before-publication-approval",
+      "hide-before-working-copy-deletion",
+    ]) {
+      harness.markTimingPhase("setup");
+      let current = visibilityFacts();
+      if (name === "restore-before-publication-approval") {
+        harness.runSql(
+          administratorSession(
+            `${name}-prepare-hide`,
+            `
+          ${setPhotoVisibility(current.publicationId, firstPhotoId, true)}
+          commit;
+        `,
+          ),
+        );
+      }
+      let reviewCycleId;
+      if (name.includes("publication-approval")) {
+        reviewCycleId = JSON.parse(
+          harness
+            .runSql(
+              `
+          begin;
+          select set_config('test.visibility_current_cycle', snapshots.review_cycle_id::text, true),
+            set_config('test.visibility_report_revision', localizations.localized_revision_id::text, true)
+          from public.owner_application_cottage_profiles profiles
+          join public.cottage_publication_snapshots snapshots on snapshots.id=profiles.current_publication_id
+          join public.cottage_publication_localizations localizations
+            on localizations.publication_id=snapshots.id and localizations.locale='ar'
+          where profiles.id='${fixture.profileId}';
+          set local role authenticated;
+          ${claims(raceOwnerUserId, "aal1")}
+          do $$
+          declare report public.cottage_translation_quality_reports;
+          begin
+            select * into report from public.report_current_cottage_translation(
+              current_setting('test.visibility_current_cycle')::uuid,
+              current_setting('test.visibility_report_revision')::uuid, 'Concurrent published language review');
+            perform set_config('test.visibility_review_cycle', report.remediation_review_cycle_id::text, true);
+          end $$;
+          ${claims(administratorUserId, "aal2")}
+          do $$ begin
+            perform public.decide_cottage_profile_localization(
+              current_setting('test.visibility_review_cycle')::uuid, locale, true, 'Concurrent reviewed head')
+            from unnest(array['en','ar','ckb']::public.cottage_profile_source_language[]) locale;
+          end $$;
+          select to_jsonb(current_setting('test.visibility_review_cycle'));
+          commit;
+        `,
+            )
+            .split("\n")
+            .at(-1),
+        );
+      }
+      current = visibilityFacts();
+      const approve = `select public.approve_cottage_profile_publication('${reviewCycleId}', 'Publish concurrent review');`;
+      const approvalFirst = name === "publication-approval-before-hide";
+      const firstBody = approvalFirst
+        ? approve
+        : setPhotoVisibility(
+            current.publicationId,
+            firstPhotoId,
+            name !== "restore-before-publication-approval",
+          );
+      const secondBody =
+        name === "competing-photo-hides"
+          ? setPhotoVisibility(current.publicationId, secondPhotoId, true)
+          : name === "hide-before-working-copy-deletion"
+            ? `select public.prepare_cottage_profile_photo_deletion('${firstPhotoId}');`
+            : approvalFirst
+              ? setPhotoVisibility(current.publicationId, firstPhotoId, true)
+              : approve;
+      const expectedState =
+        name === "competing-photo-hides"
+          ? "RC203"
+          : approvalFirst
+            ? "RC409"
+            : undefined;
+      harness.markTimingPhase("execution");
+      const winner = harness.startSession(
+        administratorSession(
+          `${name}-winner`,
+          `
+        ${firstBody}
+        select '${name}-locked';
+      `,
+        ),
+      );
+      let contender;
+      try {
+        await harness.waitForMarker(winner, `${name}-locked`);
+        const contenderName = `${name}-contender`;
+        contender = harness.startSession(
+          name === "hide-before-working-copy-deletion"
+            ? `begin;
+              select set_config('application_name', '${contenderName}', false);
+              set local role authenticated;
+              ${claims(raceOwnerUserId, "aal1")}
+              ${secondBody}
+              commit;`
+            : administratorSession(contenderName, `${secondBody} commit;`),
+          true,
+        );
+        await harness.waitForLock(contenderName, contender);
+        await harness.finishSession(winner, { action: "commit" });
+        await harness.finishSession(
+          contender,
+          expectedState ? { expectedState } : undefined,
+        );
+      } catch (error) {
+        await harness.cleanUpOwnedSession(winner, error);
+        if (contender) await harness.cleanUpOwnedSession(contender, error);
+        throw error;
+      }
+      const settled = visibilityFacts();
+      assert.equal(settled.photoIds.length, 2);
+      assert.deepEqual(settled.photoIds, initialVisibility.photoIds);
+      assert.equal(
+        settled.visibleCount,
+        approvalFirst || name === "restore-before-publication-approval" ? 2 : 1,
+      );
+      assert.equal(settled.hiddenCount, 2 - settled.visibleCount);
+      if (name.includes("publication-approval")) {
+        assert.notEqual(settled.publicationId, current.publicationId);
+        assert.equal(
+          harness.runSql(
+            `select state from public.cottage_profile_review_cycles where id='${reviewCycleId}';`,
+          ),
+          "approved",
+        );
+      } else {
+        assert.equal(settled.publicationId, current.publicationId);
+      }
+      if (name === "hide-before-working-copy-deletion") {
+        assert.deepEqual(
+          JSON.parse(
+            harness.runSql(`
+          select jsonb_build_object('active',is_active,'hidden',public_hidden,'state',state)
+          from public.cottage_profile_photos where id='${firstPhotoId}';
+        `),
+          ),
+          { active: false, hidden: true, state: "ready" },
+        );
+      }
+      harness.runSql(
+        administratorSession(
+          `${name}-restore`,
+          `
+        ${setPhotoVisibility(settled.publicationId, firstPhotoId, false)}
+        commit;
+      `,
+        ),
+      );
+      assert.equal(visibilityFacts().visibleCount, 2);
+      console.log(
+        `${name}: observed PostgreSQL Lock wait; ${expectedState ?? "both transitions committed"}; current publication retains visible media and explicit restoration succeeds.`,
+      );
+    }
   } finally {
     harness.markTimingPhase("cleanup");
     const columns = Object.keys(runtimeControl)

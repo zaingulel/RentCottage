@@ -3967,6 +3967,7 @@ CREATE OR REPLACE FUNCTION "public"."get_confirmed_booking_access"("target_refer
     'customerName', requests.customer_name,
     'coverMediaId',(select media.opaque_id
       from public.cottage_publication_media media
+      join public.cottage_profile_photos photos on photos.id=media.photo_id and not photos.public_hidden
       where media.publication_id=profiles.current_publication_id
         and public.is_cottage_publicly_discoverable(profiles.id)
       order by media.position limit 1),
@@ -4056,6 +4057,7 @@ CREATE OR REPLACE FUNCTION "public"."get_customer_booking_request"("target_refer
     'coverMediaId',(select media.opaque_id
       from public.owner_application_cottage_profiles profiles
       join public.cottage_publication_media media on media.publication_id=profiles.current_publication_id
+      join public.cottage_profile_photos photos on photos.id=media.photo_id and not photos.public_hidden
       where profiles.id=requests.profile_id and public.is_cottage_publicly_discoverable(profiles.id)
       order by media.position limit 1),
     'cottageName',snapshots.quote_payload->>'cottageName','bookingPeriod',snapshots.quote_payload->'items',
@@ -4320,6 +4322,7 @@ CREATE OR REPLACE FUNCTION "public"."list_owner_booking_request_notifications"()
     'coverMediaId',(select media.opaque_id
       from public.owner_application_cottage_profiles profiles
       join public.cottage_publication_media media on media.publication_id=profiles.current_publication_id
+      join public.cottage_profile_photos photos on photos.id=media.photo_id and not photos.public_hidden
       where profiles.id=requests.profile_id and public.is_cottage_publicly_discoverable(profiles.id)
       order by media.position limit 1),
     'databaseNow',to_char(date_trunc('milliseconds',clock_timestamp()) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) order by notifications.created_at desc),'[]'::jsonb)

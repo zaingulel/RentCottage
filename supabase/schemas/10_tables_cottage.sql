@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS "public"."owner_application_cottage_profiles" (
     "current_publication_id" "uuid",
     "current_shift_schedule_id" "uuid",
     "abandoned_at" timestamp with time zone,
+    "description_hidden" boolean DEFAULT false NOT NULL,
     CONSTRAINT "cottage_profile_abandonment_shape" CHECK (((("status" = 'abandoned'::"public"."cottage_profile_status") AND ("abandoned_at" IS NOT NULL) AND ("application_id" IS NULL) AND ("current_publication_id" IS NULL) AND ("submitted_source_revision_id" IS NULL)) OR (("status" <> 'abandoned'::"public"."cottage_profile_status") AND ("abandoned_at" IS NULL)))),
     CONSTRAINT "cottage_profile_private_directions_length" CHECK (("char_length"(COALESCE("private_directions", ''::"text")) <= 1000)),
     CONSTRAINT "cottage_profile_private_location_pair" CHECK (((("exact_latitude" IS NULL) AND ("exact_longitude" IS NULL)) OR (("exact_latitude" IS NOT NULL) AND ("exact_longitude" IS NOT NULL) AND ("exact_latitude" >= 29.0) AND ("exact_latitude" <= 37.4) AND ("exact_longitude" >= 38.7) AND ("exact_longitude" <= 49.2)))),
@@ -147,6 +148,7 @@ CREATE TABLE IF NOT EXISTS "public"."cottage_profile_photos" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "is_active" boolean DEFAULT true NOT NULL,
+    "public_hidden" boolean DEFAULT false NOT NULL,
     CONSTRAINT "cottage_profile_photo_filename_length" CHECK ((("char_length"("btrim"("original_filename")) >= 1) AND ("char_length"("btrim"("original_filename")) <= 180))),
     CONSTRAINT "cottage_profile_photos_media_type_check" CHECK (("media_type" = ANY (ARRAY['image/jpeg'::"text", 'image/png'::"text", 'image/webp'::"text"]))),
     CONSTRAINT "cottage_profile_photos_size_bytes_check" CHECK ((("size_bytes" >= 1) AND ("size_bytes" <= 5242880)))
@@ -275,8 +277,25 @@ CREATE TABLE IF NOT EXISTS "public"."cottage_profile_administrator_audit" (
     "reason" "text",
     CONSTRAINT "cottage_profile_administrator_audit_reason_check" CHECK (("reason" IS NULL) OR (("reason" = regexp_replace("reason", '^[[:space:]]+|[[:space:]]+$', '', 'g')) AND char_length("reason") >= 1 AND char_length("reason") <= 1000)),
     CONSTRAINT "cottage_profile_administrator_audit_check" CHECK (("resulting_version" >= "previous_version")),
-    CONSTRAINT "cottage_profile_administrator_audit_event_kind_check" CHECK (("event_kind" = ANY (ARRAY['working_copy_updated'::"text", 'photo_upload_prepared'::"text", 'photo_deletion_prepared'::"text", 'photo_deletion_recovered'::"text", 'draft_abandoned'::"text", 'draft_restored'::"text"]))),
-    CONSTRAINT "cottage_profile_administrator_audit_event_shape" CHECK (((("event_kind" = 'working_copy_updated'::"text") AND ("resulting_version" > "previous_version") AND ("object_path" IS NULL) AND ("lifecycle_reason" IS NULL) AND ("previous_status" IS NULL) AND ("resulting_status" IS NULL)) OR (("event_kind" = ANY (ARRAY['photo_upload_prepared'::"text", 'photo_deletion_prepared'::"text", 'photo_deletion_recovered'::"text"])) AND ("resulting_version" = "previous_version") AND ("changed_fields" = ARRAY['photos'::"text"]) AND ("object_path" IS NOT NULL) AND ("lifecycle_reason" IS NULL) AND ("previous_status" IS NULL) AND ("resulting_status" IS NULL)) OR (("event_kind" = 'draft_abandoned'::"text") AND ("resulting_version" = ("previous_version" + 1)) AND ("changed_fields" = ARRAY['status'::"text"]) AND ("object_path" IS NULL) AND ("lifecycle_reason" IS NOT NULL) AND ("lifecycle_reason" = "regexp_replace"("lifecycle_reason", '^[[:space:]]+|[[:space:]]+$'::"text", ''::"text", 'g'::"text")) AND (("char_length"("btrim"("lifecycle_reason")) >= 1) AND ("char_length"("btrim"("lifecycle_reason")) <= 1000)) AND ("previous_status" IS NOT NULL) AND ("resulting_status" IS NOT NULL) AND ("previous_status" = 'draft'::"public"."cottage_profile_status") AND ("resulting_status" = 'abandoned'::"public"."cottage_profile_status")) OR (("event_kind" = 'draft_restored'::"text") AND ("resulting_version" = ("previous_version" + 1)) AND ("changed_fields" = ARRAY['status'::"text"]) AND ("object_path" IS NULL) AND ("lifecycle_reason" IS NOT NULL) AND ("lifecycle_reason" = "regexp_replace"("lifecycle_reason", '^[[:space:]]+|[[:space:]]+$'::"text", ''::"text", 'g'::"text")) AND (("char_length"("btrim"("lifecycle_reason")) >= 1) AND ("char_length"("btrim"("lifecycle_reason")) <= 1000)) AND ("previous_status" IS NOT NULL) AND ("resulting_status" IS NOT NULL) AND ("previous_status" = 'abandoned'::"public"."cottage_profile_status") AND ("resulting_status" = 'draft'::"public"."cottage_profile_status")))),
+    CONSTRAINT "cottage_profile_administrator_audit_event_kind_check" CHECK (("event_kind" = ANY (ARRAY['working_copy_updated'::"text", 'photo_upload_prepared'::"text", 'photo_deletion_prepared'::"text", 'photo_deletion_recovered'::"text", 'draft_abandoned'::"text", 'draft_restored'::"text", 'description_hidden'::"text", 'description_restored'::"text", 'photo_hidden'::"text", 'photo_restored'::"text"]))),
+    CONSTRAINT cottage_profile_administrator_audit_event_shape
+CHECK
+    (event_kind = 'working_copy_updated'::text AND resulting_version > previous_version AND object_path IS NULL AND lifecycle_reason IS NULL AND previous_status IS NULL AND
+    resulting_status IS NULL OR (event_kind = ANY (ARRAY['photo_upload_prepared'::text, 'photo_deletion_prepared'::text, 'photo_deletion_recovered'::text])) AND resulting_version =
+    previous_version AND changed_fields = ARRAY['photos'::text] AND object_path IS
+    NOT NULL AND lifecycle_reason IS NULL AND previous_status IS NULL AND resulting_status IS NULL OR event_kind = 'draft_abandoned'::text AND resulting_version =
+    (previous_version + 1) AND changed_fields = ARRAY['status'::text] AND object_path IS NULL AND lifecycle_reason IS
+    NOT NULL AND lifecycle_reason = regexp_replace(lifecycle_reason, '^[[:space:]]+|[[:space:]]+$'::text, ''::text, 'g'::text) AND char_length(btrim(lifecycle_reason)) >= 1 AND
+    char_length(btrim(lifecycle_reason)) <= 1000 AND previous_status IS NOT NULL AND resulting_status IS
+    NOT NULL AND previous_status = 'draft'::public.cottage_profile_status AND resulting_status = 'abandoned'::public.cottage_profile_status OR event_kind = 'draft_restored'::text
+    AND resulting_version = (previous_version + 1) AND changed_fields = ARRAY['status'::text] AND object_path IS NULL AND lifecycle_reason IS
+    NOT NULL AND lifecycle_reason = regexp_replace(lifecycle_reason, '^[[:space:]]+|[[:space:]]+$'::text, ''::text, 'g'::text) AND char_length(btrim(lifecycle_reason)) >= 1 AND
+    char_length(btrim(lifecycle_reason)) <= 1000 AND previous_status IS NOT NULL AND resulting_status IS
+    NOT NULL AND previous_status = 'abandoned'::public.cottage_profile_status AND resulting_status = 'draft'::public.cottage_profile_status OR
+    (event_kind = ANY (ARRAY['description_hidden'::text, 'description_restored'::text, 'photo_hidden'::text, 'photo_restored'::text])) AND reason IS
+    NOT NULL AND resulting_version = previous_version AND lifecycle_reason IS NULL AND previous_status IS NULL AND resulting_status IS NULL AND
+    ((event_kind = ANY (ARRAY['description_hidden'::text, 'description_restored'::text])) AND changed_fields = ARRAY['description'::text] AND object_path IS NULL OR (event_kind =
+    ANY (ARRAY['photo_hidden'::text, 'photo_restored'::text])) AND changed_fields = ARRAY['photos'::text] AND object_path IS NOT NULL)),
     CONSTRAINT "cottage_profile_administrator_audit_previous_version_check" CHECK (("previous_version" >= 1))
 );
 

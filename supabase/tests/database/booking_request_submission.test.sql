@@ -63,7 +63,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(416);
+select plan(425);
 
 set local role anon;
 select throws_ok(
@@ -6728,6 +6728,142 @@ insert into public.cottage_publication_media (
   '41000000-0000-4000-8000-000000003202',
   'private/submission/cover-3202.webp', 'image/webp', 1
 );
+
+
+select jsonb_build_object(
+  'snapshots', (select jsonb_agg(to_jsonb(s) order by s.id) from public.booking_snapshots s
+    join public.booking_requests r on r.booking_snapshot_id=s.id where r.id=(select id from booking_request_lifecycle_target)),
+  'submission', (select result from finalized_submission),
+  'reference', (select booking_request_reference from booking_request_lifecycle_target),
+  'descriptionBefore', (select description from public.owner_application_cottage_profiles where id='30000000-0000-4000-8000-000000003201')
+) as proof
+\gset job628_before_
+savepoint job628_booking_preservation;
+insert into auth.users(id,aud,role,phone,phone_confirmed_at)
+values ('00000000-0000-4000-8000-000000006628','authenticated','authenticated','+9647500006628',now());
+insert into public.account_contexts(user_id,role)
+values ('00000000-0000-4000-8000-000000006628','platform_administrator');
+reset role;
+select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000006628', true);
+select set_config('request.jwt.claims', '{"role":"authenticated","sub":"00000000-0000-4000-8000-000000006628","aal":"aal2"}', true);
+set local role authenticated;
+
+select public.update_administrator_cottage_profile(
+  id, version, name, governorate, approximate_location, exact_address, exact_latitude, exact_longitude,
+  private_directions, capacity, bedrooms, bathrooms, amenities, source_language,
+  description || ' Preservation edit.', house_rules, 'Verify booked snapshot preservation'
+) from public.owner_application_cottage_profiles where id='30000000-0000-4000-8000-000000003201';
+reset role;
+set local role service_role;
+select public.finalize_booking_request_submission(
+    (select (result->>'attemptId')::uuid from prepared_submission), (select snapshot from authorized_payment)) as result
+\gset job628_edit_replay_
+reset role;
+select jsonb_build_object(
+  'snapshots', (select jsonb_agg(to_jsonb(s) order by s.id) from public.booking_snapshots s
+    join public.booking_requests r on r.booking_snapshot_id=s.id where r.id=(select id from booking_request_lifecycle_target)),
+  'submission', :'job628_edit_replay_result'::jsonb,
+  'description', (select description from public.owner_application_cottage_profiles where id='30000000-0000-4000-8000-000000003201'),
+  'descriptionHidden', (select description_hidden from public.owner_application_cottage_profiles where id='30000000-0000-4000-8000-000000003201'),
+  'photoHidden', (select public_hidden from public.cottage_profile_photos where id='40000000-0000-4000-8000-000000003202')
+) as proof
+\gset job628_edit_
+reset role;
+reset role;
+select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000006628', true);
+select set_config('request.jwt.claims', '{"role":"authenticated","sub":"00000000-0000-4000-8000-000000006628","aal":"aal2"}', true);
+set local role authenticated;
+select public.set_administrator_cottage_description_hidden('30000000-0000-4000-8000-000000003201', '66000000-0000-4000-8000-000000003201', true, 'Verify description job628_hidden');
+reset role;
+select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000006628', true);
+select set_config('request.jwt.claims', '{"role":"authenticated","sub":"00000000-0000-4000-8000-000000006628","aal":"aal2"}', true);
+set local role authenticated;
+select public.set_administrator_cottage_photo_hidden('30000000-0000-4000-8000-000000003201', '66000000-0000-4000-8000-000000003201', '40000000-0000-4000-8000-000000003202', true, 'Verify photo job628_hidden');
+reset role;
+set local role service_role;
+select public.finalize_booking_request_submission(
+    (select (result->>'attemptId')::uuid from prepared_submission), (select snapshot from authorized_payment)) as result
+\gset job628_hidden_replay_
+reset role;
+select jsonb_build_object(
+  'snapshots', (select jsonb_agg(to_jsonb(s) order by s.id) from public.booking_snapshots s
+    join public.booking_requests r on r.booking_snapshot_id=s.id where r.id=(select id from booking_request_lifecycle_target)),
+  'submission', :'job628_hidden_replay_result'::jsonb,
+  'description', (select description from public.owner_application_cottage_profiles where id='30000000-0000-4000-8000-000000003201'),
+  'descriptionHidden', (select description_hidden from public.owner_application_cottage_profiles where id='30000000-0000-4000-8000-000000003201'),
+  'photoHidden', (select public_hidden from public.cottage_profile_photos where id='40000000-0000-4000-8000-000000003202')
+) as proof
+\gset job628_hidden_
+reset role;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000003202', true);
+select set_config('request.jwt.claims', '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003202"}', true);
+set local role authenticated;
+select public.get_customer_booking_request((select booking_request_reference from booking_request_lifecycle_target)) as result
+\gset job628_customer_
+reset role;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000003201', true);
+select set_config('request.jwt.claims', '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003201"}', true);
+set local role authenticated;
+select public.list_owner_booking_request_notifications() -> 0 as result
+\gset job628_owner_
+reset role;
+reset role;
+select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000006628', true);
+select set_config('request.jwt.claims', '{"role":"authenticated","sub":"00000000-0000-4000-8000-000000006628","aal":"aal2"}', true);
+set local role authenticated;
+select public.set_administrator_cottage_description_hidden('30000000-0000-4000-8000-000000003201', '66000000-0000-4000-8000-000000003201', false, 'Verify description job628_restored');
+reset role;
+select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000006628', true);
+select set_config('request.jwt.claims', '{"role":"authenticated","sub":"00000000-0000-4000-8000-000000006628","aal":"aal2"}', true);
+set local role authenticated;
+select public.set_administrator_cottage_photo_hidden('30000000-0000-4000-8000-000000003201', '66000000-0000-4000-8000-000000003201', '40000000-0000-4000-8000-000000003202', false, 'Verify photo job628_restored');
+reset role;
+set local role service_role;
+select public.finalize_booking_request_submission(
+    (select (result->>'attemptId')::uuid from prepared_submission), (select snapshot from authorized_payment)) as result
+\gset job628_restored_replay_
+reset role;
+select jsonb_build_object(
+  'snapshots', (select jsonb_agg(to_jsonb(s) order by s.id) from public.booking_snapshots s
+    join public.booking_requests r on r.booking_snapshot_id=s.id where r.id=(select id from booking_request_lifecycle_target)),
+  'submission', :'job628_restored_replay_result'::jsonb,
+  'description', (select description from public.owner_application_cottage_profiles where id='30000000-0000-4000-8000-000000003201'),
+  'descriptionHidden', (select description_hidden from public.owner_application_cottage_profiles where id='30000000-0000-4000-8000-000000003201'),
+  'photoHidden', (select public_hidden from public.cottage_profile_photos where id='40000000-0000-4000-8000-000000003202')
+) as proof
+\gset job628_restored_
+reset role;
+reset role;
+rollback to savepoint job628_booking_preservation;
+release savepoint job628_booking_preservation;
+select ok(jsonb_array_length(:'job628_before_proof'::jsonb -> 'snapshots')=1
+  and :'job628_before_proof'::jsonb #>> '{submission,status}'='pending'
+  and :'job628_before_proof'::jsonb #>> '{submission,bookingRequestReference}'=:'job628_before_proof'::jsonb ->> 'reference',
+  'visibility preservation starts with a real nonempty finalized pending snapshot and submission result');
+select ok(:'job628_edit_proof'::jsonb -> 'snapshots'=:'job628_before_proof'::jsonb -> 'snapshots'
+  and :'job628_hidden_proof'::jsonb -> 'snapshots'=:'job628_before_proof'::jsonb -> 'snapshots'
+  and :'job628_restored_proof'::jsonb -> 'snapshots'=:'job628_before_proof'::jsonb -> 'snapshots',
+  'reasoned edit hide and restore preserve the complete booked snapshot rows');
+select ok(:'job628_edit_proof'::jsonb -> 'submission'=:'job628_before_proof'::jsonb -> 'submission'
+  and :'job628_hidden_proof'::jsonb -> 'submission'=:'job628_before_proof'::jsonb -> 'submission'
+  and :'job628_restored_proof'::jsonb -> 'submission'=:'job628_before_proof'::jsonb -> 'submission',
+  'finalized submission replay returns its original nonempty result after edit hide and restore');
+select ok(:'job628_edit_proof'::jsonb ->> 'description'=(:'job628_before_proof'::jsonb ->> 'descriptionBefore') || ' Preservation edit.'
+  and :'job628_edit_proof'::jsonb @> '{"descriptionHidden":false,"photoHidden":false}',
+  'preservation evidence observes the actual reasoned working-copy edit');
+select ok(:'job628_hidden_proof'::jsonb -> 'description'=:'job628_edit_proof'::jsonb -> 'description'
+  and :'job628_hidden_proof'::jsonb @> '{"descriptionHidden":true,"photoHidden":true}',
+  'preservation evidence observes both actual hidden states');
+select ok(:'job628_restored_proof'::jsonb -> 'description'=:'job628_edit_proof'::jsonb -> 'description'
+  and :'job628_restored_proof'::jsonb @> '{"descriptionHidden":false,"photoHidden":false}',
+  'preservation evidence observes explicit restoration without erasing the edit');
+select ok(not exists(select 1 from auth.users where id='00000000-0000-4000-8000-000000006628')
+  and not exists(select 1 from public.account_contexts where user_id='00000000-0000-4000-8000-000000006628'),
+  'the isolated preservation participant is absent after rollback');
+select is(:'job628_customer_result'::jsonb ->> 'coverMediaId', '41000000-0000-4000-8000-000000003201',
+  'Customer booking request cover skips a hidden first public photo');
+select is(:'job628_owner_result'::jsonb ->> 'coverMediaId', '41000000-0000-4000-8000-000000003201',
+  'Owner booking notification cover skips a hidden first public photo');
 
 set local role authenticated;
 select set_config(

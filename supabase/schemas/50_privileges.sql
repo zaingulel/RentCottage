@@ -1556,3 +1556,12 @@ REVOKE ALL ON FUNCTION public.booking_request_release_binding_matches(public.pay
 REVOKE ALL ON FUNCTION public.quarantine_booking_request_release_work(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.record_booking_request_release_observation(uuid,jsonb,boolean) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.record_booking_request_release_observation(uuid,jsonb,boolean) TO service_role;
+
+REVOKE ALL ON FUNCTION public.get_administrator_cottage_content_visibility(uuid) FROM PUBLIC, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.get_administrator_cottage_content_visibility(uuid) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.set_administrator_cottage_description_hidden(uuid, uuid, boolean, text) FROM PUBLIC, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.set_administrator_cottage_description_hidden(uuid, uuid, boolean, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.set_administrator_cottage_photo_hidden(uuid, uuid, uuid, boolean, text) FROM PUBLIC, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.set_administrator_cottage_photo_hidden(uuid, uuid, uuid, boolean, text) TO authenticated;
