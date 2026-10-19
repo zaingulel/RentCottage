@@ -60,10 +60,10 @@ beforeEach(() => {
     .mockResolvedValue({ status: "authenticated", context: approved });
 });
 it("Reviews permits only approved owners and renders the bounded reader", async () => {
-  for (const [locale, title] of [
-    ["en", "Reviews"],
-    ["ar", "التقييمات"],
-    ["ckb", "هەڵسەنگاندنەکان"],
+  for (const [locale, title, reviewTitle] of [
+    ["en", "Reviews", "Customer review"],
+    ["ar", "التقييمات", "تقييم العميل"],
+    ["ckb", "هەڵسەنگاندنەکان", "هەڵسەنگاندنی کڕیار"],
   ]) {
     render(await page(locale));
     expect(
@@ -88,6 +88,19 @@ it("Reviews permits only approved owners and renders the bounded reader", async 
       beforeId: null,
       limit: 20,
     });
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: `${reviewTitle}: Garden cottage`,
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("region", {
+        name: `${reviewTitle}: Garden cottage`,
+        exact: true,
+      }),
+    ).toBeVisible();
     expect(screen.getByText("A peaceful garden.")).toHaveAttribute(
       "dir",
       "auto",

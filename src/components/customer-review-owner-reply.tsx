@@ -29,11 +29,13 @@ export function CustomerReviewOwnerReply({
   bookingRequestReference,
   initialResult,
   idPrefix = "customer-review",
+  cottageName,
 }: {
   locale: Locale;
   bookingRequestReference: string;
   initialResult: OwnerCustomerReviewResult;
   idPrefix?: string;
+  cottageName?: string;
 }) {
   const copy = customerReviewMessages[locale];
   const headingId = `${idPrefix}-owner-heading`;
@@ -105,6 +107,9 @@ export function CustomerReviewOwnerReply({
         className="section-title action-focus-target"
       >
         {copy.ownerTitle}
+        {cottageName ? (
+          <span className="visually-hidden">: {cottageName}</span>
+        ) : null}
       </h2>
       {!pending ? <ActionFocusTarget targetId={headingId} /> : null}
       {initialResult.status === "access-required" ? (

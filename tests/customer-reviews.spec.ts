@@ -3017,14 +3017,15 @@ test("Cottage Owner finds reviews and replies from the workspace list", async ({
     const listPath = (locale: Locale) => `/${locale}/owner/reviews`;
     await signInPhone(page, root.phones.owner, "/en/owner/cottages");
     const rows = page.getByRole("main").locator("ul.list-rows > li");
-    for (const [locale, title, area, noReply] of [
-      ["en", "Reviews", "Owner Backoffice", "No reply yet"],
-      ["ar", "التقييمات", "مكتب مالك الكوخ", "لم يتم الرد بعد"],
+    for (const [locale, title, area, noReply, reviewTitle] of [
+      ["en", "Reviews", "Owner Backoffice", "No reply yet", "Customer review"],
+      ["ar", "التقييمات", "مكتب مالك الكوخ", "لم يتم الرد بعد", "تقييم العميل"],
       [
         "ckb",
         "هەڵسەنگاندنەکان",
         "بەشی بەڕێوەبردنی خاوەن کۆتێج",
         "هێشتا وەڵام نەدراوەتەوە",
+        "هەڵسەنگاندنی کڕیار",
       ],
     ] as const) {
       if (locale !== "en") await page.goto(`/${locale}/owner/cottages`);
@@ -3048,6 +3049,21 @@ test("Cottage Owner finds reviews and replies from the workspace list", async ({
       await expect(rows).toHaveCount(2);
       await expect(rows.nth(0)).toContainText(bodies[1]);
       await expect(rows.nth(1)).toContainText(bodies[0]);
+      for (const row of [rows.nth(0), rows.nth(1)]) {
+        await expect(
+          row.getByRole("heading", {
+            level: 2,
+            name: `${reviewTitle}: Fictional Preserved Cottage`,
+            exact: true,
+          }),
+        ).toBeVisible();
+        await expect(
+          row.getByRole("region", {
+            name: `${reviewTitle}: Fictional Preserved Cottage`,
+            exact: true,
+          }),
+        ).toBeVisible();
+      }
       await expect(
         rows.nth(0).getByText(noReply, { exact: true }),
       ).toBeVisible();
@@ -3174,12 +3190,18 @@ test("Cottage Owner finds reviews and replies from the workspace list", async ({
       secondForm.getByText("Replied", { exact: true }),
     ).toBeVisible();
     await expect(
-      secondForm.getByRole("heading", { name: "Customer review", exact: true }),
+      secondForm.getByRole("heading", {
+        name: "Customer review: Fictional Preserved Cottage",
+        exact: true,
+      }),
     ).toBeFocused();
     await testInfo.attach("owner-reviews-published-focus-a11y", {
       body: JSON.stringify(
         await secondForm
-          .getByRole("heading", { name: "Customer review", exact: true })
+          .getByRole("heading", {
+            name: "Customer review: Fictional Preserved Cottage",
+            exact: true,
+          })
           .evaluate((element) => {
             const style = getComputedStyle(element);
             const backgrounds = [];

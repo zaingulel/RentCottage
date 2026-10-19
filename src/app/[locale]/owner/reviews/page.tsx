@@ -117,6 +117,7 @@ export default async function OwnerReviewsPage({
                 locale={locale}
                 bookingRequestReference={item.bookingRequestReference}
                 initialResult={item.review}
+                cottageName={item.cottageName}
                 idPrefix={`owner-review-${item.reviewId}`}
               />
             </li>
