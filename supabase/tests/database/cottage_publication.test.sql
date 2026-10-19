@@ -165,7 +165,7 @@ select throws_ok(
   $$select public.update_administrator_cottage_profile(
     '30000000-0000-4000-8000-000000002401', 2,
     'Shaqlawa Garden', 'Erbil', 'Near Shaqlawa', 'private address', 36.4, 44.3,
-    'private directions', 8, 3, 2, array['garden'], 'en', 'Bypassed', 'Bypassed'
+    'private directions', 8, 3, 2, array['garden'], 'en', 'Bypassed', 'Bypassed', '  Reviewed content correction  '
   )$$,
   'RC208', null, 'administrator working-copy edits cannot bypass localized history'
 );
@@ -174,7 +174,7 @@ select lives_ok(
     '30000000-0000-4000-8000-000000002401', 2,
     'Unreviewed Working Name', 'Erbil', 'Unreviewed working location',
     'private address', 36.4, 44.3, 'private directions', 8, 3, 2,
-    array['garden','wifi'], 'en', 'Quiet cottage', 'No smoking'
+    array['garden','wifi'], 'en', 'Quiet cottage', 'No smoking', '  Reviewed content correction  '
   )$$,
   'structured working-copy changes remain private during the active review');
 select throws_ok(

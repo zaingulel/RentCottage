@@ -111,6 +111,7 @@ export async function saveAdministratorCottageProfileAction(
     profileId,
     Number(text(formData, "expectedVersion")),
     draftValues(formData),
+    formData.get("reason"),
   );
   if (result.status === "saved") {
     revalidateAdministratorPaths(requestedLocale, profileId);
@@ -208,12 +209,18 @@ export async function uploadCottageProfilePhotoAction(
     return { status: "invalid_photo" };
   }
   const cottageProfile = await createRequestCottageProfile();
-  const result = await cottageProfile.uploadPhoto(profileId, {
-    name: photo.name,
-    type: photo.type,
-    size: photo.size,
-    bytes: new Uint8Array(await photo.arrayBuffer()),
-  });
+  const result = await cottageProfile.uploadPhoto(
+    profileId,
+    {
+      name: photo.name,
+      type: photo.type,
+      size: photo.size,
+      bytes: new Uint8Array(await photo.arrayBuffer()),
+    },
+    ...(formData.has("reason")
+      ? ([formData.get("reason")] as const)
+      : ([] as const)),
+  );
   if (result.status === "uploaded") {
     revalidateOwnerPaths(requestedLocale, profileId);
     revalidateAdministratorPaths(requestedLocale, profileId);
@@ -238,7 +245,12 @@ export async function deleteCottageProfilePhotoAction(
   const profileId = text(formData, "profileId");
   if (!requestedLocale) return { status: "invalid" };
   const cottageProfile = await createRequestCottageProfile();
-  const result = await cottageProfile.deletePhoto(text(formData, "photoId"));
+  const result = await cottageProfile.deletePhoto(
+    text(formData, "photoId"),
+    ...(formData.has("reason")
+      ? ([formData.get("reason")] as const)
+      : ([] as const)),
+  );
   if (result.status === "deleted") {
     revalidateOwnerPaths(requestedLocale, profileId);
     revalidateAdministratorPaths(requestedLocale, profileId);

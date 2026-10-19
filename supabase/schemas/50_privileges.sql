@@ -867,17 +867,17 @@ GRANT SELECT ON TABLE "public"."cottage_profile_photos" TO "authenticated";
 
 GRANT SELECT ON TABLE "public"."cottage_profile_photos" TO "service_role";
 
-REVOKE ALL ON FUNCTION "public"."prepare_cottage_profile_photo_deletion"("target_photo_id" "uuid") FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."prepare_cottage_profile_photo_deletion"("target_photo_id" "uuid", "requested_reason" "text") FROM PUBLIC, "anon", "service_role";
 
-GRANT ALL ON FUNCTION "public"."prepare_cottage_profile_photo_deletion"("target_photo_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."prepare_cottage_profile_photo_deletion"("target_photo_id" "uuid", "requested_reason" "text") TO "authenticated";
 
 REVOKE ALL ON FUNCTION "public"."prepare_cottage_profile_photo_preview"("target_photo_id" "uuid") FROM PUBLIC;
 
 GRANT ALL ON FUNCTION "public"."prepare_cottage_profile_photo_preview"("target_photo_id" "uuid") TO "authenticated";
 
-REVOKE ALL ON FUNCTION "public"."prepare_cottage_profile_photo_upload"("target_profile_id" "uuid", "requested_original_filename" "text", "requested_media_type" "text", "requested_size_bytes" integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."prepare_cottage_profile_photo_upload"("target_profile_id" "uuid", "requested_original_filename" "text", "requested_media_type" "text", "requested_size_bytes" integer, "requested_reason" "text") FROM PUBLIC, "anon", "service_role";
 
-GRANT ALL ON FUNCTION "public"."prepare_cottage_profile_photo_upload"("target_profile_id" "uuid", "requested_original_filename" "text", "requested_media_type" "text", "requested_size_bytes" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."prepare_cottage_profile_photo_upload"("target_profile_id" "uuid", "requested_original_filename" "text", "requested_media_type" "text", "requested_size_bytes" integer, "requested_reason" "text") TO "authenticated";
 
 REVOKE ALL ON FUNCTION "public"."prepare_owner_verification_document_access"("target_document_id" "uuid") FROM PUBLIC;
 
@@ -1154,9 +1154,9 @@ GRANT ALL ON FUNCTION "public"."submit_owner_application_renewal"("expected_vers
 
 REVOKE ALL ON FUNCTION "public"."supersede_human_review_after_publication_rejection"() FROM PUBLIC;
 
-REVOKE ALL ON FUNCTION "public"."update_administrator_cottage_profile"("target_profile_id" "uuid", "target_expected_version" bigint, "requested_name" "text", "requested_governorate" "text", "requested_approximate_location" "text", "requested_exact_address" "text", "requested_exact_latitude" numeric, "requested_exact_longitude" numeric, "requested_private_directions" "text", "requested_capacity" integer, "requested_bedrooms" integer, "requested_bathrooms" integer, "requested_amenities" "text"[], "requested_source_language" "public"."cottage_profile_source_language", "requested_description" "text", "requested_house_rules" "text") FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."update_administrator_cottage_profile"("target_profile_id" "uuid", "target_expected_version" bigint, "requested_name" "text", "requested_governorate" "text", "requested_approximate_location" "text", "requested_exact_address" "text", "requested_exact_latitude" numeric, "requested_exact_longitude" numeric, "requested_private_directions" "text", "requested_capacity" integer, "requested_bedrooms" integer, "requested_bathrooms" integer, "requested_amenities" "text"[], "requested_source_language" "public"."cottage_profile_source_language", "requested_description" "text", "requested_house_rules" "text", "requested_reason" "text") FROM PUBLIC, "anon", "service_role";
 
-GRANT ALL ON FUNCTION "public"."update_administrator_cottage_profile"("target_profile_id" "uuid", "target_expected_version" bigint, "requested_name" "text", "requested_governorate" "text", "requested_approximate_location" "text", "requested_exact_address" "text", "requested_exact_latitude" numeric, "requested_exact_longitude" numeric, "requested_private_directions" "text", "requested_capacity" integer, "requested_bedrooms" integer, "requested_bathrooms" integer, "requested_amenities" "text"[], "requested_source_language" "public"."cottage_profile_source_language", "requested_description" "text", "requested_house_rules" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_administrator_cottage_profile"("target_profile_id" "uuid", "target_expected_version" bigint, "requested_name" "text", "requested_governorate" "text", "requested_approximate_location" "text", "requested_exact_address" "text", "requested_exact_latitude" numeric, "requested_exact_longitude" numeric, "requested_private_directions" "text", "requested_capacity" integer, "requested_bedrooms" integer, "requested_bathrooms" integer, "requested_amenities" "text"[], "requested_source_language" "public"."cottage_profile_source_language", "requested_description" "text", "requested_house_rules" "text", "requested_reason" "text") TO "authenticated";
 
 REVOKE ALL ON FUNCTION "public"."update_owner_cottage_profile_draft"("target_profile_id" "uuid", "target_expected_version" bigint, "requested_name" "text", "requested_governorate" "text", "requested_approximate_location" "text", "requested_exact_address" "text", "requested_exact_latitude" numeric, "requested_exact_longitude" numeric, "requested_private_directions" "text", "requested_capacity" integer, "requested_bedrooms" integer, "requested_bathrooms" integer, "requested_amenities" "text"[], "requested_source_language" "public"."cottage_profile_source_language", "requested_description" "text", "requested_house_rules" "text") FROM PUBLIC;
 

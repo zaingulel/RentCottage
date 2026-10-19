@@ -25,6 +25,7 @@ import {
 import type { Locale } from "@/i18n/routing";
 import {
   ActionButton,
+  ActionFeedback,
   ActionFocusTarget,
   ChoiceControl,
   FormControl,
@@ -46,32 +47,59 @@ function Feedback({
   const copy = cottageProfileMessages[locale];
   if (state.status === "idle") return null;
   const text =
-    state.status === "saved"
-      ? copy.saved
-      : state.status === "uploaded"
-        ? copy.uploaded
-        : state.status === "deleted"
-          ? copy.deleted
-          : state.status === "submitted"
-            ? copy.submittedSuccess
-            : state.status === "incomplete"
-              ? copy.incomplete
-              : state.status === "conflict"
-                ? copy.conflict
-                : copy.failed;
+    state.status === "invalid" && state.fields?.includes("reason")
+      ? copy.reasonInvalid
+      : state.status === "saved"
+        ? copy.saved
+        : state.status === "uploaded"
+          ? copy.uploaded
+          : state.status === "deleted"
+            ? copy.deleted
+            : state.status === "submitted"
+              ? copy.submittedSuccess
+              : state.status === "incomplete"
+                ? copy.incomplete
+                : state.status === "conflict"
+                  ? copy.conflict
+                  : copy.failed;
   return (
-    <p
-      role={
+    <ActionFeedback
+      kind={
         state.status === "saved" ||
         state.status === "uploaded" ||
         state.status === "deleted" ||
         state.status === "submitted"
-          ? "status"
-          : "alert"
+          ? "success"
+          : "error"
       }
     >
       {text}
-    </p>
+    </ActionFeedback>
+  );
+}
+
+function AdministratorReason({
+  locale,
+  state,
+}: {
+  locale: Locale;
+  state: CottageProfileActionState;
+}) {
+  return (
+    <label>
+      {cottageProfileMessages[locale].lifecycleReason}
+      <FormControl
+        kind="textarea"
+        name="reason"
+        required
+        maxLength={1000}
+        aria-invalid={
+          state.status === "invalid" && state.fields?.includes("reason")
+            ? true
+            : undefined
+        }
+      />
+    </label>
   );
 }
 
@@ -80,10 +108,12 @@ function PhotoRow({
   profileId,
   photo,
   editable,
+  actor,
 }: {
   locale: Locale;
   profileId: string;
   photo: CottageProfilePhoto;
+  actor: "owner" | "administrator";
   editable: boolean;
 }) {
   const copy = cottageProfileMessages[locale];
@@ -91,7 +121,7 @@ function PhotoRow({
     previewCottageProfilePhotoAction,
     idlePreview,
   );
-  const [deletion, deleteAction] = useActionState(
+  const [deletion, deleteAction, deletionPending] = useActionState(
     deleteCottageProfilePhotoAction,
     idle,
   );
@@ -137,7 +167,14 @@ function PhotoRow({
           <input type="hidden" name="locale" value={locale} />
           <input type="hidden" name="profileId" value={profileId} />
           <input type="hidden" name="photoId" value={photo.id} />
-          <button type="submit" className="cottage-photo-text-action">
+          {actor === "administrator" ? (
+            <AdministratorReason locale={locale} state={deletion} />
+          ) : null}
+          <button
+            type="submit"
+            className="cottage-photo-text-action"
+            disabled={deletionPending}
+          >
             {copy.deletePhoto}
           </button>
         </form>
@@ -167,8 +204,8 @@ export function CottageProfileEditor({
     actor === "owner"
       ? saveOwnerCottageProfileAction
       : saveAdministratorCottageProfileAction;
-  const [saveState, submitSave] = useActionState(saveAction, idle);
-  const [uploadState, submitUpload] = useActionState(
+  const [saveState, submitSave, savePending] = useActionState(saveAction, idle);
+  const [uploadState, submitUpload, uploadPending] = useActionState(
     uploadCottageProfilePhotoAction,
     idle,
   );
@@ -393,9 +430,14 @@ export function CottageProfileEditor({
           </div>
         </fieldset>
         {editable ? (
-          <ActionButton kind="primary" type="submit">
-            {copy.save}
-          </ActionButton>
+          <>
+            {actor === "administrator" ? (
+              <AdministratorReason locale={locale} state={saveState} />
+            ) : null}
+            <ActionButton kind="primary" type="submit" pending={savePending}>
+              {copy.save}
+            </ActionButton>
+          </>
         ) : null}
         <Feedback state={saveState} locale={locale} />
       </form>
@@ -413,6 +455,7 @@ export function CottageProfileEditor({
                 locale={locale}
                 profileId={profile.id}
                 photo={photo}
+                actor={actor}
                 editable={photoEditable}
               />
             ))}
@@ -430,7 +473,15 @@ export function CottageProfileEditor({
                   accept="image/jpeg,image/png,image/webp"
                 />
               </label>
-              <ActionButton kind="secondary" size="regular" type="submit">
+              {actor === "administrator" ? (
+                <AdministratorReason locale={locale} state={uploadState} />
+              ) : null}
+              <ActionButton
+                kind="secondary"
+                size="regular"
+                type="submit"
+                pending={uploadPending}
+              >
                 {copy.uploadPhoto}
               </ActionButton>
             </form>

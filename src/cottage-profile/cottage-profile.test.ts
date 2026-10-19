@@ -178,6 +178,94 @@ function setup() {
 }
 
 describe("Cottage Profile", () => {
+  it("administrator photo mutations preserve owner calls and forward reasons", async () => {
+    const { cottageProfile, repository, uploadedObjects, removedObjects } =
+      setup();
+    const upload = vi.spyOn(repository, "preparePhotoUpload");
+    const deletion = vi.spyOn(repository, "preparePhotoDeletion");
+    const file = {
+      name: "cottage.webp",
+      type: "image/webp",
+      size: 12,
+      bytes: new Uint8Array([
+        0x52, 0x49, 0x46, 0x46, 4, 0, 0, 0, 0x57, 0x45, 0x42, 0x50,
+      ]),
+    };
+    const photoId = "71000000-0000-4000-8000-000000000001";
+    await cottageProfile.uploadPhoto(profileId, file);
+    expect(upload).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ reason: expect.anything() }),
+    );
+    await cottageProfile.deletePhoto(photoId);
+    expect(deletion).toHaveBeenLastCalledWith(photoId);
+    for (const reason of [null, "", " \n\t ", "x".repeat(1001), {}]) {
+      await expect(
+        cottageProfile.uploadPhoto(profileId, file, reason),
+      ).resolves.toEqual({ status: "invalid", fields: ["reason"] });
+      await expect(
+        cottageProfile.deletePhoto(photoId, reason),
+      ).resolves.toEqual({ status: "invalid", fields: ["reason"] });
+    }
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(deletion).toHaveBeenCalledTimes(1);
+    expect(uploadedObjects).toHaveLength(1);
+    expect(removedObjects).toHaveLength(1);
+    await cottageProfile.uploadPhoto(
+      profileId,
+      file,
+      " \tReplace unsuitable image\n ",
+    );
+    expect(upload).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reason: "Replace unsuitable image" }),
+    );
+    await cottageProfile.deletePhoto(photoId, " \tRecover deletion\n ");
+    expect(deletion).toHaveBeenLastCalledWith(photoId, "Recover deletion");
+    upload.mockRejectedValueOnce({ code: "22023" });
+    deletion.mockRejectedValueOnce({ code: "22023" });
+    await expect(cottageProfile.uploadPhoto(profileId, file)).resolves.toEqual({
+      status: "invalid",
+      fields: ["reason"],
+    });
+    await expect(cottageProfile.deletePhoto(photoId)).resolves.toEqual({
+      status: "invalid",
+      fields: ["reason"],
+    });
+    expect(uploadedObjects).toHaveLength(2);
+    expect(removedObjects).toHaveLength(2);
+  });
+
+  it("administrator edits forward a validated reason", async () => {
+    const { cottageProfile, repository } = setup();
+    const update = vi.spyOn(repository, "updateAdministrator");
+    const values = { ...draft, sourceLanguage: "en" };
+    for (const reason of [undefined, null, "", " \t\n ", "x".repeat(1001), 7]) {
+      await expect(
+        cottageProfile.saveAdministratorDraft(profileId, 1, values, reason),
+      ).resolves.toEqual({ status: "invalid", fields: ["reason"] });
+    }
+    expect(update).not.toHaveBeenCalled();
+    await expect(
+      cottageProfile.saveAdministratorDraft(
+        profileId,
+        1,
+        values,
+        " \tCorrect content\n ",
+      ),
+    ).resolves.toMatchObject({ status: "saved" });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "Correct content" }),
+    );
+    update.mockRejectedValueOnce({ code: "22023" });
+    await expect(
+      cottageProfile.saveAdministratorDraft(
+        profileId,
+        2,
+        values,
+        "Correct content",
+      ),
+    ).resolves.toEqual({ status: "invalid", fields: ["reason"] });
+  });
+
   it("validates administrator lifecycle eligibility through the repository seam", async () => {
     const { cottageProfile, repository } = setup();
     const eligibility = vi
@@ -499,10 +587,15 @@ describe("Cottage Profile", () => {
       profile: { id: additionalProfileId, name: "Additional Cottage" },
     });
     await expect(
-      cottageProfile.saveAdministratorDraft(additionalProfileId, 2, {
-        ...values,
-        name: "Administrator additional working copy",
-      }),
+      cottageProfile.saveAdministratorDraft(
+        additionalProfileId,
+        2,
+        {
+          ...values,
+          name: "Administrator additional working copy",
+        },
+        "Reviewed content correction",
+      ),
     ).resolves.toMatchObject({
       status: "saved",
       profile: {
@@ -634,22 +727,27 @@ describe("Cottage Profile", () => {
     const { cottageProfile } = setup();
     await cottageProfile.submit(profileId, 1);
 
-    const result = await cottageProfile.saveAdministratorDraft(profileId, 2, {
-      name: "Administrator working copy",
-      governorate: "Erbil",
-      approximateLocation: "Near Shaqlawa",
-      exactAddress: "Private exact address",
-      exactLatitude: "36.408333",
-      exactLongitude: "44.385834",
-      privateDirections: "Administrator directions",
-      capacity: "10",
-      bedrooms: "4",
-      bathrooms: "3",
-      amenities: ["garden", "wifi"],
-      sourceLanguage: "en",
-      description: "Administrator working-copy description",
-      houseRules: "Administrator working-copy rules",
-    });
+    const result = await cottageProfile.saveAdministratorDraft(
+      profileId,
+      2,
+      {
+        name: "Administrator working copy",
+        governorate: "Erbil",
+        approximateLocation: "Near Shaqlawa",
+        exactAddress: "Private exact address",
+        exactLatitude: "36.408333",
+        exactLongitude: "44.385834",
+        privateDirections: "Administrator directions",
+        capacity: "10",
+        bedrooms: "4",
+        bathrooms: "3",
+        amenities: ["garden", "wifi"],
+        sourceLanguage: "en",
+        description: "Administrator working-copy description",
+        houseRules: "Administrator working-copy rules",
+      },
+      "Reviewed content correction",
+    );
 
     expect(result).toMatchObject({
       status: "saved",
@@ -671,22 +769,27 @@ describe("Cottage Profile", () => {
     });
 
     await expect(
-      cottageProfile.saveAdministratorDraft(profileId, 2, {
-        name: "Administrator working copy",
-        governorate: "Erbil",
-        approximateLocation: "Near Shaqlawa",
-        exactAddress: "Private exact address",
-        exactLatitude: "36.408333",
-        exactLongitude: "44.385834",
-        privateDirections: "Administrator directions",
-        capacity: "10",
-        bedrooms: "4",
-        bathrooms: "3",
-        amenities: ["garden", "wifi"],
-        sourceLanguage: "en",
-        description: "Administrator working-copy description",
-        houseRules: "Administrator working-copy rules",
-      }),
+      cottageProfile.saveAdministratorDraft(
+        profileId,
+        2,
+        {
+          name: "Administrator working copy",
+          governorate: "Erbil",
+          approximateLocation: "Near Shaqlawa",
+          exactAddress: "Private exact address",
+          exactLatitude: "36.408333",
+          exactLongitude: "44.385834",
+          privateDirections: "Administrator directions",
+          capacity: "10",
+          bedrooms: "4",
+          bathrooms: "3",
+          amenities: ["garden", "wifi"],
+          sourceLanguage: "en",
+          description: "Administrator working-copy description",
+          houseRules: "Administrator working-copy rules",
+        },
+        "Reviewed content correction",
+      ),
     ).resolves.toEqual({ status: "incomplete" });
   });
 

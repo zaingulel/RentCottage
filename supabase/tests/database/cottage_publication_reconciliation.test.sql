@@ -496,7 +496,7 @@ begin
     profile.id, 0,
     '[{"name":"Day","startTime":"08:00","endTime":"14:00"},{"name":"Evening","startTime":"18:00","endTime":"23:00"}]'
   );
-  perform public.prepare_cottage_profile_photo_upload(profile.id, 'source.webp', 'image/webp', 128);
+  perform public.prepare_cottage_profile_photo_upload(profile.id, 'source.webp', 'image/webp', 128, '  Reviewed content correction  ');
   return profile.id;
 end;
 $$;

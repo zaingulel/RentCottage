@@ -171,3 +171,15 @@ it("uses Eastern Arabic digits in Sorani cottage profile prose", () => {
     pointDecimal: "أدخل الرقمين بصيغة عشرية، مثل 36.408333 و 44.385834.",
   });
 });
+
+it("administrator editor requires a reason for each content change", () => {
+  expect(cottageProfileMessages.en.reasonInvalid).toBe(
+    "Enter an administrator reason of 1 to 1000 characters.",
+  );
+  expect(cottageProfileMessages.ar.reasonInvalid).toBe(
+    "أدخل سبب المسؤول من حرف واحد إلى 1000 حرف.",
+  );
+  expect(cottageProfileMessages.ckb.reasonInvalid).toBe(
+    "هۆکاری بەڕێوەبەر بنووسە کە لە ١ تا ١٠٠٠ پیت بێت.",
+  );
+});

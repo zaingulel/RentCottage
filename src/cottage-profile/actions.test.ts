@@ -13,10 +13,70 @@ import {
   abandonOwnerCottageProfileAction,
   restoreAdministratorCottageProfileAction,
   saveOwnerCottageProfileAction,
+  saveAdministratorCottageProfileAction,
+  deleteCottageProfilePhotoAction,
   uploadCottageProfilePhotoAction,
 } from "./actions";
 
 describe("Cottage Profile actions", () => {
+  it("administrator edits forward a validated reason", async () => {
+    const saveAdministratorDraft = vi
+      .fn()
+      .mockResolvedValue({ status: "invalid", fields: ["reason"] });
+    createRequestCottageProfile.mockResolvedValue({ saveAdministratorDraft });
+    const form = new FormData();
+    form.set("locale", "en");
+    form.set("profileId", "70000000-0000-4000-8000-000000000001");
+    form.set("expectedVersion", "2");
+    form.set("reason", " Content correction ");
+    await expect(
+      saveAdministratorCottageProfileAction({ status: "idle" }, form),
+    ).resolves.toEqual({ status: "invalid", fields: ["reason"] });
+    expect(saveAdministratorDraft).toHaveBeenLastCalledWith(
+      expect.any(String),
+      2,
+      expect.any(Object),
+      " Content correction ",
+    );
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("administrator photo mutations preserve owner calls and forward reasons", async () => {
+    const deletePhoto = vi.fn().mockResolvedValue({ status: "deleted" });
+    const uploadPhoto = vi.fn().mockResolvedValue({ status: "uploaded" });
+    createRequestCottageProfile.mockResolvedValue({ deletePhoto, uploadPhoto });
+    const form = new FormData();
+    form.set("locale", "en");
+    form.set("profileId", "70000000-0000-4000-8000-000000000001");
+    form.set("photoId", "71000000-0000-4000-8000-000000000001");
+    form.set(
+      "photo",
+      new File([new Uint8Array([1])], "cottage.webp", { type: "image/webp" }),
+    );
+    await deleteCottageProfilePhotoAction({ status: "idle" }, form);
+    await uploadCottageProfilePhotoAction({ status: "idle" }, form);
+    expect(deletePhoto).toHaveBeenLastCalledWith(form.get("photoId"));
+    expect(uploadPhoto).toHaveBeenLastCalledWith(
+      form.get("profileId"),
+      expect.any(Object),
+    );
+    for (const reason of [
+      " Correct photo ",
+      "",
+      new File(["reason"], "reason.txt"),
+    ]) {
+      form.set("reason", reason);
+      await deleteCottageProfilePhotoAction({ status: "idle" }, form);
+      await uploadCottageProfilePhotoAction({ status: "idle" }, form);
+      expect(deletePhoto).toHaveBeenLastCalledWith(form.get("photoId"), reason);
+      expect(uploadPhoto).toHaveBeenLastCalledWith(
+        form.get("profileId"),
+        expect.any(Object),
+        reason,
+      );
+    }
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });

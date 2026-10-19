@@ -182,12 +182,14 @@ export interface CottageProfileRepository {
     values: CottageProfileDraftValues;
   }): Promise<CottageProfile>;
   updateAdministrator(input: {
+    reason: string;
     profileId: string;
     expectedVersion: number;
     values: CottageProfileDraftValues;
   }): Promise<CottageProfile>;
   submit(profileId: string, expectedVersion: number): Promise<CottageProfile>;
   preparePhotoUpload(input: {
+    reason?: string;
     profileId: string;
     originalFilename: string;
     mediaType: string;
@@ -197,6 +199,7 @@ export interface CottageProfileRepository {
   preparePhotoPreview(photoId: string): Promise<string>;
   preparePhotoDeletion(
     photoId: string,
+    reason?: string,
   ): Promise<PreparedCottageProfilePhotoDeletion>;
   completePhotoDeletion(photoId: string): Promise<void>;
 }
@@ -459,7 +462,12 @@ export function createCottageProfile({
       profileId: string,
       expectedVersion: number,
       value: unknown,
+      reasonValue: unknown,
     ) {
+      const reason = text(reasonValue);
+      if (reason.length < 1 || reason.length > 1000) {
+        return { status: "invalid" as const, fields: ["reason"] };
+      }
       const parsed = parseDraftValues(value);
       if (
         parsed.status === "invalid" ||
@@ -478,10 +486,13 @@ export function createCottageProfile({
           profileId,
           expectedVersion,
           values: parsed.values,
+          reason,
         });
         return { status: "saved" as const, profile };
       } catch (error) {
         const code = providerErrorCode(error);
+        if (code === "22023")
+          return { status: "invalid" as const, fields: ["reason"] };
         if (code === "RC203") return { status: "incomplete" as const };
         if (code === "RC409") return { status: "conflict" as const };
         if (code === "42501") return { status: "denied" as const };
@@ -561,7 +572,15 @@ export function createCottageProfile({
       );
     },
 
-    async uploadPhoto(profileId: string, file: CottageProfileUpload) {
+    async uploadPhoto(
+      profileId: string,
+      file: CottageProfileUpload,
+      reasonValue?: unknown,
+    ) {
+      const reason = reasonValue === undefined ? undefined : text(reasonValue);
+      if (reason !== undefined && (reason.length < 1 || reason.length > 1000)) {
+        return { status: "invalid" as const, fields: ["reason"] };
+      }
       if (
         !uuidPattern.test(profileId) ||
         !photoExtensions.has(file.type) ||
@@ -586,8 +605,13 @@ export function createCottageProfile({
           originalFilename: file.name.trim(),
           mediaType: file.type,
           sizeBytes: cleaned.bytes.byteLength,
+          ...(reason === undefined ? {} : { reason }),
         });
-      } catch {
+      } catch (error) {
+        if (providerErrorCode(error) === "22023")
+          return { status: "invalid" as const, fields: ["reason"] };
+        if (providerErrorCode(error) === "42501")
+          return { status: "denied" as const };
         return { status: "unavailable" as const };
       }
       try {
@@ -636,12 +660,21 @@ export function createCottageProfile({
       }
     },
 
-    async deletePhoto(photoId: string) {
+    async deletePhoto(photoId: string, reasonValue?: unknown) {
+      const reason = reasonValue === undefined ? undefined : text(reasonValue);
+      if (reason !== undefined && (reason.length < 1 || reason.length > 1000)) {
+        return { status: "invalid" as const, fields: ["reason"] };
+      }
       if (!uuidPattern.test(photoId)) return { status: "denied" as const };
       let prepared: PreparedCottageProfilePhotoDeletion;
       try {
-        prepared = await repository.preparePhotoDeletion(photoId);
+        prepared =
+          reason === undefined
+            ? await repository.preparePhotoDeletion(photoId)
+            : await repository.preparePhotoDeletion(photoId, reason);
       } catch (error) {
+        if (providerErrorCode(error) === "22023")
+          return { status: "invalid" as const, fields: ["reason"] };
         if (providerErrorCode(error) === "RC203") {
           return { status: "incomplete" as const };
         }

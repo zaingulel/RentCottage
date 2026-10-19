@@ -764,6 +764,7 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
   }
 
   async updateAdministrator(input: {
+    reason: string;
     profileId: string;
     expectedVersion: number;
     values: CottageProfileDraftValues;
@@ -774,6 +775,7 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
         target_profile_id: input.profileId,
         target_expected_version: input.expectedVersion,
         ...rpcValues(input.values),
+        requested_reason: input.reason,
       },
     );
     assertProviderSuccess(error);
@@ -796,6 +798,7 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
   }
 
   async preparePhotoUpload(input: {
+    reason?: string;
     profileId: string;
     originalFilename: string;
     mediaType: string;
@@ -808,6 +811,9 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
         requested_original_filename: input.originalFilename,
         requested_media_type: input.mediaType,
         requested_size_bytes: input.sizeBytes,
+        ...(input.reason === undefined
+          ? {}
+          : { requested_reason: input.reason }),
       },
     );
     assertProviderSuccess(error);
@@ -841,10 +847,14 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
 
   async preparePhotoDeletion(
     photoId: string,
+    reason?: string,
   ): Promise<PreparedCottageProfilePhotoDeletion> {
     const { data, error } = await this.client.rpc(
       "prepare_cottage_profile_photo_deletion",
-      { target_photo_id: photoId },
+      {
+        target_photo_id: photoId,
+        ...(reason === undefined ? {} : { requested_reason: reason }),
+      },
     );
     assertProviderSuccess(error);
     const photo = record(data);
