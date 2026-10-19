@@ -165,7 +165,7 @@ select throws_ok(
   $$select public.update_administrator_cottage_profile(
     '30000000-0000-4000-8000-000000002401', 2,
     'Shaqlawa Garden', 'Erbil', 'Near Shaqlawa', 'private address', 36.4, 44.3,
-    'private directions', 8, 3, 2, array['garden'], 'en', 'Bypassed', 'Bypassed'
+    'private directions', 8, 3, 2, array['garden'], 'en', 'Bypassed', 'Bypassed', '  Reviewed content correction  '
   )$$,
   'RC208', null, 'administrator working-copy edits cannot bypass localized history'
 );
@@ -174,7 +174,7 @@ select lives_ok(
     '30000000-0000-4000-8000-000000002401', 2,
     'Unreviewed Working Name', 'Erbil', 'Unreviewed working location',
     'private address', 36.4, 44.3, 'private directions', 8, 3, 2,
-    array['garden','wifi'], 'en', 'Quiet cottage', 'No smoking'
+    array['garden','wifi'], 'en', 'Quiet cottage', 'No smoking', '  Reviewed content correction  '
   )$$,
   'structured working-copy changes remain private during the active review');
 select throws_ok(
@@ -731,9 +731,9 @@ select results_eq(
     ('cottage_publication_snapshots', false)$$,
   'anonymous callers have no direct SELECT privilege on any publication table');
 select results_eq(
-  $$select name, description, house_rules, cardinality(media_ids)
+  $$select name, description, house_rules, cardinality(media_ids), description_hidden
     from public.get_current_cottage_publication('30000000-0000-4000-8000-000000002401', 'ar')$$,
-  $$values ('Later Private Name'::text, 'تغيير خاص لاحق'::text, 'قواعد خاصة جديدة'::text, 1)$$,
+  $$values ('Later Private Name'::text, 'تغيير خاص لاحق'::text, 'قواعد خاصة جديدة'::text, 1, false)$$,
   'anonymous projection returns only approved current localized content and opaque media identifiers');
 select throws_ok(
   $$select object_path from public.cottage_publication_media$$,

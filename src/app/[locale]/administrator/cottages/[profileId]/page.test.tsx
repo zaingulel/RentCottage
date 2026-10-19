@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
 const {
@@ -156,4 +156,80 @@ it("passes the AAL2 translation administration overview to the review surface", 
   expect(
     screen.queryByRole("link", { name: "Back to cottages" }),
   ).not.toBeInTheDocument();
+});
+
+it("published content controls report persisted hide and restore outcomes", async () => {
+  vi.clearAllMocks();
+  const loadVisibility = vi.fn().mockResolvedValue({
+    status: "loaded",
+    visibility: {
+      profileId: "70000000-0000-4000-8000-000000000001",
+      publicationId: "72000000-0000-4000-8000-000000000001",
+      publicSlug: "approved-cottage",
+      descriptionHidden: true,
+      photos: [
+        {
+          photoId: "71000000-0000-4000-8000-000000000001",
+          originalFilename: "retained.webp",
+          hidden: false,
+        },
+      ],
+    },
+  });
+  const load = vi.fn().mockResolvedValue({
+    id: "70000000-0000-4000-8000-000000000001",
+    status: "submitted_for_content_approval",
+    currentPublicationId: "72000000-0000-4000-8000-000000000001",
+  });
+  createCottageProfile.mockResolvedValue({
+    load,
+    canAdministratorManageLifecycle: vi.fn().mockResolvedValue(false),
+    loadAdministratorContentVisibility: loadVisibility,
+  });
+  createCottagePublication.mockResolvedValue({
+    loadCurrentReview: vi.fn().mockResolvedValue({ state: "in_review" }),
+    loadTranslationAdministration: vi.fn().mockResolvedValue({}),
+  });
+  resolveContext.mockResolvedValue({ role: "platform_administrator" });
+  createClient.mockResolvedValue({
+    rpc: vi.fn().mockResolvedValue({ data: false, error: null }),
+  });
+  const params = Promise.resolve({
+    locale: "en",
+    profileId: "70000000-0000-4000-8000-000000000001",
+  });
+  render(await AdministratorCottageProfilePage({ params }));
+  expect(loadVisibility).not.toHaveBeenCalled();
+  expect(load).not.toHaveBeenCalled();
+  cleanup();
+  createClient.mockResolvedValue({
+    rpc: vi.fn().mockResolvedValue({ data: true, error: null }),
+  });
+  render(await AdministratorCottageProfilePage({ params }));
+  const panel = screen.getByRole("region", { name: "Public visibility" });
+  expect(within(panel).getByText("Hidden")).toBeVisible();
+  expect(within(panel).getByRole("button", { name: "Restore" })).toBeEnabled();
+  expect(loadVisibility).toHaveBeenCalledWith(
+    "70000000-0000-4000-8000-000000000001",
+  );
+  cleanup();
+  loadVisibility.mockResolvedValueOnce({ status: "unavailable" });
+  render(await AdministratorCottageProfilePage({ params }));
+  const unavailable = screen.getByRole("region", { name: "Public visibility" });
+  expect(within(unavailable).getByRole("alert")).toHaveTextContent(
+    "Public visibility is temporarily unavailable",
+  );
+  expect(within(unavailable).queryByRole("button")).toBeNull();
+  cleanup();
+  loadVisibility.mockClear();
+  load.mockResolvedValueOnce({
+    id: "70000000-0000-4000-8000-000000000001",
+    status: "draft",
+    currentPublicationId: null,
+  });
+  render(await AdministratorCottageProfilePage({ params }));
+  expect(loadVisibility).not.toHaveBeenCalled();
+  expect(
+    screen.queryByRole("region", { name: "Public visibility" }),
+  ).toBeNull();
 });

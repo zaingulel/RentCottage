@@ -560,6 +560,18 @@ its own; the block it sits in sets the space around it.
   treatment, two-band focus, invalid/pending/disabled states and Sorani leading remain production contracts;
   accessible palette/dot contrast and shadow-free controls supersede decorative reference differences.
   Normal field edges, shared chrome and the lower route blocks remain outside this pattern. Never clip focus.
+- Public visibility: [cottage-content-visibility.tsx](../src/components/cottage-content-visibility.tsx) follows
+  the cottage editor's native fieldset, heading/guidance and raised field-card composition, as a separate
+  panel after the private editor even while an update is under review. Description comes first, then every
+  current published photo in publication order. Each fieldset names its content, states Visible or Hidden
+  in text and has an independent required reason immediately before a regular secondary `ActionButton`.
+  The guidance explains that hiding keeps the cottage searchable and bookable and retains at least one
+  approved photo; restoration is explicit. Photos keep the private preview text control even when hidden.
+  Reuse the editor's existing tokens, fonts, spacing and tablet/phone stacking with logical right-to-left
+  flow, visible focus and at least 44px controls. A pending visibility action disables the panel's forms.
+  Status changes follow persisted server results; a refusal retains the last persisted state and uses
+  translated `ActionFeedback` with a stable focus target. An unavailable read shows an alert without active
+  controls. Working-copy photo deletion remains a separate editor action.
 - Cottage card: a cottage list card has five rows held in a subgrid so cards in a row align: cover, title, detail,
   supporting content, actions. The card grid fills its row with empty columns, so a lone card keeps its column width.
   The cover runs edge to edge at `16 / 10`, cropped with `object-fit: cover`, on `--surface-placeholder` while

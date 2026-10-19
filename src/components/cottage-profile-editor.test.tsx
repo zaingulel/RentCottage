@@ -15,6 +15,7 @@ import {
   deleteCottageProfilePhotoAction,
   previewCottageProfilePhotoAction,
   submitCottageProfileAction,
+  saveAdministratorCottageProfileAction,
 } from "@/cottage-profile/actions";
 import { CottageProfileEditor } from "./cottage-profile-editor";
 
@@ -46,6 +47,64 @@ const profile: CottageProfile = {
 };
 
 describe("Cottage Profile editor", () => {
+  it("administrator editor requires a reason for each content change", async () => {
+    vi.mocked(saveAdministratorCottageProfileAction).mockResolvedValue({
+      status: "invalid",
+      fields: ["reason"],
+    });
+    const { rerender } = render(
+      <CottageProfileEditor
+        locale="en"
+        actor="administrator"
+        editable
+        profile={{
+          ...profile,
+          photos: [
+            {
+              id: "71000000-0000-4000-8000-000000000001",
+              originalFilename: "ready.webp",
+              mediaType: "image/webp",
+              sizeBytes: 128,
+              state: "ready",
+              updatedAt: profile.updatedAt,
+            },
+            {
+              id: "71000000-0000-4000-8000-000000000002",
+              originalFilename: "recovery.webp",
+              mediaType: "image/webp",
+              sizeBytes: 128,
+              state: "deletion_pending",
+              updatedAt: profile.updatedAt,
+            },
+          ],
+        }}
+      />,
+    );
+    const reasons = screen.getAllByLabelText("Administrator reason");
+    expect(reasons).toHaveLength(4);
+    for (const reason of reasons) {
+      expect(reason).toBeRequired();
+      expect(reason).toHaveAttribute("maxLength", "1000");
+    }
+    fireEvent.change(reasons[0], { target: { value: "Correct content" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save private draft" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Enter an administrator reason of 1 to 1000 characters.",
+      ),
+    );
+    expect(reasons[0]).toHaveAttribute("aria-invalid", "true");
+    rerender(
+      <CottageProfileEditor
+        locale="en"
+        actor="owner"
+        editable
+        profile={profile}
+      />,
+    );
+    expect(screen.queryByLabelText("Administrator reason")).toBeNull();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });

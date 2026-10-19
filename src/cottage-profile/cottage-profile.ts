@@ -154,7 +154,31 @@ export interface CottageProfileAdministratorPage {
   nextCursor: CottageProfileAdministratorCursor | null;
 }
 
+export interface CottageContentVisibility {
+  profileId: string;
+  publicationId: string;
+  publicSlug: string;
+  descriptionHidden: boolean;
+  photos: { photoId: string; originalFilename: string; hidden: boolean }[];
+}
+
+export interface CottageContentVisibilityInput {
+  profileId: string;
+  publicationId: string;
+  hidden: boolean;
+  reason: string;
+}
+
 export interface CottageProfileRepository {
+  loadAdministratorContentVisibility(
+    profileId: string,
+  ): Promise<CottageContentVisibility | null>;
+  setAdministratorDescriptionHidden(
+    input: CottageContentVisibilityInput,
+  ): Promise<CottageContentVisibility>;
+  setAdministratorPhotoHidden(
+    input: CottageContentVisibilityInput & { photoId: string },
+  ): Promise<CottageContentVisibility>;
   listOwner(): Promise<CottageProfile[]>;
   listAdministrator(
     cursor?: CottageProfileAdministratorCursor,
@@ -182,12 +206,14 @@ export interface CottageProfileRepository {
     values: CottageProfileDraftValues;
   }): Promise<CottageProfile>;
   updateAdministrator(input: {
+    reason: string;
     profileId: string;
     expectedVersion: number;
     values: CottageProfileDraftValues;
   }): Promise<CottageProfile>;
   submit(profileId: string, expectedVersion: number): Promise<CottageProfile>;
   preparePhotoUpload(input: {
+    reason?: string;
     profileId: string;
     originalFilename: string;
     mediaType: string;
@@ -197,6 +223,7 @@ export interface CottageProfileRepository {
   preparePhotoPreview(photoId: string): Promise<string>;
   preparePhotoDeletion(
     photoId: string,
+    reason?: string,
   ): Promise<PreparedCottageProfilePhotoDeletion>;
   completePhotoDeletion(photoId: string): Promise<void>;
 }
@@ -399,6 +426,47 @@ async function administratorLifecycle(
   }
 }
 
+async function changeContentVisibility(
+  mutate: (
+    input: CottageContentVisibilityInput,
+  ) => Promise<CottageContentVisibility>,
+  profileId: string,
+  publicationId: string,
+  hidden: unknown,
+  reasonValue: unknown,
+  photoId?: string,
+) {
+  const reason = text(reasonValue);
+  if (reason.length < 1 || reason.length > 1000) {
+    return { status: "invalid" as const, fields: ["reason"] };
+  }
+  if (
+    !uuidPattern.test(profileId) ||
+    !uuidPattern.test(publicationId) ||
+    typeof hidden !== "boolean" ||
+    (photoId !== undefined && !uuidPattern.test(photoId))
+  ) {
+    return { status: "invalid" as const };
+  }
+  try {
+    const visibility = await mutate({
+      profileId,
+      publicationId,
+      hidden,
+      reason,
+    });
+    return { status: "saved" as const, visibility };
+  } catch (error) {
+    const code = providerErrorCode(error);
+    if (code === "22023")
+      return { status: "invalid" as const, fields: ["reason"] };
+    if (code === "42501") return { status: "denied" as const };
+    if (code === "RC409") return { status: "conflict" as const };
+    if (code === "RC203") return { status: "last_photo" as const };
+    return { status: "unavailable" as const };
+  }
+}
+
 export function createCottageProfile({
   repository,
   storage,
@@ -407,6 +475,49 @@ export function createCottageProfile({
   storage: CottageProfileStorage;
 }) {
   return {
+    async loadAdministratorContentVisibility(profileId: string) {
+      if (!uuidPattern.test(profileId)) return { status: "invalid" as const };
+      try {
+        const visibility =
+          await repository.loadAdministratorContentVisibility(profileId);
+        return visibility
+          ? { status: "loaded" as const, visibility }
+          : { status: "unavailable" as const };
+      } catch {
+        return { status: "unavailable" as const };
+      }
+    },
+    setAdministratorDescriptionHidden(
+      profileId: string,
+      publicationId: string,
+      hidden: unknown,
+      reasonValue: unknown,
+    ) {
+      return changeContentVisibility(
+        repository.setAdministratorDescriptionHidden.bind(repository),
+        profileId,
+        publicationId,
+        hidden,
+        reasonValue,
+      );
+    },
+    setAdministratorPhotoHidden(
+      profileId: string,
+      publicationId: string,
+      photoId: string,
+      hidden: unknown,
+      reasonValue: unknown,
+    ) {
+      return changeContentVisibility(
+        (input) =>
+          repository.setAdministratorPhotoHidden({ ...input, photoId }),
+        profileId,
+        publicationId,
+        hidden,
+        reasonValue,
+        photoId,
+      );
+    },
     listOwner: () => repository.listOwner(),
     listAdministrator: (cursor?: CottageProfileAdministratorCursor) =>
       repository.listAdministrator(cursor),
@@ -459,7 +570,12 @@ export function createCottageProfile({
       profileId: string,
       expectedVersion: number,
       value: unknown,
+      reasonValue: unknown,
     ) {
+      const reason = text(reasonValue);
+      if (reason.length < 1 || reason.length > 1000) {
+        return { status: "invalid" as const, fields: ["reason"] };
+      }
       const parsed = parseDraftValues(value);
       if (
         parsed.status === "invalid" ||
@@ -478,10 +594,13 @@ export function createCottageProfile({
           profileId,
           expectedVersion,
           values: parsed.values,
+          reason,
         });
         return { status: "saved" as const, profile };
       } catch (error) {
         const code = providerErrorCode(error);
+        if (code === "22023")
+          return { status: "invalid" as const, fields: ["reason"] };
         if (code === "RC203") return { status: "incomplete" as const };
         if (code === "RC409") return { status: "conflict" as const };
         if (code === "42501") return { status: "denied" as const };
@@ -561,7 +680,15 @@ export function createCottageProfile({
       );
     },
 
-    async uploadPhoto(profileId: string, file: CottageProfileUpload) {
+    async uploadPhoto(
+      profileId: string,
+      file: CottageProfileUpload,
+      reasonValue?: unknown,
+    ) {
+      const reason = reasonValue === undefined ? undefined : text(reasonValue);
+      if (reason !== undefined && (reason.length < 1 || reason.length > 1000)) {
+        return { status: "invalid" as const, fields: ["reason"] };
+      }
       if (
         !uuidPattern.test(profileId) ||
         !photoExtensions.has(file.type) ||
@@ -586,8 +713,13 @@ export function createCottageProfile({
           originalFilename: file.name.trim(),
           mediaType: file.type,
           sizeBytes: cleaned.bytes.byteLength,
+          ...(reason === undefined ? {} : { reason }),
         });
-      } catch {
+      } catch (error) {
+        if (providerErrorCode(error) === "22023")
+          return { status: "invalid" as const, fields: ["reason"] };
+        if (providerErrorCode(error) === "42501")
+          return { status: "denied" as const };
         return { status: "unavailable" as const };
       }
       try {
@@ -636,12 +768,21 @@ export function createCottageProfile({
       }
     },
 
-    async deletePhoto(photoId: string) {
+    async deletePhoto(photoId: string, reasonValue?: unknown) {
+      const reason = reasonValue === undefined ? undefined : text(reasonValue);
+      if (reason !== undefined && (reason.length < 1 || reason.length > 1000)) {
+        return { status: "invalid" as const, fields: ["reason"] };
+      }
       if (!uuidPattern.test(photoId)) return { status: "denied" as const };
       let prepared: PreparedCottageProfilePhotoDeletion;
       try {
-        prepared = await repository.preparePhotoDeletion(photoId);
+        prepared =
+          reason === undefined
+            ? await repository.preparePhotoDeletion(photoId)
+            : await repository.preparePhotoDeletion(photoId, reason);
       } catch (error) {
+        if (providerErrorCode(error) === "22023")
+          return { status: "invalid" as const, fields: ["reason"] };
         if (providerErrorCode(error) === "RC203") {
           return { status: "incomplete" as const };
         }

@@ -260,7 +260,7 @@ select throws_ok(
     (select id from public.owner_application_cottage_profiles where owner_user_id = '00000000-0000-0000-0000-000000000874' and application_id is null),
     2, 'Bypass edit', 'Erbil', 'Shaqlawa', 'Private orchard gate', 36.4, 44.3,
     'Turn after the old bridge', 6, 3, 2, array['garden', 'wifi'], 'en',
-    'Preserved private description', 'Preserved private rules'
+    'Preserved private description', 'Preserved private rules', '  Reviewed content correction  '
   )$$,
   'RC202', null, 'an AAL2 administrator cannot use a custom GUC to edit an abandoned profile'
 );

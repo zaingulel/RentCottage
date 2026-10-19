@@ -34,7 +34,8 @@ export interface PublicCottageInventoryUnit {
 export interface PublicCottageProfile extends PublicCottageSummary {
   bedrooms: number;
   bathrooms: number;
-  description: string;
+  description: string | null;
+  descriptionHidden: boolean;
   houseRules: string;
 }
 
@@ -84,6 +85,7 @@ const profileKeys = new Set([
   "bedrooms",
   "bathrooms",
   "description",
+  "descriptionHidden",
   "houseRules",
 ]);
 const inventoryShiftKeys = new Set([
@@ -303,7 +305,10 @@ function profileFrom(
     !Number.isSafeInteger(input.bathrooms) ||
     (input.bedrooms as number) < 0 ||
     (input.bathrooms as number) < 0 ||
-    !nonEmptyText(input.description) ||
+    typeof input.descriptionHidden !== "boolean" ||
+    (input.descriptionHidden
+      ? input.description !== null
+      : !nonEmptyText(input.description)) ||
     !nonEmptyText(input.houseRules)
   ) {
     return undefined;
@@ -319,7 +324,8 @@ function profileFrom(
     inventory,
     bedrooms: input.bedrooms as number,
     bathrooms: input.bathrooms as number,
-    description: input.description,
+    description: input.description as string | null,
+    descriptionHidden: input.descriptionHidden,
     houseRules: input.houseRules,
   };
 }

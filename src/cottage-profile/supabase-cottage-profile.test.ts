@@ -85,6 +85,247 @@ function loadProviderProfile({
 }
 
 describe("Supabase Cottage Profile adapter", () => {
+  it("administrator visibility data rejects corrupt provider results", async () => {
+    const profileId = "70000000-0000-4000-8000-000000000001";
+    const publicationId = "72000000-0000-4000-8000-000000000001";
+    const visibility = {
+      profileId,
+      publicationId,
+      publicSlug: "cottage-70000000000040008000000000000001",
+      descriptionHidden: true,
+      photos: [
+        {
+          photoId: readyPhotoId,
+          originalFilename: "cottage.webp",
+          hidden: true,
+        },
+        {
+          photoId: "71000000-0000-4000-8000-000000000002",
+          originalFilename: "second.webp",
+          hidden: false,
+        },
+      ],
+    };
+    const rpc = vi.fn().mockImplementation(() => result(visibility));
+    const privilegedRpc = vi.fn();
+    const repository = new SupabaseCottageProfileRepository(
+      { rpc } as unknown as SupabaseClient,
+      { rpc: privilegedRpc } as unknown as SupabaseClient,
+    );
+    await expect(
+      repository.loadAdministratorContentVisibility(profileId),
+    ).resolves.toEqual(visibility);
+    expect(rpc).toHaveBeenLastCalledWith(
+      "get_administrator_cottage_content_visibility",
+      { target_profile_id: profileId },
+    );
+    const input = {
+      profileId,
+      publicationId,
+      hidden: true,
+      reason: "Safety review",
+    };
+    await expect(
+      repository.setAdministratorDescriptionHidden(input),
+    ).resolves.toEqual(visibility);
+    expect(rpc).toHaveBeenLastCalledWith(
+      "set_administrator_cottage_description_hidden",
+      {
+        target_profile_id: profileId,
+        target_publication_id: publicationId,
+        requested_hidden: true,
+        requested_reason: "Safety review",
+      },
+    );
+    await repository.setAdministratorPhotoHidden({
+      ...input,
+      photoId: readyPhotoId,
+    });
+    expect(rpc).toHaveBeenLastCalledWith(
+      "set_administrator_cottage_photo_hidden",
+      {
+        target_profile_id: profileId,
+        target_publication_id: publicationId,
+        target_photo_id: readyPhotoId,
+        requested_hidden: true,
+        requested_reason: "Safety review",
+      },
+    );
+    expect(privilegedRpc).not.toHaveBeenCalled();
+    for (const corrupt of [
+      null,
+      [],
+      {},
+      { ...visibility, profileId: "bad" },
+      { ...visibility, profileId: "70000000-0000-4000-8000-000000000099" },
+      { ...visibility, publicationId: "bad" },
+      { ...visibility, publicSlug: "../private" },
+      { ...visibility, publicSlug: "approved-cottage" },
+      { ...visibility, descriptionHidden: "false" },
+      { ...visibility, photos: [] },
+      { ...visibility, photos: [null] },
+      { ...visibility, photos: [{ ...visibility.photos[0], hidden: 0 }] },
+      { ...visibility, photos: [{ ...visibility.photos[0], photoId: "bad" }] },
+      {
+        ...visibility,
+        photos: [{ ...visibility.photos[0], originalFilename: " " }],
+      },
+      {
+        ...visibility,
+        photos: [
+          { ...visibility.photos[0], originalFilename: "x".repeat(181) },
+        ],
+      },
+      { ...visibility, photos: [visibility.photos[0], visibility.photos[0]] },
+      {
+        ...visibility,
+        photos: visibility.photos.map((photo) => ({ ...photo, hidden: true })),
+      },
+      { ...visibility, objectPath: "private/object.webp" },
+    ]) {
+      rpc.mockImplementationOnce(() => result(corrupt));
+      await expect(
+        repository.setAdministratorDescriptionHidden(input),
+      ).rejects.toThrow();
+      if (corrupt !== null) {
+        rpc.mockImplementationOnce(() => result(corrupt));
+        await expect(
+          repository.loadAdministratorContentVisibility(profileId),
+        ).rejects.toThrow();
+      }
+    }
+    rpc.mockImplementationOnce(() =>
+      result({ ...visibility, descriptionHidden: false }),
+    );
+    await expect(
+      repository.setAdministratorDescriptionHidden(input),
+    ).rejects.toThrow();
+    rpc.mockImplementationOnce(() =>
+      result({ ...visibility, photos: [visibility.photos[1]] }),
+    );
+    await expect(
+      repository.setAdministratorPhotoHidden({
+        ...input,
+        photoId: readyPhotoId,
+      }),
+    ).rejects.toThrow();
+    rpc.mockImplementationOnce(() =>
+      result({
+        ...visibility,
+        photos: visibility.photos.map((photo) => ({ ...photo, hidden: false })),
+      }),
+    );
+    await expect(
+      repository.setAdministratorPhotoHidden({
+        ...input,
+        photoId: readyPhotoId,
+      }),
+    ).rejects.toThrow();
+    rpc.mockImplementationOnce(() => result(null));
+    await expect(
+      repository.loadAdministratorContentVisibility(profileId),
+    ).resolves.toBeNull();
+    rpc.mockImplementationOnce(() => result(null, { code: "42501" }));
+    await expect(
+      repository.setAdministratorPhotoHidden({
+        ...input,
+        photoId: readyPhotoId,
+      }),
+    ).rejects.toMatchObject({ cause: { code: "42501" } });
+  });
+
+  it("administrator edits forward a validated reason", async () => {
+    const rpc = vi.fn(() => result(null, { code: "42501" }));
+    const privilegedRpc = vi.fn();
+    const repository = new SupabaseCottageProfileRepository(
+      { rpc } as unknown as SupabaseClient,
+      { rpc: privilegedRpc } as unknown as SupabaseClient,
+    );
+    await expect(
+      repository.updateAdministrator({
+        profileId: "70000000-0000-4000-8000-000000000001",
+        expectedVersion: 2,
+        reason: "Correct content",
+        values: {
+          name: "Cottage",
+          governorate: "Erbil",
+          approximateLocation: "Shaqlawa",
+          exactAddress: "",
+          exactLatitude: null,
+          exactLongitude: null,
+          privateDirections: "",
+          capacity: 8,
+          bedrooms: 3,
+          bathrooms: 2,
+          amenities: ["garden"],
+          sourceLanguage: "en",
+          description: "Description",
+          houseRules: "Rules",
+        },
+      }),
+    ).rejects.toMatchObject({ cause: { code: "42501" } });
+    expect(rpc).toHaveBeenCalledWith(
+      "update_administrator_cottage_profile",
+      expect.objectContaining({
+        target_profile_id: "70000000-0000-4000-8000-000000000001",
+        target_expected_version: 2,
+        requested_reason: "Correct content",
+      }),
+    );
+    expect(privilegedRpc).not.toHaveBeenCalled();
+  });
+
+  it("administrator photo mutations preserve owner calls and forward reasons", async () => {
+    const rpc = vi.fn((name: string) =>
+      result(
+        name === "prepare_cottage_profile_photo_upload"
+          ? { id: readyPhotoId, object_path: "owner/profile/photo.webp" }
+          : {
+              state: "deletion_pending",
+              is_active: true,
+              object_path: "owner/profile/photo.webp",
+            },
+      ),
+    );
+    const privilegedRpc = vi.fn();
+    const repository = new SupabaseCottageProfileRepository(
+      { rpc } as unknown as SupabaseClient,
+      { rpc: privilegedRpc } as unknown as SupabaseClient,
+    );
+    const input = {
+      profileId: "70000000-0000-4000-8000-000000000001",
+      originalFilename: "cottage.webp",
+      mediaType: "image/webp",
+      sizeBytes: 128,
+    };
+    await repository.preparePhotoUpload(input);
+    expect(rpc).toHaveBeenLastCalledWith(
+      "prepare_cottage_profile_photo_upload",
+      {
+        target_profile_id: input.profileId,
+        requested_original_filename: "cottage.webp",
+        requested_media_type: "image/webp",
+        requested_size_bytes: 128,
+      },
+    );
+    await repository.preparePhotoDeletion(readyPhotoId);
+    expect(rpc).toHaveBeenLastCalledWith(
+      "prepare_cottage_profile_photo_deletion",
+      { target_photo_id: readyPhotoId },
+    );
+    await repository.preparePhotoUpload({ ...input, reason: "Replace photo" });
+    expect(rpc).toHaveBeenLastCalledWith(
+      "prepare_cottage_profile_photo_upload",
+      expect.objectContaining({ requested_reason: "Replace photo" }),
+    );
+    await repository.preparePhotoDeletion(readyPhotoId, "Recover deletion");
+    expect(rpc).toHaveBeenLastCalledWith(
+      "prepare_cottage_profile_photo_deletion",
+      { target_photo_id: readyPhotoId, requested_reason: "Recover deletion" },
+    );
+    expect(privilegedRpc).not.toHaveBeenCalled();
+  });
+
   it("loads validated draft progress and rejects corrupt or stale evidence", async () => {
     const profile = {
       id: "70000000-0000-4000-8000-000000000749",

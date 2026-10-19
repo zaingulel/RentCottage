@@ -171,3 +171,60 @@ it("uses Eastern Arabic digits in Sorani cottage profile prose", () => {
     pointDecimal: "أدخل الرقمين بصيغة عشرية، مثل 36.408333 و 44.385834.",
   });
 });
+
+it("administrator editor requires a reason for each content change", () => {
+  expect(cottageProfileMessages.en.reasonInvalid).toBe(
+    "Enter an administrator reason of 1 to 1000 characters.",
+  );
+  expect(cottageProfileMessages.ar.reasonInvalid).toBe(
+    "أدخل سبب المسؤول من حرف واحد إلى 1000 حرف.",
+  );
+  expect(cottageProfileMessages.ckb.reasonInvalid).toBe(
+    "هۆکاری بەڕێوەبەر بنووسە کە لە ١ تا ١٠٠٠ پیت بێت.",
+  );
+});
+
+it("published content controls report persisted hide and restore outcomes", () => {
+  const expected = {
+    en: {
+      visibilityTitle: "Public visibility",
+      visibilityVisible: "Visible",
+      visibilityHidden: "Hidden",
+      visibilityHide: "Hide",
+      visibilityRestore: "Restore",
+    },
+    ar: {
+      visibilityTitle: "الظهور العام",
+      visibilityVisible: "ظاهر",
+      visibilityHidden: "مخفي",
+      visibilityHide: "إخفاء",
+      visibilityRestore: "إظهار",
+    },
+    ckb: {
+      visibilityTitle: "پیشاندانی گشتی",
+      visibilityVisible: "پیشاندراو",
+      visibilityHidden: "شاراوە",
+      visibilityHide: "شاردنەوە",
+      visibilityRestore: "پیشاندانەوە",
+    },
+  };
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    expect(cottageProfileMessages[locale]).toMatchObject(expected[locale]);
+    for (const key of [
+      "visibilityGuidance",
+      "visibilityDescription",
+      "visibilitySaved",
+      "visibilityDenied",
+      "visibilityConflict",
+      "visibilityLastPhoto",
+      "visibilityUnavailable",
+      "visibilityInvalid",
+    ] as const) {
+      expect(cottageProfileMessages[locale][key].trim()).not.toBe("");
+      if (locale !== "en")
+        expect(cottageProfileMessages[locale][key]).not.toBe(
+          cottageProfileMessages.en[key],
+        );
+    }
+  }
+});

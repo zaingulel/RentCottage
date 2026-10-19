@@ -68,6 +68,53 @@ function pageOf(items: unknown[], nextCursor: string | null = null) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("Supabase Cottage discovery", () => {
+  it("public cottage description hiding is explicit and fail closed", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const hidden = {
+      ...validSummary,
+      bedrooms: 2,
+      bathrooms: 1,
+      description: null,
+      descriptionHidden: true,
+      houseRules: "No smoking",
+    };
+    const load = (data: unknown) =>
+      new SupabaseCottageDiscovery(clientReturning(data)).profile(
+        "en",
+        publicSlug,
+        query,
+      );
+    await expect(load(hidden)).resolves.toEqual({
+      status: "loaded",
+      cottage: expect.objectContaining({
+        description: null,
+        descriptionHidden: true,
+        houseRules: "No smoking",
+      }),
+    });
+    await expect(
+      load({ ...hidden, description: "Approved", descriptionHidden: false }),
+    ).resolves.toEqual({
+      status: "loaded",
+      cottage: expect.objectContaining({
+        description: "Approved",
+        descriptionHidden: false,
+      }),
+    });
+    const missingFlag: Record<string, unknown> = { ...hidden };
+    delete missingFlag.descriptionHidden;
+    for (const corrupt of [
+      missingFlag,
+      { ...hidden, description: "Private source fallback" },
+      { ...hidden, descriptionHidden: false },
+      { ...hidden, descriptionHidden: "true" },
+      { ...hidden, description: " ", descriptionHidden: false },
+      { ...hidden, objectPath: "private/photo.webp" },
+    ]) {
+      await expect(load(corrupt)).resolves.toEqual({ status: "unavailable" });
+    }
+  });
+
   it("loads only exact live facet keys and a validated direct-profile default", async () => {
     const facetsClient = clientReturning({
       governorates: ["Baghdad"],
@@ -284,6 +331,7 @@ describe("Supabase Cottage discovery", () => {
       bedrooms: -1,
       bathrooms: 1,
       description: "Approved",
+      descriptionHidden: false,
       houseRules: "No smoking",
     };
     await expect(
@@ -373,6 +421,7 @@ describe("Supabase Cottage discovery", () => {
       bedrooms: 2,
       bathrooms: 1,
       description: "Approved",
+      descriptionHidden: false,
       houseRules: "No smoking",
     };
     await expect(
@@ -544,6 +593,7 @@ describe("Supabase Cottage discovery", () => {
       bathrooms: 1,
       amenities: ["pool"],
       description: "Approved",
+      descriptionHidden: false,
       houseRules: "No smoking",
       mediaIds: [],
       inventory: validSummary.inventory.map((item) => ({

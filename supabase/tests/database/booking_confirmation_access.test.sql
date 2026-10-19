@@ -218,6 +218,22 @@ select ok(
 ) projection;
 reset role;
 set session_replication_role = replica;
+insert into public.cottage_profile_photos (
+  id, profile_id, owner_user_id, actor_user_id, object_path,
+  original_filename, media_type, size_bytes, state, public_hidden
+) values (
+  '40000000-0000-4000-8000-000000003502',
+  '20000000-0000-4000-8000-000000003501',
+  '10000000-0000-4000-8000-000000003501',
+  '10000000-0000-4000-8000-000000003501',
+  'private/confirmation/cover-3501.webp', 'cover-3501.webp', 'image/webp', 128, 'ready', false
+), (
+  '40000000-0000-4000-8000-000000003503',
+  '20000000-0000-4000-8000-000000003501',
+  '10000000-0000-4000-8000-000000003501',
+  '10000000-0000-4000-8000-000000003501',
+  'private/confirmation/cover-3502.webp', 'cover-3502.webp', 'image/webp', 128, 'ready', false
+);
 -- Position 2 precedes position 1 so heap order cannot stand in for cover order.
 insert into public.cottage_publication_media (
   publication_id, photo_id, opaque_id, object_path, media_type, position

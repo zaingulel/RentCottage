@@ -114,6 +114,7 @@ const publicCottageQuery: CottageDiscoveryQuery = {
 };
 
 const publicDisplayCottage: PublicCottageProfile = {
+  descriptionHidden: false,
   bedrooms: 3,
   bathrooms: 2,
   description:

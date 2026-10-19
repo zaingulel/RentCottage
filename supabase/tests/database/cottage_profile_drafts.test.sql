@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(111);
+select plan(117);
 
 insert into auth.users (
   id, aud, role, phone, phone_confirmed_at, email, email_confirmed_at
@@ -427,13 +427,13 @@ select set_config(
 );
 select lives_ok(
   $$select public.prepare_cottage_profile_photo_deletion(
-    current_setting('test.cottage_recovery_photo_id')::uuid
+    current_setting('test.cottage_recovery_photo_id')::uuid, '  Reviewed content correction  '
   )$$,
   'an AAL2 administrator can take responsibility for an owner-started deletion retry'
 );
 select lives_ok(
   $$select public.prepare_cottage_profile_photo_deletion(
-    current_setting('test.cottage_recovery_photo_id')::uuid
+    current_setting('test.cottage_recovery_photo_id')::uuid, '  Reviewed content correction  '
   )$$,
   'the same AAL2 administrator can safely retry recovery without another audit event'
 );
@@ -848,7 +848,7 @@ select throws_ok(
     (select id from public.owner_application_cottage_profiles limit 1),
     3, 'AAL1 edit', 'Erbil', 'Near Shaqlawa', 'Private exact address',
     36.408333, 44.385834, 'Directions', 10, 4, 3, array['wifi'],
-    'en', 'AAL1 description', 'AAL1 rules'
+    'en', 'AAL1 description', 'AAL1 rules', '  Reviewed content correction  '
   )$$,
   '42501', null,
   'an AAL1 administrator cannot edit private Cottage Profile data'
@@ -897,11 +897,22 @@ select results_eq(
 
 select throws_ok(
   $$select public.update_administrator_cottage_profile(
+    current_setting('test.cottage_profile_id')::uuid,
+    3, 'Reasonless administrator edit', 'Erbil', 'Near Shaqlawa',
+    'Private exact address', 36.408333, 44.385834, 'Directions',
+    10, 4, 3, array['wifi'], 'en',
+    'Owner working-copy description', 'Owner working-copy House Rules'
+  )$$,
+  '22023', null,
+  'administrator edits require a reason at the database boundary'
+);
+select throws_ok(
+  $$select public.update_administrator_cottage_profile(
     (select id from public.owner_application_cottage_profiles
       where application_id = '20000000-0000-4000-8000-000000000701'),
     null, 'Null administrator version', 'Erbil', 'Near Shaqlawa',
     'Private exact address', 36.408333, 44.385834, 'Directions',
-    10, 4, 3, array['wifi'], 'en', 'Description', 'Rules'
+    10, 4, 3, array['wifi'], 'en', 'Description', 'Rules', '  Reviewed content correction  '
   )$$,
   '22023', null,
   'administrator save rejects a null expected version at the database boundary'
@@ -913,7 +924,7 @@ select throws_ok(
       where application_id = '20000000-0000-4000-8000-000000000701'),
     0, 'Non-positive administrator version', 'Erbil', 'Near Shaqlawa',
     'Private exact address', 36.408333, 44.385834, 'Directions',
-    10, 4, 3, array['wifi'], 'en', 'Description', 'Rules'
+    10, 4, 3, array['wifi'], 'en', 'Description', 'Rules', '  Reviewed content correction  '
   )$$,
   '22023', null,
   'administrator save rejects a non-positive expected version at the database boundary'
@@ -925,7 +936,7 @@ select throws_ok(
       where application_id = '20000000-0000-4000-8000-000000000701'),
     3, 'Incomplete administrator copy', 'Erbil', 'Near Shaqlawa',
     'Private exact address', 36.408333, 44.385834, 'Directions',
-    10, 4, 3, array['wifi'], null, 'Description', 'Rules'
+    10, 4, 3, array['wifi'], null, 'Description', 'Rules', '  Reviewed content correction  '
   )$$,
   'RC208', null,
   'an administrator cannot bypass localized review history for submitted source fields'
@@ -950,7 +961,7 @@ select throws_ok(
     3, 'Administrator working copy', 'Erbil', 'Near Shaqlawa',
     'Private exact address', 36.408333, 44.385834, 'Administrator directions',
     10, 4, 3, array['garden', 'wifi'], 'en',
-    'Administrator working-copy description', 'Administrator working-copy rules'
+    'Administrator working-copy description', 'Administrator working-copy rules', '  Reviewed content correction  '
   )$$,
   'RC208', null,
   'an AAL2 Platform Administrator cannot edit submitted source through the working-copy RPC'
@@ -980,7 +991,7 @@ select throws_ok(
     'Private exact address', 36.408333, 44.385834,
     'Administrator directions', 10, 4, 3, array['garden', 'wifi'], 'en',
     'Owner working-copy description',
-    'Owner working-copy House Rules'
+    'Owner working-copy House Rules', '  Reviewed content correction  '
   )$$,
   '23514',
   'new row for relation "owner_application_cottage_profiles" violates check constraint "cottage_profile_approximate_location_not_coordinate_pair"',
@@ -995,7 +1006,7 @@ select throws_ok(
       where application_id is null),
     'Outside the supported area', 'Erbil', 'Near Shaqlawa', 'Private address',
     51.507351, -0.127758, 'Directions', 10, 4, 3,
-    array['wifi'], 'en', 'Description', 'Rules'
+    array['wifi'], 'en', 'Description', 'Rules', '  Reviewed content correction  '
   )$$,
   '23514',
   'new row for relation "owner_application_cottage_profiles" violates check constraint "cottage_profile_private_location_pair"',
@@ -1010,7 +1021,7 @@ select lives_ok(
     'Private exact address', 36.408333, 44.385834,
     'Administrator directions', 10, 4, 3, array['garden', 'wifi'], 'en',
     'Owner working-copy description',
-    'Owner working-copy House Rules'
+    'Owner working-copy House Rules', '  Reviewed content correction  '
   )$$,
   'an administrator no-op save remains a valid optimistic-concurrency action'
 );
@@ -1102,7 +1113,7 @@ select lives_ok(
 
 select throws_ok(
   $$select public.prepare_cottage_profile_photo_deletion(
-    current_setting('test.cottage_photo_id')::uuid
+    current_setting('test.cottage_photo_id')::uuid, '  Reviewed content correction  '
   )$$,
   'RC210', null,
   'active review media membership cannot change during submission'
@@ -1112,7 +1123,7 @@ select lives_ok(
   $$select public.prepare_cottage_profile_photo_upload(
     (select id from public.owner_application_cottage_profiles
       where application_id = '20000000-0000-4000-8000-000000000701'),
-    'shaqlawa-cottage-second.jpg', 'image/jpeg', 256
+    'shaqlawa-cottage-second.jpg', 'image/jpeg', 256, '  Reviewed content correction  '
   )$$,
   'an AAL2 Platform Administrator can prepare a second submitted-profile photo'
 );
@@ -1158,7 +1169,7 @@ select set_config(
 );
 select throws_ok(
   $$select public.prepare_cottage_profile_photo_deletion(
-    current_setting('test.cottage_photo_id')::uuid
+    current_setting('test.cottage_photo_id')::uuid, '  Reviewed content correction  '
   )$$,
   'RC210', null,
   'an AAL2 Platform Administrator cannot remove media snapshotted into a review cycle'
@@ -1314,5 +1325,171 @@ select throws_ok(
   'a prospective owner cannot use the approved-owner draft seam'
 );
 
+
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000704","role":"authenticated","aal":"aal2"}', true);
+set local role authenticated;
+select lives_ok($test$
+do $body$
+declare
+  p public.owner_application_cottage_profiles;
+  reason_value text;
+  previous_photos jsonb;
+  previous_audit jsonb;
+  prepared public.cottage_profile_photos;
+begin
+  select * into strict p from public.owner_application_cottage_profiles
+    where id = current_setting('test.cottage_profile_id')::uuid;
+  select jsonb_agg(to_jsonb(photos) order by id) into previous_photos from public.cottage_profile_photos photos;
+  select jsonb_agg(to_jsonb(audit) order by id) into previous_audit from public.cottage_profile_administrator_audit audit;
+  foreach reason_value in array array[null::text, '', E' \t\n ', repeat('x', 1001)] loop
+    begin
+      perform public.prepare_cottage_profile_photo_upload(p.id, 'refused.webp', 'image/webp', 128, reason_value);
+      raise exception 'reasonless or malformed upload wrote';
+    exception when sqlstate '22023' then null; end;
+    begin
+      perform public.prepare_cottage_profile_photo_deletion(current_setting('test.cottage_photo_id')::uuid, reason_value);
+      raise exception 'reasonless or malformed deletion wrote';
+    exception when sqlstate '22023' then null; end;
+    begin
+      perform public.update_administrator_cottage_profile(
+      p.id, p.version, p.name, p.governorate, p.approximate_location,
+      p.exact_address, p.exact_latitude, p.exact_longitude, p.private_directions,
+      p.capacity::integer, p.bedrooms::integer, p.bathrooms::integer,
+      p.amenities, p.source_language, p.description, p.house_rules, reason_value);
+      raise exception 'reasonless or malformed edit wrote';
+    exception when sqlstate '22023' then null; end;
+  end loop;
+  if previous_photos is distinct from (select jsonb_agg(to_jsonb(photos) order by id) from public.cottage_profile_photos photos)
+    or previous_audit is distinct from (select jsonb_agg(to_jsonb(audit) order by id) from public.cottage_profile_administrator_audit audit)
+    or to_jsonb(p) is distinct from (select to_jsonb(profiles) from public.owner_application_cottage_profiles profiles where id = p.id) then
+    raise exception 'refused commands changed photos, profile or audit';
+  end if;
+  select * into strict prepared from public.prepare_cottage_profile_photo_upload(
+    p.id, 'reasoned.webp', 'image/webp', 128, E' \tReviewed content correction\n ');
+  perform public.prepare_cottage_profile_photo_deletion(prepared.id, E' \tReviewed content correction\n ');
+  begin
+    perform public.prepare_cottage_profile_photo_deletion(prepared.id);
+    raise exception 'reasonless recovery wrote';
+  exception when sqlstate '22023' then null; end;
+  perform public.prepare_cottage_profile_photo_deletion(prepared.id, 'Reviewed content correction');
+  perform public.prepare_cottage_profile_photo_deletion(prepared.id, 'Reviewed content correction');
+  if (select count(*) from public.cottage_profile_administrator_audit where object_path = prepared.object_path) <> 3
+    or exists (select 1 from public.cottage_profile_administrator_audit where object_path = prepared.object_path
+      and (reason is distinct from 'Reviewed content correction'
+        or administrator_user_id <> '00000000-0000-0000-0000-000000000704'::uuid
+        or occurred_at is null)) then
+    raise exception 'upload, deletion and recovery reasons or duplicate recovery audit are wrong';
+  end if;
+end;
+$body$;
+$test$, 'administrator photo writes require a reason at the database boundary');
+select results_eq(
+  $$select bool_and(reason is not distinct from 'Reviewed content correction'), bool_and(occurred_at is not null),
+      bool_and(administrator_user_id = '00000000-0000-0000-0000-000000000704'::uuid)
+    from public.cottage_profile_administrator_audit$$,
+  $$values (true, true, true)$$,
+  'successful administrator changes record the normalized reason, actor and time'
+);
+-- Unreviewed media keeps the authority observer independent of review membership.
+select set_config('test.cottage_authority_photo_id', (
+  select id::text from public.prepare_cottage_profile_photo_upload(
+    current_setting('test.cottage_profile_id')::uuid,
+    'authority-proof.webp', 'image/webp', 128, 'Reviewed content correction'
+  )
+), true);
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000704","role":"authenticated","aal":"aal2"}', true);
+
+select lives_ok($test$
+do $body$
+declare
+  p public.owner_application_cottage_profiles;
+  reason_value text := 'Authority refusal proof';
+  previous_photos jsonb;
+  previous_audit jsonb;
+begin
+  select * into strict p from public.owner_application_cottage_profiles
+    where id = current_setting('test.cottage_profile_id')::uuid;
+  select jsonb_agg(to_jsonb(photos) order by id) into previous_photos from public.cottage_profile_photos photos;
+  select jsonb_agg(to_jsonb(audit) order by id) into previous_audit from public.cottage_profile_administrator_audit audit;
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000704","role":"authenticated"}', true);
+  begin
+    perform public.update_administrator_cottage_profile(
+      p.id, p.version, p.name, p.governorate, p.approximate_location,
+      p.exact_address, p.exact_latitude, p.exact_longitude, p.private_directions,
+      p.capacity::integer, p.bedrooms::integer, p.bathrooms::integer,
+      p.amenities, p.source_language, p.description, p.house_rules, reason_value);
+    raise exception 'unauthorized edit wrote';
+  exception when sqlstate '42501' then null; end;
+  begin
+    perform public.prepare_cottage_profile_photo_upload(p.id, 'unauthorized.webp', 'image/webp', 128, reason_value);
+    raise exception 'unauthorized upload wrote';
+  exception when sqlstate '42501' then null; end;
+  begin
+    perform public.prepare_cottage_profile_photo_deletion(current_setting('test.cottage_authority_photo_id')::uuid, reason_value);
+    raise exception 'unauthorized deletion wrote';
+  exception when sqlstate '42501' then null; end;
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000704","role":"authenticated","aal":"aal2"}', true);
+  if previous_photos is distinct from (select jsonb_agg(to_jsonb(photos) order by id) from public.cottage_profile_photos photos)
+    or previous_audit is distinct from (select jsonb_agg(to_jsonb(audit) order by id) from public.cottage_profile_administrator_audit audit)
+    or to_jsonb(p) is distinct from (select to_jsonb(profiles) from public.owner_application_cottage_profiles profiles where id = p.id) then
+    raise exception 'refused authority changed data';
+  end if;
+end;
+$body$;
+$test$, 'administrator cottage writes reject missing assurance and revoked authority');
+
+update public.account_contexts set role = 'customer'
+where user_id = '00000000-0000-0000-0000-000000000704';
+
+select lives_ok($test$
+do $body$
+declare
+  p public.owner_application_cottage_profiles;
+  reason_value text := 'Authority refusal proof';
+  previous_photos jsonb;
+  previous_audit jsonb;
+begin
+  select * into strict p from public.owner_application_cottage_profiles
+    where id = current_setting('test.cottage_profile_id')::uuid;
+  select jsonb_agg(to_jsonb(photos) order by id) into previous_photos from public.cottage_profile_photos photos;
+  select jsonb_agg(to_jsonb(audit) order by id) into previous_audit from public.cottage_profile_administrator_audit audit;
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000704","role":"authenticated","aal":"aal2"}', true);
+  begin
+    perform public.update_administrator_cottage_profile(
+      p.id, p.version, p.name, p.governorate, p.approximate_location,
+      p.exact_address, p.exact_latitude, p.exact_longitude, p.private_directions,
+      p.capacity::integer, p.bedrooms::integer, p.bathrooms::integer,
+      p.amenities, p.source_language, p.description, p.house_rules, reason_value);
+    raise exception 'unauthorized edit wrote';
+  exception when sqlstate '42501' then null; end;
+  begin
+    perform public.prepare_cottage_profile_photo_upload(p.id, 'unauthorized.webp', 'image/webp', 128, reason_value);
+    raise exception 'unauthorized upload wrote';
+  exception when sqlstate '42501' then null; end;
+  begin
+    perform public.prepare_cottage_profile_photo_deletion(current_setting('test.cottage_authority_photo_id')::uuid, reason_value);
+    raise exception 'unauthorized deletion wrote';
+  exception when sqlstate '42501' then null; end;
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000704","role":"authenticated","aal":"aal2"}', true);
+  if previous_photos is distinct from (select jsonb_agg(to_jsonb(photos) order by id) from public.cottage_profile_photos photos)
+    or previous_audit is distinct from (select jsonb_agg(to_jsonb(audit) order by id) from public.cottage_profile_administrator_audit audit)
+    or to_jsonb(p) is distinct from (select to_jsonb(profiles) from public.owner_application_cottage_profiles profiles where id = p.id) then
+    raise exception 'refused authority changed data';
+  end if;
+end;
+$body$;
+$test$, 'revoked administrator authority refuses every reasoned cottage write');
+
+reset role;
+insert into public.cottage_profile_administrator_audit (
+  profile_id, administrator_user_id, previous_version, resulting_version, changed_fields
+) values (
+  current_setting('test.cottage_profile_id')::uuid,
+  '00000000-0000-0000-0000-000000000704', 1, 2, array['name']
+);
+select is((select count(*)::integer from public.cottage_profile_administrator_audit where reason is null),
+  1, 'legacy audit rows retain nullable reasons without rewriting history');
 select * from finish();
 rollback;

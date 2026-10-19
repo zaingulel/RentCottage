@@ -5,6 +5,7 @@ import { resolvePlatformAdministratorAccess } from "@/access/platform-administra
 import { createRequestCottagePublication } from "@/cottage-publication/request-cottage-publication";
 import { createRequestCottageProfile } from "@/cottage-profile/request-cottage-profile";
 import { BackofficeNavigation } from "@/components/backoffice-navigation";
+import { CottageContentVisibility } from "@/components/cottage-content-visibility";
 import { CottageProfileEditor } from "@/components/cottage-profile-editor";
 import { CottageProfileLifecycleControls } from "@/components/cottage-profile-lifecycle-controls";
 import { CottagePublicationReview } from "@/components/cottage-publication-review";
@@ -17,19 +18,24 @@ async function loadAdministratorCottage(profileId: string) {
   const cottageProfile = await createRequestCottageProfile();
   const publication = await createRequestCottagePublication();
   const profile = await cottageProfile.load(profileId);
-  const [review, administration, lifecycleEligible] = await Promise.all([
-    publication.loadCurrentReview(profileId),
-    publication.loadTranslationAdministration(),
-    profile
-      ? cottageProfile.canAdministratorManageLifecycle(profileId)
-      : Promise.resolve(false),
-  ]);
+  const [review, administration, lifecycleEligible, visibility] =
+    await Promise.all([
+      publication.loadCurrentReview(profileId),
+      publication.loadTranslationAdministration(),
+      profile
+        ? cottageProfile.canAdministratorManageLifecycle(profileId)
+        : Promise.resolve(false),
+      profile?.currentPublicationId
+        ? cottageProfile.loadAdministratorContentVisibility(profileId)
+        : Promise.resolve(null),
+    ]);
   return {
     status: "ready" as const,
     profile,
     review,
     administration,
     lifecycleEligible,
+    visibility,
   };
 }
 
@@ -91,6 +97,9 @@ export default async function AdministratorCottageProfilePage({
           page.review?.state !== "in_review"
         }
       />
+      {page.visibility ? (
+        <CottageContentVisibility locale={locale} result={page.visibility} />
+      ) : null}
       <CottageProfileLifecycleControls
         locale={locale}
         actor="administrator"

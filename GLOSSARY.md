@@ -353,7 +353,7 @@ The text conversation for one booking journey that a phone-verified customer may
 _Avoid_: Audio call, video call, pre-payment contact exchange, unrelated public chat
 
 **Basic Administrator Dashboard**:
-The Platform Administrator view of searchable customer and owner accounts, cottage profiles, pending owner applications, cottages awaiting approval, active requests and bookings, payment and refund states, incidents, review moderation, and simple booking, gross-value, commission, service-fee and owner-payout totals. It supports audited cottage editing and hiding, account and cottage suspension or reactivation, and export for operational follow-up, but is not a finance reporting suite or revenue-management system.
+The Platform Administrator view of searchable customer and owner accounts, cottage profiles, pending owner applications, cottages awaiting approval, active requests and bookings, payment and refund states, incidents, review moderation, and simple booking, gross-value, commission, service-fee and owner-payout totals. It supports reasoned cottage editing and selective hiding of published photos or the description across all Launch Languages until explicitly restored, while House Rules, required cottage facts and at least one approved photo remain visible and booking stays available; account and whole-cottage suspension or reactivation and export remain separate capabilities, and it is not a finance reporting suite or revenue-management system.
 _Avoid_: Complex staff permission system, accounting ledger, revenue optimisation tool
 
 **Owner Earnings Summary**:

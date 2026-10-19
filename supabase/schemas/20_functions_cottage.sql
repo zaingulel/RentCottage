@@ -112,7 +112,7 @@ declare approved_house_rules text;
 declare reconciled_description text;
 declare reconciled_house_rules text;
 begin
-  if not (select public.is_platform_administrator('aal2')) then raise exception 'AAL2 Platform Administrator access is required' using errcode = '42501'; end if;
+  if (select public.is_platform_administrator('aal2')) IS NOT TRUE then raise exception 'AAL2 Platform Administrator access is required' using errcode = '42501'; end if;
   select * into cycle from public.cottage_profile_review_cycles where id = target_review_cycle_id for update;
   if not found or cycle.state <> 'in_review' then raise exception 'Cottage review cycle is unavailable' using errcode = 'RC204'; end if;
   select * into profile from public.owner_application_cottage_profiles where id = cycle.profile_id for update;
@@ -155,6 +155,11 @@ begin
     ) is distinct from true
   ) then raise exception 'Every current localized head requires approval' using errcode = 'RC203'; end if;
   if not exists (select 1 from public.cottage_profile_review_photos where review_cycle_id = cycle.id) then raise exception 'Approved publication photos are required' using errcode = 'RC203'; end if;
+  if not exists (
+    select 1 from public.cottage_profile_review_photos reviewed
+    join public.cottage_profile_photos photos on photos.id = reviewed.photo_id
+    where reviewed.review_cycle_id = cycle.id and photos.state = 'ready' and not photos.public_hidden
+  ) then raise exception 'At least one approved photo must remain visible' using errcode = 'RC203'; end if;
   select * into submitted_source from public.cottage_profile_source_revisions
     where id = cycle.source_revision_id and profile_id = profile.id;
   if not found then
@@ -1166,24 +1171,25 @@ $$;
 
 ALTER FUNCTION "public"."get_cottage_translation_administration"() OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."get_current_cottage_publication"("target_profile_id" "uuid", "target_locale" "public"."cottage_profile_source_language") RETURNS TABLE("publication_id" "uuid", "name" "text", "governorate" "text", "approximate_location" "text", "capacity" integer, "bedrooms" integer, "bathrooms" integer, "amenities" "text"[], "description" "text", "house_rules" "text", "media_ids" "uuid"[])
+CREATE OR REPLACE FUNCTION "public"."get_current_cottage_publication"("target_profile_id" "uuid", "target_locale" "public"."cottage_profile_source_language") RETURNS TABLE("publication_id" "uuid", "name" "text", "governorate" "text", "approximate_location" "text", "capacity" integer, "bedrooms" integer, "bathrooms" integer, "amenities" "text"[], "description" "text", "house_rules" "text", "media_ids" "uuid"[], "description_hidden" boolean)
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
     AS $$
   select publications.id, publications.name, publications.governorate,
     publications.approximate_location, publications.capacity,
     publications.bedrooms, publications.bathrooms, publications.amenities,
-    localizations.description, localizations.house_rules,
+    case when profiles.description_hidden then null else localizations.description end, localizations.house_rules,
     coalesce(array_agg(media.opaque_id order by media.position)
-      filter (where media.opaque_id is not null), '{}'::uuid[])
+      filter (where media.opaque_id is not null), '{}'::uuid[]), profiles.description_hidden
   from public.owner_application_cottage_profiles profiles
   join public.cottage_publication_snapshots publications on publications.id = profiles.current_publication_id
   join public.cottage_publication_localizations localizations
     on localizations.publication_id = publications.id and localizations.locale = target_locale
   left join public.cottage_publication_media media on media.publication_id = publications.id
+    and exists (select 1 from public.cottage_profile_photos photos where photos.id = media.photo_id and not photos.public_hidden)
   where profiles.id = target_profile_id
     and public.is_cottage_publicly_discoverable(profiles.id)
-  group by publications.id, localizations.description, localizations.house_rules;
+  group by publications.id, localizations.description, localizations.house_rules, profiles.description_hidden;
 $$;
 
 ALTER FUNCTION "public"."get_current_cottage_publication"("target_profile_id" "uuid", "target_locale" "public"."cottage_profile_source_language") OWNER TO "postgres";
@@ -1273,7 +1279,7 @@ begin
   perform public.validate_public_cottage_discovery_admission(requested_search);
   with target as (
     select listing.public_slug, profile.current_shift_schedule_id as schedule_id,
-      publication.*, localization.description, localization.house_rules
+      publication.*, profile.description_hidden, localization.description, localization.house_rules
     from public.cottage_marketplace_listings listing
     join public.owner_application_cottage_profiles profile on profile.id = listing.profile_id
     join public.cottage_publication_snapshots publication on publication.id = profile.current_publication_id
@@ -1291,11 +1297,13 @@ begin
     'bedrooms', target.bedrooms,
     'bathrooms', target.bathrooms,
     'amenities', target.amenities,
-    'description', target.description,
+    'description', case when target.description_hidden then null else target.description end,
+    'descriptionHidden', target.description_hidden,
     'houseRules', target.house_rules,
     'mediaIds', coalesce((
       select jsonb_agg(media.opaque_id order by media.position)
       from public.cottage_publication_media media
+      join public.cottage_profile_photos photos on photos.id = media.photo_id and not photos.public_hidden
       where media.publication_id = target.id
     ), '[]'::jsonb),
     'inventory', inventory.value
@@ -1619,7 +1627,7 @@ $$;
 
 ALTER FUNCTION "public"."lock_cottage_inventory_profiles"("target_profile_ids" "uuid"[]) OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."prepare_cottage_profile_photo_deletion"("target_photo_id" "uuid") RETURNS "public"."cottage_profile_photos"
+CREATE OR REPLACE FUNCTION "public"."prepare_cottage_profile_photo_deletion"("target_photo_id" "uuid", "requested_reason" "text" DEFAULT NULL::"text") RETURNS "public"."cottage_profile_photos"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
     AS $$
@@ -1627,24 +1635,33 @@ declare
   photo public.cottage_profile_photos;
   profile public.owner_application_cottage_profiles;
   actor_is_administrator boolean := (
-    select public.is_platform_administrator('aal2')
+    select public.is_platform_administrator('aal2') IS TRUE
   );
+  normalized_reason text := regexp_replace(requested_reason, '^[[:space:]]+|[[:space:]]+$', '', 'g');
   retained_in_history boolean;
+  target_profile_id uuid;
 begin
-  select * into photo
+  select profile_id into target_profile_id
   from public.cottage_profile_photos
-  where id = target_photo_id
-  for update;
+  where id = target_photo_id;
 
   if not found then
     raise exception 'Cottage Profile photo was not found' using errcode = 'RC204';
   end if;
   select * into profile
   from public.owner_application_cottage_profiles
-  where id = photo.profile_id
+  where id = target_profile_id
   for update;
 
-  if not actor_is_administrator and not (
+  select * into photo
+  from public.cottage_profile_photos
+  where id = target_photo_id and profile_id = profile.id
+  for update;
+  if not found then
+    raise exception 'Cottage Profile photo was not found' using errcode = 'RC204';
+  end if;
+
+  if not actor_is_administrator and (
     photo.owner_user_id = (select auth.uid())
     and profile.status = 'draft'
     and exists (
@@ -1653,9 +1670,13 @@ begin
         and role = 'cottage_owner'
         and owner_approval_state = 'approved'
     )
-  ) then
+  ) IS NOT TRUE then
     raise exception 'Cottage Profile photo deletion is denied'
       using errcode = '42501';
+  end if;
+  if actor_is_administrator and (normalized_reason is null or char_length(normalized_reason) not between 1 and 1000) then
+    raise exception 'An administrator reason of 1 to 1000 characters is required'
+      using errcode = '22023';
   end if;
   if exists (
     select 1
@@ -1679,10 +1700,10 @@ begin
     ) then
       insert into public.cottage_profile_administrator_audit (
         profile_id, administrator_user_id, previous_version, resulting_version,
-        changed_fields, event_kind, object_path
+        changed_fields, event_kind, object_path, reason
       ) values (
         profile.id, (select auth.uid()), profile.version, profile.version,
-        array['photos'], 'photo_deletion_recovered', photo.object_path
+        array['photos'], 'photo_deletion_recovered', photo.object_path, normalized_reason
       );
     end if;
     return photo;
@@ -1711,10 +1732,10 @@ begin
   if actor_is_administrator then
     insert into public.cottage_profile_administrator_audit (
       profile_id, administrator_user_id, previous_version, resulting_version,
-      changed_fields, event_kind, object_path
+      changed_fields, event_kind, object_path, reason
     ) values (
       profile.id, (select auth.uid()), profile.version, profile.version,
-      array['photos'], 'photo_deletion_prepared', photo.object_path
+      array['photos'], 'photo_deletion_prepared', photo.object_path, normalized_reason
     );
   end if;
 
@@ -1722,7 +1743,7 @@ begin
 end;
 $$;
 
-ALTER FUNCTION "public"."prepare_cottage_profile_photo_deletion"("target_photo_id" "uuid") OWNER TO "postgres";
+ALTER FUNCTION "public"."prepare_cottage_profile_photo_deletion"("target_photo_id" "uuid", "requested_reason" "text") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."prepare_cottage_profile_photo_preview"("target_photo_id" "uuid") RETURNS "text"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
@@ -1758,7 +1779,7 @@ $$;
 
 ALTER FUNCTION "public"."prepare_cottage_profile_photo_preview"("target_photo_id" "uuid") OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."prepare_cottage_profile_photo_upload"("target_profile_id" "uuid", "requested_original_filename" "text", "requested_media_type" "text", "requested_size_bytes" integer) RETURNS "public"."cottage_profile_photos"
+CREATE OR REPLACE FUNCTION "public"."prepare_cottage_profile_photo_upload"("target_profile_id" "uuid", "requested_original_filename" "text", "requested_media_type" "text", "requested_size_bytes" integer, "requested_reason" "text" DEFAULT NULL::"text") RETURNS "public"."cottage_profile_photos"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
     AS $$
@@ -1767,8 +1788,9 @@ declare
   photo public.cottage_profile_photos;
   extension text;
   actor_is_administrator boolean := (
-    select public.is_platform_administrator('aal2')
+    select public.is_platform_administrator('aal2') IS TRUE
   );
+  normalized_reason text := regexp_replace(requested_reason, '^[[:space:]]+|[[:space:]]+$', '', 'g');
 begin
   select * into profile
   from public.owner_application_cottage_profiles
@@ -1778,7 +1800,7 @@ begin
   if not found then
     raise exception 'Cottage Profile access is denied' using errcode = '42501';
   end if;
-  if not actor_is_administrator and not (
+  if not actor_is_administrator and (
     profile.owner_user_id = (select auth.uid())
     and profile.status = 'draft'
     and exists (
@@ -1787,9 +1809,13 @@ begin
         and role = 'cottage_owner'
         and owner_approval_state = 'approved'
     )
-  ) then
+  ) IS NOT TRUE then
     raise exception 'Cottage Profile photo access is denied'
       using errcode = '42501';
+  end if;
+  if actor_is_administrator and (normalized_reason is null or char_length(normalized_reason) not between 1 and 1000) then
+    raise exception 'An administrator reason of 1 to 1000 characters is required'
+      using errcode = '22023';
   end if;
   if requested_media_type not in ('image/jpeg', 'image/png', 'image/webp')
     or requested_size_bytes not between 1 and 5242880
@@ -1826,10 +1852,10 @@ begin
   if actor_is_administrator then
     insert into public.cottage_profile_administrator_audit (
       profile_id, administrator_user_id, previous_version, resulting_version,
-      changed_fields, event_kind, object_path
+      changed_fields, event_kind, object_path, reason
     ) values (
       profile.id, (select auth.uid()), profile.version, profile.version,
-      array['photos'], 'photo_upload_prepared', photo.object_path
+      array['photos'], 'photo_upload_prepared', photo.object_path, normalized_reason
     );
   end if;
 
@@ -1837,7 +1863,7 @@ begin
 end;
 $$;
 
-ALTER FUNCTION "public"."prepare_cottage_profile_photo_upload"("target_profile_id" "uuid", "requested_original_filename" "text", "requested_media_type" "text", "requested_size_bytes" integer) OWNER TO "postgres";
+ALTER FUNCTION "public"."prepare_cottage_profile_photo_upload"("target_profile_id" "uuid", "requested_original_filename" "text", "requested_media_type" "text", "requested_size_bytes" integer, "requested_reason" "text") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."preserve_committed_cottage_shift_schedule_pointer"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -3074,6 +3100,7 @@ begin
   end if;
   select media.object_path into target_path
   from public.cottage_publication_media media
+  join public.cottage_profile_photos photos on photos.id = media.photo_id and not photos.public_hidden
   join public.cottage_publication_snapshots publication on publication.id = media.publication_id
   join public.owner_application_cottage_profiles profile
     on profile.id = publication.profile_id and profile.current_publication_id = publication.id
@@ -3687,6 +3714,7 @@ begin
       'mediaIds', coalesce((
         select jsonb_agg(media.opaque_id order by media.position)
         from public.cottage_publication_media media
+        join public.cottage_profile_photos photos on photos.id = media.photo_id and not photos.public_hidden
         where media.publication_id = enumerated.id
       ), '[]'::jsonb),
       'inventory', public.resolve_public_cottage_inventory(enumerated.schedule_id, from_day, to_day)
@@ -4006,7 +4034,7 @@ $$;
 
 ALTER FUNCTION "public"."supersede_human_review_after_publication_rejection"() OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."update_administrator_cottage_profile"("target_profile_id" "uuid", "target_expected_version" bigint, "requested_name" "text", "requested_governorate" "text", "requested_approximate_location" "text", "requested_exact_address" "text", "requested_exact_latitude" numeric, "requested_exact_longitude" numeric, "requested_private_directions" "text", "requested_capacity" integer, "requested_bedrooms" integer, "requested_bathrooms" integer, "requested_amenities" "text"[], "requested_source_language" "public"."cottage_profile_source_language", "requested_description" "text", "requested_house_rules" "text") RETURNS "public"."owner_application_cottage_profiles"
+CREATE OR REPLACE FUNCTION "public"."update_administrator_cottage_profile"("target_profile_id" "uuid", "target_expected_version" bigint, "requested_name" "text", "requested_governorate" "text", "requested_approximate_location" "text", "requested_exact_address" "text", "requested_exact_latitude" numeric, "requested_exact_longitude" numeric, "requested_private_directions" "text", "requested_capacity" integer, "requested_bedrooms" integer, "requested_bathrooms" integer, "requested_amenities" "text"[], "requested_source_language" "public"."cottage_profile_source_language", "requested_description" "text", "requested_house_rules" "text", "requested_reason" "text" DEFAULT NULL::"text") RETURNS "public"."owner_application_cottage_profiles"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
     AS $$
@@ -4015,10 +4043,15 @@ declare
   previous_profile public.owner_application_cottage_profiles;
   ready_photo_count integer;
   changed_fields text[];
+  normalized_reason text := regexp_replace(requested_reason, '^[[:space:]]+|[[:space:]]+$', '', 'g');
 begin
-  if not (select public.is_platform_administrator('aal2')) then
+  if (select public.is_platform_administrator('aal2')) IS NOT TRUE then
     raise exception 'AAL2 Platform Administrator access is required'
       using errcode = '42501';
+  end if;
+  if normalized_reason is null or char_length(normalized_reason) not between 1 and 1000 then
+    raise exception 'An administrator reason of 1 to 1000 characters is required'
+      using errcode = '22023';
   end if;
   if target_expected_version is null or target_expected_version < 1 then
     raise exception 'A positive Cottage Profile version is required'
@@ -4094,17 +4127,17 @@ begin
 
   insert into public.cottage_profile_administrator_audit (
     profile_id, administrator_user_id, previous_version, resulting_version,
-    changed_fields
+    changed_fields, reason
   ) values (
     profile.id, (select auth.uid()), target_expected_version, profile.version,
-    changed_fields
+    changed_fields, normalized_reason
   );
 
   return profile;
 end;
 $$;
 
-ALTER FUNCTION "public"."update_administrator_cottage_profile"("target_profile_id" "uuid", "target_expected_version" bigint, "requested_name" "text", "requested_governorate" "text", "requested_approximate_location" "text", "requested_exact_address" "text", "requested_exact_latitude" numeric, "requested_exact_longitude" numeric, "requested_private_directions" "text", "requested_capacity" integer, "requested_bedrooms" integer, "requested_bathrooms" integer, "requested_amenities" "text"[], "requested_source_language" "public"."cottage_profile_source_language", "requested_description" "text", "requested_house_rules" "text") OWNER TO "postgres";
+ALTER FUNCTION "public"."update_administrator_cottage_profile"("target_profile_id" "uuid", "target_expected_version" bigint, "requested_name" "text", "requested_governorate" "text", "requested_approximate_location" "text", "requested_exact_address" "text", "requested_exact_latitude" numeric, "requested_exact_longitude" numeric, "requested_private_directions" "text", "requested_capacity" integer, "requested_bedrooms" integer, "requested_bathrooms" integer, "requested_amenities" "text"[], "requested_source_language" "public"."cottage_profile_source_language", "requested_description" "text", "requested_house_rules" "text", "requested_reason" "text") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."update_owner_cottage_profile_draft"("target_profile_id" "uuid", "target_expected_version" bigint, "requested_name" "text", "requested_governorate" "text", "requested_approximate_location" "text", "requested_exact_address" "text", "requested_exact_latitude" numeric, "requested_exact_longitude" numeric, "requested_private_directions" "text", "requested_capacity" integer, "requested_bedrooms" integer, "requested_bathrooms" integer, "requested_amenities" "text"[], "requested_source_language" "public"."cottage_profile_source_language", "requested_description" "text", "requested_house_rules" "text") RETURNS "public"."owner_application_cottage_profiles"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -4348,3 +4381,112 @@ end;
 $$;
 
 ALTER FUNCTION "public"."validate_public_cottage_search"("requested_search" "jsonb") OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION public.get_administrator_cottage_content_visibility(target_profile_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare result jsonb;
+begin
+  if (select public.is_platform_administrator('aal2')) IS NOT TRUE then
+    raise exception 'AAL2 Platform Administrator access is required' using errcode = '42501';
+  end if;
+  if target_profile_id is null then raise exception 'Cottage Profile identity is required' using errcode = '22023'; end if;
+  select jsonb_build_object(
+    'profileId', profiles.id, 'publicationId', publications.id,
+    'publicSlug', listings.public_slug, 'descriptionHidden', profiles.description_hidden,
+    'photos', (select jsonb_agg(jsonb_build_object(
+      'photoId', photos.id, 'originalFilename', photos.original_filename, 'hidden', photos.public_hidden
+    ) order by media.position)
+      from public.cottage_publication_media media
+      join public.cottage_profile_photos photos on photos.id = media.photo_id
+      where media.publication_id = publications.id)
+  ) into result
+  from public.owner_application_cottage_profiles profiles
+  join public.cottage_publication_snapshots publications on publications.id = profiles.current_publication_id
+  join public.cottage_marketplace_listings listings on listings.profile_id = profiles.id
+  where profiles.id = target_profile_id;
+  return result;
+end;
+$$;
+ALTER FUNCTION public.get_administrator_cottage_content_visibility(uuid) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.set_administrator_cottage_description_hidden(
+  target_profile_id uuid, target_publication_id uuid, requested_hidden boolean, requested_reason text
+) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare profile public.owner_application_cottage_profiles;
+declare normalized_reason text := regexp_replace(requested_reason, '^[[:space:]]+|[[:space:]]+$', '', 'g');
+begin
+  if (select public.is_platform_administrator('aal2')) IS NOT TRUE then
+    raise exception 'AAL2 Platform Administrator access is required' using errcode = '42501';
+  end if;
+  if target_profile_id is null or target_publication_id is null or requested_hidden is null
+    or normalized_reason is null or char_length(normalized_reason) not between 1 and 1000 then
+    raise exception 'Visibility identity, state and reason are required' using errcode = '22023';
+  end if;
+  select * into profile from public.owner_application_cottage_profiles where id = target_profile_id for update;
+  if not found or profile.current_publication_id is null then raise exception 'Published Cottage content is unavailable' using errcode = 'RC204'; end if;
+  if profile.current_publication_id <> target_publication_id then raise exception 'Cottage publication has changed' using errcode = 'RC409'; end if;
+  if profile.description_hidden is distinct from requested_hidden then
+    update public.owner_application_cottage_profiles set description_hidden = requested_hidden where id = profile.id;
+    insert into public.cottage_profile_administrator_audit (
+      profile_id, administrator_user_id, previous_version, resulting_version, changed_fields, event_kind, reason
+    ) values (
+      profile.id, (select auth.uid()), profile.version, profile.version, array['description'],
+      case when requested_hidden then 'description_hidden' else 'description_restored' end, normalized_reason
+    );
+  end if;
+  return public.get_administrator_cottage_content_visibility(profile.id);
+end;
+$$;
+ALTER FUNCTION public.set_administrator_cottage_description_hidden(uuid, uuid, boolean, text) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.set_administrator_cottage_photo_hidden(
+  target_profile_id uuid, target_publication_id uuid, target_photo_id uuid,
+  requested_hidden boolean, requested_reason text
+) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare profile public.owner_application_cottage_profiles;
+declare photo public.cottage_profile_photos;
+declare normalized_reason text := regexp_replace(requested_reason, '^[[:space:]]+|[[:space:]]+$', '', 'g');
+begin
+  if (select public.is_platform_administrator('aal2')) IS NOT TRUE then
+    raise exception 'AAL2 Platform Administrator access is required' using errcode = '42501';
+  end if;
+  if target_profile_id is null or target_publication_id is null or target_photo_id is null or requested_hidden is null
+    or normalized_reason is null or char_length(normalized_reason) not between 1 and 1000 then
+    raise exception 'Visibility identity, state and reason are required' using errcode = '22023';
+  end if;
+  select * into profile from public.owner_application_cottage_profiles where id = target_profile_id for update;
+  if not found or profile.current_publication_id is null then raise exception 'Published Cottage content is unavailable' using errcode = 'RC204'; end if;
+  if profile.current_publication_id <> target_publication_id then raise exception 'Cottage publication has changed' using errcode = 'RC409'; end if;
+  select * into photo from public.cottage_profile_photos photos
+    where photos.id = target_photo_id and photos.profile_id = profile.id
+      and exists (select 1 from public.cottage_publication_media media
+        where media.publication_id = profile.current_publication_id and media.photo_id = photos.id)
+    for update;
+  if not found then raise exception 'Current published photo is unavailable' using errcode = 'RC204'; end if;
+  if photo.public_hidden is distinct from requested_hidden then
+    if requested_hidden and (select count(*)
+      from public.cottage_publication_media media
+      join public.cottage_profile_photos photos on photos.id = media.photo_id
+      where media.publication_id = profile.current_publication_id and not photos.public_hidden) <= 1 then
+      raise exception 'At least one approved photo must remain visible' using errcode = 'RC203';
+    end if;
+    update public.cottage_profile_photos set public_hidden = requested_hidden where id = photo.id;
+    insert into public.cottage_profile_administrator_audit (
+      profile_id, administrator_user_id, previous_version, resulting_version, changed_fields, event_kind, object_path, reason
+    ) values (
+      profile.id, (select auth.uid()), profile.version, profile.version, array['photos'],
+      case when requested_hidden then 'photo_hidden' else 'photo_restored' end, photo.object_path, normalized_reason
+    );
+  end if;
+  return public.get_administrator_cottage_content_visibility(profile.id);
+end;
+$$;
+ALTER FUNCTION public.set_administrator_cottage_photo_hidden(uuid, uuid, uuid, boolean, text) OWNER TO postgres;

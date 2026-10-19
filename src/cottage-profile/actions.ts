@@ -2,8 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 
-import { isLocale, type Locale } from "@/i18n/routing";
-import { cottageProfileMaximumPhotoBytes } from "./cottage-profile";
+import { isLocale, locales, type Locale } from "@/i18n/routing";
+import {
+  cottageProfileMaximumPhotoBytes,
+  type CottageContentVisibility,
+} from "./cottage-profile";
 import { createRequestCottageProfile } from "./request-cottage-profile";
 
 export type CottageProfileActionState = {
@@ -111,6 +114,7 @@ export async function saveAdministratorCottageProfileAction(
     profileId,
     Number(text(formData, "expectedVersion")),
     draftValues(formData),
+    formData.get("reason"),
   );
   if (result.status === "saved") {
     revalidateAdministratorPaths(requestedLocale, profileId);
@@ -208,12 +212,18 @@ export async function uploadCottageProfilePhotoAction(
     return { status: "invalid_photo" };
   }
   const cottageProfile = await createRequestCottageProfile();
-  const result = await cottageProfile.uploadPhoto(profileId, {
-    name: photo.name,
-    type: photo.type,
-    size: photo.size,
-    bytes: new Uint8Array(await photo.arrayBuffer()),
-  });
+  const result = await cottageProfile.uploadPhoto(
+    profileId,
+    {
+      name: photo.name,
+      type: photo.type,
+      size: photo.size,
+      bytes: new Uint8Array(await photo.arrayBuffer()),
+    },
+    ...(formData.has("reason")
+      ? ([formData.get("reason")] as const)
+      : ([] as const)),
+  );
   if (result.status === "uploaded") {
     revalidateOwnerPaths(requestedLocale, profileId);
     revalidateAdministratorPaths(requestedLocale, profileId);
@@ -238,7 +248,12 @@ export async function deleteCottageProfilePhotoAction(
   const profileId = text(formData, "profileId");
   if (!requestedLocale) return { status: "invalid" };
   const cottageProfile = await createRequestCottageProfile();
-  const result = await cottageProfile.deletePhoto(text(formData, "photoId"));
+  const result = await cottageProfile.deletePhoto(
+    text(formData, "photoId"),
+    ...(formData.has("reason")
+      ? ([formData.get("reason")] as const)
+      : ([] as const)),
+  );
   if (result.status === "deleted") {
     revalidateOwnerPaths(requestedLocale, profileId);
     revalidateAdministratorPaths(requestedLocale, profileId);
@@ -264,4 +279,72 @@ export async function submitCottageProfileAction(
     return { status: "submitted" };
   }
   return result;
+}
+
+export type CottageContentVisibilityActionState = {
+  status:
+    | "idle"
+    | "saved"
+    | "invalid"
+    | "denied"
+    | "conflict"
+    | "last_photo"
+    | "unavailable";
+  fields?: string[];
+  visibility?: CottageContentVisibility;
+};
+
+async function administratorVisibilityAction(
+  kind: "description" | "photo",
+  formData: FormData,
+): Promise<CottageContentVisibilityActionState> {
+  const requestedLocale = locale(formData);
+  const profileId = text(formData, "profileId");
+  const publicationId = text(formData, "publicationId");
+  const photoId = text(formData, "photoId");
+  const hidden = formData.get("hidden");
+  const reason = formData.get("reason");
+  if (!requestedLocale || (hidden !== "true" && hidden !== "false"))
+    return { status: "invalid" };
+  const profile = await createRequestCottageProfile().catch(() => null);
+  if (!profile) return { status: "unavailable" };
+  const result =
+    kind === "description"
+      ? await profile.setAdministratorDescriptionHidden(
+          profileId,
+          publicationId,
+          hidden === "true",
+          reason,
+        )
+      : await profile.setAdministratorPhotoHidden(
+          profileId,
+          publicationId,
+          photoId,
+          hidden === "true",
+          reason,
+        );
+  if (result.status === "saved") {
+    for (const currentLocale of locales) {
+      revalidatePath(
+        `/${currentLocale}/cottages/${result.visibility.publicSlug}`,
+      );
+      revalidatePath(`/${currentLocale}/results`);
+      revalidateAdministratorPaths(currentLocale, result.visibility.profileId);
+    }
+  }
+  return result;
+}
+
+export async function setAdministratorCottageDescriptionVisibilityAction(
+  _previous: CottageContentVisibilityActionState,
+  formData: FormData,
+): Promise<CottageContentVisibilityActionState> {
+  return administratorVisibilityAction("description", formData);
+}
+
+export async function setAdministratorCottagePhotoVisibilityAction(
+  _previous: CottageContentVisibilityActionState,
+  formData: FormData,
+): Promise<CottageContentVisibilityActionState> {
+  return administratorVisibilityAction("photo", formData);
 }

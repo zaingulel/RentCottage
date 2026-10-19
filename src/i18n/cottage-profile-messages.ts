@@ -7,6 +7,26 @@ import type {
 } from "@/cottage-profile/cottage-profile";
 
 const en = {
+  visibilityTitle: "Public visibility",
+  visibilityGuidance:
+    "Hide the description in all languages or individual published photos. The cottage remains searchable and bookable. At least one approved photo must stay visible. Hides remain until you restore them.",
+  visibilityDescription: "Published description",
+  visibilityVisible: "Visible",
+  visibilityHidden: "Hidden",
+  visibilityHide: "Hide",
+  visibilityRestore: "Restore",
+  visibilitySaved: "Public visibility saved.",
+  visibilityDenied:
+    "Administrator access is required. Complete authenticator verification and try again.",
+  visibilityConflict:
+    "The publication changed. Reload this page before changing visibility.",
+  visibilityLastPhoto:
+    "At least one approved photo must stay visible. Restore another photo before hiding this one.",
+  visibilityUnavailable:
+    "Public visibility is temporarily unavailable. Reload this page and try again.",
+  visibilityInvalid:
+    "Check the selected published content and enter a reason before trying again.",
+
   eyebrow: "Owner Backoffice",
   overviewTitle: "Your cottages",
   publishedCount: {
@@ -161,6 +181,7 @@ const en = {
   abandon: "Abandon draft",
   restore: "Restore draft",
   lifecycleReason: "Administrator reason",
+  reasonInvalid: "Enter an administrator reason of 1 to 1000 characters.",
   abandonedSuccess: "Cottage Profile abandoned.",
   restoredSuccess: "Cottage Profile restored.",
   submit: "Submit for content approval",
@@ -184,6 +205,25 @@ type Copy = { [Key in Exclude<keyof typeof en, CountFormKey>]: string } & {
 };
 
 const ar: Copy = {
+  visibilityTitle: "الظهور العام",
+  visibilityGuidance:
+    "أخفِ الوصف بجميع اللغات أو صوراً منشورة محددة. يبقى الكوخ متاحاً للبحث والحجز. يجب أن تبقى صورة معتمدة واحدة على الأقل ظاهرة. يستمر الإخفاء حتى تعيد إظهار المحتوى.",
+  visibilityDescription: "الوصف المنشور",
+  visibilityVisible: "ظاهر",
+  visibilityHidden: "مخفي",
+  visibilityHide: "إخفاء",
+  visibilityRestore: "إظهار",
+  visibilitySaved: "تم حفظ الظهور العام.",
+  visibilityDenied:
+    "يلزم وصول المسؤول. أكمل التحقق بتطبيق المصادقة وحاول مرة أخرى.",
+  visibilityConflict: "تغير المنشور. أعد تحميل هذه الصفحة قبل تغيير الظهور.",
+  visibilityLastPhoto:
+    "يجب أن تبقى صورة معتمدة واحدة على الأقل ظاهرة. أعد إظهار صورة أخرى قبل إخفاء هذه الصورة.",
+  visibilityUnavailable:
+    "الظهور العام غير متاح مؤقتاً. أعد تحميل هذه الصفحة وحاول مرة أخرى.",
+  visibilityInvalid:
+    "تحقق من المحتوى المنشور المحدد وأدخل سبباً قبل المحاولة مرة أخرى.",
+
   eyebrow: "مكتب مالك الكوخ",
   overviewTitle: "أكواخك",
   publishedCount: {
@@ -351,6 +391,7 @@ const ar: Copy = {
   abandon: "ترك المسودة",
   restore: "استعادة المسودة",
   lifecycleReason: "سبب المسؤول",
+  reasonInvalid: "أدخل سبب المسؤول من حرف واحد إلى 1000 حرف.",
   abandonedSuccess: "تم ترك ملف الكوخ.",
   restoredSuccess: "تمت استعادة ملف الكوخ.",
   submit: "الإرسال للموافقة على المحتوى",
@@ -363,6 +404,26 @@ const ar: Copy = {
 };
 
 const ckb: Copy = {
+  visibilityTitle: "پیشاندانی گشتی",
+  visibilityGuidance:
+    "وەسفەکە بە هەموو زمانەکان یان وێنە بڵاوکراوە دیاریکراوەکان بشارەوە. کۆتێجەکە هەر بۆ گەڕان و حجزکردن بەردەستە. لانیکەم یەک وێنەی پەسەندکراو دەبێت دیار بمێنێتەوە. شاردنەوەکە بەردەوام دەبێت تا خۆت پیشانی دەدەیتەوە.",
+  visibilityDescription: "وەسفی بڵاوکراوە",
+  visibilityVisible: "پیشاندراو",
+  visibilityHidden: "شاراوە",
+  visibilityHide: "شاردنەوە",
+  visibilityRestore: "پیشاندانەوە",
+  visibilitySaved: "پیشاندانی گشتی پاشەکەوت کرا.",
+  visibilityDenied:
+    "دەستگەیشتنی بەڕێوەبەر پێویستە. پشتڕاستکردنەوە بە ئەپی ڕەسەنایەتی تەواو بکە و دووبارە هەوڵ بدەوە.",
+  visibilityConflict:
+    "بڵاوکراوەکە گۆڕاوە. پەڕەکە نوێ بکەوە پێش گۆڕینی پیشاندان.",
+  visibilityLastPhoto:
+    "لانیکەم یەک وێنەی پەسەندکراو دەبێت دیار بمێنێتەوە. وێنەیەکی تر پیشان بدەوە پێش شاردنەوەی ئەم وێنەیە.",
+  visibilityUnavailable:
+    "پیشاندانی گشتی کاتێکی کەم بەردەست نییە. پەڕەکە نوێ بکەوە و دووبارە هەوڵ بدەوە.",
+  visibilityInvalid:
+    "ناوەڕۆکی بڵاوکراوەی دیاریکراو بپشکنە و هۆکارێک بنووسە پێش هەوڵدانەوە.",
+
   eyebrow: "بەشی بەڕێوەبردنی خاوەن کۆتێج",
   overviewTitle: "کۆتێجەکانت",
   publishedCount: { other: "{count} کۆتێجی بڵاوکراوە" },
@@ -515,6 +576,7 @@ const ckb: Copy = {
   abandon: "وازهێنان لە ڕەشنووس",
   restore: "گەڕاندنەوەی ڕەشنووس",
   lifecycleReason: "هۆکاری بەڕێوەبەر",
+  reasonInvalid: "هۆکاری بەڕێوەبەر بنووسە کە لە ١ تا ١٠٠٠ پیت بێت.",
   abandonedSuccess: "لە پرۆفایلی کۆتێج وازهێنرا.",
   restoredSuccess: "پرۆفایلی کۆتێج گەڕێندرایەوە.",
   submit: "ناردن بۆ پەسەندکردنی ناوەڕۆک",
