@@ -14,7 +14,7 @@ import {
   cottageProfilePhotoBucketName,
   cottageProfilePhotoMediaTypes,
   type CottageContentVisibility,
-  type CottageDescriptionVisibilityInput,
+  type CottageContentVisibilityInput,
   type CottageProfile,
   type CottageProfileAdministratorCursor,
   type CottageProfileAdministratorPage,
@@ -748,7 +748,7 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
   }
 
   async setAdministratorDescriptionHidden(
-    input: CottageDescriptionVisibilityInput,
+    input: CottageContentVisibilityInput,
   ): Promise<CottageContentVisibility> {
     const { data, error } = await this.client.rpc(
       "set_administrator_cottage_description_hidden",
@@ -771,7 +771,7 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
   }
 
   async setAdministratorPhotoHidden(
-    input: CottageDescriptionVisibilityInput & { photoId: string },
+    input: CottageContentVisibilityInput & { photoId: string },
   ): Promise<CottageContentVisibility> {
     const { data, error } = await this.client.rpc(
       "set_administrator_cottage_photo_hidden",

@@ -12,11 +12,8 @@ import {
 import type { CottageContentVisibility as Visibility } from "@/cottage-profile/cottage-profile";
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import type { Locale } from "@/i18n/routing";
-import {
-  ActionButton,
-  ActionFeedback,
-  FormControl,
-} from "./interaction-controls";
+import { ActionButton, ActionFeedback } from "./interaction-controls";
+import { AdministratorReason } from "./cottage-profile-editor";
 
 const idle: CottageContentVisibilityActionState = { status: "idle" };
 const idlePreview: CottagePhotoPreviewState = { status: "idle" };
@@ -187,27 +184,15 @@ export function CottageContentVisibility({
                 {row.photoId ? (
                   <input type="hidden" name="photoId" value={row.photoId} />
                 ) : null}
-                <label>
-                  {copy.lifecycleReason}
-                  <FormControl
-                    kind="textarea"
-                    name="reason"
-                    required
-                    maxLength={1000}
-                    aria-invalid={
-                      target === row.id &&
-                      state.status === "invalid" &&
-                      state.fields?.includes("reason")
-                        ? true
-                        : undefined
-                    }
-                    aria-describedby={
-                      target === row.id && state.status !== "idle"
-                        ? feedbackId
-                        : undefined
-                    }
-                  />
-                </label>
+                <AdministratorReason
+                  locale={locale}
+                  state={target === row.id ? state : idle}
+                  describedBy={
+                    target === row.id && state.status !== "idle"
+                      ? feedbackId
+                      : undefined
+                  }
+                />
                 <ActionButton
                   kind="secondary"
                   size="regular"

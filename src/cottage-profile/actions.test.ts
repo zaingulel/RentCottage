@@ -1,4 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createClient } from "@supabase/supabase-js";
+
+import { createCottageProfile } from "./cottage-profile";
+import {
+  SupabaseCottageProfileRepository,
+  SupabaseCottageProfileStorage,
+} from "./supabase-cottage-profile";
 
 const { revalidatePath, createRequestCottageProfile } = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
@@ -36,10 +43,20 @@ describe("Cottage Profile actions", () => {
       .fn()
       .mockResolvedValue({ status: "saved", visibility });
     const photo = vi.fn().mockResolvedValue({ status: "saved", visibility });
-    createRequestCottageProfile.mockResolvedValue({
-      setAdministratorDescriptionHidden: description,
-      setAdministratorPhotoHidden: photo,
-    });
+    const mutationRequest = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(
+        new Error("Invalid visibility input reached the provider"),
+      );
+    const validationClient = createClient(
+      "https://visibility.example.test",
+      "synthetic-publishable-key",
+      {
+        auth: { autoRefreshToken: false, persistSession: false },
+        global: { fetch: mutationRequest },
+      },
+    );
+    const mutationRpc = vi.spyOn(validationClient, "rpc");
     const validForm = () => {
       const form = new FormData();
       for (const [key, value] of Object.entries({
@@ -54,41 +71,10 @@ describe("Cottage Profile actions", () => {
         form.set(key, value);
       return form;
     };
-    for (const action of [
-      setAdministratorCottageDescriptionVisibilityAction,
-      setAdministratorCottagePhotoVisibilityAction,
-    ]) {
-      for (const [key, value] of [
-        ["locale", "fr"],
-        ["profileId", "bad"],
-        ["publicationId", "bad"],
-        ["hidden", "1"],
-        ["hidden", " true "],
-        ["hidden", ""],
-        ["reason", " "],
-        ["reason", "x".repeat(1001)],
-      ]) {
-        const form = validForm();
-        form.set(key, value);
-        await expect(action({ status: "idle" }, form)).resolves.toMatchObject({
-          status: "invalid",
-        });
-      }
-      const malformed = validForm();
-      malformed.set("reason", new File(["reason"], "reason.txt"));
-      await expect(
-        action({ status: "idle" }, malformed),
-      ).resolves.toMatchObject({ status: "invalid" });
-    }
-    const badPhoto = validForm();
-    badPhoto.set("photoId", "bad");
-    await expect(
-      setAdministratorCottagePhotoVisibilityAction(
-        { status: "idle" },
-        badPhoto,
-      ),
-    ).resolves.toEqual({ status: "invalid" });
-    expect(createRequestCottageProfile).not.toHaveBeenCalled();
+    createRequestCottageProfile.mockResolvedValue({
+      setAdministratorDescriptionHidden: description,
+      setAdministratorPhotoHidden: photo,
+    });
     await expect(
       setAdministratorCottageDescriptionVisibilityAction(
         { status: "idle" },
@@ -126,6 +112,56 @@ describe("Cottage Profile actions", () => {
       expect.stringContaining("hostile-slug"),
     );
     revalidatePath.mockClear();
+    createRequestCottageProfile.mockResolvedValue(
+      createCottageProfile({
+        repository: new SupabaseCottageProfileRepository(
+          validationClient,
+          validationClient,
+        ),
+        storage: new SupabaseCottageProfileStorage(validationClient),
+      }),
+    );
+    for (const action of [
+      setAdministratorCottageDescriptionVisibilityAction,
+      setAdministratorCottagePhotoVisibilityAction,
+    ]) {
+      for (const [key, value] of [
+        ["locale", "fr"],
+        ["profileId", "bad"],
+        ["publicationId", "bad"],
+        ["hidden", "1"],
+        ["hidden", " true "],
+        ["hidden", ""],
+        ["reason", " "],
+        ["reason", "x".repeat(1001)],
+      ]) {
+        const form = validForm();
+        form.set(key, value);
+        await expect(action({ status: "idle" }, form)).resolves.toMatchObject({
+          status: "invalid",
+        });
+      }
+      const malformed = validForm();
+      malformed.set("reason", new File(["reason"], "reason.txt"));
+      await expect(
+        action({ status: "idle" }, malformed),
+      ).resolves.toMatchObject({ status: "invalid" });
+    }
+    const badPhoto = validForm();
+    badPhoto.set("photoId", "bad");
+    await expect(
+      setAdministratorCottagePhotoVisibilityAction(
+        { status: "idle" },
+        badPhoto,
+      ),
+    ).resolves.toEqual({ status: "invalid" });
+    expect(mutationRpc).not.toHaveBeenCalled();
+    expect(mutationRequest).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+    createRequestCottageProfile.mockResolvedValue({
+      setAdministratorDescriptionHidden: description,
+      setAdministratorPhotoHidden: photo,
+    });
     for (const status of ["denied", "conflict", "last_photo", "unavailable"]) {
       photo.mockResolvedValueOnce({ status });
       await expect(

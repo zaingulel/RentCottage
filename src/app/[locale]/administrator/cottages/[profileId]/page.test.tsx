@@ -34,9 +34,16 @@ vi.mock("@/cottage-profile/request-cottage-profile", () => ({
 vi.mock("@/cottage-publication/request-cottage-publication", () => ({
   createRequestCottagePublication: createCottagePublication,
 }));
-vi.mock("@/components/cottage-profile-editor", () => ({
-  CottageProfileEditor: () => <div>profile editor</div>,
-}));
+vi.mock("@/components/cottage-profile-editor", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@/components/cottage-profile-editor")
+    >();
+  return {
+    ...actual,
+    CottageProfileEditor: () => <div>profile editor</div>,
+  };
+});
 vi.mock("@/components/cottage-profile-lifecycle-controls", () => ({
   CottageProfileLifecycleControls: ({ eligible }: { eligible: boolean }) => (
     <div>lifecycle eligible {String(eligible)}</div>
@@ -176,13 +183,11 @@ it("published content controls report persisted hide and restore outcomes", asyn
       ],
     },
   });
-  const load = vi
-    .fn()
-    .mockResolvedValue({
-      id: "70000000-0000-4000-8000-000000000001",
-      status: "submitted_for_content_approval",
-      currentPublicationId: "72000000-0000-4000-8000-000000000001",
-    });
+  const load = vi.fn().mockResolvedValue({
+    id: "70000000-0000-4000-8000-000000000001",
+    status: "submitted_for_content_approval",
+    currentPublicationId: "72000000-0000-4000-8000-000000000001",
+  });
   createCottageProfile.mockResolvedValue({
     load,
     canAdministratorManageLifecycle: vi.fn().mockResolvedValue(false),

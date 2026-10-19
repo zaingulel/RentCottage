@@ -162,7 +162,7 @@ export interface CottageContentVisibility {
   photos: { photoId: string; originalFilename: string; hidden: boolean }[];
 }
 
-export interface CottageDescriptionVisibilityInput {
+export interface CottageContentVisibilityInput {
   profileId: string;
   publicationId: string;
   hidden: boolean;
@@ -174,10 +174,10 @@ export interface CottageProfileRepository {
     profileId: string,
   ): Promise<CottageContentVisibility | null>;
   setAdministratorDescriptionHidden(
-    input: CottageDescriptionVisibilityInput,
+    input: CottageContentVisibilityInput,
   ): Promise<CottageContentVisibility>;
   setAdministratorPhotoHidden(
-    input: CottageDescriptionVisibilityInput & { photoId: string },
+    input: CottageContentVisibilityInput & { photoId: string },
   ): Promise<CottageContentVisibility>;
   listOwner(): Promise<CottageProfile[]>;
   listAdministrator(
@@ -428,7 +428,7 @@ async function administratorLifecycle(
 
 async function changeContentVisibility(
   mutate: (
-    input: CottageDescriptionVisibilityInput & { photoId?: string },
+    input: CottageContentVisibilityInput,
   ) => Promise<CottageContentVisibility>,
   profileId: string,
   publicationId: string,
@@ -454,7 +454,6 @@ async function changeContentVisibility(
       publicationId,
       hidden,
       reason,
-      ...(photoId === undefined ? {} : { photoId }),
     });
     return { status: "saved" as const, visibility };
   } catch (error) {

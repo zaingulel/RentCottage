@@ -304,22 +304,8 @@ async function administratorVisibilityAction(
   const photoId = text(formData, "photoId");
   const hidden = formData.get("hidden");
   const reason = formData.get("reason");
-  const uuid =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  if (
-    !requestedLocale ||
-    !uuid.test(profileId) ||
-    !uuid.test(publicationId) ||
-    (kind === "photo" && !uuid.test(photoId)) ||
-    (hidden !== "true" && hidden !== "false")
-  )
+  if (!requestedLocale || (hidden !== "true" && hidden !== "false"))
     return { status: "invalid" };
-  if (
-    typeof reason !== "string" ||
-    reason.trim().length < 1 ||
-    reason.trim().length > 1000
-  )
-    return { status: "invalid", fields: ["reason"] };
   const profile = await createRequestCottageProfile().catch(() => null);
   if (!profile) return { status: "unavailable" };
   const result =

@@ -78,12 +78,14 @@ function Feedback({
   );
 }
 
-function AdministratorReason({
+export function AdministratorReason({
   locale,
   state,
+  describedBy,
 }: {
   locale: Locale;
-  state: CottageProfileActionState;
+  state: { readonly status: string; readonly fields?: readonly string[] };
+  describedBy?: string;
 }) {
   return (
     <label>
@@ -93,6 +95,7 @@ function AdministratorReason({
         name="reason"
         required
         maxLength={1000}
+        aria-describedby={describedBy}
         aria-invalid={
           state.status === "invalid" && state.fields?.includes("reason")
             ? true

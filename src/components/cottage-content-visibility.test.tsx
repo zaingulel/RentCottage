@@ -23,6 +23,8 @@ import {
 import { cottageProfileMessages } from "@/i18n/cottage-profile-messages";
 import { CottageContentVisibility } from "./cottage-content-visibility";
 
+const hostileFilename = '<img data-hostile="visibility-filename" src="x">.webp';
+
 const visibility = {
   profileId: "70000000-0000-4000-8000-000000000001",
   publicationId: "72000000-0000-4000-8000-000000000001",
@@ -31,7 +33,7 @@ const visibility = {
   photos: [
     {
       photoId: "71000000-0000-4000-8000-000000000001",
-      originalFilename: "first.webp",
+      originalFilename: hostileFilename,
       hidden: false,
     },
     {
@@ -66,6 +68,18 @@ it("published content controls report persisted hide and restore outcomes", asyn
       />,
     );
     const panel = screen.getByRole("region", { name: copy.visibilityTitle });
+    const hostilePhoto = within(panel).getByRole("group", {
+      name: hostileFilename,
+    });
+    expect(
+      within(hostilePhoto).getByRole("heading", {
+        name: hostileFilename,
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(
+      panel.querySelector('[data-hostile="visibility-filename"]'),
+    ).toBeNull();
     const description = within(panel).getByRole("group", {
       name: copy.visibilityDescription,
     });
@@ -172,6 +186,17 @@ it("published content controls report persisted hide and restore outcomes", asyn
       "aria-invalid",
       "true",
     );
+    expect(within(photo).getByLabelText(copy.lifecycleReason)).toHaveAttribute(
+      "aria-describedby",
+      "cottage-content-visibility-feedback",
+    );
+    expect(
+      within(description).getByLabelText(copy.lifecycleReason),
+    ).not.toHaveAttribute("aria-invalid");
+    expect(
+      within(description).getByLabelText(copy.lifecycleReason),
+    ).not.toHaveAttribute("aria-describedby");
+
     unmount();
     const unavailable = render(
       <CottageContentVisibility
