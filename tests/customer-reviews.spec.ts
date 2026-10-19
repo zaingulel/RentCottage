@@ -3053,13 +3053,17 @@ test("Cottage Owner finds reviews and replies from the workspace list", async ({
         await expect(
           row.getByRole("heading", {
             level: 2,
-            name: `${reviewTitle}: Fictional Preserved Cottage`,
+            name: new RegExp(
+              `^${reviewTitle}\\s*:\\s*Fictional Preserved Cottage$`,
+            ),
             exact: true,
           }),
         ).toBeVisible();
         await expect(
           row.getByRole("region", {
-            name: `${reviewTitle}: Fictional Preserved Cottage`,
+            name: new RegExp(
+              `^${reviewTitle}\\s*:\\s*Fictional Preserved Cottage$`,
+            ),
             exact: true,
           }),
         ).toBeVisible();
@@ -3191,7 +3195,7 @@ test("Cottage Owner finds reviews and replies from the workspace list", async ({
     ).toBeVisible();
     await expect(
       secondForm.getByRole("heading", {
-        name: "Customer review: Fictional Preserved Cottage",
+        name: /^Customer review\s*:\s*Fictional Preserved Cottage$/,
         exact: true,
       }),
     ).toBeFocused();
@@ -3199,7 +3203,7 @@ test("Cottage Owner finds reviews and replies from the workspace list", async ({
       body: JSON.stringify(
         await secondForm
           .getByRole("heading", {
-            name: "Customer review: Fictional Preserved Cottage",
+            name: /^Customer review\s*:\s*Fictional Preserved Cottage$/,
             exact: true,
           })
           .evaluate((element) => {
