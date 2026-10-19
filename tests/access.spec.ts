@@ -3572,9 +3572,7 @@ test("a Platform Administrator hides and restores published cottage content with
     await publicContext.close();
   }
 
-  await page.goto(`/en${cottagePath}`);
   {
-    const returnUrl = page.url();
     const bookingOwner = findAccessFixtureUser(
       await listAllAccessFixtureUsers(auditClient.auth.admin),
       reviewFixture.bookingOwnerPhone,
@@ -3731,7 +3729,6 @@ test("a Platform Administrator hides and restores published cottage content with
       "Public visibility saved.",
     );
     await expectDocumentsPreserved();
-    await page.goto(returnUrl);
   }
 });
 

@@ -44,8 +44,9 @@ const visibility = {
   ],
 };
 
-it("published content controls report persisted hide and restore outcomes", async () => {
-  for (const locale of ["en", "ar", "ckb"] as const) {
+it.each(["en", "ar", "ckb"] as const)(
+  "published content controls report persisted hide and restore outcomes in %s",
+  async (locale) => {
     const copy = cottageProfileMessages[locale];
     let settle: (state: CottageContentVisibilityActionState) => void = () => {};
     vi.mocked(
@@ -208,5 +209,5 @@ it("published content controls report persisted hide and restore outcomes", asyn
     );
     expect(screen.queryByRole("button")).toBeNull();
     unavailable.unmount();
-  }
-});
+  },
+);
