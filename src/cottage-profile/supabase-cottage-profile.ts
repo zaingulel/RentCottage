@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { publicCottageSlugPattern } from "@/cottage-discovery/discovery-query";
 import { parseAccountContext } from "@/access/supabase-account-access";
 
 import {
@@ -12,6 +13,8 @@ import {
   cottageProfileNumberRanges,
   cottageProfilePhotoBucketName,
   cottageProfilePhotoMediaTypes,
+  type CottageContentVisibility,
+  type CottageDescriptionVisibilityInput,
   type CottageProfile,
   type CottageProfileAdministratorCursor,
   type CottageProfileAdministratorPage,
@@ -90,6 +93,72 @@ function assertProviderSuccess(error: unknown): void {
       cause: error,
     });
   }
+}
+
+function parseContentVisibility(
+  value: unknown,
+  profileId: string,
+  publicationId?: string,
+): CottageContentVisibility {
+  const row = record(value);
+  const keys = [
+    "profileId",
+    "publicationId",
+    "publicSlug",
+    "descriptionHidden",
+    "photos",
+  ];
+  if (
+    Object.keys(row).some((key) => !keys.includes(key)) ||
+    row.profileId !== profileId ||
+    typeof row.profileId !== "string" ||
+    !uuidPattern.test(row.profileId) ||
+    typeof row.publicationId !== "string" ||
+    !uuidPattern.test(row.publicationId) ||
+    (publicationId !== undefined && row.publicationId !== publicationId) ||
+    typeof row.publicSlug !== "string" ||
+    !publicCottageSlugPattern.test(row.publicSlug) ||
+    typeof row.descriptionHidden !== "boolean" ||
+    !Array.isArray(row.photos) ||
+    row.photos.length < 1 ||
+    row.photos.length > cottageProfileMaximumPhotos
+  ) {
+    throw new Error("Cottage content visibility data is invalid");
+  }
+  const photoIds = new Set<string>();
+  const photos = row.photos.map((value) => {
+    const photo = record(value);
+    if (
+      Object.keys(photo).some(
+        (key) => !["photoId", "originalFilename", "hidden"].includes(key),
+      ) ||
+      typeof photo.photoId !== "string" ||
+      !uuidPattern.test(photo.photoId) ||
+      photoIds.has(photo.photoId) ||
+      typeof photo.originalFilename !== "string" ||
+      photo.originalFilename.trim().length < 1 ||
+      photo.originalFilename.length >
+        cottageProfileMaximumPhotoFilenameLength ||
+      typeof photo.hidden !== "boolean"
+    ) {
+      throw new Error("Cottage content visibility photo is invalid");
+    }
+    photoIds.add(photo.photoId);
+    return {
+      photoId: photo.photoId,
+      originalFilename: photo.originalFilename,
+      hidden: photo.hidden,
+    };
+  });
+  if (!photos.some((photo) => !photo.hidden))
+    throw new Error("Cottage content visibility has no visible photo");
+  return {
+    profileId: row.profileId,
+    publicationId: row.publicationId,
+    publicSlug: row.publicSlug,
+    descriptionHidden: row.descriptionHidden,
+    photos,
+  };
 }
 
 function parseAdministratorLifecycleEligibility(value: unknown): boolean {
@@ -665,6 +734,69 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
             ) ?? null)
           : null,
     };
+  }
+
+  async loadAdministratorContentVisibility(
+    profileId: string,
+  ): Promise<CottageContentVisibility | null> {
+    const { data, error } = await this.client.rpc(
+      "get_administrator_cottage_content_visibility",
+      { target_profile_id: profileId },
+    );
+    assertProviderSuccess(error);
+    return data === null ? null : parseContentVisibility(data, profileId);
+  }
+
+  async setAdministratorDescriptionHidden(
+    input: CottageDescriptionVisibilityInput,
+  ): Promise<CottageContentVisibility> {
+    const { data, error } = await this.client.rpc(
+      "set_administrator_cottage_description_hidden",
+      {
+        target_profile_id: input.profileId,
+        target_publication_id: input.publicationId,
+        requested_hidden: input.hidden,
+        requested_reason: input.reason,
+      },
+    );
+    assertProviderSuccess(error);
+    const visibility = parseContentVisibility(
+      data,
+      input.profileId,
+      input.publicationId,
+    );
+    if (visibility.descriptionHidden !== input.hidden)
+      throw new Error("Cottage description visibility result is invalid");
+    return visibility;
+  }
+
+  async setAdministratorPhotoHidden(
+    input: CottageDescriptionVisibilityInput & { photoId: string },
+  ): Promise<CottageContentVisibility> {
+    const { data, error } = await this.client.rpc(
+      "set_administrator_cottage_photo_hidden",
+      {
+        target_profile_id: input.profileId,
+        target_publication_id: input.publicationId,
+        target_photo_id: input.photoId,
+        requested_hidden: input.hidden,
+        requested_reason: input.reason,
+      },
+    );
+    assertProviderSuccess(error);
+    const visibility = parseContentVisibility(
+      data,
+      input.profileId,
+      input.publicationId,
+    );
+    if (
+      !visibility.photos.some(
+        (photo) =>
+          photo.photoId === input.photoId && photo.hidden === input.hidden,
+      )
+    )
+      throw new Error("Cottage photo visibility result is invalid");
+    return visibility;
   }
 
   async canAdministratorManageLifecycle(profileId: string): Promise<boolean> {

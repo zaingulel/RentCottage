@@ -183,3 +183,48 @@ it("administrator editor requires a reason for each content change", () => {
     "هۆکاری بەڕێوەبەر بنووسە کە لە ١ تا ١٠٠٠ پیت بێت.",
   );
 });
+
+it("published content controls report persisted hide and restore outcomes", () => {
+  const expected = {
+    en: {
+      visibilityTitle: "Public visibility",
+      visibilityVisible: "Visible",
+      visibilityHidden: "Hidden",
+      visibilityHide: "Hide",
+      visibilityRestore: "Restore",
+    },
+    ar: {
+      visibilityTitle: "الظهور العام",
+      visibilityVisible: "ظاهر",
+      visibilityHidden: "مخفي",
+      visibilityHide: "إخفاء",
+      visibilityRestore: "إظهار",
+    },
+    ckb: {
+      visibilityTitle: "پیشاندانی گشتی",
+      visibilityVisible: "پیشاندراو",
+      visibilityHidden: "شاراوە",
+      visibilityHide: "شاردنەوە",
+      visibilityRestore: "پیشاندانەوە",
+    },
+  };
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    expect(cottageProfileMessages[locale]).toMatchObject(expected[locale]);
+    for (const key of [
+      "visibilityGuidance",
+      "visibilityDescription",
+      "visibilitySaved",
+      "visibilityDenied",
+      "visibilityConflict",
+      "visibilityLastPhoto",
+      "visibilityUnavailable",
+      "visibilityInvalid",
+    ] as const) {
+      expect(cottageProfileMessages[locale][key].trim()).not.toBe("");
+      if (locale !== "en")
+        expect(cottageProfileMessages[locale][key]).not.toBe(
+          cottageProfileMessages.en[key],
+        );
+    }
+  }
+});

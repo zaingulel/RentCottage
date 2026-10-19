@@ -63,6 +63,13 @@ function setup() {
     return profile;
   };
   const repository: CottageProfileRepository = {
+    loadAdministratorContentVisibility: async () => null,
+    setAdministratorDescriptionHidden: async () => {
+      throw new Error("No publication");
+    },
+    setAdministratorPhotoHidden: async () => {
+      throw new Error("No publication");
+    },
     listOwner: async () => profiles,
     listAdministrator: async () => ({ profiles, nextCursor: null }),
     canAdministratorManageLifecycle: async () => true,
@@ -178,6 +185,142 @@ function setup() {
 }
 
 describe("Cottage Profile", () => {
+  it("administrator visibility actions validate input and forward authenticated intent", async () => {
+    const { cottageProfile, repository } = setup();
+    const publicationId = "72000000-0000-4000-8000-000000000001";
+    const photoId = "71000000-0000-4000-8000-000000000001";
+    const visibility = {
+      profileId,
+      publicationId,
+      publicSlug: "approved-cottage",
+      descriptionHidden: true,
+      photos: [{ photoId, originalFilename: "cottage.webp", hidden: false }],
+    };
+    const read = vi.fn().mockResolvedValue(visibility);
+    const description = vi.fn().mockResolvedValue(visibility);
+    const photo = vi.fn().mockResolvedValue(visibility);
+    Object.assign(repository, {
+      loadAdministratorContentVisibility: read,
+      setAdministratorDescriptionHidden: description,
+      setAdministratorPhotoHidden: photo,
+    });
+    await expect(
+      cottageProfile.loadAdministratorContentVisibility(profileId),
+    ).resolves.toEqual({ status: "loaded", visibility });
+    await expect(
+      cottageProfile.loadAdministratorContentVisibility("invalid"),
+    ).resolves.toEqual({ status: "invalid" });
+    expect(read).toHaveBeenCalledTimes(1);
+    for (const reason of [
+      undefined,
+      null,
+      "",
+      " \t\n ",
+      "x".repeat(1001),
+      {},
+    ]) {
+      await expect(
+        cottageProfile.setAdministratorDescriptionHidden(
+          profileId,
+          publicationId,
+          true,
+          reason,
+        ),
+      ).resolves.toEqual({ status: "invalid", fields: ["reason"] });
+    }
+    for (const [id, publication, hidden] of [
+      ["invalid", publicationId, true],
+      [profileId, "invalid", true],
+      [profileId, publicationId, "true"],
+      [profileId, publicationId, null],
+    ]) {
+      await expect(
+        cottageProfile.setAdministratorDescriptionHidden(
+          id as string,
+          publication as string,
+          hidden,
+          "Safety review",
+        ),
+      ).resolves.toEqual({ status: "invalid" });
+    }
+    await expect(
+      cottageProfile.setAdministratorPhotoHidden(
+        profileId,
+        publicationId,
+        "bad-photo",
+        true,
+        "Safety review",
+      ),
+    ).resolves.toEqual({ status: "invalid" });
+    expect(description).not.toHaveBeenCalled();
+    expect(photo).not.toHaveBeenCalled();
+    await expect(
+      cottageProfile.setAdministratorDescriptionHidden(
+        profileId,
+        publicationId,
+        true,
+        " \tSafety review\n ",
+      ),
+    ).resolves.toEqual({ status: "saved", visibility });
+    expect(description).toHaveBeenCalledWith({
+      profileId,
+      publicationId,
+      hidden: true,
+      reason: "Safety review",
+    });
+    await expect(
+      cottageProfile.setAdministratorPhotoHidden(
+        profileId,
+        publicationId,
+        photoId,
+        false,
+        "Restore approved photo",
+      ),
+    ).resolves.toEqual({ status: "saved", visibility });
+    expect(photo).toHaveBeenCalledWith({
+      profileId,
+      publicationId,
+      photoId,
+      hidden: false,
+      reason: "Restore approved photo",
+    });
+    for (const [code, status] of [
+      ["42501", "denied"],
+      ["RC409", "conflict"],
+      ["RC203", "last_photo"],
+      ["RC204", "unavailable"],
+      ["unexpected", "unavailable"],
+    ]) {
+      photo.mockRejectedValueOnce({ code });
+      await expect(
+        cottageProfile.setAdministratorPhotoHidden(
+          profileId,
+          publicationId,
+          photoId,
+          true,
+          "Safety review",
+        ),
+      ).resolves.toEqual({ status });
+    }
+    description.mockRejectedValueOnce({ code: "22023" });
+    await expect(
+      cottageProfile.setAdministratorDescriptionHidden(
+        profileId,
+        publicationId,
+        true,
+        "Safety review",
+      ),
+    ).resolves.toEqual({ status: "invalid", fields: ["reason"] });
+    read.mockRejectedValueOnce(new Error("unavailable"));
+    await expect(
+      cottageProfile.loadAdministratorContentVisibility(profileId),
+    ).resolves.toEqual({ status: "unavailable" });
+    read.mockResolvedValueOnce(null);
+    await expect(
+      cottageProfile.loadAdministratorContentVisibility(profileId),
+    ).resolves.toEqual({ status: "unavailable" });
+  });
+
   it("administrator photo mutations preserve owner calls and forward reasons", async () => {
     const { cottageProfile, repository, uploadedObjects, removedObjects } =
       setup();

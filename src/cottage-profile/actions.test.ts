@@ -9,6 +9,8 @@ vi.mock("next/cache", () => ({ revalidatePath }));
 vi.mock("./request-cottage-profile", () => ({ createRequestCottageProfile }));
 
 import {
+  setAdministratorCottageDescriptionVisibilityAction,
+  setAdministratorCottagePhotoVisibilityAction,
   abandonAdministratorCottageProfileAction,
   abandonOwnerCottageProfileAction,
   restoreAdministratorCottageProfileAction,
@@ -19,6 +21,132 @@ import {
 } from "./actions";
 
 describe("Cottage Profile actions", () => {
+  it("administrator visibility actions validate input and forward authenticated intent", async () => {
+    const profileId = "70000000-0000-4000-8000-000000000001";
+    const publicationId = "72000000-0000-4000-8000-000000000001";
+    const photoId = "71000000-0000-4000-8000-000000000001";
+    const visibility = {
+      profileId,
+      publicationId,
+      publicSlug: "authoritative-slug",
+      descriptionHidden: true,
+      photos: [{ photoId, originalFilename: "cottage.webp", hidden: false }],
+    };
+    const description = vi
+      .fn()
+      .mockResolvedValue({ status: "saved", visibility });
+    const photo = vi.fn().mockResolvedValue({ status: "saved", visibility });
+    createRequestCottageProfile.mockResolvedValue({
+      setAdministratorDescriptionHidden: description,
+      setAdministratorPhotoHidden: photo,
+    });
+    const validForm = () => {
+      const form = new FormData();
+      for (const [key, value] of Object.entries({
+        locale: "ar",
+        profileId,
+        publicationId,
+        photoId,
+        hidden: "true",
+        reason: " Safety review ",
+        publicSlug: "hostile-slug",
+      }))
+        form.set(key, value);
+      return form;
+    };
+    for (const action of [
+      setAdministratorCottageDescriptionVisibilityAction,
+      setAdministratorCottagePhotoVisibilityAction,
+    ]) {
+      for (const [key, value] of [
+        ["locale", "fr"],
+        ["profileId", "bad"],
+        ["publicationId", "bad"],
+        ["hidden", "1"],
+        ["hidden", " true "],
+        ["hidden", ""],
+        ["reason", " "],
+        ["reason", "x".repeat(1001)],
+      ]) {
+        const form = validForm();
+        form.set(key, value);
+        await expect(action({ status: "idle" }, form)).resolves.toMatchObject({
+          status: "invalid",
+        });
+      }
+      const malformed = validForm();
+      malformed.set("reason", new File(["reason"], "reason.txt"));
+      await expect(
+        action({ status: "idle" }, malformed),
+      ).resolves.toMatchObject({ status: "invalid" });
+    }
+    const badPhoto = validForm();
+    badPhoto.set("photoId", "bad");
+    await expect(
+      setAdministratorCottagePhotoVisibilityAction(
+        { status: "idle" },
+        badPhoto,
+      ),
+    ).resolves.toEqual({ status: "invalid" });
+    expect(createRequestCottageProfile).not.toHaveBeenCalled();
+    await expect(
+      setAdministratorCottageDescriptionVisibilityAction(
+        { status: "idle" },
+        validForm(),
+      ),
+    ).resolves.toEqual({ status: "saved", visibility });
+    expect(description).toHaveBeenLastCalledWith(
+      profileId,
+      publicationId,
+      true,
+      " Safety review ",
+    );
+    const restore = validForm();
+    restore.set("hidden", "false");
+    await expect(
+      setAdministratorCottagePhotoVisibilityAction({ status: "idle" }, restore),
+    ).resolves.toEqual({ status: "saved", visibility });
+    expect(photo).toHaveBeenLastCalledWith(
+      profileId,
+      publicationId,
+      photoId,
+      false,
+      " Safety review ",
+    );
+    for (const locale of ["en", "ar", "ckb"]) {
+      expect(revalidatePath).toHaveBeenCalledWith(
+        `/${locale}/cottages/authoritative-slug`,
+      );
+      expect(revalidatePath).toHaveBeenCalledWith(`/${locale}/results`);
+      expect(revalidatePath).toHaveBeenCalledWith(
+        `/${locale}/administrator/cottages/${profileId}`,
+      );
+    }
+    expect(revalidatePath).not.toHaveBeenCalledWith(
+      expect.stringContaining("hostile-slug"),
+    );
+    revalidatePath.mockClear();
+    for (const status of ["denied", "conflict", "last_photo", "unavailable"]) {
+      photo.mockResolvedValueOnce({ status });
+      await expect(
+        setAdministratorCottagePhotoVisibilityAction(
+          { status: "idle" },
+          validForm(),
+        ),
+      ).resolves.toEqual({ status });
+    }
+    expect(revalidatePath).not.toHaveBeenCalled();
+    createRequestCottageProfile.mockRejectedValueOnce(
+      new Error("request client unavailable"),
+    );
+    await expect(
+      setAdministratorCottageDescriptionVisibilityAction(
+        { status: "idle" },
+        validForm(),
+      ),
+    ).resolves.toEqual({ status: "unavailable" });
+  });
+
   it("administrator edits forward a validated reason", async () => {
     const saveAdministratorDraft = vi
       .fn()

@@ -154,7 +154,31 @@ export interface CottageProfileAdministratorPage {
   nextCursor: CottageProfileAdministratorCursor | null;
 }
 
+export interface CottageContentVisibility {
+  profileId: string;
+  publicationId: string;
+  publicSlug: string;
+  descriptionHidden: boolean;
+  photos: { photoId: string; originalFilename: string; hidden: boolean }[];
+}
+
+export interface CottageDescriptionVisibilityInput {
+  profileId: string;
+  publicationId: string;
+  hidden: boolean;
+  reason: string;
+}
+
 export interface CottageProfileRepository {
+  loadAdministratorContentVisibility(
+    profileId: string,
+  ): Promise<CottageContentVisibility | null>;
+  setAdministratorDescriptionHidden(
+    input: CottageDescriptionVisibilityInput,
+  ): Promise<CottageContentVisibility>;
+  setAdministratorPhotoHidden(
+    input: CottageDescriptionVisibilityInput & { photoId: string },
+  ): Promise<CottageContentVisibility>;
   listOwner(): Promise<CottageProfile[]>;
   listAdministrator(
     cursor?: CottageProfileAdministratorCursor,
@@ -402,6 +426,48 @@ async function administratorLifecycle(
   }
 }
 
+async function changeContentVisibility(
+  mutate: (
+    input: CottageDescriptionVisibilityInput & { photoId?: string },
+  ) => Promise<CottageContentVisibility>,
+  profileId: string,
+  publicationId: string,
+  hidden: unknown,
+  reasonValue: unknown,
+  photoId?: string,
+) {
+  const reason = text(reasonValue);
+  if (reason.length < 1 || reason.length > 1000) {
+    return { status: "invalid" as const, fields: ["reason"] };
+  }
+  if (
+    !uuidPattern.test(profileId) ||
+    !uuidPattern.test(publicationId) ||
+    typeof hidden !== "boolean" ||
+    (photoId !== undefined && !uuidPattern.test(photoId))
+  ) {
+    return { status: "invalid" as const };
+  }
+  try {
+    const visibility = await mutate({
+      profileId,
+      publicationId,
+      hidden,
+      reason,
+      ...(photoId === undefined ? {} : { photoId }),
+    });
+    return { status: "saved" as const, visibility };
+  } catch (error) {
+    const code = providerErrorCode(error);
+    if (code === "22023")
+      return { status: "invalid" as const, fields: ["reason"] };
+    if (code === "42501") return { status: "denied" as const };
+    if (code === "RC409") return { status: "conflict" as const };
+    if (code === "RC203") return { status: "last_photo" as const };
+    return { status: "unavailable" as const };
+  }
+}
+
 export function createCottageProfile({
   repository,
   storage,
@@ -410,6 +476,49 @@ export function createCottageProfile({
   storage: CottageProfileStorage;
 }) {
   return {
+    async loadAdministratorContentVisibility(profileId: string) {
+      if (!uuidPattern.test(profileId)) return { status: "invalid" as const };
+      try {
+        const visibility =
+          await repository.loadAdministratorContentVisibility(profileId);
+        return visibility
+          ? { status: "loaded" as const, visibility }
+          : { status: "unavailable" as const };
+      } catch {
+        return { status: "unavailable" as const };
+      }
+    },
+    setAdministratorDescriptionHidden(
+      profileId: string,
+      publicationId: string,
+      hidden: unknown,
+      reasonValue: unknown,
+    ) {
+      return changeContentVisibility(
+        repository.setAdministratorDescriptionHidden.bind(repository),
+        profileId,
+        publicationId,
+        hidden,
+        reasonValue,
+      );
+    },
+    setAdministratorPhotoHidden(
+      profileId: string,
+      publicationId: string,
+      photoId: string,
+      hidden: unknown,
+      reasonValue: unknown,
+    ) {
+      return changeContentVisibility(
+        (input) =>
+          repository.setAdministratorPhotoHidden({ ...input, photoId }),
+        profileId,
+        publicationId,
+        hidden,
+        reasonValue,
+        photoId,
+      );
+    },
     listOwner: () => repository.listOwner(),
     listAdministrator: (cursor?: CottageProfileAdministratorCursor) =>
       repository.listAdministrator(cursor),

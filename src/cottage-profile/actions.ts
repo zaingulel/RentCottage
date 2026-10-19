@@ -2,8 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 
-import { isLocale, type Locale } from "@/i18n/routing";
-import { cottageProfileMaximumPhotoBytes } from "./cottage-profile";
+import { isLocale, locales, type Locale } from "@/i18n/routing";
+import {
+  cottageProfileMaximumPhotoBytes,
+  type CottageContentVisibility,
+} from "./cottage-profile";
 import { createRequestCottageProfile } from "./request-cottage-profile";
 
 export type CottageProfileActionState = {
@@ -276,4 +279,86 @@ export async function submitCottageProfileAction(
     return { status: "submitted" };
   }
   return result;
+}
+
+export type CottageContentVisibilityActionState = {
+  status:
+    | "idle"
+    | "saved"
+    | "invalid"
+    | "denied"
+    | "conflict"
+    | "last_photo"
+    | "unavailable";
+  fields?: string[];
+  visibility?: CottageContentVisibility;
+};
+
+async function administratorVisibilityAction(
+  kind: "description" | "photo",
+  formData: FormData,
+): Promise<CottageContentVisibilityActionState> {
+  const requestedLocale = locale(formData);
+  const profileId = text(formData, "profileId");
+  const publicationId = text(formData, "publicationId");
+  const photoId = text(formData, "photoId");
+  const hidden = formData.get("hidden");
+  const reason = formData.get("reason");
+  const uuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (
+    !requestedLocale ||
+    !uuid.test(profileId) ||
+    !uuid.test(publicationId) ||
+    (kind === "photo" && !uuid.test(photoId)) ||
+    (hidden !== "true" && hidden !== "false")
+  )
+    return { status: "invalid" };
+  if (
+    typeof reason !== "string" ||
+    reason.trim().length < 1 ||
+    reason.trim().length > 1000
+  )
+    return { status: "invalid", fields: ["reason"] };
+  const profile = await createRequestCottageProfile().catch(() => null);
+  if (!profile) return { status: "unavailable" };
+  const result =
+    kind === "description"
+      ? await profile.setAdministratorDescriptionHidden(
+          profileId,
+          publicationId,
+          hidden === "true",
+          reason,
+        )
+      : await profile.setAdministratorPhotoHidden(
+          profileId,
+          publicationId,
+          photoId,
+          hidden === "true",
+          reason,
+        );
+  if (result.status === "saved") {
+    for (const currentLocale of locales) {
+      revalidatePath(
+        `/${currentLocale}/cottages/${result.visibility.publicSlug}`,
+      );
+      revalidatePath(`/${currentLocale}/results`);
+      revalidateAdministratorPaths(currentLocale, result.visibility.profileId);
+    }
+  }
+  return result;
+}
+
+export async function setAdministratorCottageDescriptionVisibilityAction(
+  _previous: CottageContentVisibilityActionState,
+  formData: FormData,
+): Promise<CottageContentVisibilityActionState> {
+  return administratorVisibilityAction("description", formData);
+}
+
+export async function setAdministratorCottagePhotoVisibilityAction(
+  _previous: CottageContentVisibilityActionState,
+  formData: FormData,
+): Promise<CottageContentVisibilityActionState> {
+  return administratorVisibilityAction("photo", formData);
 }

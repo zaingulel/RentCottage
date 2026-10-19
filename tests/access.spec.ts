@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { accessMessages } from "../src/i18n/access-messages";
+import { cottageProfileMessages } from "../src/i18n/cottage-profile-messages";
 import { cottageShiftScheduleMessages } from "../src/i18n/cottage-shift-schedule-messages";
 import { openHeaderPanel } from "./fixtures/site-header";
 import { writeFile } from "node:fs/promises";
@@ -2200,6 +2201,15 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   expect(previewResponse.headers()["content-type"]).toContain("image/png");
   expect(await previewResponse.body()).toEqual(cleanCottagePhoto);
 
+  await page.getByLabel("Choose cottage photo").setInputFiles({
+    name: "shaqlawa-orchard-second.png",
+    mimeType: "image/png",
+    buffer: cleanCottagePhoto,
+  });
+  await page.getByRole("button", { name: "Upload photo" }).click();
+  await expect(page.getByText("shaqlawa-orchard-second.png")).toBeVisible();
+  await expect(page.getByText("Photo uploaded.")).toBeVisible();
+
   await page.goto("/en/owner/cottages");
   const readyDraftCard = page
     .locator("article.cottage-profile-card")
@@ -2711,6 +2721,7 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
       .from("cottage_publication_media")
       .select("opaque_id,object_path")
       .eq("publication_id", publication.id)
+      .eq("position", 1)
       .single();
     if (mediaError) throw mediaError;
     const { error: locatedUploadError } = await auditClient.storage
@@ -2764,6 +2775,615 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
         password: "Local-test-password-2026",
       });
     if (ownerSignInError) throw ownerSignInError;
+
+    const { data: publishedProfile, error: profileError } = await ownerClient
+      .from("owner_application_cottage_profiles")
+      .select("current_shift_schedule_id")
+      .eq("id", profileId)
+      .single();
+    if (profileError) throw profileError;
+    const { data: visibilityShifts, error: shiftsError } = await ownerClient
+      .from("cottage_shifts")
+      .select("id")
+      .eq("schedule_revision_id", publishedProfile.current_shift_schedule_id)
+      .order("position");
+    if (shiftsError) throw shiftsError;
+    if (!visibilityShifts.length)
+      throw new Error("Visibility fixture has no shifts");
+    const { data: visibilitySchedule, error: scheduleError } = await ownerClient
+      .from("cottage_shift_schedule_revisions")
+      .select("full_day_bundle_id")
+      .eq("id", publishedProfile.current_shift_schedule_id)
+      .single();
+    if (scheduleError) throw scheduleError;
+    const { error: pricingError } = await ownerClient.rpc(
+      "save_cottage_inventory_pricing",
+      {
+        target_profile_id: profileId,
+        target_schedule_revision_id: publishedProfile.current_shift_schedule_id,
+        requested_prices: {
+          units: [
+            ...visibilityShifts.map((shift) => ({
+              unitId: shift.id,
+              unitKind: "shift",
+              standardPriceIqd: 180000,
+            })),
+            {
+              unitId: visibilitySchedule.full_day_bundle_id,
+              unitKind: "full_day_bundle",
+              standardPriceIqd: 300000,
+            },
+          ],
+        },
+      },
+    );
+    if (pricingError) throw pricingError;
+    const visibilityDay = new Date(Date.now() + 14 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    const { error: openingError } = await ownerClient.rpc(
+      "set_cottage_inventory_availability",
+      {
+        target_profile_id: profileId,
+        target_schedule_revision_id: publishedProfile.current_shift_schedule_id,
+        target_service_day: visibilityDay,
+        requested_states: [
+          { unitId: visibilityShifts[0].id, unitKind: "shift", state: "open" },
+        ],
+      },
+    );
+    if (openingError) throw openingError;
+    const { data: otherMedia, error: otherMediaError } = await auditClient
+      .from("cottage_publication_media")
+      .select("opaque_id")
+      .eq("publication_id", publication.id)
+      .eq("position", 2)
+      .single();
+    if (otherMediaError) throw otherMediaError;
+    const hiddenMediaUrl = `/api/cottage-media/${opaqueId}`;
+    const retainedMediaUrl = `/api/cottage-media/${otherMedia.opaque_id}`;
+    const slug = `cottage-${profileId.replaceAll("-", "")}`;
+    const queryString = new URLSearchParams({
+      from: visibilityDay,
+      to: visibilityDay,
+      guests: "2",
+    }).toString();
+    const requestedSearch = {
+      from: visibilityDay,
+      to: visibilityDay,
+      guests: 2,
+      selections: [],
+      amenities: [],
+    };
+    const anonymousClient = createClient(
+      process.env.SUPABASE_URL ?? "",
+      process.env.SUPABASE_PUBLISHABLE_KEY ?? "",
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    );
+    const originals = new Map<
+      BrowserLocale,
+      {
+        description: string;
+        houseRules: string;
+        name: string;
+        capacity: number;
+        approximateLocation: string;
+      }
+    >();
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      const { data, error } = await anonymousClient.rpc(
+        "get_public_cottage_profile",
+        {
+          target_locale: locale,
+          target_slug: slug,
+          requested_search: requestedSearch,
+        },
+      );
+      if (error) throw error;
+      expect(data.descriptionHidden).toBe(false);
+      expect(typeof data.description).toBe("string");
+      expect(data.description.length).toBeGreaterThan(0);
+      expect(data.mediaIds).toEqual([opaqueId, otherMedia.opaque_id]);
+      originals.set(locale, data);
+    }
+    const controlLocale = testInfo.project.name === "mobile" ? "ar" : "en";
+    const visibilityCopy = cottageProfileMessages[controlLocale];
+    await page.goto(`/${controlLocale}${cottagePath}`);
+    const visibilityPanel = page.getByRole("region", {
+      name: visibilityCopy.visibilityTitle,
+    });
+    const publishedDescription = visibilityPanel.getByRole("group", {
+      name: visibilityCopy.visibilityDescription,
+    });
+    const firstPhoto = visibilityPanel.getByRole("group", {
+      name: "shaqlawa-orchard-cottage.png",
+    });
+    const secondPhoto = visibilityPanel.getByRole("group", {
+      name: "shaqlawa-orchard-second.png",
+    });
+    await expect(
+      visibilityPanel.getByLabel(visibilityCopy.lifecycleReason),
+    ).toHaveCount(3);
+    const descriptionReason = publishedDescription.getByLabel(
+      visibilityCopy.lifecycleReason,
+    );
+    await publishedDescription
+      .getByRole("button", { name: visibilityCopy.visibilityHide, exact: true })
+      .click();
+    await expect(descriptionReason).toBeFocused();
+    expect(
+      await descriptionReason.evaluate(
+        (field) => !(field as HTMLTextAreaElement).checkValidity(),
+      ),
+    ).toBe(true);
+    await expect(
+      publishedDescription.getByText(visibilityCopy.visibilityVisible, {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await descriptionReason.fill("   ");
+    await publishedDescription
+      .getByRole("button", { name: visibilityCopy.visibilityHide, exact: true })
+      .click();
+    await expect(visibilityPanel.getByRole("alert")).toContainText(
+      visibilityCopy.reasonInvalid,
+    );
+    await expect(descriptionReason).toHaveAttribute("aria-invalid", "true");
+    const changeVisibility = async (
+      group: Locator,
+      hidden: boolean,
+      reason: string,
+    ) => {
+      await group.getByLabel(visibilityCopy.lifecycleReason).fill(reason);
+      const control = group.getByRole("button", {
+        name: hidden
+          ? visibilityCopy.visibilityHide
+          : visibilityCopy.visibilityRestore,
+        exact: true,
+      });
+      await control.focus();
+      await control.press("Enter");
+      await expect(
+        group.getByText(
+          hidden
+            ? visibilityCopy.visibilityHidden
+            : visibilityCopy.visibilityVisible,
+          { exact: true },
+        ),
+      ).toBeVisible();
+      await expect(visibilityPanel.getByRole("status")).toContainText(
+        visibilityCopy.visibilitySaved,
+      );
+      await expect(
+        group.getByRole("button", {
+          name: hidden
+            ? visibilityCopy.visibilityRestore
+            : visibilityCopy.visibilityHide,
+          exact: true,
+        }),
+      ).toBeFocused();
+    };
+    await changeVisibility(
+      publishedDescription,
+      true,
+      "Hide disputed description in every language",
+    );
+    await changeVisibility(
+      firstPhoto,
+      true,
+      "Hide first published photo for review",
+    );
+    const hiddenMedia = await request.get(hiddenMediaUrl);
+    expect(hiddenMedia.status()).toBe(404);
+    expect(hiddenMedia.headers()["cache-control"]).toContain("private");
+    expect(hiddenMedia.headers()["cache-control"]).toContain("no-store");
+    expect((await request.get(retainedMediaUrl)).status()).toBe(200);
+    await firstPhoto
+      .getByRole("button", { name: visibilityCopy.preview })
+      .click();
+    const retainedPreview = firstPhoto.getByRole("link", {
+      name: visibilityCopy.preview,
+    });
+    await expect(retainedPreview).toBeVisible();
+    const privatePhotoUrl = await retainedPreview.getAttribute("href");
+    if (!privatePhotoUrl)
+      throw new Error("Hidden photo private preview is missing");
+    expect((await page.request.get(privatePhotoUrl)).status()).toBe(200);
+    await secondPhoto
+      .getByLabel(visibilityCopy.lifecycleReason)
+      .fill("Cannot hide the last approved photo");
+    const lastPhotoControl = secondPhoto.getByRole("button", {
+      name: visibilityCopy.visibilityHide,
+      exact: true,
+    });
+    await lastPhotoControl.focus();
+    await lastPhotoControl.press("Enter");
+    await expect(visibilityPanel.getByRole("alert")).toContainText(
+      visibilityCopy.visibilityLastPhoto,
+    );
+    await expect(
+      secondPhoto.getByText(visibilityCopy.visibilityVisible, { exact: true }),
+    ).toBeVisible();
+    await expect(lastPhotoControl).toBeFocused();
+    const panelMeasurements = await visibilityPanel.evaluate((panel) => {
+      const controls = [...panel.querySelectorAll<HTMLButtonElement>("button")];
+      const action = panel.querySelector<HTMLButtonElement>(
+        "button.action-secondary",
+      );
+      if (!action) throw new Error("Visibility action is missing");
+      const style = getComputedStyle(action);
+      return {
+        noOverflow:
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+        targets: controls.every(
+          (control) =>
+            control.getBoundingClientRect().height >= 44 &&
+            control.getBoundingClientRect().width >= 44,
+        ),
+        color: style.color,
+        background: style.backgroundColor,
+        focusRing: getComputedStyle(document.activeElement!)
+          .boxShadow.match(/rgba?\([^)]+\)/g)
+          ?.at(-1),
+        focus:
+          getComputedStyle(document.activeElement!).outlineStyle !== "none" &&
+          getComputedStyle(document.activeElement!).outlineWidth !== "0px",
+      };
+    });
+    expect(panelMeasurements.noOverflow).toBe(true);
+    expect(panelMeasurements.targets).toBe(true);
+    expect(panelMeasurements.focus).toBe(true);
+    const luminance = (color: string) => {
+      const channels = color
+        .match(/[\d.]+/g)
+        ?.slice(0, 3)
+        .map(Number);
+      if (!channels || channels.length !== 3)
+        throw new Error("Visibility contrast color is unavailable");
+      const linear = channels.map((channel) =>
+        channel / 255 <= 0.04045
+          ? channel / 255 / 12.92
+          : ((channel / 255 + 0.055) / 1.055) ** 2.4,
+      );
+      return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+    };
+    const contrast = (first: string, second: string) => {
+      const values = [luminance(first), luminance(second)].sort(
+        (a, b) => b - a,
+      );
+      return (values[0] + 0.05) / (values[1] + 0.05);
+    };
+    expect(
+      contrast(panelMeasurements.color, panelMeasurements.background),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(panelMeasurements.focusRing ?? "", panelMeasurements.background),
+    ).toBeGreaterThanOrEqual(3);
+    if (
+      testInfo.project.name === "desktop" ||
+      testInfo.project.name === "mobile"
+    ) {
+      await visibilityPanel.screenshot({
+        path: testInfo.outputPath(
+          `visibility-admin-${controlLocale}-${testInfo.project.name}.png`,
+        ),
+      });
+    }
+    const browser = page.context().browser();
+    if (!browser)
+      throw new Error("Anonymous visibility browser is unavailable");
+    const publicContext = await browser.newContext({
+      baseURL: new URL(page.url()).origin,
+      viewport: page.viewportSize()!,
+    });
+    const publicPage = await publicContext.newPage();
+    try {
+      for (const [
+        locale,
+        hiddenSentence,
+        rulesHeading,
+        bookingHeading,
+        quote,
+      ] of [
+        [
+          "en",
+          "The description is temporarily hidden.",
+          "House Rules",
+          "Choose your Booking Period",
+          "Get exact quote",
+        ],
+        [
+          "ar",
+          "الوصف مخفي مؤقتًا.",
+          "قواعد البيت",
+          "اختر فترة الحجز",
+          "عرض السعر الدقيق",
+        ],
+        [
+          "ckb",
+          "وەسفەکە کاتییانە شاردراوەتەوە.",
+          "یاساکانی کۆتێج",
+          "ماوەی حجزەکەت هەڵبژێرە",
+          "پێشنیاری نرخی ورد",
+        ],
+      ] as const) {
+        const original = originals.get(locale);
+        if (!original)
+          throw new Error("Published visibility baseline is missing");
+        const { data, error } = await anonymousClient.rpc(
+          "get_public_cottage_profile",
+          {
+            target_locale: locale,
+            target_slug: slug,
+            requested_search: requestedSearch,
+          },
+        );
+        if (error) throw error;
+        expect(data).toMatchObject({
+          descriptionHidden: true,
+          description: null,
+          houseRules: original.houseRules,
+          name: original.name,
+          capacity: original.capacity,
+          approximateLocation: original.approximateLocation,
+          mediaIds: [otherMedia.opaque_id],
+        });
+        await publicPage.goto(`/${locale}/cottages/${slug}?${queryString}`);
+        await expect(publicPage.locator("html")).toHaveAttribute(
+          "dir",
+          locale === "en" ? "ltr" : "rtl",
+        );
+        await expect(
+          publicPage.getByText(hiddenSentence, { exact: true }),
+        ).toBeVisible();
+        await expect(
+          publicPage.getByRole("heading", { name: rulesHeading, exact: true }),
+        ).toBeVisible();
+        await expect(
+          publicPage.getByText(original.houseRules, { exact: true }),
+        ).toBeVisible();
+        await expect(
+          publicPage.locator(".profile-main-image img"),
+        ).toHaveAttribute("src", retainedMediaUrl);
+        expect(await publicPage.content()).not.toContain(hiddenMediaUrl);
+        expect(await publicPage.content()).not.toContain(original.description);
+        await expect(
+          publicPage.getByRole("heading", {
+            name: bookingHeading,
+            exact: true,
+          }),
+        ).toBeVisible();
+        await publicPage
+          .locator('.booking-summary button[aria-pressed="false"]:enabled')
+          .first()
+          .click();
+        await expect(
+          publicPage.getByRole("link", { name: quote, exact: true }),
+        ).toBeVisible();
+        if (
+          (locale === "en" && testInfo.project.name === "desktop") ||
+          (locale === "ar" && testInfo.project.name === "mobile")
+        ) {
+          await publicPage.screenshot({
+            path: testInfo.outputPath(
+              `visibility-public-${locale}-${testInfo.project.name}.png`,
+            ),
+            fullPage: true,
+          });
+        }
+      }
+      await publicPage.goto(`/en/results?${queryString}`);
+      const resultCard = publicPage.getByRole("article").filter({
+        has: publicPage.getByRole("heading", {
+          name: originals.get("en")!.name,
+          exact: true,
+        }),
+      });
+      await expect(resultCard).toBeVisible();
+      await expect(resultCard.locator("img")).toHaveAttribute(
+        "src",
+        retainedMediaUrl,
+      );
+      expect(await resultCard.innerHTML()).not.toContain(hiddenMediaUrl);
+      await changeVisibility(
+        firstPhoto,
+        false,
+        "Restore first approved photo after review",
+      );
+      await changeVisibility(
+        publishedDescription,
+        false,
+        "Restore approved description in every language",
+      );
+      expect((await request.get(hiddenMediaUrl)).status()).toBe(200);
+      for (const locale of ["en", "ar", "ckb"] as const) {
+        await publicPage.goto(`/${locale}/cottages/${slug}?${queryString}`);
+        await expect(
+          publicPage.getByText(originals.get(locale)!.description, {
+            exact: true,
+          }),
+        ).toBeVisible();
+        await expect(
+          publicPage.locator(".profile-main-image img"),
+        ).toHaveAttribute("src", hiddenMediaUrl);
+      }
+      await publicPage.goto(`/en/results?${queryString}`);
+      await expect(resultCard.locator("img")).toHaveAttribute(
+        "src",
+        hiddenMediaUrl,
+      );
+    } finally {
+      await publicContext.close();
+    }
+
+    await page.goto(`/en${cottagePath}`);
+    {
+      const returnUrl = page.url();
+      const bookingOwner = findAccessFixtureUser(
+        await listAllAccessFixtureUsers(auditClient.auth.admin),
+        reviewFixture.bookingOwnerPhone,
+      );
+      if (!bookingOwner || !uuidPattern.test(bookingOwner.id))
+        throw new Error("Verification preservation owner is unavailable");
+      const targets = JSON.parse(
+        database.runSql(`
+        select coalesce(jsonb_agg(jsonb_build_object(
+          'applicationId', applications.id, 'profileId', profiles.id,
+          'publicationId', profiles.current_publication_id,
+          'scheduleId', profiles.current_shift_schedule_id,
+          'publicationProfileId', publications.profile_id, 'name', publications.name
+        )), '[]'::jsonb)
+        from public.owner_applications applications
+        join public.owner_application_cottage_profiles profiles
+          on profiles.application_id = applications.id
+          and profiles.owner_user_id = applications.owner_user_id
+        join public.cottage_publication_snapshots publications
+          on publications.id = profiles.current_publication_id
+        where applications.owner_user_id = '${bookingOwner.id}'::uuid
+          and applications.status = 'approved';
+      `),
+      ) as {
+        applicationId: string;
+        profileId: string;
+        publicationId: string;
+        scheduleId: string;
+        publicationProfileId: string;
+        name: string;
+      }[];
+      if (
+        targets.length !== 1 ||
+        ![
+          targets[0].applicationId,
+          targets[0].profileId,
+          targets[0].publicationId,
+          targets[0].scheduleId,
+        ].every((id) => uuidPattern.test(id)) ||
+        targets[0].publicationProfileId !== targets[0].profileId ||
+        targets[0].name !== reviewFixture.bookingCottageName
+      )
+        throw new Error("Verification preservation profile linkage is invalid");
+      const target = targets[0];
+      const readDocuments = async () => {
+        const metadata = JSON.parse(
+          database.runSql(`
+          select coalesce(jsonb_agg(to_jsonb(document) order by document.id), '[]'::jsonb)
+          from public.owner_verification_documents document
+          where document.application_id = '${target.applicationId}'::uuid;
+        `),
+        ) as (Record<string, unknown> & {
+          id: string;
+          application_id: string;
+          object_path: string;
+          size_bytes: number;
+        })[];
+        if (
+          !metadata.length ||
+          new Set(metadata.map((document) => document.id)).size !==
+            metadata.length ||
+          metadata.some(
+            (document) =>
+              !uuidPattern.test(document.id) ||
+              document.application_id !== target.applicationId ||
+              typeof document.object_path !== "string" ||
+              !document.object_path.trim() ||
+              !Number.isInteger(document.size_bytes) ||
+              document.size_bytes < 1,
+          )
+        )
+          throw new Error(
+            "Verification preservation document metadata is incomplete",
+          );
+        const bytes = new Map<string, Buffer>();
+        for (const document of metadata) {
+          const { data, error } = await auditClient.storage
+            .from("owner-verification")
+            .download(document.object_path);
+          if (error || !data)
+            throw new Error(
+              "Verification preservation document download failed",
+            );
+          const content = Buffer.from(await data.arrayBuffer());
+          if (!content.length || content.length !== document.size_bytes)
+            throw new Error(
+              "Verification preservation document bytes are incomplete",
+            );
+          bytes.set(document.id, content);
+        }
+        return { metadata: JSON.stringify(metadata), bytes };
+      };
+      const baseline = await readDocuments();
+      const expectDocumentsPreserved = async () => {
+        const current = await readDocuments();
+        expect(
+          current.metadata === baseline.metadata,
+          "Verification document metadata must remain unchanged",
+        ).toBe(true);
+        expect(
+          current.bytes.size === baseline.bytes.size &&
+            [...baseline.bytes].every(
+              ([id, bytes]) => current.bytes.get(id)?.equals(bytes) === true,
+            ),
+          "Verification document bytes must remain unchanged",
+        ).toBe(true);
+      };
+      try {
+        await page.goto(`/en/administrator/cottages/${target.profileId}`);
+        const source = page.getByLabel("Source description", { exact: true });
+        const original = await source.inputValue();
+        if (!original.trim())
+          throw new Error(
+            "Verification preservation source description is missing",
+          );
+        await source.fill(`${original} Verification preservation edit.`);
+        const save = page.getByRole("button", {
+          name: "Save private draft",
+          exact: true,
+        });
+        const editForm = save.locator("xpath=ancestor::form");
+        await editForm
+          .getByLabel("Administrator reason")
+          .fill("Verify owner document preservation");
+        await save.click();
+        await expect(editForm.getByRole("status")).toContainText(
+          "Private draft saved.",
+        );
+        await expectDocumentsPreserved();
+        const panel = page.getByRole("region", { name: "Public visibility" });
+        const description = panel.getByRole("group", {
+          name: "Published description",
+        });
+        await description
+          .getByLabel("Administrator reason")
+          .fill("Verify owner document preservation while hidden");
+        await description
+          .getByRole("button", { name: "Hide", exact: true })
+          .click();
+        await expect(
+          description.getByText("Hidden", { exact: true }),
+        ).toBeVisible();
+        await expect(panel.getByRole("status")).toContainText(
+          "Public visibility saved.",
+        );
+        await expectDocumentsPreserved();
+        await description
+          .getByLabel("Administrator reason")
+          .fill("Restore description after owner document preservation check");
+        await description
+          .getByRole("button", { name: "Restore", exact: true })
+          .click();
+        await expect(
+          description.getByText("Visible", { exact: true }),
+        ).toBeVisible();
+        await expect(panel.getByRole("status")).toContainText(
+          "Public visibility saved.",
+        );
+        await expectDocumentsPreserved();
+      } finally {
+        await page.goto(returnUrl);
+      }
+    }
+
     const reportReason = "The published Arabic meaning is incorrect";
     const { error: reportError } = await ownerClient.rpc(
       "report_current_cottage_translation",
@@ -3409,6 +4029,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     "bedrooms",
     "capacity",
     "description",
+    "descriptionHidden",
     "governorate",
     "houseRules",
     "inventory",
