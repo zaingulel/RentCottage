@@ -803,8 +803,8 @@ set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002401","role":"authenticated","aal":"aal1"}', true);
 select results_eq(
   $$select has_unpublished_content_change from public.list_cottage_profile_unpublished_content_changes(array['30000000-0000-4000-8000-000000002401']::uuid[])$$,
-  array[true],
-  'the owner''s uncorrected source-language text is an unpublished Content Change');
+  array[false],
+  'approval reconciles the owner''s saved source-language text with the corrected publication');
 select lives_ok(
   $$select public.update_owner_cottage_profile_draft(
     '30000000-0000-4000-8000-000000002401',

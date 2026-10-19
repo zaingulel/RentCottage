@@ -1,3 +1,6 @@
+import assert from "node:assert/strict";
+import { randomInt, randomUUID } from "node:crypto";
+
 import { createClient } from "@supabase/supabase-js";
 
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
@@ -168,7 +171,270 @@ try {
   );
   harness.markTimingPhase("cleanup");
   clearAdditionalProfiles();
+
+  harness.markTimingPhase("setup");
+  const raceOwnerUserId = randomUUID();
+  const raceOwnerPhone = "+999" + randomInt(100000000000, 1000000000000);
+  const runtimeControl = JSON.parse(
+    harness.runSql(`
+    select to_jsonb(control) from public.cottage_translation_runtime_control control where singleton;
+  `),
+  );
+  try {
+    const fixture = JSON.parse(
+      harness
+        .runSql(
+          `
+      begin;
+      insert into auth.users (id, aud, role, phone, phone_confirmed_at, email, email_confirmed_at)
+      values ('${raceOwnerUserId}', 'authenticated', 'authenticated', '${raceOwnerPhone}', now(), null, null);
+      insert into public.account_contexts (user_id, role, owner_approval_state)
+      values ('${raceOwnerUserId}', 'cottage_owner', 'approved');
+      update public.cottage_translation_runtime_control
+      set production_ready = true,
+          approved_evaluation_artifact_digest = repeat('a', 64),
+          production_approval_digest = repeat('b', 64),
+          provider_terms_approval_reference = 'test-provider-terms',
+          native_review_approval_reference = 'test-native-review',
+          quality_threshold_approval_reference = 'test-quality-threshold',
+          ordinary_model = 'test-luna', ordinary_effort = 'none', ordinary_prompt_version = 'v1',
+          stronger_model = 'test-terra', stronger_effort = 'none', stronger_prompt_version = 'v1',
+          judge_model = 'test-sol', judge_effort = 'medium', judge_prompt_version = 'judge-v1',
+          monthly_request_limit = 100, monthly_token_limit = 100000,
+          monthly_spend_microusd_limit = 1000000,
+          updated_at = now()
+      where singleton;
+      set local role authenticated;
+      ${claims(raceOwnerUserId, "aal1")}
+      do $$
+      declare profile public.owner_application_cottage_profiles;
+      begin
+        select * into profile from public.create_owner_cottage_profile_draft();
+        perform set_config('test.reconciliation_race_profile_id', profile.id::text, true);
+        perform public.update_owner_cottage_profile_draft(
+          profile.id, 1, 'Reconciliation race garden', 'Erbil', 'Near Shaqlawa',
+          'Private race address', 36.4, 44.3, 'Private race directions',
+          8, 3, 2, array['garden'], 'en', 'Race submitted description', 'Race submitted rules'
+        );
+        perform public.replace_cottage_shift_schedule(
+          profile.id, 0,
+          '[{"name":"Day","startTime":"08:00","endTime":"14:00"},{"name":"Evening","startTime":"18:00","endTime":"23:00"}]'
+        );
+        perform public.prepare_cottage_profile_photo_upload(profile.id, 'race.webp', 'image/webp', 128);
+      end;
+      $$;
+      reset role;
+      insert into storage.objects (bucket_id, name, owner_id, metadata)
+      select public.cottage_profile_photo_bucket_name(), photos.object_path,
+        photos.owner_user_id::text, '{"size":128,"mimetype":"image/webp"}'::jsonb
+      from public.cottage_profile_photos photos
+      where photos.profile_id = current_setting('test.reconciliation_race_profile_id')::uuid;
+      set local role service_role;
+      select set_config('request.jwt.claims', '{"sub":"${administratorUserId}","role":"service_role","aal":"aal2"}', true);
+      do $$
+      begin
+        perform public.register_cottage_profile_photo(
+          (select id from public.cottage_profile_photos
+            where profile_id = current_setting('test.reconciliation_race_profile_id')::uuid)
+        );
+      end;
+      $$;
+      set local role authenticated;
+      ${claims(raceOwnerUserId, "aal1")}
+      do $$
+      begin
+        perform public.submit_cottage_profile_for_content_approval(
+          current_setting('test.reconciliation_race_profile_id')::uuid, 2
+        );
+        perform set_config('test.reconciliation_race_cycle_id', (
+          select id::text from public.cottage_profile_review_cycles
+          where profile_id = current_setting('test.reconciliation_race_profile_id')::uuid
+        ), true);
+      end;
+      $$;
+      set local role service_role;
+      select set_config('request.jwt.claims', '{"sub":"${administratorUserId}","role":"service_role","aal":"aal2"}', true);
+      do $$
+      declare translated record;
+      declare attempt public.cottage_profile_translation_attempts;
+      begin
+        for translated in
+          select * from (values
+            ('ar'::public.cottage_profile_source_language, 'حديقة هادئة', 'الهدوء في المساء'),
+            ('ckb'::public.cottage_profile_source_language, 'باخچەیەکی ئارام', 'ئارامی لە ئێوارەدا')
+          ) content(locale, description, house_rules)
+        loop
+          select * into attempt from public.begin_cottage_profile_translation_execution(
+            current_setting('test.reconciliation_race_cycle_id')::uuid, translated.locale, 'ordinary', 50000
+          );
+          perform public.complete_cottage_profile_translation_execution(
+            attempt.id, attempt.lease_token, translated.description, translated.house_rules,
+            'test-provider', 'test-luna', 'none', 'v1'
+          );
+        end loop;
+      end;
+      $$;
+      set local role authenticated;
+      ${claims(administratorUserId, "aal2")}
+      do $$
+      begin
+        perform public.correct_cottage_profile_localization(
+          current_setting('test.reconciliation_race_cycle_id')::uuid, 'en',
+          'Race baseline description', 'Race baseline rules', 'Correct the initial source wording'
+        );
+        perform public.decide_cottage_profile_localization(
+          current_setting('test.reconciliation_race_cycle_id')::uuid, locale, true, 'Initial head approved'
+        ) from unnest(array['en', 'ar', 'ckb']::public.cottage_profile_source_language[]) locale;
+        perform public.approve_cottage_profile_publication(
+          current_setting('test.reconciliation_race_cycle_id')::uuid, 'Publish race baseline'
+        );
+      end;
+      $$;
+      reset role;
+      select set_config('test.reconciliation_race_report_revision_id', localizations.localized_revision_id::text, true)
+      from public.owner_application_cottage_profiles profiles
+      join public.cottage_publication_localizations localizations
+        on localizations.publication_id = profiles.current_publication_id and localizations.locale = 'ar'
+      where profiles.id = current_setting('test.reconciliation_race_profile_id')::uuid;
+      set local role authenticated;
+      ${claims(raceOwnerUserId, "aal1")}
+      do $$
+      declare report public.cottage_translation_quality_reports;
+      begin
+        select * into report from public.report_current_cottage_translation(
+          current_setting('test.reconciliation_race_cycle_id')::uuid,
+          current_setting('test.reconciliation_race_report_revision_id')::uuid,
+          'Review this published generated wording'
+        );
+        perform set_config('test.reconciliation_race_remediation_id', report.remediation_review_cycle_id::text, true);
+      end;
+      $$;
+      set local role authenticated;
+      ${claims(administratorUserId, "aal2")}
+      do $$
+      begin
+        perform public.correct_cottage_profile_localization(
+          current_setting('test.reconciliation_race_remediation_id')::uuid, 'en',
+          'Race approved description', 'Race approved rules', 'Correct the remediation source wording'
+        );
+        perform public.decide_cottage_profile_localization(
+          current_setting('test.reconciliation_race_remediation_id')::uuid, locale, true, 'Remediation head approved'
+        ) from unnest(array['en', 'ar', 'ckb']::public.cottage_profile_source_language[]) locale;
+      end;
+      $$;
+      reset role;
+      select jsonb_build_object(
+        'profileId', id, 'ownerUserId', owner_user_id, 'version', version,
+        'description', description, 'houseRules', house_rules,
+        'reviewCycleId', current_setting('test.reconciliation_race_remediation_id')
+      ) from public.owner_application_cottage_profiles
+      where id = current_setting('test.reconciliation_race_profile_id')::uuid;
+      commit;
+    `,
+        )
+        .split("\n")
+        .at(-1),
+    );
+    assert.equal(fixture.ownerUserId, raceOwnerUserId);
+    assert.notEqual(fixture.ownerUserId, ownerUserId);
+    assert.equal(fixture.version, 4);
+    assert.equal(fixture.description, "Race baseline description");
+    assert.equal(fixture.houseRules, "Race baseline rules");
+
+    harness.markTimingPhase("execution");
+    const saver = harness.startSession(`
+      begin;
+      select set_config('application_name', 'owner-save-vs-remediation-approval-winner', false);
+      set local role authenticated;
+      ${claims(raceOwnerUserId, "aal1")}
+      select public.update_owner_cottage_profile_draft(
+        '${fixture.profileId}', 4, 'Reconciliation race garden', 'Erbil', 'Near Shaqlawa',
+        'Private race address', 36.4, 44.3, 'Private race directions',
+        8, 3, 2, array['garden'], 'en', 'Race owner description', 'Race baseline rules'
+      );
+      select 'owner-save-version=' || version from public.owner_application_cottage_profiles
+      where id = '${fixture.profileId}';
+      select 'owner-save-vs-remediation-approval-locked';
+    `);
+    let approver;
+    try {
+      await harness.waitForMarker(
+        saver,
+        "owner-save-vs-remediation-approval-locked",
+      );
+      assert.ok(saver.stdout.split("\n").includes("owner-save-version=5"));
+      const approverName = "owner-save-vs-remediation-approval-contender";
+      approver = harness.startSession(
+        administratorSession(
+          approverName,
+          `
+          select public.approve_cottage_profile_publication('${fixture.reviewCycleId}', 'Approve concurrent remediation');
+          commit;
+        `,
+        ),
+        true,
+      );
+      await harness.waitForLock(approverName, approver);
+      await harness.finishSession(saver, { action: "commit" });
+      await harness.finishSession(approver);
+    } catch (error) {
+      await harness.cleanUpOwnedSession(saver, error);
+      if (approver) await harness.cleanUpOwnedSession(approver, error);
+      throw error;
+    }
+    const result = JSON.parse(
+      harness.runSql(`
+      select jsonb_build_object(
+        'ownerUserId', profiles.owner_user_id,
+        'description', profiles.description, 'houseRules', profiles.house_rules,
+        'version', profiles.version, 'publicationNumber', snapshots.publication_number,
+        'publishedDescription', localizations.description, 'publishedHouseRules', localizations.house_rules
+      ) from public.owner_application_cottage_profiles profiles
+      join public.cottage_publication_snapshots snapshots on snapshots.id = profiles.current_publication_id
+      join public.cottage_publication_localizations localizations
+        on localizations.publication_id = snapshots.id and localizations.locale = 'en'
+      where profiles.id = '${fixture.profileId}';
+    `),
+    );
+    assert.deepEqual(result, {
+      ownerUserId: raceOwnerUserId,
+      description: "Race owner description",
+      houseRules: "Race approved rules",
+      version: 6,
+      publicationNumber: 2,
+      publishedDescription: "Race approved description",
+      publishedHouseRules: "Race approved rules",
+    });
+    console.log(
+      "owner-save-vs-remediation-approval: observed PostgreSQL Lock wait; later owner description survived, untouched House Rules reconciled, and each operation advanced the version once.",
+    );
+  } finally {
+    harness.markTimingPhase("cleanup");
+    const columns = Object.keys(runtimeControl)
+      .filter((column) => column !== "singleton")
+      .map((column) => `"${column}"`)
+      .join(", ");
+    harness.runSql(`
+      update public.cottage_translation_runtime_control set (${columns}) = (
+        select ${columns} from jsonb_populate_record(
+          null::public.cottage_translation_runtime_control,
+          '${JSON.stringify(runtimeControl).replaceAll("'", "''")}'::jsonb
+        )
+      ) where singleton;
+    `);
+    assert.deepEqual(
+      JSON.parse(
+        harness.runSql(`
+      select to_jsonb(control) from public.cottage_translation_runtime_control control where singleton;
+    `),
+      ),
+      runtimeControl,
+    );
+  }
   timingOutcome = "passed";
 } finally {
-  harness.finishTiming({ outcome: timingOutcome, cleanupDisposition: "local" });
+  harness.finishTiming({
+    outcome: timingOutcome,
+    cleanupDisposition: "project-teardown",
+  });
 }
