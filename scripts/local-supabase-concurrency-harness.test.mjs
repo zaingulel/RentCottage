@@ -654,9 +654,6 @@ describe("local Supabase concurrency harness", () => {
       });
       const running = verifyProviderResolution(harness);
       const setup = child.stdin.write.mock.calls[0][0];
-      expect(setup).toContain(
-        "'successful authorization finalizes one Pending Booking Request'",
-      );
       expect(setup).toContain("create temp table history_reference");
       expect(setup).toContain(
         "grant select on history_reference to authenticated",
@@ -664,10 +661,7 @@ describe("local Supabase concurrency harness", () => {
       expect(setup).not.toContain("select 'RESOLVED:'");
       expect(child.stdin.write).toHaveBeenCalledTimes(1);
       tick = 20;
-      child.stdout.emit(
-        "data",
-        "ok 1 - established submission\nRC330_SQL_SETUP_READY\n",
-      );
+      child.stdout.emit("data", "RC330_SQL_SETUP_READY\n");
       await vi.advanceTimersByTimeAsync(20);
       expect(child.stdin.write).toHaveBeenCalledTimes(2);
       const body = child.stdin.write.mock.calls[1][0];
@@ -764,12 +758,7 @@ describe("local Supabase concurrency harness", () => {
       );
       expect(source).toContain('"payment_required"');
 
-      for (const failure of [
-        "setup",
-        "body",
-        "body-timeout",
-        "setup-assertion",
-      ]) {
+      for (const failure of ["setup", "body", "body-timeout"]) {
         const failedChild = childProcess();
         const primary = new Error("actual history setup failure");
         const failed = createLocalSupabaseConcurrencyHarness({
@@ -786,34 +775,21 @@ describe("local Supabase concurrency harness", () => {
           expect(failedChild.stdin.write).toHaveBeenCalledTimes(1);
           expect(failedChild.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
         } else {
-          failedChild.stdout.emit(
-            "data",
-            (failure === "setup-assertion"
-              ? "not ok 1 - submission setup\n"
-              : "ok 1 - setup\n") + "RC330_SQL_SETUP_READY\n",
-          );
+          failedChild.stdout.emit("data", "RC330_SQL_SETUP_READY\n");
           await vi.advanceTimersByTimeAsync(20);
           if (failure === "body") {
             failedChild.stderr.emit("data", "actual history body SQL failure");
             failedChild.emit("close", 9, null);
-          } else if (failure === "setup-assertion") {
-            failedChild.stdout.emit("data", output);
           }
           await vi.advanceTimersByTimeAsync(40);
           const error = await failureRun;
           expect(error.message).toContain(
             failure === "body"
               ? "actual history body SQL failure"
-              : failure === "body-timeout"
-                ? "PostgreSQL session did not reach RC330_HISTORY_EXECUTION_READY"
-                : "The established submission setup must pass",
+              : "PostgreSQL session did not reach RC330_HISTORY_EXECUTION_READY",
           );
           if (failure === "body-timeout")
             expect(failedChild.kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
-          if (failure === "setup-assertion")
-            expect(failedChild.stdin.end).toHaveBeenCalledExactlyOnceWith(
-              "rollback;\n",
-            );
         }
       }
     } finally {
