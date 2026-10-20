@@ -13,6 +13,7 @@ sentence had failed to prevent it or because the bad state would be silent or ha
 | Protection | Mechanism | What it refuses or forces |
 |---|---|---|
 | No unsafe git or GitHub command | `.claude/hooks/block-unsafe-git.mjs` before every shell command (Codex twin under `.codex/hooks/`) | The command forms listed at [the head of `scripts/lib/unsafe-git.mjs`](../scripts/lib/unsafe-git.mjs), which also says what the guard does not model; among them a `git worktree add` that resets a branch with `-B`, forces with `--force`, or names a path under `.claude/worktrees/` that climbs back out with `..`, and a forced `git worktree remove` |
+| Cleanup approval belongs to the trusted root | The Claude root hook `.claude/hooks/block-unsafe-git.mjs`, through native `PreToolUse` permission control | A recognized direct relative cleanup call from an untrusted checkout is refused before loading its helper; only the plain trusted-root command receives cleanup-specific automatic approval, as [closeout step 5](../.agents/skills/closeout/SKILL.md) defines |
 | A builder receives a bounded handoff | `.claude/hooks/check-builder-handoff.mjs` before every agent spawn | A handoff missing a required field, with an unfilled slot, or telling the builder to prove its own mutation |
 | Green before a turn ends | `.claude/hooks/verify-green.sh` at turn end, in the checkout the session is working in (Codex twin under `.codex/hooks/`) | Finishing with a lint error; a check it could not run, because no project root resolved or a tool is absent, is stated as unverified rather than passed silently |
 | The product's own checks pass | The product gates `scripts/gates/{stop,pre-commit}`: `stop` run by both Stop hooks on every turn end, and `pre-commit` run by `.githooks/pre-commit` on every commit | A turn end or commit whose product gate, when present, exits non-zero or is not executable; an absent gate changes nothing |
@@ -26,6 +27,22 @@ sentence had failed to prevent it or because the bad state would be silent or ha
 | Metered suites run on purpose | `.codex/rules/playwright.rules`, where the repository supplies that rule file | A browser run on Codex without a prompt |
 
 ## How it works
+
+Cleanup has no static shell allowance. The installed Claude hook derives its root from its own file location,
+then requires the submitted working directory and the hook process's actual directory to resolve to that same
+main working tree. It also verifies that the helper resolves to the expected root path. An unrelated main
+checkout or a matching helper in a linked job does not establish this identity. Every existing guard refusal
+still takes precedence. After validation, the hook emits native `hookSpecificOutput.permissionDecision: "allow"`
+for the narrow command grammar in [closeout step 5](../.agents/skills/closeout/SKILL.md); a recognized direct call
+without trusted context exits 2. Quoted arguments, redirection or compounds do not escape that direct-call denial.
+Forms outside that denial and automatic grammar receive ordinary runtime review, including an absolute path to a
+current detached verifier's helper. Such a runtime approval is separate from the cleanup-specific hook grant.
+[Claude's hook decision reference](https://code.claude.com/docs/en/hooks#pretooluse-decision-control) describes the
+native protocol; the helper's provenance, occupancy and Docker checks still decide whether targets can be removed.
+
+This protection assumes intact trusted-root files and a trusted host and interpreter configuration.
+[Closeout step 5](../.agents/skills/closeout/SKILL.md) owns cleanup activation checks before relying on it. Matching helper bytes do not pin the interpreter. The hook does not protect
+against a hostile interpreter or changes to the trusted root itself.
 
 Everything else, including which reviewer runs, when to stop and replan, and what the pull request body must say, is a
 sentence in `AGENTS.md` or a skill. The bar for executable machinery is named in [`AGENTS.md`](../AGENTS.md) under
@@ -68,6 +85,8 @@ stale guidance rather than adding a second authority.
 - **A runtime has not loaded or trusted the hooks.** Committed and registered hook configuration proves this repository
   contract; it does not prove that an already-running runtime loaded or trusted that configuration. When the active
   runtime cannot be observed, the delivery report still names that limit.
+  [Closeout step 5](../.agents/skills/closeout/SKILL.md) owns cleanup activation and configuration recovery and
+  selects the current verifier's eligible helper invocation, preserving targets until every safeguard passes.
 - **A command is wrapped or disguised.** The git guard reads an agent's plainly written command and, apart from a
   plain `env` prefix in front of git, does not look inside a wrapper, so it catches accidents and is not a security
   boundary. The branch rules on the server bind only an identity that cannot bypass them; for the role that can, a

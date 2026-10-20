@@ -96,12 +96,14 @@ receive configuration approval without auto mode's classifier judgment. For plai
 read. The hook reads command text; it does not inspect extra arguments supplied from input by a wrapper such as
 `xargs`.
 
-Closeout has one shared allowance, `Bash(node scripts/closeout-cleanup.mjs *)`, for the checked helper's cleanup and
-read-only `--check` forms. Matching helper commands receive configuration approval; individual `git worktree remove`,
-`git branch -d` and `rm` commands keep their existing permissions. The session still verifies the exact job identity
-and the ownership and disposability of its worktree, branch and scratch targets, and follows the existing delivery and
-merge approval steps. Passing an issue number or path to the helper does not establish ownership. The helper checks
-whether targets can safely be removed and reports any retention.
+Closeout's cleanup-specific automatic approval comes from the active trusted root hook, with no static cleanup
+allowance. Only the plain command forms in [closeout step 5](../.agents/skills/closeout/SKILL.md) qualify after root
+validation; a recognized direct relative call from an untrusted checkout is refused before its helper loads.
+Unsupported forms outside that denial, including an absolute verifier-helper path, receive ordinary runtime review.
+[The enforcement guide](AI-WORKFLOW-enforcement.md#how-it-works) explains the hook's identity checks and assumptions.
+Individual `git worktree remove`, `git branch -d` and `rm` commands keep their existing permissions. The session still
+verifies job identity, target ownership and disposability, and follows delivery and merge approval steps. An issue
+number or path does not establish ownership; the helper checks removal safety and reports any retention.
 
 The job form, `node scripts/closeout-cleanup.mjs <issue>`, accepts optional `--pr` with a canonical
 `https://github.com/<owner>/<repository>/pull/<number>` address. Ordinary branch deletion runs first. With that option,

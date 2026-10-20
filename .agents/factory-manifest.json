@@ -1,10 +1,10 @@
 {
   "canonical": "zaingulel/fabraik",
   "release": {
-    "tag": "v0.3.0",
-    "id": 418393009,
-    "assetId": 659320276,
-    "digest": "sha256:5a7a4089daa70c74263b4e233b2e8549ef8837c0c9e1fe7cc354d88f8e6b5ae5"
+    "tag": "v0.3.1",
+    "id": 418625611,
+    "assetId": 659863333,
+    "digest": "sha256:368d851dd34f3a9868bf6238166b58e5e55a33a2e087faafaf011e158dfa622b"
   },
   "entries": [
     {
@@ -13,7 +13,7 @@
     },
     {
       "path": ".agents/skills/closeout/SKILL.md",
-      "sha256": "f47b02f8b16888e2ae04162f6f0f47f86ba88336ba25f5f2b55d92875514a7e6"
+      "sha256": "9f83c2bd9f16fadf05c16e9640a851691bf85520db355dcc8e654ba0f0d6260e"
     },
     {
       "path": ".agents/skills/codebase-design/DEEPENING.md",
@@ -405,7 +405,7 @@
     },
     {
       "path": ".claude/hooks/block-unsafe-git.mjs",
-      "sha256": "0c93ee10c8c745f524ef2dee22ff0ad582330139f40b02e5b9bff648cab92676"
+      "sha256": "1bf998a0b53535252fdbcd2eff9cac727a8cec0821c41d9581338b9f5795666b"
     },
     {
       "path": ".claude/hooks/check-builder-handoff.mjs",
@@ -425,7 +425,7 @@
     },
     {
       "path": ".claude/settings.json",
-      "sha256": "6ce751997d23dccd95970b75d594278bf3ebe458e579ffceeb7070f28b1b6a81"
+      "sha256": "54fb1e66de1caaa653203245a5ff7ca5f44ce41eb426781809cc1ed516611b3e"
     },
     {
       "path": ".claude/skills/accessibility-review/SKILL.md",
@@ -433,7 +433,7 @@
     },
     {
       "path": ".claude/skills/closeout/SKILL.md",
-      "sha256": "f47b02f8b16888e2ae04162f6f0f47f86ba88336ba25f5f2b55d92875514a7e6"
+      "sha256": "9f83c2bd9f16fadf05c16e9640a851691bf85520db355dcc8e654ba0f0d6260e"
     },
     {
       "path": ".claude/skills/codebase-design/DEEPENING.md",
@@ -725,7 +725,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW-enforcement.md",
-      "sha256": "75f64942cacf0d16d1b3cdd583588c684fdaad9ef9493272bb85493526adedda"
+      "sha256": "fd6cc6397558b3bff57d26eac952700da5f7138443bc97b791101c8ee656c81a"
     },
     {
       "path": "docs/AI-WORKFLOW-evidence.md",
@@ -737,7 +737,7 @@
     },
     {
       "path": "docs/AI-WORKFLOW-runtimes.md",
-      "sha256": "edbb85a3a48749b33641682074f846998f6031944ecb98a9d34204214403794f"
+      "sha256": "7ecac208d51e279df7bd5c02989da9774ae6e555de0c012e6ad4a65af9e0138e"
     },
     {
       "path": "docs/AI-WORKFLOW-seats.md",
@@ -962,7 +962,7 @@
     },
     {
       "path": "scripts/lib/settings-policy.test.mjs",
-      "sha256": "b378ed0c69554055378451f5b7956f5b95a6bdcb120c248d235445b4206772b0"
+      "sha256": "e08d0b2119ff88e2067b74565c17bde50289e11183a46061aa44a3c2889d3672"
     },
     {
       "path": "scripts/lib/sweep-scope-corpus.mjs",
@@ -990,11 +990,11 @@
     },
     {
       "path": "scripts/lib/unsafe-git.mjs",
-      "sha256": "609d6232439a16099bdab5c7cf7acbabf69613df58ddf96378918f979028d0ad"
+      "sha256": "d0fff33d9a9018a85290cee7221606d9ed0a73edd073da91f0b91f6ad1c6c796"
     },
     {
       "path": "scripts/lib/unsafe-git.test.mjs",
-      "sha256": "0e40cafcb6f24e1cc9fd58e3a3a1e0d2111c033de20776a8bbadc721131155d7"
+      "sha256": "46092fb66df566607fe6746d13e32d1e61bde07dde8a71ada593e4b9490c6de9"
     },
     {
       "path": "scripts/lib/verify-green.test.mjs",
@@ -1002,7 +1002,7 @@
     },
     {
       "path": "scripts/lib/workflow-contract.test.mjs",
-      "sha256": "782d032aefb6efa734fb37a203e4f13ab3bab3c6e7107dfc62baa16071101d87"
+      "sha256": "1bc49d364b3b85c2bdb2b17538ec133bb31146aedbb6d4ec46d854e662399c22"
     },
     {
       "path": "scripts/merge-watch.mjs",

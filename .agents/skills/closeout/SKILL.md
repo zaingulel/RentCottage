@@ -53,9 +53,34 @@ process list; nothing is inferred from chat.
    that this session started the reporting run, that it has stopped, and that its output reports neither a
    retained process group nor unconfirmed termination; either report retains the artifact. A target whose
    creation evidence fails is a leftover and follows the Leftovers paragraph below.
-   **Cleanup command.** From the verifier checkout, run that checkout's copy of the command, never the job
-   worktree's: `node scripts/closeout-cleanup.mjs <issue> [--pr <canonical HTTPS GitHub PR URL>] --scratch <path> --regenerated <entry>`. Give
-   `--scratch` once for each verified scratch target, as an absolute path, and `--regenerated` once for each
+   **Cleanup command.** Run the selected current verifier's copy, never the job worktree's or a stale root's.
+   Only when that verifier is the current trusted root, use `node scripts/closeout-cleanup.mjs` with arguments
+   `<issue> [--pr <canonical HTTPS GitHub PR URL>] --scratch <path> --regenerated <entry>`. For a current verified
+   detached or linked verifier, use `node "<absolute-verifier-path>/scripts/closeout-cleanup.mjs"` with those same
+   arguments through ordinary runtime review.
+   On Claude Code, cleanup-specific automatic approval comes only from the installed trusted root hook, after
+   its root, working-directory and helper-path checks and every existing guard refusal. The accepted raw command
+   is `node scripts/closeout-cleanup.mjs` with optional arguments containing only ASCII letters, digits and
+   `_./:@,+%=-`. Words are separated by spaces or tabs; leading and trailing spaces or tabs are allowed. The
+   helper still validates flags and values. A recognized direct relative call starts with those literal `node`
+   and helper words and has a space, tab or end of command after the helper path. From an untrusted checkout it
+   is denied before its helper loads, including when quoted arguments, redirection or compound syntax follow that
+   prefix. Use the eligible invocation above for the selected current verifier. Other forms, including absolute
+   verifier paths, wrappers and Unicode or quoted paths, receive no cleanup-specific grant and follow ordinary
+   runtime review unless an existing refusal applies. The verified absolute helper fallback below uses this review.
+   **Cleanup activation.** Before relying on the grant, ensure the reviewed installation or update reaches the
+   root, then start a fresh root `claude --permission-mode auto` session. Accept workspace trust after reviewing
+   the root, observe auto mode, and verify `block-unsafe-git.mjs` on `PreToolUse` through `/hooks`. Inspect
+   `/permissions` for `Bash(node scripts/closeout-cleanup.mjs *)` and broader personal or local cleanup allowances;
+   have their owner withdraw them before relying on this protection. Verify that bare `node` and hook execution
+   resolve the reviewed interpreter through PATH, without editable job directories or relative executable locations.
+   Intact trusted-root files and trusted host and interpreter configuration are prerequisites; matching helper
+   bytes do not pin the interpreter. A job update or an already-running session does not establish activation.
+   Unavailable auto mode, inactive hooks, residual broad allowances or denial-overriding modifications leave
+   protection unverified. Personal and local settings belong to their owner; release updates do not silently
+   repair them. An ordinary runtime approval does not prove the root hook granted it. If activation cannot be
+   verified, retain targets or use ordinary reviewed cleanup, preserving every helper safeguard.
+   Give `--scratch` once for each verified scratch target, as an absolute path, and `--regenerated` once for each
    ignored dependency or build directory a command regenerates, such as `node_modules`, as a path relative to the
    worktree; leave out a flag with nothing to name. The command finds the worktree registered for `job/<issue>`
    itself. A standalone ignored symbolic link, including a named regenerated root such as `node_modules`,
@@ -218,9 +243,11 @@ An owner file or a tracked deliverable is never a leftover.
    names it only when the command succeeded and every line reads `"incomplete_results":false`. A failed or
    incomplete search leaves that evidence unavailable; even a complete filename miss does not clear a dependency
    on the artifact's contents.
-3. **Check use and work state.** Check whether anything uses it with
-   `node scripts/closeout-cleanup.mjs --check <path>`, run from the verifier checkout, which reports the path
-   unused, in use or unverifiable and removes nothing; only `unused` shows that nothing uses it. For a worktree,
+3. **Check use and work state.** Check whether anything uses it with the selected current verifier's helper.
+   Only from the current trusted root, use `node scripts/closeout-cleanup.mjs --check <path>`. For a current verified
+   detached or linked verifier, use `node "<absolute-verifier-path>/scripts/closeout-cleanup.mjs" --check <path>`
+   through ordinary runtime review. The command reports the path unused, in use or unverifiable and removes
+   nothing; only `unused` shows that nothing uses it. For a worktree,
    from the verifier checkout, read
    `git -C <path> status --porcelain --untracked-files=normal --ignored=matching` and its branch, and run the
    same check on its path. `git worktree remove` deletes ignored files without refusing, so investigate each

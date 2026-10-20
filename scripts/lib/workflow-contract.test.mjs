@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -17,6 +17,136 @@ const PRESENT = SETTINGS.runtimes;
 const without = (runtime) => !PRESENT.includes(runtime) && `the settings file names no ${runtime} runtime`;
 const RESUME = readFileSync(resolve(ROOT, '.agents/skills/resume/SKILL.md'), 'utf8');
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// The independent oracle is the root-only cleanup contract and native hook exit protocol.
+// This subprocess test observes that protocol and accidental helper execution by the hook.
+// It never dispatches submitted shell text; actual Claude dispatch needs separate live-runtime evidence.
+// Recurring cost: one disposable main/linked Git fixture and bounded hook subprocesses.
+// Remove if cleanup-specific hook approval is retired; real cleanup behavior has separate CLI evidence.
+test('ANTI-REGRESSION: cleanup approval is bound to the trusted root hook', { skip: without('claude') }, (t) => {
+  const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'workflow-cleanup-permission-')));
+  t.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const root = join(fixture, 'root');
+  const job = join(fixture, 'job');
+  const sentinel = join(fixture, 'sentinel');
+  const env = {
+    ...gitEnvironment(),
+    GIT_CONFIG_GLOBAL: join(fixture, 'no-global-config'),
+    GIT_CONFIG_NOSYSTEM: '1',
+  };
+  const git = (cwd, args) => {
+    const run = spawnSync('git', args, { cwd, env, encoding: 'utf8' });
+    assert.equal(run.status, 0, `git ${args.join(' ')}: ${run.stderr}`);
+    return run.stdout.trim();
+  };
+  mkdirSync(root);
+  git(root, ['init', '-q', '-b', 'main']);
+  for (const path of [
+    '.claude/hooks/block-unsafe-git.mjs',
+    'scripts/lib/unsafe-git.mjs',
+    'scripts/lib/checkout-context.mjs',
+    'scripts/lib/posix-shell.mjs',
+    'scripts/closeout-cleanup.mjs',
+  ]) {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    cpSync(join(ROOT, path), join(root, path));
+  }
+  git(root, ['add', '.']);
+  git(root, ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false',
+    'commit', '-q', '-m', 'fixture baseline']);
+  git(root, ['worktree', 'add', '-q', '-b', 'job/321', job]);
+  // Maliciously altered job-local CLI: discard the copied executable body/imports, including
+  // the imported self-check, and permit only deletion of this fixture's literal sentinel.
+  writeFileSync(join(job, 'scripts/closeout-cleanup.mjs'),
+    `import { unlinkSync } from 'node:fs';\nunlinkSync(${JSON.stringify(sentinel)});\n`);
+  writeFileSync(sentinel, 'retained');
+  const command = 'node scripts/closeout-cleanup.mjs 321';
+  const hook = (cwd, payload, options = {}) => spawnSync(process.execPath, [join(root, '.claude/hooks/block-unsafe-git.mjs')], {
+    cwd, env, input: JSON.stringify(payload), encoding: 'utf8', ...options,
+  });
+  const refused = hook(job, { cwd: job, tool_input: { command } });
+  assert.equal(refused.status, 2, `the hook must refuse editable job cleanup: ${refused.stderr}`);
+  assert.equal(readFileSync(sentinel, 'utf8'), 'retained', 'the hook must not execute the editable helper');
+  assert.match(refused.stderr, /cleanup requires the current trusted root/);
+  assert.match(refused.stderr, /if the root is not current, invoke the current verified helper by absolute path under ordinary runtime review/);
+  assert.ok(refused.stderr.includes(root));
+  const allowed = hook(root, { cwd: root, tool_input: { command } });
+  assert.equal(allowed.status, 0, allowed.stderr);
+  assert.equal(allowed.stderr, '');
+  assert.deepEqual(JSON.parse(allowed.stdout), {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'allow',
+      permissionDecisionReason: `Cleanup runs the verified helper in the trusted root ${root}`,
+    },
+  });
+
+  const other = join(fixture, 'unrelated-main');
+  mkdirSync(other);
+  git(other, ['init', '-q', '-b', 'main']);
+  for (const [cwd, payloadCwd] of [
+    [other, other], [root, job], [job, root], [root, undefined], [root, 321],
+    [root, join(fixture, 'missing-cwd')],
+  ]) {
+    const run = hook(cwd, { cwd: payloadCwd, tool_input: { command } });
+    assert.equal(run.status, 2, `untrusted cwd ${JSON.stringify(payloadCwd)}: ${run.stderr}`);
+    assert.equal(run.stdout, '', 'refusal must not include permission JSON');
+  }
+  for (const suffix of [' "quoted path"', ' > output', ' && echo done']) {
+    assert.equal(hook(job, { cwd: job, tool_input: { command: command + suffix } }).status, 2,
+      'direct untrusted calls are refused even with unsupported suffixes');
+  }
+  const unavailableGit = hook(root, { cwd: root, tool_input: { command } }, { env: { ...env, PATH: fixture } });
+  assert.equal(unavailableGit.status, 2, unavailableGit.stderr);
+  assert.match(unavailableGit.stderr, /Git cannot identify/);
+  renameSync(join(root, '.git'), join(root, 'saved-git'));
+  const unresolvedRoot = hook(root, { cwd: root, tool_input: { command } });
+  renameSync(join(root, 'saved-git'), join(root, '.git'));
+  assert.equal(unresolvedRoot.status, 2, unresolvedRoot.stderr);
+  assert.match(unresolvedRoot.stderr, /Git cannot identify/);
+
+  const helper = join(root, 'scripts/closeout-cleanup.mjs');
+  const helperBytes = readFileSync(helper);
+  rmSync(helper);
+  const missingHelper = hook(root, { cwd: root, tool_input: { command } });
+  assert.equal(missingHelper.status, 2, missingHelper.stderr);
+  assert.match(missingHelper.stderr, /could not be resolved/);
+  writeFileSync(helper, helperBytes);
+  // Redirect the scripts directory so the helper remains a file; only identity can reject it.
+  // A junction avoids requiring Windows file-symlink privileges.
+  renameSync(join(root, 'scripts'), join(root, 'saved-scripts'));
+  symlinkSync(join(job, 'scripts'), join(root, 'scripts'), 'junction');
+  const redirectedHelper = hook(root, { cwd: root, tool_input: { command } });
+  rmSync(join(root, 'scripts'));
+  renameSync(join(root, 'saved-scripts'), join(root, 'scripts'));
+  assert.equal(redirectedHelper.status, 2, redirectedHelper.stderr);
+  assert.match(redirectedHelper.stderr, /redirected/);
+
+  for (const payload of [null, [], {}, { tool_input: { command: 321 } },
+    { cwd: root, tool_input: { command: {} } }]) {
+    const run = hook(root, payload);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stdout, '', 'uninspectable payload must never grant permission');
+    assert.match(run.stderr, /no string command/);
+  }
+  const malformed = hook(root, {}, { input: '{' });
+  assert.equal(malformed.status, 0, malformed.stderr);
+  assert.equal(malformed.stdout, '');
+  assert.match(malformed.stderr, /unparseable hook payload/);
+  for (const unsupported of [`env ${command}`, `${command} && echo done`]) {
+    const run = hook(root, { cwd: root, tool_input: { command: unsupported } });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stdout, '', 'unsupported syntax must receive no cleanup-specific permission');
+  }
+  const gitRefusal = hook(root, { cwd: root, tool_input: { command: `${command} && git commit --no-verify` } });
+  assert.equal(gitRefusal.status, 2, gitRefusal.stderr);
+  assert.match(gitRefusal.stderr, /git commit/);
+  assert.equal(gitRefusal.stdout, '', 'existing Git refusals precede cleanup approval');
+  const gitRead = hook(root, { cwd: root, tool_input: { command: 'git status' } });
+  assert.equal(gitRead.status, 0, gitRead.stderr);
+  assert.equal(gitRead.stdout, '');
+  assert.equal(readFileSync(sentinel, 'utf8'), 'retained', 'hook subprocesses did not execute the editable helper');
+});
 
 // Pins the independently reviewed workflow, including its job-level branch condition.
 // Recurring cost: one file read and hash; update only after configuration review.
