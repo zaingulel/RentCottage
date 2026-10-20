@@ -1152,3 +1152,9 @@ ALTER TABLE public.booking_request_release_work ADD CONSTRAINT booking_request_r
 
 ALTER TABLE public.owner_application_cottage_profiles ADD CONSTRAINT cottage_suspension_revision_nonnegative CHECK(suspension_revision>=0);
 ALTER TABLE public.owner_application_cottage_profiles ADD CONSTRAINT cottage_suspension_prior_listing_state CHECK(listing_state_before_suspension IS NULL OR listing_state_before_suspension IN ('published','paused'));
+
+ALTER TABLE ONLY public.booking_request_submission_attempts
+    ADD CONSTRAINT booking_request_submission_suspension_revisions_check CHECK (
+      customer_suspension_revision >= 0 AND owner_suspension_revision >= 0
+      AND cottage_suspension_revision >= 0
+    );

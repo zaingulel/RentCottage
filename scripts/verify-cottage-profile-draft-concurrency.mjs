@@ -59,122 +59,215 @@ try {
   ${claims(administratorUserId, "aal2")}
   ${body}
 `;
-  const clearAdditionalProfiles = () =>
+  const sharedProfileRows = () =>
     harness.runSql(`
-    delete from public.owner_application_cottage_profiles
-    where owner_user_id = '${ownerUserId}' and application_id is null;
+    select jsonb_build_object(
+      'profiles', coalesce((select jsonb_agg(to_jsonb(profiles) order by id)
+        from public.owner_application_cottage_profiles profiles
+        where owner_user_id='${ownerUserId}'), '[]'::jsonb),
+      'sources', coalesce((select jsonb_agg(to_jsonb(sources) order by sources.id)
+        from public.cottage_profile_source_revisions sources
+        join public.owner_application_cottage_profiles profiles on profiles.id=sources.profile_id
+        where profiles.owner_user_id='${ownerUserId}'), '[]'::jsonb)
+    );
   `);
-  const seedAdditionalProfiles = (count, status, age) =>
-    harness.runSql(`
-    insert into public.owner_application_cottage_profiles (
-      owner_user_id, status, created_at, abandoned_at
-    )
-    select '${ownerUserId}', '${status}', now() - interval '${age}',
-      case when '${status}' = 'abandoned' then now() else null end
-    from generate_series(1, ${count});
+  const retainedSharedProfiles = sharedProfileRows();
+  const raceOwnerUserId = randomUUID();
+  const raceOwnerPhone = "+999" + randomInt(100000000000, 1000000000000);
+  harness.runSql(`
+    begin;
+    insert into auth.users (id, aud, role, phone, phone_confirmed_at, email, email_confirmed_at)
+    values ('${raceOwnerUserId}', 'authenticated', 'authenticated', '${raceOwnerPhone}', now(), null, null);
+    insert into public.account_contexts (user_id, role, owner_approval_state)
+    values ('${raceOwnerUserId}', 'cottage_owner', 'approved');
+    commit;
   `);
+  const raceOwnerSession = (applicationName, body) => `
+    begin;
+    select set_config('application_name', '${applicationName}', false);
+    set local role authenticated;
+    ${claims(raceOwnerUserId, "aal1")}
+    ${body}
+  `;
+  const capacityProfileIds = new Set();
+  const clearAdditionalProfiles = () => {
+    if (!capacityProfileIds.size) return;
+    const ids = [...capacityProfileIds].map((id) => `'${id}'`).join(",");
+    try {
+      harness.runSql(`
+        delete from public.owner_application_cottage_profiles
+        where owner_user_id='${raceOwnerUserId}' and id=any(array[${ids}]::uuid[]);
+      `);
+      assert.equal(
+        harness.runSql(`
+        select count(*) from public.owner_application_cottage_profiles
+        where owner_user_id='${raceOwnerUserId}' and id=any(array[${ids}]::uuid[]);
+      `),
+        "0",
+      );
+      capacityProfileIds.clear();
+    } catch (error) {
+      console.error("Retained capacity scenario profiles:", [
+        ...capacityProfileIds,
+      ]);
+      throw error;
+    }
+  };
+  const seedAdditionalProfiles = (count, status, age) => {
+    const ids = harness
+      .runSql(
+        `
+      insert into public.owner_application_cottage_profiles (
+        owner_user_id, status, created_at, abandoned_at
+      )
+      select '${raceOwnerUserId}', '${status}', now() - interval '${age}',
+        case when '${status}' = 'abandoned' then now() else null end
+      from generate_series(1, ${count}) returning id;
+    `,
+      )
+      .split("\n");
+    assert.equal(ids.length, count);
+    for (const id of ids) capacityProfileIds.add(id);
+  };
+  const capacityCounts = `
+    select count(*) filter(where current_publication_id is null and status<>'abandoned')
+      || '|' || count(*) filter(where application_id is null and created_at>now()-interval '24 hours')
+    from public.owner_application_cottage_profiles where owner_user_id='${raceOwnerUserId}';
+  `;
+  const createdProfile = `select 'CREATED_PROFILE=' || (public.create_owner_cottage_profile_draft()).id;`;
+  const recordCreatedProfiles = (session) => {
+    for (const line of session.stdout.split("\n")) {
+      if (line.startsWith("CREATED_PROFILE="))
+        capacityProfileIds.add(line.slice("CREATED_PROFILE=".length));
+    }
+  };
 
-  async function proveCreateRace({
-    name,
-    seedCount,
-    seedStatus,
-    seedAge,
-    expectedCode,
-  }) {
+  async function proveCreateRace({ name, seedStatus, seedAge, expectedCode }) {
     harness.markTimingPhase("setup");
     clearAdditionalProfiles();
-    seedAdditionalProfiles(seedCount, seedStatus, seedAge);
+    seedAdditionalProfiles(19, seedStatus, seedAge);
+    assert.equal(
+      harness.runSql(capacityCounts),
+      seedStatus === "draft" ? "19|0" : "0|19",
+    );
     harness.markTimingPhase("execution");
     const first = harness.startSession(
-      ownerSession(
+      raceOwnerSession(
         `${name}-winner`,
         `
-      select public.create_owner_cottage_profile_draft();
+      ${createdProfile}
       select '${name}-locked';
     `,
       ),
     );
-    await harness.waitForMarker(first, `${name}-locked`);
-    const contenderName = `${name}-contender`;
-    const contender = harness.startSession(
-      ownerSession(
-        contenderName,
-        `
-      select public.create_owner_cottage_profile_draft();
-      commit;
-    `,
-      ),
-      true,
-    );
-    await harness.waitForLock(contenderName, contender);
-    await harness.finishSession(first, { action: "commit" });
-    await harness.finishSession(contender, { expectedState: expectedCode });
-    console.log(
-      `${name}: observed PostgreSQL Lock wait and ${expectedCode} refusal.`,
-    );
+    let contender;
+    try {
+      await harness.waitForMarker(first, `${name}-locked`);
+      recordCreatedProfiles(first);
+      const contenderName = `${name}-contender`;
+      contender = harness.startSession(
+        raceOwnerSession(
+          contenderName,
+          `
+        ${createdProfile}
+        commit;
+      `,
+        ),
+        true,
+      );
+      await harness.waitForLock(contenderName, contender);
+      await harness.finishSession(first, { action: "commit" });
+      assert.equal(
+        harness.runSql(capacityCounts),
+        seedStatus === "draft" ? "20|1" : "1|20",
+      );
+      await harness.finishSession(contender, { expectedState: expectedCode });
+      console.log(
+        `${name}: observed PostgreSQL Lock wait and ${expectedCode} refusal.`,
+      );
+    } catch (error) {
+      await harness.cleanUpOwnedSession(first, error);
+      if (contender) await harness.cleanUpOwnedSession(contender, error);
+      throw error;
+    } finally {
+      recordCreatedProfiles(first);
+      if (contender) recordCreatedProfiles(contender);
+      clearAdditionalProfiles();
+    }
   }
 
   await proveCreateRace({
     name: "open-cap-create-vs-create",
-    seedCount: 18,
     seedStatus: "draft",
     seedAge: "2 days",
     expectedCode: "RC420",
   });
-
   await proveCreateRace({
     name: "rate-only-create-vs-create",
-    seedCount: 19,
     seedStatus: "abandoned",
     seedAge: "1 hour",
     expectedCode: "RC429",
   });
 
   harness.markTimingPhase("setup");
-  clearAdditionalProfiles();
-  seedAdditionalProfiles(18, "draft", "2 days");
+  seedAdditionalProfiles(19, "draft", "2 days");
   const abandonedProfileId = harness.runSql(`
-  insert into public.owner_application_cottage_profiles (
-    owner_user_id, status, created_at, abandoned_at
-  ) values ('${ownerUserId}', 'abandoned', now() - interval '2 days', now())
-  returning id;
-`);
+    insert into public.owner_application_cottage_profiles (
+      owner_user_id, status, created_at, abandoned_at
+    ) values ('${raceOwnerUserId}', 'abandoned', now() - interval '2 days', now())
+    returning id;
+  `);
+  capacityProfileIds.add(abandonedProfileId);
+  assert.equal(harness.runSql(capacityCounts), "19|0");
   harness.markTimingPhase("execution");
   const creator = harness.startSession(
-    ownerSession(
+    raceOwnerSession(
       "create-vs-admin-restore-winner",
       `
-    select public.create_owner_cottage_profile_draft();
+    ${createdProfile}
     select 'create-vs-admin-restore-locked';
   `,
     ),
   );
-  await harness.waitForMarker(creator, "create-vs-admin-restore-locked");
-  const restoreName = "create-vs-admin-restore-contender";
-  const restorer = harness.startSession(
-    administratorSession(
-      restoreName,
-      `
-    select public.restore_administrator_cottage_profile_draft(
-      '${abandonedProfileId}', 1, 'Concurrency capacity proof'
+  let restorer;
+  try {
+    await harness.waitForMarker(creator, "create-vs-admin-restore-locked");
+    recordCreatedProfiles(creator);
+    const restoreName = "create-vs-admin-restore-contender";
+    restorer = harness.startSession(
+      administratorSession(
+        restoreName,
+        `
+      select public.restore_administrator_cottage_profile_draft(
+        '${abandonedProfileId}', 1, 'Concurrency capacity proof'
+      );
+      commit;
+    `,
+      ),
+      true,
     );
-    commit;
-  `,
-    ),
-    true,
-  );
-  await harness.waitForLock(restoreName, restorer);
-  await harness.finishSession(creator, { action: "commit" });
-  await harness.finishSession(restorer, { expectedState: "RC420" });
-  console.log(
-    "create-vs-admin-restore: observed PostgreSQL Lock wait and RC420 refusal.",
-  );
-  harness.markTimingPhase("cleanup");
-  clearAdditionalProfiles();
+    await harness.waitForLock(restoreName, restorer);
+    await harness.finishSession(creator, { action: "commit" });
+    assert.equal(harness.runSql(capacityCounts), "20|1");
+    await harness.finishSession(restorer, { expectedState: "RC420" });
+    console.log(
+      "create-vs-admin-restore: observed PostgreSQL Lock wait and RC420 refusal.",
+    );
+  } catch (error) {
+    await harness.cleanUpOwnedSession(creator, error);
+    if (restorer) await harness.cleanUpOwnedSession(restorer, error);
+    throw error;
+  } finally {
+    recordCreatedProfiles(creator);
+    clearAdditionalProfiles();
+  }
 
+  assert.equal(
+    sharedProfileRows(),
+    retainedSharedProfiles,
+    "Capacity cases must preserve every retained shared-owner profile and immutable submitted source.",
+  );
   harness.markTimingPhase("setup");
-  const raceOwnerUserId = randomUUID();
-  const raceOwnerPhone = "+999" + randomInt(100000000000, 1000000000000);
   const runtimeControl = JSON.parse(
     harness.runSql(`
     select to_jsonb(control) from public.cottage_translation_runtime_control control where singleton;
@@ -186,10 +279,6 @@ try {
         .runSql(
           `
       begin;
-      insert into auth.users (id, aud, role, phone, phone_confirmed_at, email, email_confirmed_at)
-      values ('${raceOwnerUserId}', 'authenticated', 'authenticated', '${raceOwnerPhone}', now(), null, null);
-      insert into public.account_contexts (user_id, role, owner_approval_state)
-      values ('${raceOwnerUserId}', 'cottage_owner', 'approved');
       update public.cottage_translation_runtime_control
       set production_ready = true,
           approved_evaluation_artifact_digest = repeat('a', 64),
@@ -634,6 +723,408 @@ try {
       ),
       runtimeControl,
     );
+  }
+  for (const operation of ["update", "submit"]) {
+    harness.markTimingPhase("setup");
+    const suspensionCommandId = randomUUID();
+    const reactivationCommandId = randomUUID();
+    const suspensionReason = `Fictional held-profile owner ${operation} ${suspensionCommandId}`;
+    const reactivationReason = `Restore fictional held-profile owner ${operation} ${reactivationCommandId}`;
+    let suspensionProfileId;
+    let suspensionApplication;
+    let baselineHistory;
+    const ownerEligibility = () =>
+      harness
+        .runSql(
+          ownerSession(
+            `owner-${operation}-suspension-eligibility`,
+            `
+      select public.owner_can_start_new_business('${ownerUserId}');
+      rollback;
+    `,
+          ),
+        )
+        .split("\n")
+        .at(-1);
+    const ownerHistory = () =>
+      JSON.parse(
+        harness.runSql(`
+    select jsonb_build_object(
+      'transitions', coalesce((select jsonb_agg(to_jsonb(transitions) order by id)
+        from public.owner_application_transitions transitions
+        where application_id='${suspensionApplication.id}'), '[]'::jsonb),
+      'notices', coalesce((select jsonb_agg(to_jsonb(notices) order by id)
+        from public.owner_application_notices notices
+        where application_id='${suspensionApplication.id}'), '[]'::jsonb),
+      'actions', coalesce((select jsonb_agg(to_jsonb(actions) order by id)
+        from private.marketplace_suspension_actions actions
+        where account_user_id='${ownerUserId}'), '[]'::jsonb)
+    );
+  `),
+      );
+    const profileBytes = () =>
+      harness.runSql(`
+      select jsonb_build_object(
+        'profile', to_jsonb(profiles),
+        'sources', coalesce((select jsonb_agg(to_jsonb(sources) order by id)
+          from public.cottage_profile_source_revisions sources where profile_id=profiles.id), '[]'::jsonb),
+        'photos', coalesce((select jsonb_agg(to_jsonb(photos) order by id)
+          from public.cottage_profile_photos photos where profile_id=profiles.id), '[]'::jsonb),
+        'objects', coalesce((select jsonb_agg(to_jsonb(objects) order by objects.id)
+          from storage.objects objects join public.cottage_profile_photos photos
+            on objects.bucket_id=public.cottage_profile_photo_bucket_name() and objects.name=photos.object_path
+          where photos.profile_id=profiles.id), '[]'::jsonb),
+        'cycles', coalesce((select jsonb_agg(to_jsonb(cycles) order by id)
+          from public.cottage_profile_review_cycles cycles where profile_id=profiles.id), '[]'::jsonb),
+        'localizedRevisions', coalesce((select jsonb_agg(to_jsonb(localizations) order by localizations.id)
+          from public.cottage_profile_localized_revisions localizations
+          join public.cottage_profile_review_cycles cycles on cycles.id=localizations.review_cycle_id
+          where cycles.profile_id=profiles.id), '[]'::jsonb),
+        'reviewPhotos', coalesce((select jsonb_agg(to_jsonb(photos) order by photos.position)
+          from public.cottage_profile_review_photos photos
+          join public.cottage_profile_review_cycles cycles on cycles.id=photos.review_cycle_id
+          where cycles.profile_id=profiles.id), '[]'::jsonb)
+      ) from public.owner_application_cottage_profiles profiles where id='${suspensionProfileId}';
+    `);
+    try {
+      assert.equal(
+        ownerEligibility(),
+        "t",
+        "The suspension race requires a genuinely approved owner with current verification.",
+      );
+      suspensionApplication = JSON.parse(
+        harness.runSql(`
+      select jsonb_build_object('id', applications.id, 'version', applications.version,
+        'suspensionRevision', contexts.owner_suspension_revision)
+      from public.owner_applications applications
+      join public.account_contexts contexts on contexts.user_id=applications.owner_user_id
+      where applications.owner_user_id='${ownerUserId}' and applications.status='approved';
+    `),
+      );
+      baselineHistory = ownerHistory();
+      assert.equal(
+        harness.runSql(`
+      select count(*) from public.booking_requests
+      where owner_user_id='${ownerUserId}' and status='pending';
+    `),
+        "0",
+        "The shared owner must have no unrelated pending requests before suspension.",
+      );
+      suspensionProfileId = harness
+        .runSql(
+          ownerSession(
+            `owner-${operation}-suspension-setup`,
+            `
+        select (public.create_owner_cottage_profile_draft()).id;
+        commit;
+      `,
+          ),
+        )
+        .split("\n")
+        .at(-1);
+      harness.runSql(
+        ownerSession(
+          `owner-${operation}-suspension-baseline`,
+          `
+      select public.update_owner_cottage_profile_draft(
+        '${suspensionProfileId}', 1, 'Suspension race garden', 'Erbil', 'Near Shaqlawa',
+        'Private race address', 36.4, 44.3, 'Private race directions',
+        8, 3, 2, array['garden'], 'en', 'Race baseline description', 'Race baseline rules'
+      );
+      commit;
+    `,
+        ),
+      );
+      if (operation === "submit") {
+        harness.runSql(
+          ownerSession(
+            `owner-${operation}-suspension-photo`,
+            `
+        select public.prepare_cottage_profile_photo_upload(
+          '${suspensionProfileId}', 'suspension-submit.webp', 'image/webp', 128
+        );
+        commit;
+      `,
+          ),
+        );
+        harness.runSql(`
+        begin;
+        insert into storage.objects (bucket_id, name, owner_id, metadata)
+        select public.cottage_profile_photo_bucket_name(), object_path, owner_user_id::text,
+          '{"size":128,"mimetype":"image/webp"}'::jsonb
+        from public.cottage_profile_photos where profile_id='${suspensionProfileId}';
+        set local role service_role;
+        select set_config('request.jwt.claims', '{"sub":"${administratorUserId}","role":"service_role","aal":"aal2"}', true);
+        select public.register_cottage_profile_photo(id) from public.cottage_profile_photos
+        where profile_id='${suspensionProfileId}';
+        commit;
+      `);
+      }
+      const before = profileBytes();
+      assert.equal(JSON.parse(before).profile.version, 2);
+      harness.markTimingPhase("execution");
+      const holder = harness.startSession(`
+      begin;
+      set application_name='owner-${operation}-suspension-holder';
+      select id from public.owner_application_cottage_profiles
+      where id='${suspensionProfileId}' for update;
+      select 'OWNER_WRITE_PROFILE_HELD';
+    `);
+      let contender;
+      try {
+        await harness.waitForMarker(holder, "OWNER_WRITE_PROFILE_HELD");
+        contender = harness.startSession(
+          ownerSession(
+            `owner-${operation}-suspension-contender`,
+            `
+          ${
+            operation === "submit"
+              ? `select public.submit_cottage_profile_for_content_approval('${suspensionProfileId}', 2);`
+              : `select public.update_owner_cottage_profile_draft(
+              '${suspensionProfileId}', 2, 'Suspension race garden', 'Erbil', 'Near Shaqlawa',
+              'Private race address', 36.4, 44.3, 'Private race directions',
+              8, 3, 2, array['garden'], 'en', 'Unsafe suspended owner description', 'Race baseline rules'
+            );`
+          }
+          commit;
+        `,
+          ),
+          true,
+        );
+        await harness.waitForLock(
+          `owner-${operation}-suspension-contender`,
+          contender,
+        );
+        holder.child.stdin.write(`
+        set local role authenticated;
+        ${claims(administratorUserId, "aal2")}
+        select 'OWNER_SUSPENSION=' || public.set_marketplace_suspension(
+          'owner', '${ownerUserId}', 'suspend', ${suspensionApplication.version},
+          '${suspensionReason}', '${suspensionCommandId}'
+        )::text;
+        select 'OWNER_WRITE_SUSPENDED';
+      `);
+        await harness.waitForMarker(holder, "OWNER_WRITE_SUSPENDED");
+        const suspension = JSON.parse(
+          holder.stdout
+            .split("\n")
+            .find((line) => line.startsWith("OWNER_SUSPENSION="))
+            .slice("OWNER_SUSPENSION=".length),
+        );
+        assert.equal(suspension.status, "completed");
+        await harness.finishSession(holder, { action: "commit" });
+        await contender.exited;
+        const after = profileBytes();
+        assert.equal(
+          after,
+          before,
+          `owner_write_rechecks_after_profile_wait ${operation} changed the working copy after suspension: ${after}`,
+        );
+        await harness.finishSession(contender, { expectedState: "42501" });
+      } catch (error) {
+        await harness.cleanUpOwnedSession(holder, error);
+        if (contender) await harness.cleanUpOwnedSession(contender, error);
+        throw error;
+      }
+      console.log(
+        `owner_write_rechecks_after_profile_wait ${operation}: held-profile suspension committed; waiting owner write denied with 42501 and exact working-copy/source/photo bytes retained.`,
+      );
+    } finally {
+      harness.markTimingPhase("cleanup");
+      if (suspensionApplication) {
+        const currentHistory = ownerHistory();
+        const ownActions = currentHistory.actions.filter(
+          (action) => action.command_id === suspensionCommandId,
+        );
+        if (ownActions.length) {
+          assert.equal(ownActions.length, 1);
+          const action = ownActions[0];
+          assert.equal(action.target_kind, "owner");
+          assert.equal(action.actor_user_id, administratorUserId);
+          assert.equal(action.reason, suspensionReason);
+          const current = JSON.parse(
+            harness
+              .runSql(
+                administratorSession(
+                  `owner-${operation}-suspension-restoration-check`,
+                  `
+            select public.get_marketplace_suspension('owner', '${ownerUserId}');
+            rollback;
+          `,
+                ),
+              )
+              .split("\n")
+              .at(-1),
+          );
+          assert.equal(current.status, "ready");
+          assert.equal(current.state, "suspended");
+          assert.equal(
+            current.revision,
+            action.resulting_revision,
+            "The current suspension must still be attributable to this scenario command.",
+          );
+          assert.equal(current.canReactivate, true);
+          assert.equal(current.restorationState, "approved");
+          const restored = JSON.parse(
+            harness
+              .runSql(
+                administratorSession(
+                  `owner-${operation}-suspension-reactivate`,
+                  `
+            select public.set_marketplace_suspension('owner', '${ownerUserId}', 'reactivate',
+              ${current.revision}, '${reactivationReason}', '${reactivationCommandId}');
+            commit;
+          `,
+                ),
+              )
+              .split("\n")
+              .at(-1),
+          );
+          assert.equal(restored.status, "completed");
+          assert.equal(ownerEligibility(), "t");
+          const retained = ownerHistory();
+          for (const key of ["transitions", "notices", "actions"]) {
+            const baselineIds = new Set(
+              baselineHistory[key].map((row) => row.id),
+            );
+            assert.deepEqual(
+              retained[key].filter((row) => baselineIds.has(row.id)),
+              baselineHistory[key],
+            );
+          }
+          const newActions = retained.actions.filter(
+            (row) => !baselineHistory.actions.some((old) => old.id === row.id),
+          );
+          assert.equal(newActions.length, 2);
+          for (const [commandId, reason, expectedRevision, targetAction] of [
+            [
+              suspensionCommandId,
+              suspensionReason,
+              suspensionApplication.version,
+              "suspend",
+            ],
+            [
+              reactivationCommandId,
+              reactivationReason,
+              current.revision,
+              "reactivate",
+            ],
+          ]) {
+            const matching = newActions.filter(
+              (row) => row.command_id === commandId,
+            );
+            assert.equal(matching.length, 1);
+            assert.equal(matching[0].reason, reason);
+            assert.equal(matching[0].actor_user_id, administratorUserId);
+            assert.equal(matching[0].expected_revision, expectedRevision);
+            assert.equal(matching[0].resulting_revision, expectedRevision + 1);
+            assert.equal(matching[0].action, targetAction);
+            const transitions = retained.transitions.filter(
+              (row) =>
+                row.application_version === expectedRevision + 1 &&
+                row.reason === reason,
+            );
+            assert.equal(transitions.length, 1);
+            assert.equal(transitions[0].actor_user_id, administratorUserId);
+          }
+          assert.equal(
+            retained.transitions.length,
+            baselineHistory.transitions.length + 2,
+          );
+          const notices = retained.notices.filter(
+            (row) => row.reason === suspensionReason,
+          );
+          assert.equal(notices.length, 1);
+          assert.equal(notices[0].kind, "suspended");
+          assert.equal(
+            retained.notices.length,
+            baselineHistory.notices.length + 1,
+          );
+          assert.equal(
+            harness.runSql(`
+          select applications.version || '|' || contexts.owner_suspension_revision
+          from public.owner_applications applications
+          join public.account_contexts contexts on contexts.user_id=applications.owner_user_id
+          where applications.id='${suspensionApplication.id}';
+        `),
+            `${suspensionApplication.version + 2}|${suspensionApplication.suspensionRevision + 2}`,
+          );
+          console.log(
+            `owner_write_rechecks_after_profile_wait ${operation} history: retained all prior rows and both scenario actions, two transitions and one suspension notice; real reactivation preserved monotonic counters.`,
+          );
+        }
+        if (suspensionProfileId && operation === "submit") {
+          const retained = JSON.parse(profileBytes());
+          assert.equal(retained.photos.length, 1);
+          assert.equal(retained.photos[0].state, "ready");
+          assert.equal(retained.objects.length, 1);
+          if (retained.sources.length) {
+            assert.equal(retained.sources.length, 1);
+            assert.equal(
+              retained.profile.status,
+              "submitted_for_content_approval",
+            );
+            assert.equal(retained.profile.version, 3);
+            assert.equal(
+              retained.profile.submitted_source_revision_id,
+              retained.sources[0].id,
+            );
+            assert.equal(retained.cycles.length, 1);
+            assert.equal(
+              retained.cycles[0].source_revision_id,
+              retained.sources[0].id,
+            );
+            assert.equal(retained.localizedRevisions.length, 1);
+            assert.equal(retained.reviewPhotos.length, 1);
+            assert.equal(
+              retained.reviewPhotos[0].photo_id,
+              retained.photos[0].id,
+            );
+          } else {
+            assert.equal(retained.profile.status, "draft");
+            assert.equal(retained.profile.version, 2);
+            assert.equal(retained.cycles.length, 0);
+          }
+          console.log(
+            "owner-submit retained evidence:",
+            JSON.stringify({
+              profileId: retained.profile.id,
+              status: retained.profile.status,
+              version: retained.profile.version,
+              suspensionCommandId,
+              reactivationCommandId,
+              submittedSourceRevisionId:
+                retained.profile.submitted_source_revision_id,
+              sourceIds: retained.sources.map((row) => row.id),
+              photoIds: retained.photos.map((row) => row.id),
+              storageObjectIds: retained.objects.map((row) => row.id),
+              reviewCycleIds: retained.cycles.map((row) => row.id),
+              localizedRevisionIds: retained.localizedRevisions.map(
+                (row) => row.id,
+              ),
+              reviewPhotos: retained.reviewPhotos.map((row) => ({
+                cycleId: row.review_cycle_id,
+                photoId: row.photo_id,
+              })),
+              disposition: retained.sources.length
+                ? "immutable submitted graph"
+                : "ready photo/storage graph",
+            }),
+          );
+        } else if (suspensionProfileId) {
+          harness.runSql(`
+          delete from public.owner_application_cottage_profiles
+          where id='${suspensionProfileId}' and owner_user_id='${ownerUserId}' and application_id is null;
+        `);
+          assert.equal(
+            harness.runSql(`
+          select count(*) from public.owner_application_cottage_profiles where id='${suspensionProfileId}';
+        `),
+            "0",
+          );
+        }
+      }
+    }
   }
   timingOutcome = "passed";
 } finally {

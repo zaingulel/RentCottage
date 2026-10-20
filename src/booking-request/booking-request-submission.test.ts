@@ -140,7 +140,12 @@ describe("BookingRequestSubmission", () => {
     expect(markReconciliationRequired).not.toHaveBeenCalled();
   });
 
-  it.each(["quote-stale", "too-late", "invalid"] as const)(
+  it.each([
+    "customer-suspended",
+    "quote-stale",
+    "too-late",
+    "invalid",
+  ] as const)(
     "never calls Payment Authorization when fresh preparation returns %s",
     async (status) => {
       const repository = {
@@ -164,7 +169,13 @@ describe("BookingRequestSubmission", () => {
     },
   );
 
-  it.each(["quote-stale", "too-late", "invalid", "unavailable"] as const)(
+  it.each([
+    "customer-suspended",
+    "quote-stale",
+    "too-late",
+    "invalid",
+    "unavailable",
+  ] as const)(
     "never starts Payment Authorization when the atomic claim returns %s",
     async (status) => {
       const repository = {

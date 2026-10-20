@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS private.marketplace_suspension_actions (
       (target_kind IN ('customer','owner') AND account_user_id IS NOT NULL AND profile_id IS NULL)
       OR (target_kind='cottage' AND profile_id IS NOT NULL AND account_user_id IS NULL)),
     CONSTRAINT marketplace_suspension_action_kind CHECK (action IN ('suspend','reactivate')),
-    CONSTRAINT marketplace_suspension_action_reason CHECK (reason=regexp_replace(reason,'^[[:space:]]+|[[:space:]]+$','','g') AND char_length(reason) BETWEEN 1 AND 1000),
+    CONSTRAINT marketplace_suspension_action_reason CHECK (reason=regexp_replace(reason,'^[[:space:]]+|[[:space:]]+$','','g') AND char_length(reason) >= 1 AND char_length(reason) <= 1000),
     CONSTRAINT marketplace_suspension_action_revision CHECK (expected_revision>=0 AND resulting_revision=expected_revision+1)
 );
 ALTER TABLE private.marketplace_suspension_actions OWNER TO postgres;

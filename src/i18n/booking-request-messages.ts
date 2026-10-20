@@ -74,6 +74,8 @@ export const bookingRequestMessages: Record<
       "self-booking-not-allowed":
         "You cannot book your own cottage. Use your owner availability and private-block tools instead.",
       "access-required": "Verify your Customer phone number before continuing.",
+      "customer-suspended":
+        "Your Customer account is suspended. You cannot send a new Booking Request.",
       "quote-stale":
         "The price, rules, or availability changed. Refresh this quote before trying again.",
       "too-late": "The six-hour Booking Request Cut-Off has passed.",
@@ -124,6 +126,8 @@ export const bookingRequestMessages: Record<
       "self-booking-not-allowed":
         "لا يمكنك حجز كوخك. استخدم أدوات توافر المالك والحظر الخاص.",
       "access-required": "تحقق من رقم هاتف العميل قبل المتابعة.",
+      "customer-suspended":
+        "حساب العميل الخاص بك موقوف. لا يمكنك إرسال طلب حجز جديد.",
       "quote-stale": "تغير السعر أو القواعد أو التوفر. حدّث عرض السعر.",
       "too-late":
         "انقضى الموعد النهائي لإرسال طلب الحجز، وهو قبل بداية أول فترة محجوزة بست ساعات.",
@@ -174,6 +178,8 @@ export const bookingRequestMessages: Record<
       invalid: "خانەکان و قبوڵکردنە پێویستەکان بپشکنە و دووبارە هەوڵ بدە.",
       "self-booking-not-allowed":
         "ناتوانیت کۆتێجەکەی خۆت حجز بکەیت. ئامرازەکانی بەردەستبوون و داخستنی تایبەتی خاوەن بەکاربهێنە.",
+      "customer-suspended":
+        "هەژماری کڕیاری تۆ ڕاگیراوە. ناتوانیت داواکاریی حجزکردنی نوێ بنێریت.",
       "access-required":
         "پێش بەردەوامبوون ژمارەی تەلەفۆنی کڕیار پشتڕاست بکەرەوە.",
       "quote-stale":

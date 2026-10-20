@@ -10,6 +10,7 @@ import {
 const failureStatuses = [
   "invalid",
   "access-required",
+  "customer-suspended",
   "self-booking-not-allowed",
   "quote-stale",
   "too-late",
@@ -45,6 +46,30 @@ describe("Booking Request error messages", () => {
       for (const status of failureStatuses) {
         expect(bookingRequestErrorMessage(locale, status)).toBeTruthy();
       }
+    },
+  );
+
+  it.each([
+    [
+      "en",
+      "Your Customer account is suspended. You cannot send a new Booking Request.",
+    ],
+    ["ar", "حساب العميل الخاص بك موقوف. لا يمكنك إرسال طلب حجز جديد."],
+    [
+      "ckb",
+      "هەژماری کڕیاری تۆ ڕاگیراوە. ناتوانیت داواکاریی حجزکردنی نوێ بنێریت.",
+    ],
+  ] satisfies [Locale, string][])(
+    "explains the suspended Customer booking restriction in %s without verification or availability advice",
+    (locale, expected) => {
+      const message = bookingRequestErrorMessage(locale, "customer-suspended");
+      expect(message).toBe(expected);
+      expect(message).not.toBe(
+        bookingRequestErrorMessage(locale, "access-required"),
+      );
+      expect(message).not.toBe(
+        bookingRequestErrorMessage(locale, "unavailable"),
+      );
     },
   );
 

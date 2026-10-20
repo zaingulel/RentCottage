@@ -30,6 +30,7 @@ const stateStatuses = new Set<SubmissionFailureStatus>([
   "invalid",
   "self-booking-not-allowed",
   "access-required",
+  "customer-suspended",
   "quote-stale",
   "too-late",
   "authorization-failed",
@@ -346,12 +347,21 @@ export class SupabaseBookingRequestSubmissionRepository implements BookingReques
     if (
       result &&
       hasExactKeys(result, ["status"]) &&
-      ["invalid", "quote-stale", "too-late", "unavailable"].includes(
-        result.status as string,
-      )
+      [
+        "invalid",
+        "customer-suspended",
+        "quote-stale",
+        "too-late",
+        "unavailable",
+      ].includes(result.status as string)
     ) {
       throw new BookingRequestPreAuthorizationRejected(
-        result.status as "invalid" | "quote-stale" | "too-late" | "unavailable",
+        result.status as
+          | "invalid"
+          | "customer-suspended"
+          | "quote-stale"
+          | "too-late"
+          | "unavailable",
       );
     }
     return executionPermitFrom(data);
