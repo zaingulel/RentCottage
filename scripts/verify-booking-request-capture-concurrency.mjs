@@ -273,7 +273,11 @@ try {
     'intentActive', (select intent_dedupe_active from public.booking_request_submission_attempts where booking_request_id = '${requestId}'),
     'confirmations', (select coalesce(jsonb_agg(to_jsonb(c) order by id),'[]') from public.booking_confirmations c),
     'receipts', (select coalesce(jsonb_agg(to_jsonb(r) order by id),'[]') from public.booking_receipts r),
-    'releases', (select count(*) from public.booking_request_release_work) + (select count(*) from public.payment_provider_operations where operation_kind = 'release')
+    'releases', (select count(*) from public.booking_request_release_work where booking_request_id = '${requestId}') + (select count(*) from public.payment_provider_operations where payment_lifecycle_id = '73000000-0000-4000-8000-000000001001' and operation_kind = 'release'),
+    'releaseGraph', jsonb_build_object(
+      'work', (select coalesce(jsonb_agg(to_jsonb(w) order by w.id),'[]') from public.booking_request_release_work w),
+      'operations', (select coalesce(jsonb_agg(to_jsonb(o) order by o.id),'[]') from public.payment_provider_operations o where o.operation_kind = 'release')
+    )
   );`,
       ),
     );
@@ -376,7 +380,13 @@ try {
       before.occupancies,
       "Every original Shift occupancy must remain active",
     );
+    assert.equal(before.releases, 0);
     assert.equal(after.releases, 0);
+    assert.deepEqual(
+      after.releaseGraph,
+      before.releaseGraph,
+      "Capture recovery preserves every pre-existing release work and provider operation",
+    );
   }
   async function proveApplicationRecovery(source) {
     harness.markTimingPhase("setup");
@@ -2038,6 +2048,12 @@ try {
 
   async function provePaymentOrchestration() {
     harness.markTimingPhase("setup");
+    const outsideOccupancies = JSON.parse(
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `select coalesce(jsonb_agg(to_jsonb(o) order by to_jsonb(o)::text),'[]') from public.cottage_booking_period_occupancies o where o.booking_period_commitment_id <> '50000000-0000-4000-8000-000000001001';`,
+      ),
+    );
     const source = readFileSync(
       "supabase/tests/database/booking_request_payment_recovery.test.sql",
       "utf8",
@@ -2074,15 +2090,16 @@ try {
         harness.markTimingPhase("execution");
       }
     };
-    const state = async () =>
-      JSON.parse(
+    const state = async () => {
+      const result = JSON.parse(
         await harness.runSqlAfterSetup(
           paymentEvidenceSql,
           `select jsonb_build_object(
     'attempts',(select jsonb_agg(to_jsonb(v) order by generation) from public.booking_request_payment_recovery_attempts v),
     'operations',(select jsonb_agg(pg_temp.payment_fixture_operation_json(v) order by created_at,id) from public.payment_provider_operations v where recovery_attempt_id is not null or operation_kind='refund'),
     'effects',(select coalesce(sum(e.physical_execution_count),0) from public.simulated_payment_effects e join public.payment_provider_operations l on l.id=e.operation_id where l.recovery_attempt_id is not null or l.operation_kind='refund'),
-    'active',(select count(*) from public.cottage_booking_period_occupancies where active),
+    'active',(select count(*) from public.cottage_booking_period_occupancies where booking_period_commitment_id = '50000000-0000-4000-8000-000000001001' and active),
+    'outsideOccupancies',(select coalesce(jsonb_agg(to_jsonb(o) order by to_jsonb(o)::text),'[]') from public.cottage_booking_period_occupancies o where o.booking_period_commitment_id <> '50000000-0000-4000-8000-000000001001'),
     'confirmations',(select count(*) from public.booking_confirmations),
     'receipts',(select count(*) from public.booking_receipts),
     'invalidations',(select count(*) from public.booking_request_confirmation_invalidations),
@@ -2092,6 +2109,13 @@ try {
     'notices',(select count(*) from public.booking_request_status_notifications where status='expired'));`,
         ),
       );
+      assert.deepEqual(
+        result.outsideOccupancies,
+        outsideOccupancies,
+        "Payment orchestration preserves every unrelated booking-period occupancy",
+      );
+      return result;
+    };
     const stop = async (worker) => {
       harness.markTimingPhase("cleanup");
       try {
