@@ -1199,6 +1199,11 @@ describe("access verification command", () => {
         "mobile",
       ]).env,
     ).toMatchObject(localEnvironment);
+    for (const action of ["create", "validate"]) {
+      expect(
+        optionsFor("node", ["scripts/prepare-access-test.mjs", action, "concurrency-inventory"]).env,
+      ).toMatchObject(localEnvironment);
+    }
     for (const [command, args] of browserCommands) {
       if (args[0] === "scripts/prepare-access-test.mjs") {
         expect(optionsFor(command, args).env).toMatchObject(localEnvironment);

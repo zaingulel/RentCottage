@@ -17,10 +17,16 @@ import {
 } from "./lib/access-browser-fixtures.mjs";
 
 const USAGE =
-  "Usage: node scripts/prepare-access-test.mjs <create|validate> <mobile|desktop|worker> [...] or <create|validate> demo";
+  "Usage: node scripts/prepare-access-test.mjs <create|validate> <mobile|desktop|worker> [...] or <create|validate> <demo|concurrency-inventory>";
 const [mode, ...selection] = process.argv.slice(2);
 const isDemo = selection.length === 1 && selection[0] === "demo";
-const requestedProjects = isDemo ? ["desktop"] : selection;
+const isConcurrencyInventory =
+  selection.length === 1 && selection[0] === "concurrency-inventory";
+const requestedProjects = isDemo
+  ? ["desktop"]
+  : isConcurrencyInventory
+    ? ["mobile"]
+    : selection;
 const projectsAreValid =
   (mode === "create" || mode === "validate") &&
   requestedProjects.length > 0 &&
@@ -74,13 +80,14 @@ if (demoEnvironmentError) {
   });
   const password = "Local-test-password-2026";
   const users = await listAllAccessFixtureUsers(client.auth.admin);
-  const cottageOwnerFixtures = isDemo
-    ? []
-    : [
-        { profile: "mobile", phone: "+9647510000000" },
-        { profile: "desktop", phone: "+9647510000001" },
-        { profile: "worker", phone: "+9647510000002" },
-      ].filter(({ profile }) => requestedProjects.includes(profile));
+  const cottageOwnerFixtures =
+    isDemo || isConcurrencyInventory
+      ? []
+      : [
+          { profile: "mobile", phone: "+9647510000000" },
+          { profile: "desktop", phone: "+9647510000001" },
+          { profile: "worker", phone: "+9647510000002" },
+        ].filter(({ profile }) => requestedProjects.includes(profile));
   const bookingCustomerFixtures = [
     { profile: "mobile", phone: "+9647520000000" },
     { profile: "desktop", phone: "+9647520000001" },
@@ -94,13 +101,12 @@ if (demoEnvironmentError) {
           },
         ]
       : []),
-  ].filter(({ profile }) => requestedProjects.includes(profile));
-  const browserOwners = [
-    "access",
-    "booking-request",
-    "messaging",
-    "scheduled-expiry",
-  ];
+  ].filter(
+    ({ profile }) => !isConcurrencyInventory && requestedProjects.includes(profile),
+  );
+  const browserOwners = isConcurrencyInventory
+    ? ["concurrency-inventory"]
+    : ["access", "booking-request", "messaging", "scheduled-expiry"];
   const projectsForOwner = (owner) =>
     owner === "scheduled-expiry"
       ? requestedProjects.filter((project) => project === "worker")
@@ -355,7 +361,7 @@ if (demoEnvironmentError) {
   const pdfBytes = new TextEncoder().encode("%PDF-1.7\nfixture\n%%EOF");
   const pdfDigest = createHash("sha256").update(pdfBytes).digest("hex");
   let concurrentRegistrationChecked = false;
-  if (!isDemo) {
+  if (!isDemo && !isConcurrencyInventory) {
     const ownerClient = createClient(url, publishableKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });

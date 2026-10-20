@@ -58,14 +58,21 @@ export function accessBrowserFixture(project, owner = "access") {
     throw new Error(`Unknown access browser fixture project: ${project}`);
   }
   if (
-    !["access", "booking-request", "messaging", "scheduled-expiry"].includes(
-      owner,
-    )
+    ![
+      "access",
+      "booking-request",
+      "messaging",
+      "scheduled-expiry",
+      "concurrency-inventory",
+    ].includes(owner)
   ) {
     throw new Error(`Unknown access browser fixture owner: ${owner}`);
   }
   if (owner === "scheduled-expiry" && project !== "worker") {
     throw new Error("Scheduled expiry browser fixtures require worker project");
+  }
+  if (owner === "concurrency-inventory" && project !== "mobile") {
+    throw new Error("Inventory concurrency fixtures require mobile project");
   }
   const label = `${project[0].toUpperCase()}${project.slice(1)}`;
   if (owner !== "access") {
@@ -76,14 +83,19 @@ export function accessBrowserFixture(project, owner = "access") {
         "booking-request": `+964757000000${index}`,
         messaging: `+964758000000${index}`,
         "scheduled-expiry": "+9647592800002",
+        "concurrency-inventory": "+9647593100000",
       }[owner],
       bookingLegalName: `${owner} ${label} Booking Fixture`,
       bookingCottageName: `${owner} ${label} Booking Fixture Cottage`,
-      customerPhone: {
-        "booking-request": `+964752000000${index}`,
-        messaging: `+964756000000${index}`,
-        "scheduled-expiry": "+9647592900002",
-      }[owner],
+      ...(owner === "concurrency-inventory"
+        ? {}
+        : {
+            customerPhone: {
+              "booking-request": `+964752000000${index}`,
+              messaging: `+964756000000${index}`,
+              "scheduled-expiry": "+9647592900002",
+            }[owner],
+          }),
       ...(owner === "booking-request"
         ? { secondaryCustomerPhone: `+964759270000${index}` }
         : {}),

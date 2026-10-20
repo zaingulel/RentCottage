@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
+import { accessBrowserFixture } from "./lib/access-browser-fixtures.mjs";
 import { publishedCottageCleanup } from "./lib/booking-fixture.mjs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
@@ -602,6 +603,79 @@ try {
   }
 
   guardDisposableLocalDatabase();
+  const browserOwnerId = runSql(
+    "select id from auth.users where phone='9647510000000';",
+  );
+  assert.match(browserOwnerId, /^[0-9a-f-]{36}$/);
+  function browserContinuationIds(stage) {
+    const observed = JSON.parse(
+      runSql(`begin;
+        do $$ begin perform set_config('request.jwt.claims',
+          '{"sub":"${browserOwnerId}","role":"authenticated","aal":"aal1"}', true); end $$;
+        set local role authenticated;
+        with profiles as materialized (
+          select id, status, current_publication_id, version
+          from public.list_owner_cottage_profiles(
+            target_after_updated_at => null, target_after_id => null, target_limit => 100)
+        ), progress as materialized (
+          select profile_id, profile_version, completed_requirements, next_requirement, submission_allowed
+          from public.read_owner_cottage_profile_draft_progress(
+            target_profile_ids => array(select id from profiles
+              where status='draft' and current_publication_id is null))
+        ) select jsonb_build_object(
+          'profiles', coalesce((select jsonb_agg(to_jsonb(p) order by p.id) from profiles p), '[]'::jsonb),
+          'progress', coalesce((select jsonb_agg(to_jsonb(p) order by p.profile_id) from progress p), '[]'::jsonb));
+        rollback;`),
+    );
+    assert.ok(Array.isArray(observed.profiles));
+    assert.ok(Array.isArray(observed.progress));
+    assert.ok(
+      observed.profiles.length < 100,
+      "Browser owner list reached page cap",
+    );
+    assert.equal(
+      new Set(observed.profiles.map((profile) => profile.id)).size,
+      observed.profiles.length,
+    );
+    const drafts = observed.profiles.filter(
+      (profile) =>
+        profile.status === "draft" && profile.current_publication_id === null,
+    );
+    assert.equal(
+      observed.progress.length,
+      drafts.length,
+      "Exact browser draft progress cardinality required",
+    );
+    assert.equal(
+      new Set(observed.progress.map((row) => row.profile_id)).size,
+      drafts.length,
+    );
+    for (const row of observed.progress) {
+      const profile = drafts.find((draft) => draft.id === row.profile_id);
+      assert.ok(profile, "Progress must match an observed browser draft");
+      assert.equal(row.profile_version, profile.version);
+      assert.ok(
+        Number.isInteger(row.completed_requirements) &&
+          row.completed_requirements >= 0 &&
+          row.completed_requirements <= 13,
+      );
+      assert.equal(typeof row.submission_allowed, "boolean");
+      assert.ok(
+        row.next_requirement === null || typeof row.next_requirement === "string",
+      );
+      assert.equal(row.next_requirement === null, row.completed_requirements === 13);
+    }
+    const ids = observed.progress
+      .filter((row) => row.submission_allowed && row.next_requirement !== null)
+      .map((row) => row.profile_id)
+      .sort();
+    console.log(
+      "inventory browser continuation observation:",
+      JSON.stringify({ stage, ids, count: ids.length }),
+    );
+    return ids;
+  }
+  const browserContinuationsBefore = browserContinuationIds("before");
   let failure;
   try {
     markTimingPhase("setup");
@@ -653,8 +727,12 @@ try {
   }
   if (failure) throw failure;
   markTimingPhase("setup");
+  const preparedOwnerPhone = accessBrowserFixture(
+    "mobile",
+    "concurrency-inventory",
+  ).bookingOwnerPhone;
   const preparedOwnerId = runSql(
-    `select id from auth.users where phone='9647510000000';`,
+    `select id from auth.users where phone='${preparedOwnerPhone.slice(1)}';`,
   );
   const administratorId = runSql(
     `select id from auth.users where email='cottage-profile-fixture-reviewer@rentcottage.test';`,
@@ -1207,6 +1285,11 @@ try {
       );
     }
   }
+  assert.deepEqual(
+    browserContinuationIds("after"),
+    browserContinuationsBefore,
+    "Inventory concurrency changed the browser owner's Continue setup IDs",
+  );
   timingOutcome = "passed";
 } finally {
   finishTiming({
