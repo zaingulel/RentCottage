@@ -181,15 +181,34 @@ describe("access verification command", () => {
         }),
       ).toBe(0);
       const actual = commands(run);
-      const inventoryIndex = actual.findIndex(([, args]) => args[0] === "scripts/verify-cottage-inventory-concurrency.mjs");
+      const inventoryIndex = actual.findIndex(
+        ([, args]) =>
+          args[0] === "scripts/verify-cottage-inventory-concurrency.mjs",
+      );
       if (partition === "database-core") {
         expect(actual.slice(inventoryIndex - 2, inventoryIndex + 1)).toEqual([
-          ["node", ["scripts/prepare-access-test.mjs", "create", "concurrency-inventory"]],
-          ["node", ["scripts/prepare-access-test.mjs", "validate", "concurrency-inventory"]],
+          [
+            "node",
+            [
+              "scripts/prepare-access-test.mjs",
+              "create",
+              "concurrency-inventory",
+            ],
+          ],
+          [
+            "node",
+            [
+              "scripts/prepare-access-test.mjs",
+              "validate",
+              "concurrency-inventory",
+            ],
+          ],
           ["node", ["scripts/verify-cottage-inventory-concurrency.mjs"]],
         ]);
       } else {
-        expect(actual.some(([, args]) => args.includes("concurrency-inventory"))).toBe(false);
+        expect(
+          actual.some(([, args]) => args.includes("concurrency-inventory")),
+        ).toBe(false);
       }
       const bookingIndex = actual.findIndex(
         ([, args]) =>

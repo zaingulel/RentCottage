@@ -221,6 +221,7 @@ describe("BookingRequestSubmission", () => {
       markReconciliationRequired: vi.fn(),
     };
     const provider = new PaymentSimulator({
+      now: () => "2099-08-21T17:00:00.000Z",
       identity: { merchantId: "foreign" },
     });
     await expect(

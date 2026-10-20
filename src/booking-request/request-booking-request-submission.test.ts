@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPaymentLifecycle } from "@/payment/payment-lifecycle";
 import { PaymentSimulator } from "@/payment/payment-simulator";
 
+import type { RecoverableSubmissionAttempt } from "./booking-request-submission";
+
 const {
   createClient,
   createSubmission,
@@ -212,7 +214,7 @@ it("isolates hostile per-candidate recovery and marking failures while continuin
     outcomes: ["succeeded", "succeeded"],
     identity: durablePaymentProvider.identity,
   });
-  const candidates = [];
+  const candidates: RecoverableSubmissionAttempt[] = [];
   for (const [id, paymentLifecycleId] of [
     [
       "22222222-2222-4222-8222-222222222222",

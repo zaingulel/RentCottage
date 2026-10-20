@@ -661,9 +661,13 @@ try {
       );
       assert.equal(typeof row.submission_allowed, "boolean");
       assert.ok(
-        row.next_requirement === null || typeof row.next_requirement === "string",
+        row.next_requirement === null ||
+          typeof row.next_requirement === "string",
       );
-      assert.equal(row.next_requirement === null, row.completed_requirements === 13);
+      assert.equal(
+        row.next_requirement === null,
+        row.completed_requirements === 13,
+      );
     }
     const ids = observed.progress
       .filter((row) => row.submission_allowed && row.next_requirement !== null)

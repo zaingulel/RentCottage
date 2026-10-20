@@ -689,19 +689,26 @@ test("browser account fixtures are disjoint by file and project", async () => {
 });
 
 test("inventory concurrency reserves its own mobile owner without a browser customer", async () => {
-  assert.deepEqual(fixtures.accessBrowserFixture("mobile", "concurrency-inventory"), {
-    project: "mobile",
-    exactAddress: "Synthetic private fixture address",
-    bookingOwnerPhone: "+9647593100000",
-    bookingLegalName: "concurrency-inventory Mobile Booking Fixture",
-    bookingCottageName: "concurrency-inventory Mobile Booking Fixture Cottage",
-  });
+  assert.deepEqual(
+    fixtures.accessBrowserFixture("mobile", "concurrency-inventory"),
+    {
+      project: "mobile",
+      exactAddress: "Synthetic private fixture address",
+      bookingOwnerPhone: "+9647593100000",
+      bookingLegalName: "concurrency-inventory Mobile Booking Fixture",
+      bookingCottageName:
+        "concurrency-inventory Mobile Booking Fixture Cottage",
+    },
+  );
   for (const project of ["desktop", "worker"]) {
     assert.throws(
       () => fixtures.accessBrowserFixture(project, "concurrency-inventory"),
       /Inventory concurrency fixtures require mobile project/,
     );
-    for (const prepare of [fixtures.createAccessBrowserFixtures, fixtures.validateAccessBrowserFixtures]) {
+    for (const prepare of [
+      fixtures.createAccessBrowserFixtures,
+      fixtures.validateAccessBrowserFixtures,
+    ]) {
       await assert.rejects(
         prepare({ projects: [project], owner: "concurrency-inventory" }),
         /Inventory concurrency fixtures require mobile project/,
@@ -709,11 +716,18 @@ test("inventory concurrency reserves its own mobile owner without a browser cust
     }
   }
   for (const mode of ["create", "validate"]) {
-    for (const selection of [["concurrency-inventory", "mobile"], ["concurrency-inventory", "concurrency-inventory"]]) {
-      const rejected = spawnSync(process.execPath, ["scripts/prepare-access-test.mjs", mode, ...selection], {
-        env: { ...process.env, SUPABASE_URL: "http://127.0.0.1:1" },
-        encoding: "utf8",
-      });
+    for (const selection of [
+      ["concurrency-inventory", "mobile"],
+      ["concurrency-inventory", "concurrency-inventory"],
+    ]) {
+      const rejected = spawnSync(
+        process.execPath,
+        ["scripts/prepare-access-test.mjs", mode, ...selection],
+        {
+          env: { ...process.env, SUPABASE_URL: "http://127.0.0.1:1" },
+          encoding: "utf8",
+        },
+      );
       assert.equal(rejected.status, 2, rejected.stderr);
       assert.match(rejected.stderr, /Usage:/);
       assert.doesNotMatch(rejected.stderr, /fetch failed/);
