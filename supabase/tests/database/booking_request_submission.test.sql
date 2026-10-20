@@ -63,6 +63,72 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
+create or replace function pg_temp.preparation_money_counts() returns jsonb language sql as $$
+  select jsonb_build_array(
+    (select count(*) from public.booking_request_authorization_claims),
+    (select count(*) from public.payment_provider_operations),
+    (select count(*) from public.booking_requests),
+    (select count(*) from public.cottage_booking_period_commitments),
+    (select count(*) from public.booking_request_payment_history));
+$$;
+
+create or replace function pg_temp.assert_restriction_stale_preparation_replacement(
+  original_attempt public.booking_request_submission_attempts,
+  result jsonb,
+  expected_key uuid,
+  submission jsonb,
+  counts_before jsonb
+) returns void language plpgsql as $$
+declare replacement public.booking_request_submission_attempts;
+declare replay jsonb;
+begin
+  select * into strict replacement from public.booking_request_submission_attempts where id=(result->>'attemptId')::uuid;
+  if replacement.id=original_attempt.id or replacement.payment_lifecycle_id=original_attempt.payment_lifecycle_id
+    or replacement.idempotency_key<>expected_key
+    or replacement.intent_payload is distinct from original_attempt.intent_payload
+    or replacement.intent_fingerprint is distinct from original_attempt.intent_fingerprint
+    or replacement.quote_payload is distinct from original_attempt.quote_payload
+    or replacement.quote_fingerprint is distinct from original_attempt.quote_fingerprint
+    or replacement.state<>'authorizing' or not replacement.intent_dedupe_active
+    or replacement.payment_snapshot is not null or replacement.booking_request_id is not null
+    or row(replacement.customer_suspension_revision,replacement.owner_suspension_revision,replacement.cottage_suspension_revision)
+      is distinct from (select row(customer.customer_suspension_revision,owner_context.owner_suspension_revision,profiles.suspension_revision)
+        from public.account_contexts customer
+        join public.owner_application_cottage_profiles profiles on profiles.id=replacement.profile_id
+        join public.account_contexts owner_context on owner_context.user_id=profiles.owner_user_id
+        where customer.user_id=replacement.customer_user_id)
+  then raise exception 'Replacement lost fresh identity, current tuple or immutable intent/quote'; end if;
+  if (select to_jsonb(attempts)-array['state','intent_dedupe_active','updated_at'] from public.booking_request_submission_attempts attempts where id=original_attempt.id)
+      is distinct from to_jsonb(original_attempt)-array['state','intent_dedupe_active','updated_at']
+    or not exists(select 1 from public.booking_request_submission_attempts where id=original_attempt.id and state='expired' and not intent_dedupe_active and updated_at>original_attempt.updated_at)
+    or not public.messaging_submission_attempt_is_resolved(original_attempt.id)
+    or (select count(*) from public.booking_request_submission_attempts where customer_user_id=original_attempt.customer_user_id and intent_fingerprint=original_attempt.intent_fingerprint and intent_dedupe_active)<>1
+  then raise exception 'Retirement changed immutable attempt or failed to free exactly one intent'; end if;
+  replay:=public.prepare_booking_request_submission(original_attempt.customer_user_id,replacement.idempotency_key,submission);
+  if replay is distinct from result then raise exception 'Replacement replay changed identity: %',replay; end if;
+  replay:=public.prepare_booking_request_submission(original_attempt.customer_user_id,original_attempt.idempotency_key,submission);
+  if replay is distinct from '{"status":"unavailable"}'::jsonb then raise exception 'Retired old key revived: %',replay; end if;
+  if pg_temp.preparation_money_counts() is distinct from counts_before
+    or (select count(*) from public.booking_request_submission_attempts where customer_user_id=original_attempt.customer_user_id)<>2
+  then raise exception 'Preparation retirement created money, claim, request, hold or extra attempts'; end if;
+end;
+$$;
+
+create or replace function pg_temp.booking_submission_graph() returns jsonb language sql as $$
+  select jsonb_build_object(
+  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
+  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
+  'booking_request_authorization_reconciliation_outbox',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_reconciliation_outbox rows),
+  'booking_request_authorization_claim_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claim_occupancies rows),
+  'cottage_booking_period_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_occupancies rows),
+  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
+  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
+  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
+  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
+  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
+);
+$$;
+
 select plan(449);
 
 set local role anon;
@@ -1361,19 +1427,12 @@ insert into public.account_contexts(user_id,role) values('00000000-0000-4000-800
 select lives_ok($test$
 do $body$
 declare original_attempt public.booking_request_submission_attempts;
-declare replacement public.booking_request_submission_attempts;
 declare result jsonb;
-declare replay jsonb;
 declare counts_before jsonb;
 begin
   select * into strict original_attempt from public.booking_request_submission_attempts
   where id=(select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
-  counts_before:=jsonb_build_array(
-    (select count(*) from public.booking_request_authorization_claims),
-    (select count(*) from public.payment_provider_operations),
-    (select count(*) from public.booking_requests),
-    (select count(*) from public.cottage_booking_period_commitments),
-    (select count(*) from public.booking_request_payment_history));
+  counts_before:=pg_temp.preparation_money_counts();
   perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
   result:=public.set_marketplace_suspension('customer',original_attempt.customer_user_id,'suspend',0,'Fictional preparation restriction',gen_random_uuid());
   if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
@@ -1381,40 +1440,8 @@ begin
   if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
   result:=public.prepare_booking_request_submission(original_attempt.customer_user_id,'11111111-1111-4111-8111-111111113710',(select submission from journey_submission));
   if result->>'status' is distinct from 'ready' then raise exception 'Direct fresh key cannot replace restored customer preparation: %',result; end if;
-  select * into strict replacement from public.booking_request_submission_attempts where id=(result->>'attemptId')::uuid;
-  if replacement.id=original_attempt.id or replacement.payment_lifecycle_id=original_attempt.payment_lifecycle_id
-    or replacement.idempotency_key<>'11111111-1111-4111-8111-111111113710'::uuid
-    or replacement.intent_payload is distinct from original_attempt.intent_payload
-    or replacement.intent_fingerprint is distinct from original_attempt.intent_fingerprint
-    or replacement.quote_payload is distinct from original_attempt.quote_payload
-    or replacement.quote_fingerprint is distinct from original_attempt.quote_fingerprint
-    or replacement.state<>'authorizing' or not replacement.intent_dedupe_active
-    or replacement.payment_snapshot is not null or replacement.booking_request_id is not null
-    or row(replacement.customer_suspension_revision,replacement.owner_suspension_revision,replacement.cottage_suspension_revision)
-      is distinct from (select row(customer.customer_suspension_revision,owner_context.owner_suspension_revision,profiles.suspension_revision)
-        from public.account_contexts customer
-        join public.owner_application_cottage_profiles profiles on profiles.id=replacement.profile_id
-        join public.account_contexts owner_context on owner_context.user_id=profiles.owner_user_id
-        where customer.user_id=replacement.customer_user_id)
-  then raise exception 'Replacement lost fresh identity, current tuple or immutable intent/quote'; end if;
-  if (select to_jsonb(attempts)-array['state','intent_dedupe_active','updated_at'] from public.booking_request_submission_attempts attempts where id=original_attempt.id)
-      is distinct from to_jsonb(original_attempt)-array['state','intent_dedupe_active','updated_at']
-    or not exists(select 1 from public.booking_request_submission_attempts where id=original_attempt.id and state='expired' and not intent_dedupe_active and updated_at>original_attempt.updated_at)
-    or not public.messaging_submission_attempt_is_resolved(original_attempt.id)
-    or (select count(*) from public.booking_request_submission_attempts where customer_user_id=original_attempt.customer_user_id and intent_fingerprint=original_attempt.intent_fingerprint and intent_dedupe_active)<>1
-  then raise exception 'Retirement changed immutable attempt or failed to free exactly one intent'; end if;
-  replay:=public.prepare_booking_request_submission(original_attempt.customer_user_id,replacement.idempotency_key,(select submission from journey_submission));
-  if replay is distinct from result then raise exception 'Replacement replay changed identity: %',replay; end if;
-  replay:=public.prepare_booking_request_submission(original_attempt.customer_user_id,original_attempt.idempotency_key,(select submission from journey_submission));
-  if replay is distinct from '{"status":"unavailable"}'::jsonb then raise exception 'Retired old key revived: %',replay; end if;
-  if jsonb_build_array(
-    (select count(*) from public.booking_request_authorization_claims),
-    (select count(*) from public.payment_provider_operations),
-    (select count(*) from public.booking_requests),
-    (select count(*) from public.cottage_booking_period_commitments),
-    (select count(*) from public.booking_request_payment_history)) is distinct from counts_before
-    or (select count(*) from public.booking_request_submission_attempts where customer_user_id=original_attempt.customer_user_id)<>2
-  then raise exception 'Preparation retirement created money, claim, request, hold or extra attempts'; end if;
+  perform pg_temp.assert_restriction_stale_preparation_replacement(
+    original_attempt,result,'11111111-1111-4111-8111-111111113710'::uuid,(select submission from journey_submission),counts_before);
 end;
 $body$;
 $test$,'restriction_stale_preparation_replacement: customer direct fresh key');
@@ -1433,19 +1460,12 @@ select public.review_owner_application('20000000-0000-4000-8000-000000003290',1,
 select lives_ok($test$
 do $body$
 declare original_attempt public.booking_request_submission_attempts;
-declare replacement public.booking_request_submission_attempts;
 declare result jsonb;
-declare replay jsonb;
 declare counts_before jsonb;
 begin
   select * into strict original_attempt from public.booking_request_submission_attempts
   where id=(select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
-  counts_before:=jsonb_build_array(
-    (select count(*) from public.booking_request_authorization_claims),
-    (select count(*) from public.payment_provider_operations),
-    (select count(*) from public.booking_requests),
-    (select count(*) from public.cottage_booking_period_commitments),
-    (select count(*) from public.booking_request_payment_history));
+  counts_before:=pg_temp.preparation_money_counts();
   perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
   result:=public.set_marketplace_suspension('owner',(select owner_user_id from public.owner_application_cottage_profiles where id=original_attempt.profile_id),'suspend',2,'Fictional preparation restriction',gen_random_uuid());
   if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
@@ -1453,40 +1473,8 @@ begin
   if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
   result:=public.prepare_booking_request_submission(original_attempt.customer_user_id,'11111111-1111-4111-8111-111111113710',(select submission from journey_submission));
   if result->>'status' is distinct from 'ready' then raise exception 'Direct fresh key cannot replace restored owner preparation: %',result; end if;
-  select * into strict replacement from public.booking_request_submission_attempts where id=(result->>'attemptId')::uuid;
-  if replacement.id=original_attempt.id or replacement.payment_lifecycle_id=original_attempt.payment_lifecycle_id
-    or replacement.idempotency_key<>'11111111-1111-4111-8111-111111113710'::uuid
-    or replacement.intent_payload is distinct from original_attempt.intent_payload
-    or replacement.intent_fingerprint is distinct from original_attempt.intent_fingerprint
-    or replacement.quote_payload is distinct from original_attempt.quote_payload
-    or replacement.quote_fingerprint is distinct from original_attempt.quote_fingerprint
-    or replacement.state<>'authorizing' or not replacement.intent_dedupe_active
-    or replacement.payment_snapshot is not null or replacement.booking_request_id is not null
-    or row(replacement.customer_suspension_revision,replacement.owner_suspension_revision,replacement.cottage_suspension_revision)
-      is distinct from (select row(customer.customer_suspension_revision,owner_context.owner_suspension_revision,profiles.suspension_revision)
-        from public.account_contexts customer
-        join public.owner_application_cottage_profiles profiles on profiles.id=replacement.profile_id
-        join public.account_contexts owner_context on owner_context.user_id=profiles.owner_user_id
-        where customer.user_id=replacement.customer_user_id)
-  then raise exception 'Replacement lost fresh identity, current tuple or immutable intent/quote'; end if;
-  if (select to_jsonb(attempts)-array['state','intent_dedupe_active','updated_at'] from public.booking_request_submission_attempts attempts where id=original_attempt.id)
-      is distinct from to_jsonb(original_attempt)-array['state','intent_dedupe_active','updated_at']
-    or not exists(select 1 from public.booking_request_submission_attempts where id=original_attempt.id and state='expired' and not intent_dedupe_active and updated_at>original_attempt.updated_at)
-    or not public.messaging_submission_attempt_is_resolved(original_attempt.id)
-    or (select count(*) from public.booking_request_submission_attempts where customer_user_id=original_attempt.customer_user_id and intent_fingerprint=original_attempt.intent_fingerprint and intent_dedupe_active)<>1
-  then raise exception 'Retirement changed immutable attempt or failed to free exactly one intent'; end if;
-  replay:=public.prepare_booking_request_submission(original_attempt.customer_user_id,replacement.idempotency_key,(select submission from journey_submission));
-  if replay is distinct from result then raise exception 'Replacement replay changed identity: %',replay; end if;
-  replay:=public.prepare_booking_request_submission(original_attempt.customer_user_id,original_attempt.idempotency_key,(select submission from journey_submission));
-  if replay is distinct from '{"status":"unavailable"}'::jsonb then raise exception 'Retired old key revived: %',replay; end if;
-  if jsonb_build_array(
-    (select count(*) from public.booking_request_authorization_claims),
-    (select count(*) from public.payment_provider_operations),
-    (select count(*) from public.booking_requests),
-    (select count(*) from public.cottage_booking_period_commitments),
-    (select count(*) from public.booking_request_payment_history)) is distinct from counts_before
-    or (select count(*) from public.booking_request_submission_attempts where customer_user_id=original_attempt.customer_user_id)<>2
-  then raise exception 'Preparation retirement created money, claim, request, hold or extra attempts'; end if;
+  perform pg_temp.assert_restriction_stale_preparation_replacement(
+    original_attempt,result,'11111111-1111-4111-8111-111111113710'::uuid,(select submission from journey_submission),counts_before);
 end;
 $body$;
 $test$,'restriction_stale_preparation_replacement: owner direct fresh key');
@@ -1505,19 +1493,12 @@ select public.review_owner_application('20000000-0000-4000-8000-000000003290',1,
 select lives_ok($test$
 do $body$
 declare original_attempt public.booking_request_submission_attempts;
-declare replacement public.booking_request_submission_attempts;
 declare result jsonb;
-declare replay jsonb;
 declare counts_before jsonb;
 begin
   select * into strict original_attempt from public.booking_request_submission_attempts
   where id=(select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
-  counts_before:=jsonb_build_array(
-    (select count(*) from public.booking_request_authorization_claims),
-    (select count(*) from public.payment_provider_operations),
-    (select count(*) from public.booking_requests),
-    (select count(*) from public.cottage_booking_period_commitments),
-    (select count(*) from public.booking_request_payment_history));
+  counts_before:=pg_temp.preparation_money_counts();
   perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
   result:=public.set_marketplace_suspension('cottage',original_attempt.profile_id,'suspend',0,'Fictional preparation restriction',gen_random_uuid());
   if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
@@ -1525,40 +1506,8 @@ begin
   if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
   result:=public.prepare_booking_request_submission(original_attempt.customer_user_id,'11111111-1111-4111-8111-111111113710',(select submission from journey_submission));
   if result->>'status' is distinct from 'ready' then raise exception 'Direct fresh key cannot replace restored cottage preparation: %',result; end if;
-  select * into strict replacement from public.booking_request_submission_attempts where id=(result->>'attemptId')::uuid;
-  if replacement.id=original_attempt.id or replacement.payment_lifecycle_id=original_attempt.payment_lifecycle_id
-    or replacement.idempotency_key<>'11111111-1111-4111-8111-111111113710'::uuid
-    or replacement.intent_payload is distinct from original_attempt.intent_payload
-    or replacement.intent_fingerprint is distinct from original_attempt.intent_fingerprint
-    or replacement.quote_payload is distinct from original_attempt.quote_payload
-    or replacement.quote_fingerprint is distinct from original_attempt.quote_fingerprint
-    or replacement.state<>'authorizing' or not replacement.intent_dedupe_active
-    or replacement.payment_snapshot is not null or replacement.booking_request_id is not null
-    or row(replacement.customer_suspension_revision,replacement.owner_suspension_revision,replacement.cottage_suspension_revision)
-      is distinct from (select row(customer.customer_suspension_revision,owner_context.owner_suspension_revision,profiles.suspension_revision)
-        from public.account_contexts customer
-        join public.owner_application_cottage_profiles profiles on profiles.id=replacement.profile_id
-        join public.account_contexts owner_context on owner_context.user_id=profiles.owner_user_id
-        where customer.user_id=replacement.customer_user_id)
-  then raise exception 'Replacement lost fresh identity, current tuple or immutable intent/quote'; end if;
-  if (select to_jsonb(attempts)-array['state','intent_dedupe_active','updated_at'] from public.booking_request_submission_attempts attempts where id=original_attempt.id)
-      is distinct from to_jsonb(original_attempt)-array['state','intent_dedupe_active','updated_at']
-    or not exists(select 1 from public.booking_request_submission_attempts where id=original_attempt.id and state='expired' and not intent_dedupe_active and updated_at>original_attempt.updated_at)
-    or not public.messaging_submission_attempt_is_resolved(original_attempt.id)
-    or (select count(*) from public.booking_request_submission_attempts where customer_user_id=original_attempt.customer_user_id and intent_fingerprint=original_attempt.intent_fingerprint and intent_dedupe_active)<>1
-  then raise exception 'Retirement changed immutable attempt or failed to free exactly one intent'; end if;
-  replay:=public.prepare_booking_request_submission(original_attempt.customer_user_id,replacement.idempotency_key,(select submission from journey_submission));
-  if replay is distinct from result then raise exception 'Replacement replay changed identity: %',replay; end if;
-  replay:=public.prepare_booking_request_submission(original_attempt.customer_user_id,original_attempt.idempotency_key,(select submission from journey_submission));
-  if replay is distinct from '{"status":"unavailable"}'::jsonb then raise exception 'Retired old key revived: %',replay; end if;
-  if jsonb_build_array(
-    (select count(*) from public.booking_request_authorization_claims),
-    (select count(*) from public.payment_provider_operations),
-    (select count(*) from public.booking_requests),
-    (select count(*) from public.cottage_booking_period_commitments),
-    (select count(*) from public.booking_request_payment_history)) is distinct from counts_before
-    or (select count(*) from public.booking_request_submission_attempts where customer_user_id=original_attempt.customer_user_id)<>2
-  then raise exception 'Preparation retirement created money, claim, request, hold or extra attempts'; end if;
+  perform pg_temp.assert_restriction_stale_preparation_replacement(
+    original_attempt,result,'11111111-1111-4111-8111-111111113710'::uuid,(select submission from journey_submission),counts_before);
 end;
 $body$;
 $test$,'restriction_stale_preparation_replacement: cottage direct fresh key');
@@ -1570,19 +1519,12 @@ insert into public.account_contexts(user_id,role) values('00000000-0000-4000-800
 select lives_ok($test$
 do $body$
 declare original_attempt public.booking_request_submission_attempts;
-declare replacement public.booking_request_submission_attempts;
 declare result jsonb;
-declare replay jsonb;
 declare counts_before jsonb;
 begin
   select * into strict original_attempt from public.booking_request_submission_attempts
   where id=(select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
-  counts_before:=jsonb_build_array(
-    (select count(*) from public.booking_request_authorization_claims),
-    (select count(*) from public.payment_provider_operations),
-    (select count(*) from public.booking_requests),
-    (select count(*) from public.cottage_booking_period_commitments),
-    (select count(*) from public.booking_request_payment_history));
+  counts_before:=pg_temp.preparation_money_counts();
   perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
   result:=public.set_marketplace_suspension('customer',original_attempt.customer_user_id,'suspend',0,'Fictional preparation restriction',gen_random_uuid());
   if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
@@ -1594,40 +1536,8 @@ begin
   then raise exception 'Fresh begin refusal did not retire untouched restriction-stale preparation'; end if;
   result:=public.prepare_booking_request_submission(original_attempt.customer_user_id,'11111111-1111-4111-8111-111111113710',(select submission from journey_submission));
   if result->>'status' is distinct from 'ready' then raise exception 'Direct fresh key cannot replace begin-retired preparation: %',result; end if;
-  select * into strict replacement from public.booking_request_submission_attempts where id=(result->>'attemptId')::uuid;
-  if replacement.id=original_attempt.id or replacement.payment_lifecycle_id=original_attempt.payment_lifecycle_id
-    or replacement.idempotency_key<>'11111111-1111-4111-8111-111111113710'::uuid
-    or replacement.intent_payload is distinct from original_attempt.intent_payload
-    or replacement.intent_fingerprint is distinct from original_attempt.intent_fingerprint
-    or replacement.quote_payload is distinct from original_attempt.quote_payload
-    or replacement.quote_fingerprint is distinct from original_attempt.quote_fingerprint
-    or replacement.state<>'authorizing' or not replacement.intent_dedupe_active
-    or replacement.payment_snapshot is not null or replacement.booking_request_id is not null
-    or row(replacement.customer_suspension_revision,replacement.owner_suspension_revision,replacement.cottage_suspension_revision)
-      is distinct from (select row(customer.customer_suspension_revision,owner_context.owner_suspension_revision,profiles.suspension_revision)
-        from public.account_contexts customer
-        join public.owner_application_cottage_profiles profiles on profiles.id=replacement.profile_id
-        join public.account_contexts owner_context on owner_context.user_id=profiles.owner_user_id
-        where customer.user_id=replacement.customer_user_id)
-  then raise exception 'Replacement lost fresh identity, current tuple or immutable intent/quote'; end if;
-  if (select to_jsonb(attempts)-array['state','intent_dedupe_active','updated_at'] from public.booking_request_submission_attempts attempts where id=original_attempt.id)
-      is distinct from to_jsonb(original_attempt)-array['state','intent_dedupe_active','updated_at']
-    or not exists(select 1 from public.booking_request_submission_attempts where id=original_attempt.id and state='expired' and not intent_dedupe_active and updated_at>original_attempt.updated_at)
-    or not public.messaging_submission_attempt_is_resolved(original_attempt.id)
-    or (select count(*) from public.booking_request_submission_attempts where customer_user_id=original_attempt.customer_user_id and intent_fingerprint=original_attempt.intent_fingerprint and intent_dedupe_active)<>1
-  then raise exception 'Retirement changed immutable attempt or failed to free exactly one intent'; end if;
-  replay:=public.prepare_booking_request_submission(original_attempt.customer_user_id,replacement.idempotency_key,(select submission from journey_submission));
-  if replay is distinct from result then raise exception 'Replacement replay changed identity: %',replay; end if;
-  replay:=public.prepare_booking_request_submission(original_attempt.customer_user_id,original_attempt.idempotency_key,(select submission from journey_submission));
-  if replay is distinct from '{"status":"unavailable"}'::jsonb then raise exception 'Retired old key revived: %',replay; end if;
-  if jsonb_build_array(
-    (select count(*) from public.booking_request_authorization_claims),
-    (select count(*) from public.payment_provider_operations),
-    (select count(*) from public.booking_requests),
-    (select count(*) from public.cottage_booking_period_commitments),
-    (select count(*) from public.booking_request_payment_history)) is distinct from counts_before
-    or (select count(*) from public.booking_request_submission_attempts where customer_user_id=original_attempt.customer_user_id)<>2
-  then raise exception 'Preparation retirement created money, claim, request, hold or extra attempts'; end if;
+  perform pg_temp.assert_restriction_stale_preparation_replacement(
+    original_attempt,result,'11111111-1111-4111-8111-111111113710'::uuid,(select submission from journey_submission),counts_before);
 end;
 $body$;
 $test$,'restriction_stale_preparation_replacement: begin claim retirement');
@@ -1802,18 +1712,7 @@ begin
   if original_attempt->'payment_snapshot' is null
     or original_claim is null or original_outbox is null
   then raise exception 'Issued claim fixture lacks durable reconciliation evidence'; end if;
-  original_graph:=jsonb_build_object(
-  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
-  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
-  'booking_request_authorization_reconciliation_outbox',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_reconciliation_outbox rows),
-  'booking_request_authorization_claim_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claim_occupancies rows),
-  'cottage_booking_period_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_occupancies rows),
-  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
-  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
-  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
-  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
-  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
-);
+  original_graph:=pg_temp.booking_submission_graph();
   perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
   result := public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','suspend',0,'Fictional issued claim restriction',gen_random_uuid());
   if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
@@ -1836,18 +1735,7 @@ begin
     or exists(select 1 from public.cottage_booking_period_commitments)
   then raise exception 'Rejected issued claim replay created authorization, request or hold'; end if;
   if public.retire_unusable_prepared_booking_request_submission(target_attempt)
-    or jsonb_build_object(
-  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
-  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
-  'booking_request_authorization_reconciliation_outbox',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_reconciliation_outbox rows),
-  'booking_request_authorization_claim_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claim_occupancies rows),
-  'cottage_booking_period_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_occupancies rows),
-  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
-  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
-  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
-  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
-  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
-) is distinct from original_graph
+    or pg_temp.booking_submission_graph() is distinct from original_graph
   then raise exception 'Issued claim refusal changed attempt snapshot claim occupancy operation outbox or financial history'; end if;
 
 end;
@@ -2529,33 +2417,11 @@ begin
   if result->>'status' is distinct from 'completed' then raise exception 'Hostile claim fixture suspension failed: %',result; end if;
 end;
 $fixture$;
-create temporary table claimed_null_snapshot_before as select jsonb_build_object(
-  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
-  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
-  'booking_request_authorization_reconciliation_outbox',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_reconciliation_outbox rows),
-  'booking_request_authorization_claim_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claim_occupancies rows),
-  'cottage_booking_period_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_occupancies rows),
-  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
-  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
-  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
-  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
-  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
-) record;
+create temporary table claimed_null_snapshot_before as select pg_temp.booking_submission_graph() record;
 select is(public.retire_unusable_prepared_booking_request_submission(
   (select (result->>'attemptId')::uuid from prepared_submission)),false,
   'restriction_stale_preparation_replacement: a real claim protects hostile null snapshot preparation');
-select is(jsonb_build_object(
-  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
-  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
-  'booking_request_authorization_reconciliation_outbox',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_reconciliation_outbox rows),
-  'booking_request_authorization_claim_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claim_occupancies rows),
-  'cottage_booking_period_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_occupancies rows),
-  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
-  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
-  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
-  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
-  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
-),(select record from claimed_null_snapshot_before),
+select is(pg_temp.booking_submission_graph(),(select record from claimed_null_snapshot_before),
   'claimed null snapshot refusal preserves exact attempt claim outbox occupancy operation request hold link and history');
 rollback to savepoint claimed_preparation_null_snapshot;
 
@@ -2658,18 +2524,7 @@ begin
   then raise exception 'Restoration did not restore ordinary owner/cottage eligibility'; end if;
   select to_jsonb(attempts) into strict original_attempt from public.booking_request_submission_attempts attempts where attempts.id=target_attempt;
   select to_jsonb(claims) into strict original_claim from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt;
-  original_graph:=jsonb_build_object(
-  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
-  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
-  'booking_request_authorization_reconciliation_outbox',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_reconciliation_outbox rows),
-  'booking_request_authorization_claim_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claim_occupancies rows),
-  'cottage_booking_period_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_occupancies rows),
-  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
-  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
-  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
-  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
-  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
-);
+  original_graph:=pg_temp.booking_submission_graph();
   perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
   result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000003201','suspend',2,'Fictional direct admission restriction',gen_random_uuid());
   if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
@@ -2718,18 +2573,7 @@ begin
   then raise exception 'Denied direct admission changed original attempt, claim or created provider/request/hold rows'; end if;
   if (select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_revisions then raise exception 'owner issued rebased stored attempt revisions'; end if;
   if public.retire_unusable_prepared_booking_request_submission(target_attempt)
-    or jsonb_build_object(
-  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
-  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
-  'booking_request_authorization_reconciliation_outbox',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_reconciliation_outbox rows),
-  'booking_request_authorization_claim_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claim_occupancies rows),
-  'cottage_booking_period_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_occupancies rows),
-  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
-  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
-  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
-  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
-  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
-) is distinct from original_graph
+    or pg_temp.booking_submission_graph() is distinct from original_graph
   then raise exception 'Issued claim refusal changed attempt snapshot claim occupancy operation outbox or financial history'; end if;
 
 end;
@@ -2764,18 +2608,7 @@ begin
   then raise exception 'Restoration did not restore ordinary owner/cottage eligibility'; end if;
   select to_jsonb(attempts) into strict original_attempt from public.booking_request_submission_attempts attempts where attempts.id=target_attempt;
   select to_jsonb(claims) into strict original_claim from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt;
-  original_graph:=jsonb_build_object(
-  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
-  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
-  'booking_request_authorization_reconciliation_outbox',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_reconciliation_outbox rows),
-  'booking_request_authorization_claim_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claim_occupancies rows),
-  'cottage_booking_period_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_occupancies rows),
-  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
-  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
-  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
-  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
-  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
-);
+  original_graph:=pg_temp.booking_submission_graph();
   perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
   result:=public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000003201','suspend',0,'Fictional direct admission restriction',gen_random_uuid());
   if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
@@ -2824,18 +2657,7 @@ begin
   then raise exception 'Denied direct admission changed original attempt, claim or created provider/request/hold rows'; end if;
   if (select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_revisions then raise exception 'cottage issued rebased stored attempt revisions'; end if;
   if public.retire_unusable_prepared_booking_request_submission(target_attempt)
-    or jsonb_build_object(
-  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
-  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
-  'booking_request_authorization_reconciliation_outbox',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_reconciliation_outbox rows),
-  'booking_request_authorization_claim_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claim_occupancies rows),
-  'cottage_booking_period_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_occupancies rows),
-  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
-  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
-  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
-  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
-  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
-) is distinct from original_graph
+    or pg_temp.booking_submission_graph() is distinct from original_graph
   then raise exception 'Issued claim refusal changed attempt snapshot claim occupancy operation outbox or financial history'; end if;
 
 end;
@@ -2858,18 +2680,7 @@ declare denied boolean;
 begin
   select to_jsonb(attempts) into strict original_attempt from public.booking_request_submission_attempts attempts where attempts.id=target_attempt;
   select to_jsonb(claims) into strict original_claim from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt;
-  original_graph:=jsonb_build_object(
-  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
-  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
-  'booking_request_authorization_reconciliation_outbox',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_reconciliation_outbox rows),
-  'booking_request_authorization_claim_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claim_occupancies rows),
-  'cottage_booking_period_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_occupancies rows),
-  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
-  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
-  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
-  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
-  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
-);
+  original_graph:=pg_temp.booking_submission_graph();
   perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
   result:=public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','suspend',0,'Fictional direct admission restriction',gen_random_uuid());
   if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
@@ -2898,18 +2709,7 @@ begin
     or exists(select 1 from public.cottage_booking_period_commitments)
   then raise exception 'Denied direct admission changed original attempt, claim or created provider/request/hold rows'; end if;
   if public.retire_unusable_prepared_booking_request_submission(target_attempt)
-    or jsonb_build_object(
-  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
-  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
-  'booking_request_authorization_reconciliation_outbox',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_reconciliation_outbox rows),
-  'booking_request_authorization_claim_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claim_occupancies rows),
-  'cottage_booking_period_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_occupancies rows),
-  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
-  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
-  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
-  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
-  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
-) is distinct from original_graph
+    or pg_temp.booking_submission_graph() is distinct from original_graph
   then raise exception 'Issued claim refusal changed attempt snapshot claim occupancy operation outbox or financial history'; end if;
 
 end;
@@ -2966,18 +2766,7 @@ begin
   perform set_config('role','none',true);
   select jsonb_agg(to_jsonb(operations) order by operations.id) into original_operations from public.payment_provider_operations operations;
   select jsonb_agg(to_jsonb(history) order by history.id) into original_history from public.booking_request_payment_history history;
-  original_graph:=jsonb_build_object(
-  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
-  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
-  'booking_request_authorization_reconciliation_outbox',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_reconciliation_outbox rows),
-  'booking_request_authorization_claim_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claim_occupancies rows),
-  'cottage_booking_period_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_occupancies rows),
-  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
-  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
-  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
-  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
-  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
-);
+  original_graph:=pg_temp.booking_submission_graph();
   begin
     result:=public.finalize_booking_request_submission(target_attempt,snapshot);
   exception when sqlstate 'RC409' then denied:=true;
@@ -2987,18 +2776,7 @@ begin
     or (select jsonb_agg(to_jsonb(history) order by history.id) from public.booking_request_payment_history history) is distinct from original_history
   then raise exception 'Inflight authorization created a request or lost authoritative evidence: %',result; end if;
   if public.retire_unusable_prepared_booking_request_submission(target_attempt)
-    or jsonb_build_object(
-  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
-  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
-  'booking_request_authorization_reconciliation_outbox',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_reconciliation_outbox rows),
-  'booking_request_authorization_claim_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claim_occupancies rows),
-  'cottage_booking_period_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_occupancies rows),
-  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
-  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
-  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
-  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
-  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
-) is distinct from original_graph
+    or pg_temp.booking_submission_graph() is distinct from original_graph
   then raise exception 'Admitted authorization refusal changed durable evidence or occupancy'; end if;
   perform set_config('role','service_role',true);
   result:=public.reload_booking_request_payment_operation(operation-array['permitPurpose','claimId','claimGeneration','notAfter','idempotencyKey','cleanupAttemptId','workId','leaseGeneration','leaseToken','stateRevision','operationId','operationGeneration'],null,null);
