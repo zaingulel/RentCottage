@@ -914,16 +914,133 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByRole("region", { name: payoutMessages.en.title, exact: true }),
     ).toBeVisible();
-    for (const locale of ["ar", "ckb"] as const) {
+    const totalsViewport = page.viewportSize()!;
+    const totalsMeasurements = [];
+    for (const [locale, viewport] of [
+      ["en", { width: 1440, height: 1000 }],
+      ["ar", { width: 390, height: 844 }],
+      ["ckb", { width: 320, height: 844 }],
+    ] as const) {
+      const copy = administratorTotalsMessages[locale];
+      const direction = locale === "en" ? "ltr" : "rtl";
+      await page.setViewportSize(viewport);
       await page.goto(`/${locale}/administrator/totals`);
-      await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+      await expect(page.locator("html")).toHaveAttribute("dir", direction);
       await expect(
-        page.getByRole("heading", {
-          name: administratorTotalsMessages[locale].title,
-          level: 1,
-        }),
+        page.getByRole("heading", { name: copy.title, level: 1 }),
       ).toBeVisible();
+      const count = page.getByText(`${copy.bookingCount}:`);
+      await expect(count).toBeVisible();
+      await expect(count.locator("strong")).toHaveText(/\S/);
+      const countText = await count.locator("strong").innerText();
+      await expect(count).toHaveText(`${copy.bookingCount}: ${countText}`);
+      const apply = page.getByRole("button", { name: copy.apply, exact: true });
+      await expect(apply).toBeVisible();
+      await page
+        .getByRole("link", {
+          name: administratorRecordsMessages[locale].reset,
+          exact: true,
+        })
+        .focus();
+      await page.keyboard.press("Shift+Tab");
+      await expect(apply).toBeFocused();
+      const focus = await apply.evaluate((button) => {
+        const style = getComputedStyle(button);
+        return {
+          text: button.textContent,
+          rectangle: button.getBoundingClientRect().toJSON(),
+          color: style.color,
+          background: style.backgroundColor,
+          outlineColor: style.outlineColor,
+          outlineWidth: style.outlineWidth,
+          outlineOffset: style.outlineOffset,
+          outlineStyle: style.outlineStyle,
+          boxShadow: style.boxShadow,
+        };
+      });
+      const controls = await apply
+        .locator("xpath=ancestor::form[1]")
+        .locator("label")
+        .evaluateAll((labels) =>
+          labels.map((label) => ({
+            label: label.querySelector("span")!.textContent,
+            rectangle: label
+              .querySelector("input, select")!
+              .getBoundingClientRect()
+              .toJSON(),
+          })),
+        );
+      await page.keyboard.press("Enter");
+      await expect(page).toHaveURL(
+        `/${locale}/administrator/totals?state=&from=&through=`,
+      );
+      await expect(count).toBeVisible();
+      await expect(count).toHaveText(`${copy.bookingCount}: ${countText}`);
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+      });
+      await expect
+        .poll(() =>
+          count.evaluate((paragraph) => {
+            const box = paragraph.getBoundingClientRect();
+            return {
+              noOverflow: document.documentElement.scrollWidth <= innerWidth,
+              contained: box.left >= 0 && box.right <= innerWidth,
+            };
+          }),
+        )
+        .toEqual({ noOverflow: true, contained: true });
+      const paragraph = await count.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const backgrounds = [];
+        for (
+          let ancestor: Element | null = element;
+          ancestor;
+          ancestor = ancestor.parentElement
+        ) {
+          const ancestorStyle = getComputedStyle(ancestor);
+          backgrounds.push({
+            tag: ancestor.tagName,
+            color: ancestorStyle.backgroundColor,
+            image: ancestorStyle.backgroundImage,
+          });
+        }
+        return {
+          text: element.textContent,
+          rectangle: element.getBoundingClientRect().toJSON(),
+          color: style.color,
+          fontSize: style.fontSize,
+          backgrounds,
+        };
+      });
+      totalsMeasurements.push({
+        locale,
+        viewport,
+        direction,
+        paragraph,
+        focus,
+        controls,
+      });
+      const imageName = `administrator-totals-count-${locale}.png`;
+      const imagePath = testInfo.outputPath(imageName);
+      await page.screenshot({ path: imagePath, fullPage: true, scale: "css" });
+      await testInfo.attach(imageName, {
+        path: imagePath,
+        contentType: "image/png",
+      });
     }
+    const totalsMeasurementsPath = testInfo.outputPath(
+      "administrator-totals-count-measurements.json",
+    );
+    await writeFile(
+      totalsMeasurementsPath,
+      JSON.stringify(totalsMeasurements, null, 2),
+    );
+    await testInfo.attach("administrator-totals-count-measurements.json", {
+      path: totalsMeasurementsPath,
+      contentType: "application/json",
+    });
+    await page.setViewportSize(totalsViewport);
   });
   for (const locale of ["en", "ar", "ckb"] as const) {
     test(`${locale} connected cancellation stay`, async ({
