@@ -7,7 +7,7 @@ export const administratorTotalsMessages = {
       "Simple totals of Confirmed Bookings for operational follow-up. They do not replace accounting software or tax reporting, and they do not set or optimise prices.",
     tooMany:
       "More than {limit} bookings match. Narrow the date range or choose one status.",
-    bookingCount: "Confirmed Bookings",
+    bookingCount: "Listed bookings (including flagged)",
     captured: "Captured from customers",
     bookingPrice: "Booking Price",
     bookingServiceFees: "Booking Service Fees",
@@ -45,7 +45,7 @@ export const administratorTotalsMessages = {
       "إجماليات بسيطة للحجوزات المؤكدة للمتابعة التشغيلية. لا تحل محل برامج المحاسبة ولا التقارير الضريبية، ولا تحدد الأسعار ولا تحسّنها.",
     tooMany:
       "يوجد أكثر من {limit} حجز مطابق. ضيّق نطاق التواريخ أو اختر حالة واحدة.",
-    bookingCount: "الحجوزات المؤكدة",
+    bookingCount: "الحجوزات المدرجة (بما فيها المعلّمة)",
     captured: "المحصل من العملاء",
     bookingPrice: "سعر الحجز",
     bookingServiceFees: "رسوم خدمة الحجز",
@@ -83,7 +83,7 @@ export const administratorTotalsMessages = {
       "کۆی سادەی حجزە پشتڕاستکراوەکان بۆ بەدواداچوونی کارکردن. جێگەی بەرنامەی ژمێریاری و ڕاپۆرتی باج ناگرنەوە، و نرخ دیاری ناکەن و باشتریشی ناکەن.",
     tooMany:
       "زیاتر لە {limit} حجز هاوتان. ماوەی بەروارەکان بچووک بکەرەوە یان یەک دۆخ هەڵبژێرە.",
-    bookingCount: "حجزە پشتڕاستکراوەکان",
+    bookingCount: "حجزە لیستکراوەکان (لەگەڵ نیشانکراوەکان)",
     captured: "وەرگیراو لە کڕیاران",
     bookingPrice: "نرخی حجز",
     bookingServiceFees: "کرێی خزمەتگوزاری حجز",

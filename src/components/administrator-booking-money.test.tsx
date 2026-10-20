@@ -208,19 +208,25 @@ describe("AdministratorBookingMoney", () => {
       for (const [locale, label, count, flagged, limit] of [
         [
           "ckb",
-          "حجزە پشتڕاستکراوەکان",
+          "حجزە لیستکراوەکان (لەگەڵ نیشانکراوەکان)",
           "١٬٢٣٤",
           "چونکە ٢ لەم",
           "زیاتر لە ٥٠٠ حجز",
         ],
         [
           "en",
-          "Confirmed Bookings",
+          "Listed bookings (including flagged)",
           "1,234",
           "because 2 of these",
           "More than 500 bookings",
         ],
-        ["ar", "الحجوزات المؤكدة", "1,234", "لأن 2 من هذه", "أكثر من 500 حجز"],
+        [
+          "ar",
+          "الحجوزات المدرجة (بما فيها المعلّمة)",
+          "1,234",
+          "لأن 2 من هذه",
+          "أكثر من 500 حجز",
+        ],
       ] as const) {
         const { unmount } = show(
           ready({
@@ -269,7 +275,7 @@ describe("AdministratorBookingMoney", () => {
     show(
       ready({
         summary: {
-          bookingCount: 1,
+          bookingCount: 2,
           flagged: [
             {
               bookingRequestId: "43000000-0000-4000-8000-000000000003",
@@ -288,6 +294,9 @@ describe("AdministratorBookingMoney", () => {
       }),
     );
 
+    expect(
+      screen.getByText("Listed bookings (including flagged):"),
+    ).toHaveTextContent("Listed bookings (including flagged): 2");
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Money totals are not shown because 2 of these bookings lack consistent payment evidence. Open each one below to review it.",
     );
@@ -418,9 +427,9 @@ describe("AdministratorBookingMoney", () => {
     );
 
     expect(screen.getByText("No records match these filters.")).toBeVisible();
-    expect(screen.getByText(/Confirmed Bookings:/)).toHaveTextContent(
-      "Confirmed Bookings: 0",
-    );
+    expect(
+      screen.getByText("Listed bookings (including flagged):"),
+    ).toHaveTextContent("Listed bookings (including flagged): 0");
     expect(screen.queryByRole("region")).toBeNull();
     expect(document.body).not.toHaveTextContent("IQD");
   });

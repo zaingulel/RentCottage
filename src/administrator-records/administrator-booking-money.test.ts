@@ -270,12 +270,30 @@ describe("administrator booking money derivation", () => {
       confirmedAt: confirmedAt(7),
     };
     const summary = bookingMoneySummary({
-      bookings: [bookingRow(1), bookingRow(9)],
+      bookings: [
+        bookingRow(1),
+        bookingRow(9, { earnings: { status: "unavailable" } }),
+      ],
       missingPaymentEvidence: [missing],
     });
-    expect(summary.bookingCount).toBe(2);
+    expect(summary.bookingCount).toBe(3);
     expect(summary.totals).toEqual({ status: "unavailable" });
-    expect(summary.flagged).toEqual([missing]);
+    expect(summary.flagged).toEqual([
+      {
+        bookingRequestId: uuid(9),
+        reference: reference(9),
+        confirmedAt: confirmedAt(9),
+      },
+      missing,
+    ]);
+
+    const missingOnly = bookingMoneySummary({
+      bookings: [],
+      missingPaymentEvidence: [missing],
+    });
+    expect(missingOnly.bookingCount).toBe(1);
+    expect(missingOnly.totals).toEqual({ status: "unavailable" });
+    expect(missingOnly.flagged).toEqual([missing]);
   });
 
   it("reports an unsafe sum with nothing flagged as overflow", () => {
