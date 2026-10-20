@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { observeRecordHeading } from "./fixtures/record-heading";
 import { accessMessages } from "../src/i18n/access-messages";
 import { triggerScheduled } from "./fixtures/trigger-scheduled";
@@ -9,6 +10,8 @@ const paymentEvidenceSql =
   readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
   "\n-- END PAYMENT EVIDENCE FIXTURE\n";
 import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import * as OTPAuth from "otpauth";
 import { selectPaymentRequiredExpiry } from "../src/booking-request/booking-request-payment-required-expiry";
 import { bookingRequestPaymentFactsFrom } from "../src/booking-request/supabase-booking-request-payment-observation";
 import { bookingTermsFixture } from "../src/booking-request/booking-terms-fixture";
@@ -2162,5 +2165,327 @@ test("a verified Customer double-submit creates one Pending request and one mini
       await ownerDetailPage.close();
     }
   }
+  if (testInfo.project.name === "worker")
+    await test.step("suspension resolves a waiting request through authoritative local release and delivery once", async () => {
+      const pendingDay = serviceDay(dayOffset + 2);
+      const opened = await fixtureOwner.rpc(
+        "set_cottage_inventory_availability",
+        {
+          target_profile_id: profile.id,
+          target_schedule_revision_id: profile.current_shift_schedule_id,
+          target_service_day: pendingDay,
+          requested_states: [
+            ...shifts.map((item) => ({
+              unitId: item.id,
+              unitKind: "shift",
+              state: "open",
+            })),
+            {
+              unitId: schedule.full_day_bundle_id,
+              unitKind: "full_day_bundle",
+              state: "open",
+            },
+          ],
+        },
+      );
+      expect(opened.error).toBeNull();
+      query.set("from", pendingDay);
+      query.set("to", pendingDay);
+      query.set("selection", `${pendingDay}:shift:${shift.position}`);
+      const reference = await submitAnotherRequest("en");
+      const requests = JSON.parse(
+        harness.runSql(
+          `select jsonb_agg(to_jsonb(requests)) from public.booking_requests requests where booking_request_reference='${reference}';`,
+        ),
+      );
+      expect(requests).toHaveLength(1);
+      const request = requests[0];
+      expect(request.status).toBe("pending");
+      const privileged = createClient(
+        process.env.SUPABASE_URL!,
+        process.env.SUPABASE_SECRET_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } },
+      );
+      const administrator = await privileged.auth.admin.createUser({
+        email: `pending-suspension-${randomUUID()}@rentcottage.test`,
+        password: "Local-test-password-2026",
+        email_confirm: true,
+      });
+      expect(administrator.error).toBeNull();
+      const actorId = administrator.data.user!.id;
+      const provisioned = await privileged.rpc(
+        "provision_platform_administrator",
+        { target_user_id: actorId },
+      );
+      expect(provisioned.error).toBeNull();
+      const commandId = randomUUID();
+      const suspend = () =>
+        JSON.parse(
+          harness.runSql(`begin; set local role authenticated;
+      set local request.jwt.claims='{"sub":"${actorId}","role":"authenticated","aal":"aal2"}';
+      select public.set_marketplace_suspension('customer','${request.customer_user_id}','suspend',0,'Fictional pending suspension','${commandId}'); commit;`),
+        );
+      const evidence = () =>
+        JSON.parse(
+          harness.runSql(`select jsonb_build_object(
+      'request',(select to_jsonb(rows) from public.booking_requests rows where rows.id='${request.id}'),
+      'snapshot',(select to_jsonb(rows) from public.booking_snapshots rows where rows.id='${request.booking_snapshot_id}'),
+      'work',(select to_jsonb(rows) from public.booking_request_release_work rows where booking_request_id='${request.id}'),
+      'hold',(select to_jsonb(rows) from public.cottage_booking_period_commitments rows where rows.id='${request.booking_period_commitment_id}'),
+      'occupancies',(select jsonb_agg(to_jsonb(rows) order by service_day,shift_id) from public.cottage_booking_period_occupancies rows where booking_period_commitment_id='${request.booking_period_commitment_id}'),
+      'release',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]') from public.payment_provider_operations rows where payment_lifecycle_id='${request.payment_lifecycle_id}' and operation_kind='release'),
+      'effects',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]') from public.fictional_booking_confirmation_notification_effects rows where booking_request_id='${request.id}'),
+      'events',(select coalesce(jsonb_agg(jsonb_build_object('event',to_jsonb(events),'work',to_jsonb(work)) order by events.id),'[]') from public.booking_notification_events events left join public.booking_confirmation_notification_work work on work.event_id=events.id where events.booking_request_id='${request.id}'),
+      'confirmations',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]') from public.booking_confirmations rows where booking_request_id='${request.id}')
+    );`),
+        );
+      const before = evidence();
+      expect(before.hold.status).toBe("pending_hold");
+      expect(before.release).toEqual([]);
+      const restricted = suspend();
+      expect(restricted.status).toBe("completed");
+      expect(restricted.target.releaseSummary).toEqual({
+        affected: 1,
+        resolved: 0,
+        processing: 1,
+        quarantined: 0,
+      });
+      const processing = evidence();
+      expect(processing.request.status).toBe("processing");
+      expect(processing.work).toMatchObject({
+        booking_request_id: request.id,
+        suspension_action_id: restricted.actionId,
+        outcome: "declined",
+        state: "processing",
+      });
+      expect(processing.hold).toEqual(before.hold);
+      expect(processing.occupancies).toEqual(before.occupancies);
+      expect(processing.release).toEqual([]);
+      expect(suspend()).toMatchObject({
+        status: "completed",
+        actionId: restricted.actionId,
+      });
+      expect(evidence()).toEqual(processing);
+      harness.runSql(
+        `insert into public.account_names (user_id, first_name) values ('${actorId}', 'Sara') on conflict (user_id) do update set first_name=excluded.first_name;`,
+      );
+      const administratorContext = await browser.newContext({
+        baseURL,
+        viewport: { width: 390, height: 844 },
+      });
+      try {
+        const administratorPage = await administratorContext.newPage();
+        await administratorPage.goto("/en/administrator/access");
+        await administratorPage
+          .getByLabel("Email")
+          .fill(administrator.data.user!.email!);
+        await administratorPage
+          .getByLabel("Password")
+          .fill("Local-test-password-2026");
+        await administratorPage
+          .getByRole("button", { name: "Continue", exact: true })
+          .click();
+        const secret = await administratorPage
+          .getByTestId("mfa-secret")
+          .textContent();
+        if (!secret)
+          throw new Error(
+            "Pending suspension administrator enrollment is unavailable",
+          );
+        await administratorPage.getByLabel("Authenticator app code").fill(
+          new OTPAuth.TOTP({
+            secret: OTPAuth.Secret.fromBase32(secret),
+          }).generate(),
+        );
+        await administratorPage
+          .getByRole("button", { name: "Verify", exact: true })
+          .click();
+        await expect(
+          administratorPage.getByText(/Administrator access is ready/),
+        ).toBeVisible();
+        await administratorPage.goto(
+          `/ar/administrator/records/account/${request.customer_user_id}`,
+        );
+        await expect(administratorPage.locator("html")).toHaveAttribute(
+          "lang",
+          "ar",
+        );
+        await expect(administratorPage.locator("html")).toHaveAttribute(
+          "dir",
+          "rtl",
+        );
+        const customerPanel = administratorPage.getByRole("region", {
+          name: "نشاط العميل",
+          exact: true,
+        });
+        await expect(customerPanel.locator(".status-badge")).toHaveText(
+          "معلّق",
+        );
+        const progress = customerPanel.getByRole("group", {
+          name: "تقدّم تحرير الدفعات",
+          exact: true,
+        });
+        for (const [label, value] of [
+          ["المتأثرة", "١"],
+          ["المحسومة", "٠"],
+          ["قيد المعالجة", "١"],
+          ["يحتاج إلى متابعة", "٠"],
+        ]) {
+          await expect(
+            progress
+              .locator(".fact-list > div")
+              .filter({
+                has: administratorPage.getByText(label, { exact: true }),
+              })
+              .locator("dd"),
+          ).toHaveText(value);
+        }
+        await expect(
+          customerPanel
+            .getByRole("listitem")
+            .filter({ hasText: "Fictional pending suspension" })
+            .getByText(actorId, { exact: true }),
+        ).toBeVisible();
+        const summary = JSON.parse(
+          harness.runSql(`begin; set local role authenticated;
+          set local request.jwt.claims='{"sub":"${actorId}","role":"authenticated","aal":"aal2"}';
+          select public.get_marketplace_suspension('customer','${request.customer_user_id}'); commit;`),
+        );
+        expect(summary.releaseSummary).toEqual({
+          affected: 1,
+          resolved: 0,
+          processing: 1,
+          quarantined: 0,
+        });
+        expect(summary.actions[0].id).toBe(restricted.actionId);
+        expect(evidence()).toEqual(processing);
+        const capture = testInfo.outputPath("administrator-ar-mobile.png");
+        await administratorPage.screenshot({ path: capture, fullPage: true });
+        await testInfo.attach("administrator-ar-mobile", {
+          path: capture,
+          contentType: "image/png",
+        });
+        const administratorArMobileStatePath = testInfo.outputPath(
+          "administrator-ar-mobile-state.json",
+        );
+        await writeFile(
+          administratorArMobileStatePath,
+          JSON.stringify({
+            actorId,
+            targetId: request.customer_user_id,
+            actionId: restricted.actionId,
+            requestId: request.id,
+            workId: processing.work.id,
+            summary,
+            viewport: administratorPage.viewportSize(),
+            lang: await administratorPage.locator("html").getAttribute("lang"),
+            dir: await administratorPage.locator("html").getAttribute("dir"),
+          }),
+        );
+        await testInfo.attach("administrator-ar-mobile-state", {
+          path: administratorArMobileStatePath,
+          contentType: "application/json",
+        });
+      } finally {
+        await administratorContext.close();
+      }
+      expect(evidence()).toEqual(processing);
+      for (let tick = 0; tick < 2; tick++) {
+        const result = await triggerScheduled(baseURL, "/__scheduled");
+        expect(result.ok, await result.text()).toBe(true);
+      }
+      const resolved = evidence();
+      expect(resolved.request).toMatchObject({
+        id: request.id,
+        status: "declined",
+        decline_reason: "other",
+        decline_note: null,
+      });
+      expect(resolved.snapshot).toEqual(before.snapshot);
+      expect(resolved.work).toMatchObject({
+        id: processing.work.id,
+        state: "complete",
+        suspension_action_id: restricted.actionId,
+      });
+      expect(resolved.hold).toMatchObject({
+        id: before.hold.id,
+        status: "released",
+      });
+      expect(
+        resolved.occupancies.every((row: { active: boolean }) => !row.active),
+      ).toBe(true);
+      expect(resolved.confirmations).toEqual([]);
+      expect(resolved.release).toHaveLength(1);
+      expect(resolved.release[0]).toMatchObject({
+        provider: "fictional-payments",
+        environment: "local-test",
+        current_outcome: "succeeded",
+        operation_kind: "release",
+      });
+      expect(resolved.release[0].movement_reference).toEqual(
+        expect.any(String),
+      );
+      const terminal = resolved.events.filter(
+        (row: { event: { event_kind: string } }) =>
+          row.event.event_kind === "request_declined",
+      );
+      expect(terminal).toHaveLength(2);
+      const customerDelivery = terminal.find(
+        (row: { event: { recipient_user_id: string } }) =>
+          row.event.recipient_user_id === request.customer_user_id,
+      );
+      expect(customerDelivery).toMatchObject({
+        event: { recipient_role: "customer" },
+        work: { state: "delivered" },
+      });
+      const delivered = resolved.effects.filter((row: { event_id: string }) =>
+        terminal.some(
+          (event: { event: { id: string } }) => event.event.id === row.event_id,
+        ),
+      );
+      expect(delivered).toHaveLength(2);
+      for (const effect of delivered)
+        expect(effect).toMatchObject({
+          supplier: "fictional-notifications",
+          environment: "local-test",
+        });
+      await page.goto(`/en/booking-requests/${reference}`);
+      await expect(page.getByRole("main")).toContainText("Declined");
+      await expect(page.getByRole("main")).not.toContainText(
+        "Fictional pending suspension",
+      );
+      await page.reload();
+      const repeated = await triggerScheduled(baseURL, "/__scheduled");
+      expect(repeated.ok, await repeated.text()).toBe(true);
+      expect(suspend()).toMatchObject({
+        status: "completed",
+        actionId: restricted.actionId,
+        target: {
+          releaseSummary: {
+            affected: 1,
+            resolved: 1,
+            processing: 0,
+            quarantined: 0,
+          },
+        },
+      });
+      expect(evidence()).toEqual(resolved);
+      const suspensionRetainedPendingGraphPath = testInfo.outputPath(
+        "suspension-retained-pending-graph.json",
+      );
+      await writeFile(
+        suspensionRetainedPendingGraphPath,
+        JSON.stringify({
+          actorId,
+          commandId,
+          reference,
+          evidence: resolved,
+        }),
+      );
+      await testInfo.attach("suspension-retained-pending-graph", {
+        path: suspensionRetainedPendingGraphPath,
+        contentType: "application/json",
+      });
+    });
   await ownerContext.close();
 });

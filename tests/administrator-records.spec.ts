@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
@@ -629,6 +630,405 @@ test("an administrator discovers accounts and approval records with authoritativ
       "Fictional Queue Owner",
     ])
       expect(surface).not.toContain(value);
+});
+
+test("suspension controls preserve independent capabilities and immutable history through reactivation", async ({
+  page,
+}, testInfo) => {
+  const url = localUrl();
+  const fixture = accessBrowserFixture(testInfo.project.name);
+  const owner = createClient(url, process.env.SUPABASE_PUBLISHABLE_KEY!, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const signedIn = await owner.auth.signInWithPassword({
+    phone: fixture.bookingOwnerPhone,
+    password,
+  });
+  expect(signedIn.error).toBeNull();
+  const ownerId = signedIn.data.user!.id;
+  const profile = await owner
+    .from("owner_application_cottage_profiles")
+    .select(
+      "id,application_id,current_publication_id,current_shift_schedule_id",
+    )
+    .eq("name", fixture.bookingCottageName)
+    .single();
+  expect(profile.error).toBeNull();
+  expect(profile.data!.current_publication_id).toMatch(uuidPattern);
+  expect(profile.data!.current_shift_schedule_id).toMatch(uuidPattern);
+  const email = `suspension-records-${testInfo.project.name}-${randomUUID()}@rentcottage.test`;
+  const administrator = await privilegedClient.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+  expect(administrator.error).toBeNull();
+  const actorId = administrator.data.user!.id;
+  const provisioned = await privilegedClient.rpc(
+    "provision_platform_administrator",
+    {
+      target_user_id: actorId,
+    },
+  );
+  expect(provisioned.error).toBeNull();
+  harness.runSql(
+    `insert into public.account_names (user_id, first_name) values ('${actorId}', 'Sara') on conflict (user_id) do update set first_name = excluded.first_name;`,
+  );
+  await page.goto("/en/administrator/access");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Continue" }).click();
+  const secret = await page.getByTestId("mfa-secret").textContent();
+  if (!secret)
+    throw new Error("Suspension administrator enrollment is unavailable");
+  await page.getByLabel("Authenticator app code").fill(
+    new OTPAuth.TOTP({
+      secret: OTPAuth.Secret.fromBase32(secret),
+    }).generate(),
+  );
+  await page.getByRole("button", { name: "Verify", exact: true }).click();
+  await expect(page.getByText(/Administrator access is ready/)).toBeVisible();
+  const readHistory = () =>
+    JSON.parse(
+      harness.runSql(`select coalesce(jsonb_agg(to_jsonb(actions) order by created_at,id),'[]')
+    from private.marketplace_suspension_actions actions where actor_user_id='${actorId}';`),
+    ) as Array<{
+      id: string;
+      target_kind: string;
+      account_user_id: string | null;
+      profile_id: string | null;
+      actor_user_id: string;
+      action: string;
+      reason: string;
+      from_state: string;
+      to_state: string;
+      expected_revision: number;
+      resulting_revision: number;
+      created_at: string;
+    }>;
+  expect(readHistory()).toEqual([]);
+  const capability = async () => {
+    const result = await owner.rpc("owner_can_start_new_business", {
+      target_owner_user_id: ownerId,
+    });
+    expect(result.error).toBeNull();
+    return result.data;
+  };
+  expect(await capability()).toBe(true);
+  await page.goto(`/en/administrator/records/account/${ownerId}`);
+  const customer = page.getByRole("region", {
+    name: "Customer activity",
+    exact: true,
+  });
+  const ownerPanel = page.getByRole("region", {
+    name: "Owner activity",
+    exact: true,
+  });
+  await expect(customer.locator(".status-badge")).toHaveText("Active");
+  await expect(ownerPanel.locator(".status-badge")).toHaveText("Approved");
+  await customer
+    .getByRole("button", { name: "Suspend new activity", exact: true })
+    .click();
+  await expect(customer.getByLabel("Reason", { exact: true })).toHaveJSProperty(
+    "required",
+    true,
+  );
+  expect(readHistory()).toEqual([]);
+  const act = async (
+    panel: ReturnType<Page["getByRole"]>,
+    action: "suspend" | "reactivate",
+    reason: string,
+    state: string,
+  ) => {
+    await panel.getByLabel("Reason", { exact: true }).fill(reason);
+    await panel
+      .getByRole("button", {
+        name:
+          action === "suspend"
+            ? "Suspend new activity"
+            : "Reactivate eligible activity",
+        exact: true,
+      })
+      .click();
+    await expect(panel.getByRole("status")).toContainText("Command completed.");
+    await expect(panel.locator(".status-badge")).toHaveText(state);
+    const history = readHistory();
+    const recorded = history.at(-1)!;
+    expect(recorded).toMatchObject({
+      actor_user_id: actorId,
+      action,
+      reason,
+      to_state: state.toLowerCase(),
+    });
+    expect(recorded.id).toMatch(uuidPattern);
+    expect(recorded.resulting_revision).toBe(recorded.expected_revision + 1);
+    const audit = panel.getByRole("listitem").filter({ hasText: reason });
+    await expect(audit).toHaveCount(1);
+    await expect(audit.getByText(actorId, { exact: true })).toBeVisible();
+    expect(
+      Date.parse((await audit.locator("time").getAttribute("datetime"))!),
+    ).toBe(Date.parse(recorded.created_at));
+    await panel
+      .getByRole("button", {
+        name: "Refresh restriction and release progress",
+        exact: true,
+      })
+      .click();
+    await expect(panel.getByRole("status")).toContainText(
+      "progress refreshed.",
+    );
+    expect(readHistory()).toEqual(history);
+    return recorded;
+  };
+  const suspendedCustomer = await act(
+    customer,
+    "suspend",
+    "Fictional customer capability safety restriction",
+    "Suspended",
+  );
+  expect(suspendedCustomer).toMatchObject({
+    target_kind: "customer",
+    account_user_id: ownerId,
+    from_state: "active",
+  });
+  expect(await capability()).toBe(true);
+  await expect(ownerPanel.locator(".status-badge")).toHaveText("Approved");
+  if (testInfo.project.name === "worker") {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
+    await expect(customer.locator(".status-badge")).toHaveText("Suspended");
+    await expect(ownerPanel.locator(".status-badge")).toHaveText("Approved");
+    await expect(
+      customer.getByText(suspendedCustomer.reason, { exact: true }),
+    ).toBeVisible();
+    await expect(customer.getByText(actorId, { exact: true })).toBeVisible();
+    const capture = testInfo.outputPath("administrator-en-desktop.png");
+    await page.screenshot({ path: capture, fullPage: true });
+    await testInfo.attach("administrator-en-desktop", {
+      path: capture,
+      contentType: "image/png",
+    });
+    const administratorEnDesktopStatePath = testInfo.outputPath(
+      "administrator-en-desktop-state.json",
+    );
+    await writeFile(
+      administratorEnDesktopStatePath,
+      JSON.stringify({
+        viewport: page.viewportSize(),
+        lang: await page.locator("html").getAttribute("lang"),
+        dir: await page.locator("html").getAttribute("dir"),
+        action: suspendedCustomer,
+      }),
+    );
+    await testInfo.attach("administrator-en-desktop-state", {
+      path: administratorEnDesktopStatePath,
+      contentType: "application/json",
+    });
+  }
+  await act(
+    customer,
+    "reactivate",
+    "Fictional customer capability restored",
+    "Active",
+  );
+  const suspendedOwner = await act(
+    ownerPanel,
+    "suspend",
+    "Fictional owner capability safety restriction",
+    "Suspended",
+  );
+  expect(suspendedOwner).toMatchObject({
+    target_kind: "owner",
+    account_user_id: ownerId,
+    from_state: "approved",
+  });
+  expect(await capability()).toBe(false);
+  await expect(customer.locator(".status-badge")).toHaveText("Active");
+  const context = await owner
+    .from("account_contexts")
+    .select("role,customer_suspended,owner_approval_state")
+    .eq("user_id", ownerId)
+    .single();
+  expect(context.error).toBeNull();
+  expect(context.data).toEqual({
+    role: "cottage_owner",
+    customer_suspended: false,
+    owner_approval_state: "suspended",
+  });
+  await act(
+    ownerPanel,
+    "reactivate",
+    "Fictional eligible owner activity restored",
+    "Approved",
+  );
+  expect(await capability()).toBe(true);
+  await page.goto(`/en/administrator/cottages/${profile.data!.id}`);
+  const cottage = page.getByRole("region", {
+    name: "Cottage activity",
+    exact: true,
+  });
+  await expect(cottage.locator(".status-badge")).toHaveText("Published");
+  const suspendedCottage = await act(
+    cottage,
+    "suspend",
+    "Fictional cottage business safety restriction",
+    "Suspended",
+  );
+  expect(suspendedCottage).toMatchObject({
+    target_kind: "cottage",
+    profile_id: profile.data!.id,
+    from_state: "published",
+  });
+  await act(
+    cottage,
+    "reactivate",
+    "Fictional eligible cottage listing restored",
+    "Published",
+  );
+  const restored = JSON.parse(
+    harness.runSql(`select jsonb_build_object('profileId',profiles.id,'publicationId',profiles.current_publication_id,'scheduleId',profiles.current_shift_schedule_id,'state',listings.state,'discoverable',public.is_cottage_publicly_discoverable(profiles.id))
+    from public.owner_application_cottage_profiles profiles join public.cottage_marketplace_listings listings on listings.profile_id=profiles.id where profiles.id='${profile.data!.id}';`),
+  );
+  expect(restored).toEqual({
+    profileId: profile.data!.id,
+    publicationId: profile.data!.current_publication_id,
+    scheduleId: profile.data!.current_shift_schedule_id,
+    state: "published",
+    discoverable: true,
+  });
+  const retained = readHistory();
+  expect(retained).toHaveLength(6);
+  await page.reload();
+  await expect(cottage.locator(".status-badge")).toHaveText("Published");
+  expect(readHistory()).toEqual(retained);
+  let canonicalRetention: unknown;
+  if (testInfo.project.name === "worker") {
+    const canonicalId = "25000000-0000-4000-8000-000000000401";
+    const canonicalFacts = () => {
+      const rows = JSON.parse(
+        harness.runSql(`select jsonb_agg(jsonb_build_object(
+        'profileId',profiles.id,'state',listings.state,'restricted',profiles.business_suspended,
+        'publicationId',profiles.current_publication_id,'scheduleId',profiles.current_shift_schedule_id,
+        'publicationMatches',exists(select 1 from public.cottage_publication_snapshots snapshots where snapshots.id=profiles.current_publication_id and snapshots.profile_id=profiles.id),
+        'scheduleMatches',exists(select 1 from public.cottage_shift_schedule_revisions schedules where schedules.id=profiles.current_shift_schedule_id and schedules.profile_id=profiles.id),
+        'content',to_jsonb(profiles)-array['business_suspended','suspension_revision','listing_state_before_suspension','updated_at'],
+        'pending',(select count(*) from public.booking_requests requests where requests.profile_id=profiles.id and requests.status='pending')
+      )) from public.owner_application_cottage_profiles profiles join public.cottage_marketplace_listings listings on listings.profile_id=profiles.id where profiles.id='${canonicalId}';`),
+      );
+      expect(rows).toHaveLength(1);
+      return rows[0];
+    };
+    const baseline = canonicalFacts();
+    expect(baseline).toMatchObject({
+      profileId: canonicalId,
+      state: "published",
+      restricted: false,
+      publicationMatches: true,
+      scheduleMatches: true,
+      pending: 0,
+    });
+    expect(baseline.publicationId).toMatch(uuidPattern);
+    expect(baseline.scheduleId).toMatch(uuidPattern);
+    await page.goto(`/en/administrator/cottages/${canonicalId}`);
+    await expect(cottage.locator(".status-badge")).toHaveText("Published");
+    const restriction = await act(
+      cottage,
+      "suspend",
+      "Fictional canonical cottage safety restriction",
+      "Suspended",
+    );
+    const prediction = JSON.parse(
+      harness.runSql(`begin; set local role authenticated;
+      set local request.jwt.claims='{"sub":"${actorId}","role":"authenticated","aal":"aal2"}';
+      select public.get_marketplace_suspension('cottage','${canonicalId}'); commit;`),
+    );
+    expect(prediction).toMatchObject({
+      status: "ready",
+      targetKind: "cottage",
+      targetId: canonicalId,
+      state: "suspended",
+      restorationState: "paused",
+      restorationRestriction: "publication-or-owner-ineligible",
+    });
+    expect(prediction.actions[0].id).toBe(restriction.id);
+    const restoration = await act(
+      cottage,
+      "reactivate",
+      "Fictional canonical cottage eligible paused restoration",
+      "Paused",
+    );
+    const after = canonicalFacts();
+    expect(after).toEqual({ ...baseline, state: "paused" });
+    const actions = readHistory();
+    expect(actions).toHaveLength(8);
+    expect(actions.slice(0, 6)).toEqual(retained);
+    expect(actions.slice(6)).toEqual([restriction, restoration]);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/ckb/administrator/cottages/${canonicalId}`);
+    await expect(page.locator("html")).toHaveAttribute("lang", "ckb");
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    const soraniCottage = page.getByRole("region", {
+      name: "چالاکی ماڵ",
+      exact: true,
+    });
+    await expect(soraniCottage.locator(".status-badge")).toHaveText(
+      "وەستێنراو",
+    );
+    await expect(soraniCottage).toContainText(
+      "شایستەیی بڵاوکردنەوە یان خشتە یان خاوەن ڕێگە بە بڵاوکردنەوەی ڕیکلام نادات.",
+    );
+    await expect(
+      soraniCottage.getByText(restoration.reason, { exact: true }),
+    ).toBeVisible();
+    expect(readHistory()).toEqual(actions);
+    canonicalRetention = {
+      baseline,
+      after,
+      prediction,
+      actions: [restriction, restoration],
+    };
+    const capture = testInfo.outputPath("administrator-ckb-mobile.png");
+    await page.screenshot({ path: capture, fullPage: true });
+    await testInfo.attach("administrator-ckb-mobile", {
+      path: capture,
+      contentType: "image/png",
+    });
+    const administratorCkbMobileStatePath = testInfo.outputPath(
+      "administrator-ckb-mobile-state.json",
+    );
+    await writeFile(
+      administratorCkbMobileStatePath,
+      JSON.stringify({
+        viewport: page.viewportSize(),
+        lang: await page.locator("html").getAttribute("lang"),
+        dir: await page.locator("html").getAttribute("dir"),
+        facts: after,
+        actions: [restriction, restoration],
+      }),
+    );
+    await testInfo.attach("administrator-ckb-mobile-state", {
+      path: administratorCkbMobileStatePath,
+      contentType: "application/json",
+    });
+  }
+  const suspensionRetainedAdministratorGraphPath = testInfo.outputPath(
+    "suspension-retained-administrator-graph.json",
+  );
+  await writeFile(
+    suspensionRetainedAdministratorGraphPath,
+    JSON.stringify({
+      actorId,
+      ownerId,
+      profile: profile.data,
+      actions: readHistory(),
+      canonicalRetention,
+    }),
+  );
+  await testInfo.attach("suspension-retained-administrator-graph", {
+    path: suspensionRetainedAdministratorGraphPath,
+    contentType: "application/json",
+  });
 });
 
 const queueArgs = {
