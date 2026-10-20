@@ -129,7 +129,7 @@ create or replace function pg_temp.booking_submission_graph() returns jsonb lang
 );
 $$;
 
-select plan(460);
+select plan(467);
 
 set local role anon;
 select throws_ok(
@@ -3270,6 +3270,92 @@ select throws_ok(
   '22023', 'Invalid payment provider identity',
   'due Booking Request recoveries refuse a non-object identity');
 reset role;
+savepoint live_lease_preserves_worker_ownership;
+set local role service_role;
+do $body$
+begin
+  perform public.mark_booking_request_reconciliation_required(
+    (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission));
+end;
+$body$;
+select is(
+  public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb),
+  (select expected from due_recovery_expected),
+  'unleased marked authorized work remains due for recovery');
+reset role;
+select results_eq(
+  $$select attempts.state, claims.state::text, outbox.state, outbox.lease_token is null
+    from public.booking_request_submission_attempts attempts
+    join public.booking_request_authorization_claims claims on claims.attempt_id=attempts.id
+    join public.booking_request_authorization_reconciliation_outbox outbox
+      on outbox.claim_id=claims.id and outbox.claim_generation=claims.generation
+    where attempts.id=(select (result->>'attemptId')::uuid from prepared_submission)$$,
+  $$values ('reconciliation_required'::text,'authorized'::text,'pending'::text,true)$$,
+  'marking unleased authorized work keeps its claim authorized and its recovery pending without a lease');
+create temporary table live_lease_work as
+select public.dequeue_booking_request_authorization_reconciliation() as result;
+create temporary table live_lease_rows as
+select to_jsonb(attempts) as attempt, to_jsonb(claims) as claim, to_jsonb(outbox) as outbox
+from public.booking_request_submission_attempts attempts
+join public.booking_request_authorization_claims claims on claims.attempt_id=attempts.id
+join public.booking_request_authorization_reconciliation_outbox outbox
+  on outbox.claim_id=claims.id and outbox.claim_generation=claims.generation
+where attempts.id=(select (result->>'attemptId')::uuid from prepared_submission);
+select is(
+  (select jsonb_build_object('status',result->>'status','claimId',result->>'claimId',
+    'stateRevision',(result->>'stateRevision')::bigint,'leaseToken',result->>'leaseToken') from live_lease_work),
+  (select jsonb_build_object('status','work','claimId',claim->>'id',
+    'stateRevision',(claim->>'state_revision')::bigint,'leaseToken',outbox->>'lease_token') from live_lease_rows),
+  'a real dequeue leases the marked authorization to one worker');
+set local role service_role;
+select is(
+  public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb),
+  '[]'::jsonb,
+  'due Booking Request recoveries omit work under a live worker lease');
+do $body$
+begin
+  perform public.mark_booking_request_reconciliation_required(
+    (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission));
+end;
+$body$;
+reset role;
+select is(
+  (select jsonb_build_object('attempt',to_jsonb(attempts),'claim',to_jsonb(claims),'outbox',to_jsonb(outbox))
+    from public.booking_request_submission_attempts attempts
+    join public.booking_request_authorization_claims claims on claims.attempt_id=attempts.id
+    join public.booking_request_authorization_reconciliation_outbox outbox
+      on outbox.claim_id=claims.id and outbox.claim_generation=claims.generation
+    where attempts.id=(select (result->>'attemptId')::uuid from prepared_submission)),
+  (select jsonb_build_object('attempt',attempt,'claim',claim,'outbox',outbox) from live_lease_rows),
+  'redundant marking during a live worker lease preserves the exact attempt, claim and leased recovery');
+update public.booking_request_authorization_reconciliation_outbox outbox
+set lease_expires_at=clock_timestamp()-interval '1 second'
+from live_lease_rows rows
+where outbox.claim_id=(rows.claim->>'id')::uuid;
+set local role service_role;
+select is(
+  public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb),
+  (select expected from due_recovery_expected),
+  'an expired worker lease makes the authorization due for recovery again');
+do $body$
+begin
+  perform public.mark_booking_request_reconciliation_required(
+    (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission));
+end;
+$body$;
+reset role;
+select results_eq(
+  $$select attempts.state, claims.state::text, claims.state_revision, outbox.state,
+      outbox.lease_token is null, outbox.lease_expires_at is null
+    from public.booking_request_submission_attempts attempts
+    join public.booking_request_authorization_claims claims on claims.attempt_id=attempts.id
+    join public.booking_request_authorization_reconciliation_outbox outbox
+      on outbox.claim_id=claims.id and outbox.claim_generation=claims.generation
+    where attempts.id=(select (result->>'attemptId')::uuid from prepared_submission)$$,
+  $$select 'reconciliation_required'::text,'authorized'::text,(claim->>'state_revision')::bigint,'pending'::text,true,true
+    from live_lease_rows$$,
+  'marking after the worker lease expires clears it without changing the authorized claim');
+rollback to savepoint live_lease_preserves_worker_ownership;
 update public.booking_request_authorization_claims
 set reconciliation_expires_at=statement_timestamp()+interval '1 minute'
 where attempt_id=(select (result->>'attemptId')::uuid from prepared_submission);

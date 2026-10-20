@@ -50,6 +50,9 @@ begin
         and attempts.authorization_environment=claims.environment
         and attempts.authorization_merchant_id=claims.merchant_id
         and attempts.authorization_terminal_id=claims.terminal_id
+        and not exists(select 1 from public.booking_request_authorization_reconciliation_outbox outbox
+          where outbox.claim_id=claims.id and outbox.claim_generation=claims.generation
+            and outbox.state='pending' and outbox.lease_expires_at>clock_timestamp())
       order by attempts.updated_at,attempts.id limit 50) due);
 end;
 $function$;
@@ -277,5 +280,64 @@ begin
     expired_count := expired_count + 1;
   end loop;
   return expired_count;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.mark_booking_request_reconciliation_required (
+  target_attempt_id uuid
+)
+  RETURNS void
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path TO ''
+  AS $function$
+declare current_outbox public.booking_request_authorization_reconciliation_outbox;
+begin
+  perform attempts.id
+  from public.booking_request_submission_attempts attempts
+  where attempts.id = target_attempt_id
+  for update;
+  perform claims.id
+  from public.booking_request_authorization_claims claims
+  where claims.attempt_id = target_attempt_id
+  for update;
+  select outbox.* into current_outbox
+  from public.booking_request_authorization_reconciliation_outbox outbox
+  join public.booking_request_authorization_claims claims
+    on claims.id = outbox.claim_id
+    and claims.generation = outbox.claim_generation
+  where claims.attempt_id = target_attempt_id
+  for update of outbox;
+  if exists (
+    select 1
+    from public.booking_request_submission_attempts attempts
+    where attempts.id = target_attempt_id
+      and attempts.state in (
+        'finalized', 'released', 'authorization_failed', 'expired'
+      )
+  ) then
+    return;
+  end if;
+  if current_outbox.state = 'pending'
+    and current_outbox.lease_expires_at > clock_timestamp() then
+    return;
+  end if;
+  update public.booking_request_submission_attempts
+  set state = 'reconciliation_required',
+    updated_at = now()
+  where id = target_attempt_id;
+  update public.booking_request_authorization_claims claims
+  set state = 'reconciliation_required',
+    state_revision = state_revision + 1,
+    updated_at = clock_timestamp()
+  where claims.attempt_id = target_attempt_id
+    and claims.state = 'starting';
+  update public.booking_request_authorization_reconciliation_outbox outbox
+  set state = 'pending', observed_state_revision = claims.state_revision,
+    lease_token = null, lease_expires_at = null,
+    updated_at = clock_timestamp()
+  from public.booking_request_authorization_claims claims
+  where claims.attempt_id = target_attempt_id
+    and outbox.claim_id = claims.id;
 end;
 $function$;

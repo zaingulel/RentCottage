@@ -48,6 +48,9 @@ try {
     "rc-booking-request-durable-execution-contender";
   const expiryStaleCompletionName =
     "rc-booking-request-expiry-stale-completion";
+  const expiryLeaseMarker = "RC_BOOKING_REQUEST_EXPIRY_WORK_LEASED";
+  const expiryRedundantMarkerName =
+    "rc-booking-request-expiry-redundant-marker";
   const releaseRetryOwnerName = "rc-booking-request-release-retry-owner";
   const releaseRetryContenderName =
     "rc-booking-request-release-retry-contender";
@@ -2620,11 +2623,127 @@ commit;`;
     where claims.attempt_id = (
       select attempt_id from public.test_booking_request_concurrency_fixture
     );
-    create table public.test_booking_request_expiry_stale_work as
-    select public.dequeue_booking_request_authorization_reconciliation() as result;
-    grant select on public.test_booking_request_expiry_stale_work to service_role;
+    create table public.test_booking_request_expiry_stale_work (result jsonb);
+    grant select, insert on public.test_booking_request_expiry_stale_work to service_role;
   `);
+    const ownedClaim = await runSql(`
+    select claims.id || '|' || attempts.state || '|' || claims.state || '|' || claims.state_revision
+    from public.booking_request_authorization_claims claims
+    join public.booking_request_submission_attempts attempts
+      on attempts.id = claims.attempt_id
+    where claims.attempt_id = (
+      select attempt_id from public.test_booking_request_concurrency_fixture
+    );
+  `);
+    const [ownedClaimId, ...ownedState] = ownedClaim.split("|");
+    const selectedAttemptId = await runSql(`
+    begin;
+    set local role service_role;
+    select due.value ->> 'id'
+    from jsonb_array_elements(public.due_booking_request_submission_recoveries(
+      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+    )) due
+    where (due.value ->> 'id')::uuid = (
+      select attempt_id from public.test_booking_request_concurrency_fixture
+    );
+    commit;
+  `);
+    if (!selectedAttemptId) {
+      throw new Error(
+        "The unleased due authorization was not selected for recovery.",
+      );
+    }
     markTimingPhase("execution");
+    const leaseWorker = await startSession(`
+    set application_name = 'rc-booking-request-expiry-lease-worker';
+    begin;
+    set local role service_role;
+    insert into public.test_booking_request_expiry_stale_work
+    select public.dequeue_booking_request_authorization_reconciliation();
+    select result ->> 'claimId' from public.test_booking_request_expiry_stale_work;
+    select '${expiryLeaseMarker}';
+  `);
+    await waitForMarker(leaseWorker, expiryLeaseMarker);
+    if (!leaseWorker.stdout.includes(ownedClaimId)) {
+      throw new Error(
+        `The worker did not lease the selected authorization: ${leaseWorker.stdout}`,
+      );
+    }
+    const redundantMarker = await startSession(
+      `
+    set application_name = '${expiryRedundantMarkerName}';
+    begin;
+    set local role service_role;
+    select public.mark_booking_request_reconciliation_required('${selectedAttemptId}');
+    commit;
+  `,
+      true,
+    );
+    await waitForLock(expiryRedundantMarkerName, redundantMarker);
+    await finishSession(leaseWorker, { action: "commit" });
+    await finishSession(redundantMarker);
+    const ownership = await runSql(`
+    select attempts.state || '|' || claims.state || '|' || claims.state_revision || '|' ||
+      outbox.state || '|' ||
+      (outbox.lease_token is not distinct from (work.result ->> 'leaseToken')::uuid) || '|' ||
+      (to_char(outbox.lease_expires_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+        is not distinct from work.result ->> 'leaseExpiresAt') || '|' ||
+      (claims.state_revision = (work.result ->> 'stateRevision')::bigint)
+    from public.test_booking_request_expiry_stale_work work
+    join public.booking_request_authorization_claims claims
+      on claims.id = (work.result ->> 'claimId')::uuid
+    join public.booking_request_submission_attempts attempts
+      on attempts.id = claims.attempt_id
+    join public.booking_request_authorization_reconciliation_outbox outbox
+      on outbox.claim_id = claims.id and outbox.claim_generation = claims.generation;
+  `);
+    if (ownership !== `${ownedState.join("|")}|pending|true|true|true`) {
+      throw new Error(
+        `Redundant marking revoked the live worker lease: ${ownership}`,
+      );
+    }
+    const leasedDequeue = await startSession(
+      `
+    begin;
+    set local role service_role;
+    select coalesce(public.dequeue_booking_request_authorization_reconciliation() ->> 'claimId', 'empty');
+    rollback;
+  `,
+      true,
+    );
+    await finishSession(leasedDequeue);
+    if (
+      !leasedDequeue.stdout.trim() ||
+      leasedDequeue.stdout.includes(ownedClaimId)
+    ) {
+      throw new Error(
+        `A second worker leased the still-leased authorization: ${leasedDequeue.stdout}`,
+      );
+    }
+    const originalCompletion = await startSession(
+      `
+    begin;
+    set local role service_role;
+    select public.complete_booking_request_authorization_reconciliation(
+      (work.result ->> 'claimId')::uuid,
+      (work.result ->> 'generation')::integer,
+      (work.result ->> 'stateRevision')::bigint,
+      (work.result ->> 'leaseToken')::uuid,
+      fixture.payment_snapshot,
+      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+    ) ->> 'status'
+    from public.test_booking_request_expiry_stale_work work
+    cross join public.test_booking_request_concurrency_fixture fixture;
+    rollback;
+  `,
+      true,
+    );
+    await finishSession(originalCompletion);
+    if (originalCompletion.stdout.trim() !== "applied") {
+      throw new Error(
+        `The original worker could not complete its preserved lease: ${originalCompletion.stdout}`,
+      );
+    }
     const first = await startSession(`
     set application_name = 'rc-booking-request-expiry-finalization';
     begin;
@@ -2725,7 +2844,7 @@ commit;`;
       );
     }
     console.log(
-      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=authorization-retained-then-explicit-finalization-stale-lease-conflict; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-absent-then-cleanup-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending; retirement-claim-first=attempt-lock-wait-then-claim-retained; retirement-first=late-claim-blocked-then-invalid-without-payment; retirement-cross-attempt=customer-lock-wait-then-independent-claim-and-replacement-ready; key-collision=profile-lock-wait-then-invalid-without-late-attempt-lock-and-claim-ready; retirement-message=actor-lock-wait-message-admitted-then-rollback-and-payment-free-replacement-ready.",
+      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=authorization-retained-then-explicit-finalization-stale-lease-conflict; live-lease=unleased-due-then-redundant-marker-waits-then-token-expiry-state-revision-preserved-not-re-leased-original-completion-applied-rolled-back; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-absent-then-cleanup-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending; retirement-claim-first=attempt-lock-wait-then-claim-retained; retirement-first=late-claim-blocked-then-invalid-without-payment; retirement-cross-attempt=customer-lock-wait-then-independent-claim-and-replacement-ready; key-collision=profile-lock-wait-then-invalid-without-late-attempt-lock-and-claim-ready; retirement-message=actor-lock-wait-message-admitted-then-rollback-and-payment-free-replacement-ready.",
     );
   }
 
