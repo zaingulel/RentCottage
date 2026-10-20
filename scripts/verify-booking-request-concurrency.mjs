@@ -1,4 +1,7 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { accessBrowserFixture } from "./lib/access-browser-fixtures.mjs";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
 
 const {
@@ -1714,6 +1717,8 @@ commit;`;
   `);
     const messageAdmission = await startSession(`
     begin;
+    select contexts.user_id from public.account_contexts contexts
+    where contexts.user_id = '${customerId}' for share of contexts;
     select conversations.id from public.messaging_conversations conversations
     join public.test_booking_request_retirement_fixture race
       on race.conversation_id = conversations.id
@@ -2699,7 +2704,7 @@ commit;`;
       );
     }
     console.log(
-      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=ledger-finalized-stale-lease-conflict; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending; retirement-claim-first=attempt-lock-wait-then-claim-retained; retirement-first=late-claim-blocked-then-invalid-without-payment; retirement-cross-attempt=customer-lock-wait-then-independent-claim-and-replacement-ready; key-collision=profile-lock-wait-then-invalid-without-late-attempt-lock-and-claim-ready; retirement-message=conversation-lock-wait-message-admitted-then-rollback-and-payment-free-replacement-ready.",
+      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=ledger-finalized-stale-lease-conflict; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending; retirement-claim-first=attempt-lock-wait-then-claim-retained; retirement-first=late-claim-blocked-then-invalid-without-payment; retirement-cross-attempt=customer-lock-wait-then-independent-claim-and-replacement-ready; key-collision=profile-lock-wait-then-invalid-without-late-attempt-lock-and-claim-ready; retirement-message=actor-lock-wait-message-admitted-then-rollback-and-payment-free-replacement-ready.",
     );
   }
 
@@ -2748,7 +2753,829 @@ commit;`;
     }
   }
   if (failure) throw failure;
+
+  async function verifySuspensionSerialization() {
+    const literal = (value) => `'${String(value).replaceAll("'", "''")}'`;
+    const json = (value) => `${literal(JSON.stringify(value))}::jsonb`;
+    const readJson = async (sql) =>
+      JSON.parse((await runSql(sql)).split("\n").at(-1));
+    const identity = {
+      provider: "fictional-payments",
+      environment: "local-test",
+      merchantId: "fictional-merchant",
+      terminalId: "fictional-terminal",
+    };
+    const service = (sql) =>
+      `begin; set local role service_role; ${sql} commit;`;
+    const claims = (id, aal = "aal1") => `set local role authenticated;
+      select set_config('request.jwt.claims', ${json({ sub: id, role: "authenticated", aal })}::text, true);`;
+    const administratorId =
+      await readJson(`select to_jsonb(id) from auth.users where email='cottage-profile-fixture-reviewer@rentcottage.test'
+      and exists (select 1 from public.account_contexts where user_id=auth.users.id and role='platform_administrator');`);
+    assert.ok(administratorId, "A current prepared administrator is required.");
+    const admin = (sql) =>
+      `begin; ${claims(administratorId, "aal2")} ${sql} commit;`;
+    const fixtures = [];
+    const attempts = [];
+    const settings = [];
+    let passed = 0;
+    for (const project of ["mobile", "worker"]) {
+      const phone = accessBrowserFixture(
+        project,
+        "booking-request",
+      ).bookingOwnerPhone.replace(/^\+/, "");
+      const rows =
+        await readJson(`select coalesce(jsonb_agg(to_jsonb(candidate)), '[]') from (
+        select profiles.id, profiles.owner_user_id, profiles.current_shift_schedule_id, profiles.current_publication_id,
+          profiles.suspension_revision, profiles.business_suspended, shifts.id as shift_id, shifts.position,
+          applications.id as application_id, applications.version, contexts.customer_suspended,
+          contexts.customer_suspension_revision, contexts.owner_suspension_revision
+        from auth.users users join public.account_contexts contexts on contexts.user_id=users.id
+        join public.owner_applications applications on applications.owner_user_id=users.id and applications.status='approved'
+        join public.owner_application_cottage_profiles profiles on profiles.owner_user_id=users.id
+        join public.cottage_shifts shifts on shifts.schedule_revision_id=profiles.current_shift_schedule_id and shifts.position=1
+        where ltrim(users.phone, '+')=${literal(phone)} and users.phone_confirmed_at is not null
+          and not contexts.customer_suspended
+          and public.is_cottage_publicly_discoverable(profiles.id) order by profiles.id
+      ) candidate;`);
+      assert.equal(
+        rows.length,
+        1,
+        `${project} requires one genuinely prepared published profile.`,
+      );
+      assert.equal(
+        await readJson(
+          admin(
+            `select to_jsonb(public.owner_can_start_new_business(${literal(rows[0].owner_user_id)}));`,
+          ),
+        ),
+        true,
+      );
+      fixtures.push({ project, ...rows[0] });
+    }
+    assert.notEqual(fixtures[0].owner_user_id, fixtures[1].owner_user_id);
+    const ownerIds = fixtures
+      .map((fixture) => literal(fixture.owner_user_id))
+      .join(",");
+    const profileIds = fixtures.map((fixture) => literal(fixture.id)).join(",");
+    assert.equal(
+      await runSql(`select count(*) from public.booking_requests where status='pending'
+      and (owner_user_id in (${ownerIds}) or customer_user_id in (${ownerIds}));`),
+      "0",
+      "Prepared participants have unrelated pending requests.",
+    );
+    const history = async () =>
+      await readJson(`select jsonb_build_object(
+      'actions', coalesce((select jsonb_agg(to_jsonb(a) order by id) from private.marketplace_suspension_actions a
+        where account_user_id in (${ownerIds}) or profile_id in (${profileIds})), '[]'),
+      'transitions', coalesce((select jsonb_agg(to_jsonb(t) order by id) from public.owner_application_transitions t
+        where application_id in (select id from public.owner_applications where owner_user_id in (${ownerIds}))), '[]'),
+      'notices', coalesce((select jsonb_agg(to_jsonb(n) order by id) from public.owner_application_notices n where owner_user_id in (${ownerIds})), '[]'));`);
+    const initialHistory = await history();
+    console.log(
+      "Suspension booking fixture baseline:",
+      JSON.stringify({ fixtures, history: initialHistory }),
+    );
+    const readAttempt = async (attempt) =>
+      await readJson(
+        `select to_jsonb(a) from public.booking_request_submission_attempts a where id=${literal(attempt.id)};`,
+      );
+    const authorizationFacts = async (attempt) =>
+      await readJson(`select jsonb_build_object(
+      'claim',(select to_jsonb(c) from public.booking_request_authorization_claims c where attempt_id=${literal(attempt.id)}),
+      'operations',coalesce((select jsonb_agg(to_jsonb(o) order by o.id) from public.payment_provider_operations o
+        join public.booking_request_authorization_claims c on c.id=o.claim_id where c.attempt_id=${literal(attempt.id)}),'[]'),
+      'effects',coalesce((select jsonb_agg(to_jsonb(e) order by e.operation_id) from public.simulated_payment_effects e
+        join public.payment_provider_operations o on o.id=e.operation_id join public.booking_request_authorization_claims c
+        on c.id=o.claim_id where c.attempt_id=${literal(attempt.id)}),'[]'));`);
+    const revisions = (row) => [
+      row.customer_suspension_revision,
+      row.owner_suspension_revision,
+      row.cottage_suspension_revision,
+    ];
+    const readTarget = async (kind, id) =>
+      await readJson(
+        admin(
+          `select public.get_marketplace_suspension(${literal(kind)},${literal(id)});`,
+        ),
+      );
+    const suspendSql = (
+      kind,
+      id,
+      revision,
+      commandId,
+    ) => `public.set_marketplace_suspension(${literal(kind)},${literal(id)},
+      'suspend',${revision},${literal(`Fictional booking race ${commandId}`)},${literal(commandId)})`;
+    async function restore(kind, id, commandId) {
+      const current = await readTarget(kind, id);
+      assert.equal(current.status, "ready");
+      assert.equal(current.state, "suspended");
+      assert.equal(current.canReactivate, true);
+      assert.equal(
+        current.actions[0].commandId,
+        commandId,
+        "Restriction attribution changed; retain it for investigation.",
+      );
+      const restoreId = randomUUID();
+      const result = await readJson(
+        admin(`select public.set_marketplace_suspension(${literal(kind)},${literal(id)},'reactivate',
+        ${current.revision},${literal(`Restore fictional booking race ${restoreId}`)},${literal(restoreId)});`),
+      );
+      assert.equal(result.status, "completed");
+      assert.equal(
+        result.target.state,
+        kind === "owner"
+          ? "approved"
+          : kind === "customer"
+            ? "active"
+            : "published",
+      );
+      console.log(
+        "Suspension booking reactivation:",
+        JSON.stringify({ kind, id, commandId, restoreId, result }),
+      );
+    }
+    async function arrange(customer, target, label) {
+      markTimingPhase("setup");
+      const usedDays = settings
+        .filter((setting) => setting.target.id === target.id)
+        .map((setting) => literal(setting.service_day));
+      const selected = await readJson(`select to_jsonb(candidate) from (
+        select day::date as service_day, to_jsonb(availability) as prior_row, coalesce(availability.state::text, 'closed') as prior_effective
+        from generate_series(current_date+40,current_date+400,interval '1 day') day
+        left join public.cottage_inventory_availability availability on availability.schedule_revision_id=${literal(target.current_shift_schedule_id)}
+          and availability.unit_kind='shift' and availability.unit_id=${literal(target.shift_id)} and availability.service_day=day::date
+        where not exists (select 1 from public.cottage_booking_period_occupancies occupancy
+          where occupancy.schedule_revision_id=${literal(target.current_shift_schedule_id)} and occupancy.service_day=day::date)
+          and not exists (select 1 from public.booking_request_authorization_claim_occupancies occupancy
+          where occupancy.schedule_revision_id=${literal(target.current_shift_schedule_id)} and occupancy.service_day=day::date)
+          ${usedDays.length ? `and day::date not in (${usedDays.join(",")})` : ""}
+        order by (availability.state='open') desc nulls last, day limit 1
+      ) candidate;`);
+      assert.ok(
+        selected,
+        `No disjoint future inventory is available for ${label}.`,
+      );
+      const setting = {
+        target,
+        ...selected,
+        changed: selected.prior_effective !== "open",
+      };
+      settings.push(setting);
+      if (setting.changed)
+        await runSql(`begin; ${claims(target.owner_user_id)} select public.set_cottage_inventory_availability(
+        ${literal(target.id)},${literal(target.current_shift_schedule_id)},${literal(setting.service_day)},
+        ${json([{ unitId: target.shift_id, unitKind: "shift", state: "open" }])}); commit;`);
+      const search = {
+        from: setting.service_day,
+        to: setting.service_day,
+        guests: 2,
+        amenities: [],
+        selections: [
+          {
+            serviceDay: setting.service_day,
+            kind: "shift",
+            position: target.position,
+          },
+        ],
+      };
+      const slug = `cottage-${target.id.replaceAll("-", "")}`;
+      const quote = await readJson(
+        `select public.get_public_booking_quote_with_fingerprint('en',${literal(slug)},${json(search)});`,
+      );
+      assert.equal(quote.status, "quoted");
+      const evidence = await readJson(
+        "select public.booking_request_acceptance_evidence('en',false);",
+      );
+      const submission = {
+        locale: "en",
+        publicSlug: slug,
+        discoveryQuery: search,
+        quoteFingerprint: quote.quoteFingerprint,
+        contentVersion: quote.contentVersion,
+        termsVersion: quote.termsVersion,
+        bookingPriceIqd: quote.bookingPriceIqd,
+        serviceFeeIqd: quote.serviceFeeIqd,
+        customerTotalIqd: quote.customerTotalIqd,
+        firstStartsAt: quote.items[0].startsAt,
+        intent: {
+          customerName: "Fictional Reciprocal Customer",
+          partySize: 2,
+          acceptedHouseRules: true,
+          acceptedCancellationPolicy: true,
+          acceptedMarketplaceTerms: true,
+          acceptedInside48HourNoRefund: false,
+          cancellationPolicyVersion: "rentcottage-mvp-2026-08-04",
+          acceptanceEvidence: evidence,
+        },
+      };
+      const attempt = {
+        customer,
+        target,
+        label,
+        submission,
+        idempotencyKey: randomUUID(),
+      };
+      attempts.push(attempt);
+      markTimingPhase("execution");
+      return attempt;
+    }
+    const preparation = (attempt) =>
+      `public.prepare_booking_request_submission(${literal(attempt.customer.owner_user_id)},${literal(attempt.idempotencyKey)},${json(attempt.submission)})`;
+    function setPrepared(attempt, prepared) {
+      assert.equal(prepared.status, "ready");
+      attempt.id = prepared.attemptId;
+      const price = attempt.submission.bookingPriceIqd * 1000;
+      const fee = attempt.submission.serviceFeeIqd * 1000;
+      const total = attempt.submission.customerTotalIqd * 1000;
+      const lifecycle = prepared.paymentLifecycleId;
+      attempt.pending = {
+        paymentLifecycleId: lifecycle,
+        currency: "IQD",
+        bookingPriceFils: price,
+        bookingServiceFeeFils: fee,
+        customerTotalFils: total,
+        authorization: {
+          paymentLifecycleId: lifecycle,
+          kind: "authorization",
+          logicalOperationId: `${lifecycle}:authorization`,
+          attemptId: `${lifecycle}:authorization:attempt-1`,
+          status: "pending",
+          amountFils: total,
+          providerRequestId: null,
+          providerReference: null,
+          movementReference: null,
+          reconciliationRequired: false,
+          retrySafe: false,
+        },
+        capture: null,
+        release: null,
+        refunds: [],
+        financials: {
+          refundedBookingPriceFils: 0,
+          refundedBookingServiceFeeFils: 0,
+          remainingBookingPriceFils: price,
+          remainingBookingServiceFeeFils: fee,
+          marketplaceCommissionFils: price / 10,
+          ownerEntitlementFils: (price * 9) / 10,
+        },
+        payout: {
+          status: "not_eligible",
+          eligibleFils: (price * 9) / 10,
+          paidFils: 0,
+          providerFeeFils: 0,
+          providerReserveFils: 0,
+          recoveryExposureFils: 0,
+          recoveryBalanceFils: 0,
+          automaticOwnerDebitFils: 0,
+          paidWhileBlocked: false,
+          settlement: null,
+        },
+        holds: { administrator: false, dispute: false },
+        dispute: null,
+        audits: [],
+        movements: [],
+      };
+    }
+    const claimSql = (attempt) =>
+      `public.begin_booking_request_authorization_claim(${literal(attempt.id)},${json(attempt.pending)},${json(identity)})`;
+    async function setClaimed(attempt, result) {
+      assert.equal(result.status, "ready");
+      const claim = await readJson(
+        `select to_jsonb(c) from public.booking_request_authorization_claims c where attempt_id=${literal(attempt.id)};`,
+      );
+      attempt.claim = claim;
+      attempt.operation = {
+        providerIdentity: identity,
+        permitPurpose: "booking-request-authorization",
+        idempotencyKey: claim.provider_idempotency_key,
+        notAfter: new Date(claim.not_after).toISOString(),
+        requestFingerprint: "b".repeat(64),
+        paymentLifecycleId: claim.payment_lifecycle_id,
+        logicalOperationId: claim.logical_operation_id,
+        physicalAttemptId: claim.physical_attempt_id,
+        operationKind: "authorization",
+        amountFils: claim.amount_fils,
+        currency: claim.currency,
+        claimId: claim.id,
+        claimGeneration: claim.generation,
+        stateRevision: null,
+        cleanupAttemptId: null,
+        workId: null,
+        leaseGeneration: null,
+        leaseToken: null,
+        operationId: null,
+        operationGeneration: null,
+      };
+    }
+    async function authorize(attempt, admission) {
+      assert.equal(admission.mode, "execute");
+      const observed = await readJson(
+        service(
+          `select pg_temp.payment_fixture_result(${json(admission)},'succeeded');`,
+        ),
+      );
+      assert.equal(observed.outcome, "succeeded");
+      attempt.admission = admission;
+      attempt.authorized = {
+        ...attempt.pending,
+        authorization: {
+          ...attempt.pending.authorization,
+          status: "succeeded",
+          providerRequestId: observed.providerRequestId,
+          providerReference: observed.providerReference,
+          movementReference: observed.movementReference,
+        },
+        movements: [
+          {
+            kind: "authorization",
+            logicalOperationId:
+              attempt.pending.authorization.logicalOperationId,
+            attemptId: attempt.pending.authorization.attemptId,
+            amountFils: attempt.pending.customerTotalFils,
+            movementReference: observed.movementReference,
+            recordedAt: "2099-01-01T00:00:00.000Z",
+          },
+        ],
+      };
+      await runSql(
+        service(
+          `select public.save_booking_request_payment_snapshot(${literal(attempt.id)},${json(attempt.authorized)},${json(identity)});`,
+        ),
+      );
+      attempt.before = await readAttempt(attempt);
+      attempt.moneyBefore = await authorizationFacts(attempt);
+      assert.equal(attempt.before.state, "authorized");
+      assert.equal(attempt.before.booking_request_id, null);
+    }
+    async function prepareClaim(customer, target, label) {
+      const attempt = await arrange(customer, target, label);
+      setPrepared(
+        attempt,
+        await readJson(service(`select ${preparation(attempt)};`)),
+      );
+      await setClaimed(
+        attempt,
+        await readJson(service(`select ${claimSql(attempt)};`)),
+      );
+      return attempt;
+    }
+    async function prepareAuthorized(customer, target, label) {
+      const attempt = await prepareClaim(customer, target, label);
+      await authorize(
+        attempt,
+        await readJson(
+          service(
+            `select public.admit_booking_request_provider_operation(${json(attempt.operation)});`,
+          ),
+        ),
+      );
+      return attempt;
+    }
+    const finalizeSql = (attempt) =>
+      `public.finalize_booking_request_submission(${literal(attempt.id)},${json(attempt.authorized)})`;
+    async function noFinalization(attempt) {
+      assert.deepEqual(
+        await authorizationFacts(attempt),
+        attempt.moneyBefore,
+        "Refused finalization changed existing authorization evidence.",
+      );
+      assert.deepEqual(
+        await readAttempt(attempt),
+        attempt.before,
+        "Refused finalization changed the authorized attempt.",
+      );
+      assert.equal(
+        await runSql(
+          `select count(*) from public.booking_requests where payment_lifecycle_id=${literal(attempt.before.payment_lifecycle_id)};`,
+        ),
+        "0",
+      );
+      assert.equal(
+        await runSql(`select count(*) from public.cottage_booking_period_commitments where customer_user_id=${literal(attempt.customer.owner_user_id)}
+        and profile_id=${literal(attempt.target.id)} and access_ranges && tstzmultirange(tstzrange(${literal(attempt.submission.firstStartsAt)}::timestamptz,
+          ${literal(attempt.submission.firstStartsAt)}::timestamptz+interval '1 hour','[)'));`),
+        "0",
+      );
+    }
+    async function waitGraph(waiterName, holderName) {
+      const graph =
+        await readJson(`select coalesce(jsonb_agg(jsonb_build_object('waiter',waiter.application_name,'holder',holder.application_name,
+        'state',waiter.state,'wait',waiter.wait_event_type)), '[]') from pg_stat_activity waiter
+        cross join lateral unnest(pg_blocking_pids(waiter.pid)) blocked(pid) join pg_stat_activity holder on holder.pid=blocked.pid
+        where waiter.application_name=${literal(waiterName)};`);
+      assert.ok(
+        graph.some(
+          (edge) => edge.holder === holderName && edge.wait === "Lock",
+        ),
+      );
+      assert.ok(
+        graph.every((edge) => edge.holder === holderName),
+        "Unexpected cross-account authority wait.",
+      );
+      console.log("Suspension booking wait graph:", JSON.stringify(graph));
+    }
+    async function assertOwned(table, key, value) {
+      await runSql(`do $owned$ begin begin perform 1 from public.${table} where ${key}=${literal(value)} for update nowait;
+        raise exception 'Finalizer did not own ${table}'; exception when lock_not_available then null; end; end $owned$;`);
+    }
+    function resultFrom(session, marker) {
+      const line = session.stdout
+        .split("\n")
+        .find((item) => item.startsWith(`${marker}=`));
+      assert.ok(line, `Missing ${marker} result.`);
+      return JSON.parse(line.slice(marker.length + 1));
+    }
+    async function reciprocalStage(pair, stage, expression) {
+      const holders = [];
+      const contenders = [];
+      try {
+        for (const [index, attempt] of pair.entries()) {
+          const holder =
+            await startSession(`begin; set application_name='rc-h2-${stage}-holder-${index}';
+            select user_id from public.account_contexts where user_id=${literal(attempt.customer.owner_user_id)} for update;
+            select 'H2_${stage}_${index}_HELD';`);
+          holders.push(holder);
+          await waitForMarker(holder, `H2_${stage}_${index}_HELD`);
+        }
+        for (const [index, attempt] of pair.entries()) {
+          const name = `rc-h2-${stage}-contender-${index}`;
+          const marker = `H2_${stage}_${index}_RESULT`;
+          const contender =
+            await startSession(`begin; set application_name=${literal(name)}; set local role service_role;
+            select ${literal(`${marker}=`)} || (${expression(attempt)})::text; select ${literal(`${marker}_DONE`)};`);
+          contenders.push(contender);
+          await waitForLock(name, contender);
+          await waitGraph(name, `rc-h2-${stage}-holder-${index}`);
+        }
+        for (const holder of holders)
+          await finishSession(holder, { action: "commit" });
+        for (const [index, contender] of contenders.entries())
+          await waitForMarker(contender, `H2_${stage}_${index}_RESULT_DONE`);
+        assert.equal(
+          await runSql(`select count(*) from pg_stat_activity where application_name in
+          ('rc-h2-${stage}-contender-0','rc-h2-${stage}-contender-1') and cardinality(pg_blocking_pids(pid))>0;`),
+          "0",
+        );
+        const results = contenders.map((contender, index) =>
+          resultFrom(contender, `H2_${stage}_${index}_RESULT`),
+        );
+        for (const contender of contenders)
+          await finishSession(contender, { action: "commit" });
+        return results;
+      } finally {
+        for (const session of [...holders, ...contenders])
+          if (!session.exit)
+            await finishSession(session, { action: "rollback" });
+      }
+    }
+    try {
+      const pair = [
+        await arrange(fixtures[0], fixtures[1], "reciprocal-a-to-b"),
+        await arrange(fixtures[1], fixtures[0], "reciprocal-b-to-a"),
+      ];
+      const prepared = await reciprocalStage(pair, "prepare", preparation);
+      pair.forEach((attempt, index) => setPrepared(attempt, prepared[index]));
+      const claimed = await reciprocalStage(pair, "claim", claimSql);
+      for (const [index, attempt] of pair.entries())
+        await setClaimed(attempt, claimed[index]);
+      const admitted = await reciprocalStage(
+        pair,
+        "admit",
+        (attempt) =>
+          `public.admit_booking_request_provider_operation(${json(attempt.operation)})`,
+      );
+      for (const [index, attempt] of pair.entries())
+        await authorize(attempt, admitted[index]);
+      console.log(
+        "PASS reciprocal_owner_customer_admission_remains_serializable: prepare|claim|new-provider-admission both directions; no cross-account authority wait.",
+      );
+      passed++;
+      for (const [direction, customer] of fixtures.entries()) {
+        const target = fixtures[1 - direction];
+        for (const boundary of ["customer", "cottage"]) {
+          const attempt = await prepareAuthorized(
+            customer,
+            target,
+            `${direction}-${boundary}-finalizer`,
+          );
+          const targetId =
+            boundary === "customer" ? customer.owner_user_id : target.id;
+          const current = await readTarget(boundary, targetId);
+          assert.equal(current.status, "ready");
+          const commandId = randomUUID();
+          const holderName = `rc-h2-${direction}-${boundary}-holder`;
+          const finalizerName = `rc-h2-${direction}-${boundary}-finalizer`;
+          const holder =
+            await startSession(`begin; set application_name=${literal(holderName)};
+            select ${boundary === "customer" ? "user_id from public.account_contexts where user_id" : "id from public.owner_application_cottage_profiles where id"}=${literal(targetId)} for update;
+            select 'H2_FINALIZER_BOUNDARY_HELD';`);
+          let finalizer;
+          let suspended = false;
+          try {
+            await waitForMarker(holder, "H2_FINALIZER_BOUNDARY_HELD");
+            finalizer = await startSession(
+              `begin; set application_name=${literal(finalizerName)}; set local role service_role;
+              select ${finalizeSql(attempt)}; commit;`,
+              true,
+            );
+            await waitForLock(finalizerName, finalizer);
+            await waitGraph(finalizerName, holderName);
+            await assertOwned(
+              "booking_request_submission_attempts",
+              "id",
+              attempt.id,
+            );
+            await assertOwned(
+              "booking_request_authorization_claims",
+              "id",
+              attempt.claim.id,
+            );
+            if (boundary === "cottage")
+              await assertOwned(
+                "account_contexts",
+                "user_id",
+                customer.owner_user_id,
+              );
+            holder.child.stdin
+              .write(`${claims(administratorId, "aal2")} select 'H2_SUSPENSION=' || ${suspendSql(boundary, targetId, current.revision, commandId)}::text;
+              select 'H2_SUSPENSION_DONE';\n`);
+            await waitForMarker(holder, "H2_SUSPENSION_DONE");
+            assert.equal(
+              resultFrom(holder, "H2_SUSPENSION").status,
+              "completed",
+            );
+            await finishSession(holder, { action: "commit" });
+            suspended = true;
+            await finishSession(finalizer, { expectedState: "RC409" });
+            await noFinalization(attempt);
+            assert.deepEqual(
+              revisions(await readAttempt(attempt)),
+              revisions(attempt.before),
+            );
+            console.log(
+              `PASS suspension_wins_waiting_finalization_${direction}_${boundary}: actual command completed, RC409, no new request or hold, authorization retained.`,
+            );
+            passed++;
+          } finally {
+            for (const session of [holder, finalizer])
+              if (session && !session.exit)
+                await finishSession(session, { action: "rollback" });
+            if (suspended) await restore(boundary, targetId, commandId);
+          }
+        }
+      }
+      const admissionFirst = await prepareClaim(
+        fixtures[0],
+        fixtures[1],
+        "admission-first",
+      );
+      const unadmitted = await prepareClaim(
+        fixtures[0],
+        fixtures[1],
+        "unadmitted-before-fence",
+      );
+      const admission = await readJson(
+        service(
+          `select public.admit_booking_request_provider_operation(${json(admissionFirst.operation)});`,
+        ),
+      );
+      const captured = revisions(await readAttempt(admissionFirst));
+      const customerState = await readTarget(
+        "customer",
+        fixtures[0].owner_user_id,
+      );
+      const admissionCommand = randomUUID();
+      assert.equal(
+        (
+          await readJson(
+            admin(
+              `select ${suspendSql("customer", fixtures[0].owner_user_id, customerState.revision, admissionCommand)};`,
+            ),
+          )
+        ).status,
+        "completed",
+      );
+      try {
+        const denied = await startSession(
+          service(
+            `select public.admit_booking_request_provider_operation(${json(unadmitted.operation)});`,
+          ),
+          true,
+        );
+        await finishSession(denied, { expectedState: "RC409" });
+        assert.equal(
+          await runSql(
+            `select count(*) from public.payment_provider_operations where claim_id=${literal(unadmitted.claim.id)};`,
+          ),
+          "0",
+        );
+        await authorize(admissionFirst, admission);
+        const refused = await startSession(
+          service(`select ${finalizeSql(admissionFirst)};`),
+          true,
+        );
+        await finishSession(refused, { expectedState: "RC409" });
+        await noFinalization(admissionFirst);
+      } finally {
+        await restore("customer", fixtures[0].owner_user_id, admissionCommand);
+      }
+      assert.deepEqual(revisions(await readAttempt(admissionFirst)), captured);
+      assert.notEqual(
+        (await readJson(service(`select ${claimSql(admissionFirst)};`))).status,
+        "ready",
+      );
+      const operationBefore = await readJson(
+        `select to_jsonb(o) from public.payment_provider_operations o where id=${literal(admission.operationId)};`,
+      );
+      assert.equal(
+        (
+          await readJson(
+            service(`select pg_temp.payment_query(${json(admissionFirst.operation)},${literal(operationBefore.provider_request_id)},
+        ${literal(operationBefore.provider_reference)},'succeeded');`),
+          )
+        ).outcome,
+        "succeeded",
+      );
+      assert.equal(
+        await runSql(
+          `select count(*) from public.payment_provider_operations where claim_id=${literal(admissionFirst.claim.id)};`,
+        ),
+        "1",
+      );
+      assert.deepEqual(
+        await readJson(
+          `select to_jsonb(o) from public.payment_provider_operations o where id=${literal(admission.operationId)};`,
+        ),
+        operationBefore,
+      );
+      console.log(
+        "PASS admission_first_reconciliation_retains_binding: existing fictional effect recorded after suspension; fresh admission refused; stale claim refused; one retained operation and unchanged revisions.",
+      );
+      passed++;
+      const submissionFirst = await prepareAuthorized(
+        fixtures[1],
+        fixtures[0],
+        "submission-first",
+      );
+      assert.equal(
+        (await readJson(service(`select ${finalizeSql(submissionFirst)};`)))
+          .status,
+        "pending",
+      );
+      const requestBefore =
+        await readJson(`select to_jsonb(r) from public.booking_requests r where id=(select booking_request_id
+        from public.booking_request_submission_attempts where id=${literal(submissionFirst.id)});`);
+      const snapshotBefore = await readJson(
+        `select to_jsonb(s) from public.booking_snapshots s where id=${literal(requestBefore.booking_snapshot_id)};`,
+      );
+      const commandId = randomUUID();
+      const current = await readTarget("customer", fixtures[1].owner_user_id);
+      const resolved = await readJson(
+        admin(
+          `select ${suspendSql("customer", fixtures[1].owner_user_id, current.revision, commandId)};`,
+        ),
+      );
+      assert.equal(resolved.status, "completed");
+      try {
+        const release = await readJson(
+          `select to_jsonb(w) from public.booking_request_release_work w where booking_request_id=${literal(requestBefore.id)};`,
+        );
+        assert.equal(release.suspension_action_id, resolved.actionId);
+        assert.equal(
+          await runSql(
+            `select status from public.booking_requests where id=${literal(requestBefore.id)};`,
+          ),
+          "processing",
+        );
+        assert.deepEqual(
+          await readJson(
+            `select to_jsonb(s) from public.booking_snapshots s where id=${literal(requestBefore.booking_snapshot_id)};`,
+          ),
+          snapshotBefore,
+        );
+        assert.equal(
+          await runSql(
+            `select count(*) from public.cottage_booking_period_commitments where id=${literal(requestBefore.booking_period_commitment_id)};`,
+          ),
+          "1",
+        );
+        assert.equal(
+          await runSql(
+            `select count(*) from public.payment_provider_operations where claim_id=${literal(submissionFirst.claim.id)};`,
+          ),
+          "1",
+        );
+      } finally {
+        await restore("customer", fixtures[1].owner_user_id, commandId);
+      }
+      assert.equal(
+        await runSql(
+          `select status from public.booking_requests where id=${literal(requestBefore.id)};`,
+        ),
+        "processing",
+      );
+      console.log(
+        "PASS submission_first_suspension_prepares_release: retained request, hold, snapshot and money history; reactivation leaves request processing.",
+      );
+      passed++;
+      const ownerCurrent = await readTarget("owner", fixtures[0].owner_user_id);
+      const ownerCommand = randomUUID();
+      assert.equal(
+        (
+          await readJson(
+            admin(
+              `select ${suspendSql("owner", fixtures[0].owner_user_id, ownerCurrent.revision, ownerCommand)};`,
+            ),
+          )
+        ).status,
+        "completed",
+      );
+      try {
+        assert.equal(
+          await runSql(
+            `select not customer_suspended from public.account_contexts where user_id=${literal(fixtures[0].owner_user_id)};`,
+          ),
+          "t",
+        );
+        const independent = await prepareAuthorized(
+          fixtures[0],
+          fixtures[1],
+          "owner-only-customer-booking",
+        );
+        assert.equal(
+          (await readJson(service(`select ${finalizeSql(independent)};`)))
+            .status,
+          "pending",
+        );
+        console.log(
+          "PASS owner_only_suspension_preserves_independent_customer_booking: prepare|claim|admit|finalize pending on eligible other owner.",
+        );
+        passed++;
+      } finally {
+        await restore("owner", fixtures[0].owner_user_id, ownerCommand);
+      }
+      const finalHistory = await history();
+      for (const key of Object.keys(initialHistory))
+        for (const row of initialHistory[key])
+          assert.deepEqual(
+            finalHistory[key].find((current) => current.id === row.id),
+            row,
+          );
+      console.log(
+        "Suspension booking retained history:",
+        JSON.stringify(finalHistory),
+      );
+      console.log(
+        `Suspension booking supplemental slice specs: ${passed} pass; simultaneous reciprocal finalizers unclaimed (pre-existing static foreign-key lock cycle).`,
+      );
+    } finally {
+      markTimingPhase("cleanup");
+      for (const session of activeSessions)
+        if (!session.exit) await finishSession(session, { action: "rollback" });
+      for (const setting of settings) {
+        const referenced =
+          await runSql(`select (select count(*) from public.booking_request_authorization_claim_occupancies
+          where schedule_revision_id=${literal(setting.target.current_shift_schedule_id)} and service_day=${literal(setting.service_day)})
+          + (select count(*) from public.cottage_booking_period_occupancies where schedule_revision_id=${literal(setting.target.current_shift_schedule_id)} and service_day=${literal(setting.service_day)});`);
+        if (setting.changed && referenced === "0") {
+          await runSql(`begin; ${claims(setting.target.owner_user_id)} select public.set_cottage_inventory_availability(
+            ${literal(setting.target.id)},${literal(setting.target.current_shift_schedule_id)},${literal(setting.service_day)},
+            ${json([{ unitId: setting.target.shift_id, unitKind: "shift", state: setting.prior_effective }])}); commit;`);
+          setting.restoration = "ordinary-api-effective-state-restored";
+        } else
+          setting.restoration = setting.changed
+            ? "retained-with-claim-or-hold"
+            : "unchanged";
+      }
+      console.log(
+        "Suspension booking retained availability:",
+        JSON.stringify(settings),
+      );
+      for (const attempt of attempts.filter((item) => item.id))
+        console.log(
+          "Suspension booking retained graph:",
+          await runSql(`select jsonb_build_object(
+        'label',${literal(attempt.label)},'attempt',(select to_jsonb(a) from public.booking_request_submission_attempts a where id=${literal(attempt.id)}),
+        'claims',coalesce((select jsonb_agg(to_jsonb(c)) from public.booking_request_authorization_claims c where attempt_id=${literal(attempt.id)}),'[]'),
+        'claimItems',coalesce((select jsonb_agg(to_jsonb(i)) from public.booking_request_authorization_claim_items i join public.booking_request_authorization_claims c on c.id=i.claim_id where c.attempt_id=${literal(attempt.id)}),'[]'),
+        'claimOccupancies',coalesce((select jsonb_agg(to_jsonb(o)) from public.booking_request_authorization_claim_occupancies o join public.booking_request_authorization_claims c on c.id=o.claim_id where c.attempt_id=${literal(attempt.id)}),'[]'),
+        'operations',coalesce((select jsonb_agg(to_jsonb(o)) from public.payment_provider_operations o join public.booking_request_authorization_claims c on c.id=o.claim_id where c.attempt_id=${literal(attempt.id)}),'[]'),
+        'observations',coalesce((select jsonb_agg(to_jsonb(o)) from public.payment_provider_observations o join public.payment_provider_operations p on p.id=o.operation_id join public.booking_request_authorization_claims c on c.id=p.claim_id where c.attempt_id=${literal(attempt.id)}),'[]'),
+        'effects',coalesce((select jsonb_agg(to_jsonb(e)) from public.simulated_payment_effects e join public.payment_provider_operations p on p.id=e.operation_id join public.booking_request_authorization_claims c on c.id=p.claim_id where c.attempt_id=${literal(attempt.id)}),'[]'),
+        'request',(select to_jsonb(r) from public.booking_requests r join public.booking_request_submission_attempts a on a.booking_request_id=r.id where a.id=${literal(attempt.id)}),
+        'snapshot',(select to_jsonb(s) from public.booking_snapshots s join public.booking_requests r on r.booking_snapshot_id=s.id join public.booking_request_submission_attempts a on a.booking_request_id=r.id where a.id=${literal(attempt.id)}),
+        'hold',(select to_jsonb(h) from public.cottage_booking_period_commitments h join public.booking_requests r on r.booking_period_commitment_id=h.id join public.booking_request_submission_attempts a on a.booking_request_id=r.id where a.id=${literal(attempt.id)}),
+        'releaseWork',(select to_jsonb(w) from public.booking_request_release_work w join public.booking_request_submission_attempts a on a.booking_request_id=w.booking_request_id where a.id=${literal(attempt.id)}),
+        'notifications',coalesce((select jsonb_agg(to_jsonb(n)) from public.owner_request_notifications n join public.booking_request_submission_attempts a on a.booking_request_id=n.booking_request_id where a.id=${literal(attempt.id)}),'[]'));`),
+        );
+    }
+  }
+  await verifySuspensionSerialization();
   timingOutcome = "passed";
 } finally {
-  finishTiming({ outcome: timingOutcome, cleanupDisposition: "local" });
+  finishTiming({
+    outcome: timingOutcome,
+    cleanupDisposition: "project-teardown",
+  });
 }

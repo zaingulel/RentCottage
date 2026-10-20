@@ -675,6 +675,7 @@ test("connected completed stay from messaging to review", async ({
     expect(rows).toHaveLength(1);
     return rows[0];
   };
+  let retainSuspensionGraph = false;
   for (const locale of ["en", "ar", "ckb"] as const) {
     await cleanup();
     let visitorContext:
@@ -691,6 +692,40 @@ test("connected completed stay from messaging to review", async ({
         startDaySql: anchoredServiceDay(anchor, -3),
       });
       expect(fixture.ids.requestId).toBe(requestId);
+      const restrict = (
+        kind: "customer" | "cottage",
+        targetId: string,
+        action: "suspend" | "reactivate",
+      ) => {
+        const result = JSON.parse(
+          harness.runSql(`begin;
+          set local role authenticated;
+          set local request.jwt.claims='{"sub":"${fixture.ids.administratorUserId}","role":"authenticated","aal":"aal2"}';
+          select public.set_marketplace_suspension('${kind}','${targetId}','${action}',
+            (public.get_marketplace_suspension('${kind}','${targetId}')->>'revision')::bigint,
+            'Fictional connected history ${kind} ${action}','${randomUUID()}'); commit;`),
+        );
+        if (result.status === "completed") retainSuspensionGraph = true;
+        expect(result.status).toBe("completed");
+        expect(result.actionId).toMatch(/^[0-9a-f-]{36}$/);
+        return result;
+      };
+      const retainedFacts = () =>
+        JSON.parse(
+          harness.runSql(`select jsonb_build_object(
+        'request',(select to_jsonb(rows) from public.booking_requests rows where id='${requestId}'),
+        'snapshot',(select to_jsonb(rows) from public.booking_snapshots rows join public.booking_requests requests on requests.booking_snapshot_id=rows.id where requests.id='${requestId}'),
+        'confirmations',(select jsonb_agg(to_jsonb(rows) order by rows.id) from public.booking_confirmations rows where booking_request_id='${requestId}'),
+        'receipts',(select jsonb_agg(to_jsonb(rows) order by rows.id) from public.booking_receipts rows join public.booking_confirmations confirmations on confirmations.id=rows.booking_confirmation_id where confirmations.booking_request_id='${requestId}'),
+        'payments',(select jsonb_agg(to_jsonb(rows) order by rows.id) from public.payment_provider_operations rows join public.booking_requests requests on requests.payment_lifecycle_id=rows.payment_lifecycle_id where requests.id='${requestId}'),
+        'paymentHistory',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.sequence),'[]') from public.booking_request_payment_history rows where booking_request_id='${requestId}'),
+        'outcomes',(select jsonb_agg(to_jsonb(rows) order by rows.id) from public.booking_lifecycle_outcomes rows where booking_request_id='${requestId}'),
+        'cancellations',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]') from public.booking_cancellations rows where booking_request_id='${requestId}'),
+        'incidents',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]') from public.booking_incidents rows where booking_request_id='${requestId}'),
+        'refunds',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]') from public.booking_refund_intents rows where booking_request_id='${requestId}'),
+        'reviews',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]') from public.customer_reviews rows where booking_request_id='${requestId}')
+      );`),
+        );
       const before = readBooking();
       expect(before).toMatchObject({
         requestId,
@@ -884,6 +919,32 @@ test("connected completed stay from messaging to review", async ({
         lifecycleRegion.getByText(lifecycle.completed, { exact: true }),
       ).toBeVisible();
       await expect(reviewRegion).toContainText(copy.eligibleUntil);
+      if (locale === "ckb")
+        await test.step("suspension blocks a new customer review and retains eligible completed history", async () => {
+          const facts = retainedFacts();
+          restrict("customer", fixture.identities.customer, "suspend");
+          await page.reload();
+          await expect(reviewRegion).toContainText(copy.suspended);
+          await expect(
+            reviewRegion.getByRole("button", {
+              name: copy.submit,
+              exact: true,
+            }),
+          ).toHaveCount(0);
+          const denied = await customerClient.rpc("submit_customer_review", {
+            target_reference: fixture.ids.bookingReference,
+            target_rating: 5,
+            target_original_language: "en",
+            target_original_body: "Fictional blocked review",
+          });
+          expect(denied.error).toBeNull();
+          expect(denied.data).toEqual({ status: "suspended" });
+          expect(retainedFacts()).toEqual(facts);
+          restrict("customer", fixture.identities.customer, "reactivate");
+          await page.reload();
+          await expect(reviewRegion).toContainText(copy.eligibleUntil);
+          expect(retainedFacts()).toEqual(facts);
+        });
       const reviewBody = `Fictional ${locale} review <dialog open data-connected-review>fictional example</dialog> & <em>literal</em>`;
       const rating = reviewRegion.getByRole("radio", {
         name: `5 ${copy.ratingValue}`,
@@ -1058,9 +1119,157 @@ test("connected completed stay from messaging to review", async ({
         ranges: before.ranges,
         reviewCount: 1,
       });
+      if (locale === "ckb")
+        await test.step("suspension preserves confirmed private and financial history while restricting customer sends", async () => {
+          const facts = retainedFacts();
+          expect(facts.confirmations).toHaveLength(1);
+          expect(facts.receipts).toHaveLength(2);
+          expect(facts.payments.length).toBeGreaterThan(0);
+          expect(facts.reviews).toEqual(reviews);
+          const accessBefore = await customerClient.rpc(
+            "get_confirmed_booking_access",
+            { target_reference: fixture.ids.bookingReference },
+          );
+          expect(accessBefore.error).toBeNull();
+          expect(accessBefore.data).toMatchObject({
+            actorRole: "customer",
+            exactAddress: "Fictional private address",
+            ownerPhone: fixture.phones.owner,
+          });
+          const cancellationBefore = await customerClient.rpc(
+            "get_booking_cancellation_facts",
+            {
+              target_booking_request_id: requestId,
+              target_actor_role: "customer",
+            },
+          );
+          expect(cancellationBefore.error).toBeNull();
+          expect(cancellationBefore.data).toMatchObject({
+            bookingRequestId: requestId,
+            confirmationId: before.confirmationId,
+          });
+          const cottageAction = restrict(
+            "cottage",
+            fixture.ids.profileId,
+            "suspend",
+          );
+          await page.goto(conversationUrl);
+          await expect(
+            page.getByRole("button", { name: messaging.send, exact: true }),
+          ).toBeVisible();
+          const servicingBody = "Fictional confirmed cottage servicing message";
+          await page
+            .getByLabel(messaging.messageLabel, { exact: true })
+            .fill(servicingBody);
+          await page
+            .getByRole("button", { name: messaging.send, exact: true })
+            .click();
+          await expect(
+            messages.getByText(servicingBody, { exact: true }),
+          ).toBeVisible();
+          const serviced = readConversation(conversationId);
+          expect(serviced.messages.slice(0, 1)).toEqual(
+            conversationBefore.messages,
+          );
+          expect(serviced.messages[1]).toMatchObject({
+            conversation_id: conversationId,
+            original_body: servicingBody,
+          });
+          const customerAction = restrict(
+            "customer",
+            fixture.identities.customer,
+            "suspend",
+          );
+          await page.reload();
+          await expect(page.getByRole("main").getByRole("alert")).toHaveText(
+            `! ${messaging.customerSuspended}`,
+          );
+          await expect(
+            page.getByLabel(messaging.messageLabel, { exact: true }),
+          ).toHaveCount(0);
+          await expect(
+            page.getByRole("button", { name: messaging.send, exact: true }),
+          ).toHaveCount(0);
+          await expect(
+            messages.getByText(original, { exact: true }),
+          ).toBeVisible();
+          await expect(
+            messages.getByText(servicingBody, { exact: true }),
+          ).toBeVisible();
+          const denied = await privileged.rpc("admit_messaging_message", {
+            target_actor_user_id: fixture.identities.customer,
+            target_conversation_id: conversationId,
+            target_command_id: randomUUID(),
+            target_original_language: "en",
+            target_original_body: "Fictional blocked customer send",
+          });
+          expect(denied.error).toBeNull();
+          expect(denied.data.status).toBe("suspended");
+          expect(readConversation(conversationId).messages).toEqual(
+            serviced.messages,
+          );
+          const accessAfter = await customerClient.rpc(
+            "get_confirmed_booking_access",
+            { target_reference: fixture.ids.bookingReference },
+          );
+          expect(accessAfter.error).toBeNull();
+          expect(accessAfter.data).toMatchObject({
+            receiptId: accessBefore.data.receiptId,
+            actorRole: "customer",
+            pricing: accessBefore.data.pricing,
+            exactAddress: accessBefore.data.exactAddress,
+            ownerPhone: accessBefore.data.ownerPhone,
+            customerPhone: accessBefore.data.customerPhone,
+            bookingReference: accessBefore.data.bookingReference,
+          });
+          const cancellationAfter = await customerClient.rpc(
+            "get_booking_cancellation_facts",
+            {
+              target_booking_request_id: requestId,
+              target_actor_role: "customer",
+            },
+          );
+          expect(cancellationAfter.error).toBeNull();
+          expect(cancellationAfter.data).toMatchObject({
+            ...cancellationBefore.data,
+            observedAt: expect.any(String),
+          });
+          await page.goto(bookingPath);
+          await expect(
+            page
+              .getByRole("region", { name: copy.submitted })
+              .getByText(reviewBody, { exact: true }),
+          ).toBeVisible();
+          await expect(
+            page.getByText("Fictional private address", { exact: true }),
+          ).toBeVisible();
+          expect(retainedFacts()).toEqual(facts);
+          const suspensionRetainedCompletedGraphPath = testInfo.outputPath(
+            "suspension-retained-completed-graph.json",
+          );
+          await writeFile(
+            suspensionRetainedCompletedGraphPath,
+            JSON.stringify({
+              namespace,
+              identities: fixture.identities,
+              requestId,
+              attemptId,
+              conversationId,
+              cottageAction,
+              customerAction,
+              facts,
+              messages: serviced.messages,
+            }),
+          );
+          await testInfo.attach("suspension-retained-completed-graph", {
+            path: suspensionRetainedCompletedGraphPath,
+            contentType: "application/json",
+          });
+        });
     } finally {
       await visitorContext?.close();
-      await cleanup();
+      // Immutable restriction audit retains its exact target graph until project disposal.
+      if (!retainSuspensionGraph) await cleanup();
     }
   }
 });

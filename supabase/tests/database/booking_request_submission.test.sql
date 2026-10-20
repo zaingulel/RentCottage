@@ -63,7 +63,73 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(425);
+create or replace function pg_temp.preparation_money_counts() returns jsonb language sql as $$
+  select jsonb_build_array(
+    (select count(*) from public.booking_request_authorization_claims),
+    (select count(*) from public.payment_provider_operations),
+    (select count(*) from public.booking_requests),
+    (select count(*) from public.cottage_booking_period_commitments),
+    (select count(*) from public.booking_request_payment_history));
+$$;
+
+create or replace function pg_temp.assert_restriction_stale_preparation_replacement(
+  original_attempt public.booking_request_submission_attempts,
+  result jsonb,
+  expected_key uuid,
+  submission jsonb,
+  counts_before jsonb
+) returns void language plpgsql as $$
+declare replacement public.booking_request_submission_attempts;
+declare replay jsonb;
+begin
+  select * into strict replacement from public.booking_request_submission_attempts where id=(result->>'attemptId')::uuid;
+  if replacement.id=original_attempt.id or replacement.payment_lifecycle_id=original_attempt.payment_lifecycle_id
+    or replacement.idempotency_key<>expected_key
+    or replacement.intent_payload is distinct from original_attempt.intent_payload
+    or replacement.intent_fingerprint is distinct from original_attempt.intent_fingerprint
+    or replacement.quote_payload is distinct from original_attempt.quote_payload
+    or replacement.quote_fingerprint is distinct from original_attempt.quote_fingerprint
+    or replacement.state<>'authorizing' or not replacement.intent_dedupe_active
+    or replacement.payment_snapshot is not null or replacement.booking_request_id is not null
+    or row(replacement.customer_suspension_revision,replacement.owner_suspension_revision,replacement.cottage_suspension_revision)
+      is distinct from (select row(customer.customer_suspension_revision,owner_context.owner_suspension_revision,profiles.suspension_revision)
+        from public.account_contexts customer
+        join public.owner_application_cottage_profiles profiles on profiles.id=replacement.profile_id
+        join public.account_contexts owner_context on owner_context.user_id=profiles.owner_user_id
+        where customer.user_id=replacement.customer_user_id)
+  then raise exception 'Replacement lost fresh identity, current tuple or immutable intent/quote'; end if;
+  if (select to_jsonb(attempts)-array['state','intent_dedupe_active','updated_at'] from public.booking_request_submission_attempts attempts where id=original_attempt.id)
+      is distinct from to_jsonb(original_attempt)-array['state','intent_dedupe_active','updated_at']
+    or not exists(select 1 from public.booking_request_submission_attempts where id=original_attempt.id and state='expired' and not intent_dedupe_active and updated_at>original_attempt.updated_at)
+    or not public.messaging_submission_attempt_is_resolved(original_attempt.id)
+    or (select count(*) from public.booking_request_submission_attempts where customer_user_id=original_attempt.customer_user_id and intent_fingerprint=original_attempt.intent_fingerprint and intent_dedupe_active)<>1
+  then raise exception 'Retirement changed immutable attempt or failed to free exactly one intent'; end if;
+  replay:=public.prepare_booking_request_submission(original_attempt.customer_user_id,replacement.idempotency_key,submission);
+  if replay is distinct from result then raise exception 'Replacement replay changed identity: %',replay; end if;
+  replay:=public.prepare_booking_request_submission(original_attempt.customer_user_id,original_attempt.idempotency_key,submission);
+  if replay is distinct from '{"status":"unavailable"}'::jsonb then raise exception 'Retired old key revived: %',replay; end if;
+  if pg_temp.preparation_money_counts() is distinct from counts_before
+    or (select count(*) from public.booking_request_submission_attempts where customer_user_id=original_attempt.customer_user_id)<>2
+  then raise exception 'Preparation retirement created money, claim, request, hold or extra attempts'; end if;
+end;
+$$;
+
+create or replace function pg_temp.booking_submission_graph() returns jsonb language sql as $$
+  select jsonb_build_object(
+  'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
+  'booking_request_authorization_claims',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claims rows),
+  'booking_request_authorization_reconciliation_outbox',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_reconciliation_outbox rows),
+  'booking_request_authorization_claim_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_authorization_claim_occupancies rows),
+  'cottage_booking_period_occupancies',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_occupancies rows),
+  'payment_provider_operations',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.payment_provider_operations rows),
+  'cottage_booking_period_commitments',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.cottage_booking_period_commitments rows),
+  'booking_request_payment_history',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_payment_history rows),
+  'booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_requests rows),
+  'messaging_conversation_booking_requests',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.messaging_conversation_booking_requests rows)
+);
+$$;
+
+select plan(449);
 
 set local role anon;
 select throws_ok(
@@ -667,6 +733,40 @@ select is(
   'true', 'just inside 48 hours requires the no-refund acceptance'
 );
 
+savepoint suspension_fences_prepare;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select lives_ok($test$
+do $body$
+declare prepared jsonb;
+declare result jsonb;
+declare submission jsonb := (select valid.submission from valid_submission valid);
+declare before_operations bigint := (select count(*) from public.payment_provider_operations);
+declare before_requests bigint := (select count(*) from public.booking_requests);
+declare before_holds bigint := (select count(*) from public.cottage_booking_period_commitments);
+begin
+  prepared := public.prepare_booking_request_submission('00000000-0000-0000-0000-000000003202','11111111-1111-4111-8111-111111113790',submission);
+  if prepared->>'status' is distinct from 'ready' then raise exception 'Fresh suspension fixture did not prepare: %',prepared; end if;
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result := public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','suspend',0,'Fictional admission restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Customer suspension failed: %',result; end if;
+  result := public.prepare_booking_request_submission('00000000-0000-0000-0000-000000003202','11111111-1111-4111-8111-111111113791',jsonb_set(submission,'{intent,customerName}','"Suspended Customer"'));
+  if result->>'status' is distinct from 'customer-suspended' then raise exception 'Fresh customer suspension admitted: %',result; end if;
+  result := public.prepare_booking_request_submission('00000000-0000-0000-0000-000000003202','11111111-1111-4111-8111-111111113790',submission);
+  if result->>'status' is distinct from 'customer-suspended' then raise exception 'Null snapshot replay bypassed suspension: %',result; end if;
+  result := public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','reactivate',1,'Prospective customer restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Customer restoration failed: %',result; end if;
+  result := public.prepare_booking_request_submission('00000000-0000-0000-0000-000000003202','11111111-1111-4111-8111-111111113790',submission);
+  if result->>'status' is distinct from 'quote-stale' then raise exception 'Reactivation revived stale preparation: %',result; end if;
+  if (select count(*) from public.payment_provider_operations)<>before_operations
+    or (select count(*) from public.booking_requests)<>before_requests
+    or (select count(*) from public.cottage_booking_period_commitments)<>before_holds
+  then raise exception 'Rejected preparation created provider operation, request or hold'; end if;
+end;
+$body$;
+$test$,'suspension_fences_prepared_and_issued_authorizations: fresh and null-snapshot replay');
+rollback to savepoint suspension_fences_prepare;
+
 create temp table self_booking_before as select
   (select count(*) from public.booking_request_submission_attempts) attempts,
   (select count(*) from public.cottage_booking_period_commitments) holds,
@@ -912,6 +1012,46 @@ select is(
   'a pre-provider crash resumes the same durable Payment Lifecycle'
 );
 reset role;
+
+
+savepoint suspension_revision_hostile_input;
+select lives_ok($test$
+do $body$
+declare target_attempt uuid := (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+declare original_attempt jsonb;
+declare revision_column text;
+declare invalid_value text;
+declare actual_state text;
+declare actual_constraint text;
+declare expected_state text;
+begin
+  select to_jsonb(attempts) into strict original_attempt
+  from public.booking_request_submission_attempts attempts where attempts.id=target_attempt;
+  foreach revision_column in array array['customer_suspension_revision','owner_suspension_revision','cottage_suspension_revision'] loop
+    foreach invalid_value in array array[null::text,'-1','not-a-revision'] loop
+      expected_state:=case when invalid_value is null then '23502' when invalid_value='-1' then '23514' else '22P02' end;
+      actual_state:=null;
+      actual_constraint:=null;
+      begin
+        execute format('update public.booking_request_submission_attempts set %I=%L::bigint where id=%L::uuid',revision_column,invalid_value,target_attempt);
+      exception when not_null_violation or check_violation or invalid_text_representation then
+        get stacked diagnostics actual_state=returned_sqlstate,actual_constraint=constraint_name;
+      end;
+      if actual_state is distinct from expected_state
+        or (invalid_value='-1' and actual_constraint is distinct from 'booking_request_submission_suspension_revisions_check')
+      then raise exception 'Persisted % accepted or misclassified invalid revision %: % / %',revision_column,invalid_value,actual_state,actual_constraint; end if;
+    end loop;
+  end loop;
+  if (select to_jsonb(attempts) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_attempt
+    or exists(select 1 from public.booking_request_authorization_claims)
+    or exists(select 1 from public.payment_provider_operations)
+    or exists(select 1 from public.booking_requests)
+    or exists(select 1 from public.cottage_booking_period_commitments)
+  then raise exception 'Rejected persisted revisions changed attempt or created authorization/request/hold'; end if;
+end;
+$body$;
+$test$,'suspension_fences_prepared_and_issued_authorizations: persisted revisions reject null negative and malformed values');
+rollback to savepoint suspension_revision_hostile_input;
 
 create temporary table usable_replacement_quote as
 select public.get_public_booking_quote_with_fingerprint(
@@ -1280,6 +1420,328 @@ select snapshot
   ) as snapshot
 from authorized_payment;
 grant select on pending_authorization_payment to service_role;
+
+savepoint suspension_customer_direct_replacement;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select lives_ok($test$
+do $body$
+declare original_attempt public.booking_request_submission_attempts;
+declare result jsonb;
+declare counts_before jsonb;
+begin
+  select * into strict original_attempt from public.booking_request_submission_attempts
+  where id=(select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+  counts_before:=pg_temp.preparation_money_counts();
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result:=public.set_marketplace_suspension('customer',original_attempt.customer_user_id,'suspend',0,'Fictional preparation restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  result:=public.set_marketplace_suspension('customer',original_attempt.customer_user_id,'reactivate',1,'Prospective preparation restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  result:=public.prepare_booking_request_submission(original_attempt.customer_user_id,'11111111-1111-4111-8111-111111113710',(select submission from journey_submission));
+  if result->>'status' is distinct from 'ready' then raise exception 'Direct fresh key cannot replace restored customer preparation: %',result; end if;
+  perform pg_temp.assert_restriction_stale_preparation_replacement(
+    original_attempt,result,'11111111-1111-4111-8111-111111113710'::uuid,(select submission from journey_submission),counts_before);
+end;
+$body$;
+$test$,'restriction_stale_preparation_replacement: customer direct fresh key');
+rollback to savepoint suspension_customer_direct_replacement;
+
+savepoint suspension_owner_direct_replacement;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+values('20000000-0000-4000-8000-000000003290','00000000-0000-0000-0000-000000003201','individual','Fictional Admission Owner','submitted',now(),now(),now()+interval '72 hours');
+insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+values('42000000-0000-4000-8000-000000003290','20000000-0000-4000-8000-000000003290','identity','fictional/pending/identity.pdf','identity.pdf','application/pdf',128);
+update public.owner_verification_documents set content_digest=repeat('e',64),digest_source='sha256' where id='42000000-0000-4000-8000-000000003290';
+select public.review_owner_application('20000000-0000-4000-8000-000000003290',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+select lives_ok($test$
+do $body$
+declare original_attempt public.booking_request_submission_attempts;
+declare result jsonb;
+declare counts_before jsonb;
+begin
+  select * into strict original_attempt from public.booking_request_submission_attempts
+  where id=(select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+  counts_before:=pg_temp.preparation_money_counts();
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result:=public.set_marketplace_suspension('owner',(select owner_user_id from public.owner_application_cottage_profiles where id=original_attempt.profile_id),'suspend',2,'Fictional preparation restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  result:=public.set_marketplace_suspension('owner',(select owner_user_id from public.owner_application_cottage_profiles where id=original_attempt.profile_id),'reactivate',3,'Prospective preparation restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  result:=public.prepare_booking_request_submission(original_attempt.customer_user_id,'11111111-1111-4111-8111-111111113710',(select submission from journey_submission));
+  if result->>'status' is distinct from 'ready' then raise exception 'Direct fresh key cannot replace restored owner preparation: %',result; end if;
+  perform pg_temp.assert_restriction_stale_preparation_replacement(
+    original_attempt,result,'11111111-1111-4111-8111-111111113710'::uuid,(select submission from journey_submission),counts_before);
+end;
+$body$;
+$test$,'restriction_stale_preparation_replacement: owner direct fresh key');
+rollback to savepoint suspension_owner_direct_replacement;
+
+savepoint suspension_cottage_direct_replacement;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+values('20000000-0000-4000-8000-000000003290','00000000-0000-0000-0000-000000003201','individual','Fictional Admission Owner','submitted',now(),now(),now()+interval '72 hours');
+insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+values('42000000-0000-4000-8000-000000003290','20000000-0000-4000-8000-000000003290','identity','fictional/pending/identity.pdf','identity.pdf','application/pdf',128);
+update public.owner_verification_documents set content_digest=repeat('e',64),digest_source='sha256' where id='42000000-0000-4000-8000-000000003290';
+select public.review_owner_application('20000000-0000-4000-8000-000000003290',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+select lives_ok($test$
+do $body$
+declare original_attempt public.booking_request_submission_attempts;
+declare result jsonb;
+declare counts_before jsonb;
+begin
+  select * into strict original_attempt from public.booking_request_submission_attempts
+  where id=(select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+  counts_before:=pg_temp.preparation_money_counts();
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result:=public.set_marketplace_suspension('cottage',original_attempt.profile_id,'suspend',0,'Fictional preparation restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  result:=public.set_marketplace_suspension('cottage',original_attempt.profile_id,'reactivate',1,'Prospective preparation restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  result:=public.prepare_booking_request_submission(original_attempt.customer_user_id,'11111111-1111-4111-8111-111111113710',(select submission from journey_submission));
+  if result->>'status' is distinct from 'ready' then raise exception 'Direct fresh key cannot replace restored cottage preparation: %',result; end if;
+  perform pg_temp.assert_restriction_stale_preparation_replacement(
+    original_attempt,result,'11111111-1111-4111-8111-111111113710'::uuid,(select submission from journey_submission),counts_before);
+end;
+$body$;
+$test$,'restriction_stale_preparation_replacement: cottage direct fresh key');
+rollback to savepoint suspension_cottage_direct_replacement;
+
+savepoint suspension_begin_replacement;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select lives_ok($test$
+do $body$
+declare original_attempt public.booking_request_submission_attempts;
+declare result jsonb;
+declare counts_before jsonb;
+begin
+  select * into strict original_attempt from public.booking_request_submission_attempts
+  where id=(select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+  counts_before:=pg_temp.preparation_money_counts();
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result:=public.set_marketplace_suspension('customer',original_attempt.customer_user_id,'suspend',0,'Fictional preparation restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  result:=public.set_marketplace_suspension('customer',original_attempt.customer_user_id,'reactivate',1,'Prospective preparation restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  result:=public.begin_booking_request_authorization_claim(original_attempt.id,(select snapshot from pending_authorization_payment),'{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb);
+  if result is distinct from '{"status":"quote-stale"}'::jsonb then raise exception 'Fresh begin did not refuse stale revision: %',result; end if;
+  if not exists(select 1 from public.booking_request_submission_attempts where id=original_attempt.id and state='expired' and not intent_dedupe_active)
+  then raise exception 'Fresh begin refusal did not retire untouched restriction-stale preparation'; end if;
+  result:=public.prepare_booking_request_submission(original_attempt.customer_user_id,'11111111-1111-4111-8111-111111113710',(select submission from journey_submission));
+  if result->>'status' is distinct from 'ready' then raise exception 'Direct fresh key cannot replace begin-retired preparation: %',result; end if;
+  perform pg_temp.assert_restriction_stale_preparation_replacement(
+    original_attempt,result,'11111111-1111-4111-8111-111111113710'::uuid,(select submission from journey_submission),counts_before);
+end;
+$body$;
+$test$,'restriction_stale_preparation_replacement: begin claim retirement');
+rollback to savepoint suspension_begin_replacement;
+
+savepoint suspension_owner_fresh;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+values('20000000-0000-4000-8000-000000003290','00000000-0000-0000-0000-000000003201','individual','Fictional Admission Owner','submitted',now(),now(),now()+interval '72 hours');
+insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+values('42000000-0000-4000-8000-000000003290','20000000-0000-4000-8000-000000003290','identity','fictional/pending/identity.pdf','identity.pdf','application/pdf',128);
+update public.owner_verification_documents set content_digest=repeat('e',64),digest_source='sha256' where id='42000000-0000-4000-8000-000000003290';
+select public.review_owner_application('20000000-0000-4000-8000-000000003290',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+select lives_ok($test$
+do $body$
+declare original_revisions jsonb;
+declare result jsonb;
+declare target_attempt uuid := (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+declare snapshot jsonb := (select payment.snapshot from pending_authorization_payment payment);
+declare identity jsonb := '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}';
+begin
+  original_revisions:=(select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt);
+  if not public.owner_can_start_new_business('00000000-0000-0000-0000-000000003201')
+    or not public.is_cottage_publicly_discoverable('30000000-0000-4000-8000-000000003201')
+  then raise exception 'Restoration did not restore ordinary owner/cottage eligibility'; end if;
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result := public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000003201','suspend',2,'Fictional fresh claim restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  result:=public.prepare_booking_request_submission('00000000-0000-0000-0000-000000003202','11111111-1111-4111-8111-111111113201',(select journey.submission from journey_submission journey));
+  if result->>'status' is distinct from 'quote-stale' then raise exception 'Old preparation revived after owner transition: %',result; end if;
+  result := public.begin_booking_request_authorization_claim(target_attempt,snapshot,identity);
+  if result->>'status' is distinct from 'quote-stale' then raise exception 'Fresh claim bypassed suspension: %',result; end if;
+  result := public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000003201','reactivate',3,'Prospective restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  if not public.owner_can_start_new_business('00000000-0000-0000-0000-000000003201')
+    or not public.is_cottage_publicly_discoverable('30000000-0000-4000-8000-000000003201')
+  then raise exception 'Restoration did not restore ordinary owner/cottage eligibility'; end if;
+  if (select jsonb_build_array(customer.customer_suspension_revision,owner_context.owner_suspension_revision,profiles.suspension_revision)
+      from public.booking_request_submission_attempts attempts
+      join public.account_contexts customer on customer.user_id=attempts.customer_user_id
+      join public.owner_application_cottage_profiles profiles on profiles.id=attempts.profile_id
+      join public.account_contexts owner_context on owner_context.user_id=profiles.owner_user_id
+      where attempts.id=target_attempt)
+      is distinct from jsonb_set(original_revisions,'{1}',to_jsonb((original_revisions->>1)::bigint+2))
+  then raise exception 'owner restoration did not isolate exactly its changed revision'; end if;
+  result:=public.prepare_booking_request_submission('00000000-0000-0000-0000-000000003202','11111111-1111-4111-8111-111111113201',(select journey.submission from journey_submission journey));
+  if result->>'status' is distinct from 'unavailable' then raise exception 'Retired old preparation did not remain terminal after owner restoration: %',result; end if;
+  result := public.begin_booking_request_authorization_claim(target_attempt,snapshot,identity);
+  if result->>'status' is distinct from 'quote-stale' then raise exception 'Fresh claim revived old revision: %',result; end if;
+  if exists(select 1 from public.booking_request_authorization_claims where attempt_id=target_attempt)
+    or exists(select 1 from public.payment_provider_operations)
+    or exists(select 1 from public.booking_requests)
+    or exists(select 1 from public.cottage_booking_period_commitments)
+  then raise exception 'Rejected fresh claim created authorization, request or hold'; end if;
+  if (select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_revisions then raise exception 'owner fresh rebased stored attempt revisions'; end if;
+end;
+$body$;
+$test$,'suspension_fences_prepared_and_issued_authorizations: owner fresh restoration');
+rollback to savepoint suspension_owner_fresh;
+
+savepoint suspension_cottage_fresh;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+values('20000000-0000-4000-8000-000000003290','00000000-0000-0000-0000-000000003201','individual','Fictional Admission Owner','submitted',now(),now(),now()+interval '72 hours');
+insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+values('42000000-0000-4000-8000-000000003290','20000000-0000-4000-8000-000000003290','identity','fictional/pending/identity.pdf','identity.pdf','application/pdf',128);
+update public.owner_verification_documents set content_digest=repeat('e',64),digest_source='sha256' where id='42000000-0000-4000-8000-000000003290';
+select public.review_owner_application('20000000-0000-4000-8000-000000003290',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+select lives_ok($test$
+do $body$
+declare original_revisions jsonb;
+declare result jsonb;
+declare target_attempt uuid := (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+declare snapshot jsonb := (select payment.snapshot from pending_authorization_payment payment);
+declare identity jsonb := '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}';
+begin
+  original_revisions:=(select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt);
+  if not public.owner_can_start_new_business('00000000-0000-0000-0000-000000003201')
+    or not public.is_cottage_publicly_discoverable('30000000-0000-4000-8000-000000003201')
+  then raise exception 'Restoration did not restore ordinary owner/cottage eligibility'; end if;
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result := public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000003201','suspend',0,'Fictional fresh claim restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  result:=public.prepare_booking_request_submission('00000000-0000-0000-0000-000000003202','11111111-1111-4111-8111-111111113201',(select journey.submission from journey_submission journey));
+  if result->>'status' is distinct from 'quote-stale' then raise exception 'Old preparation revived after cottage transition: %',result; end if;
+  result := public.begin_booking_request_authorization_claim(target_attempt,snapshot,identity);
+  if result->>'status' is distinct from 'quote-stale' then raise exception 'Fresh claim bypassed suspension: %',result; end if;
+  result := public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000003201','reactivate',1,'Prospective restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  if not public.owner_can_start_new_business('00000000-0000-0000-0000-000000003201')
+    or not public.is_cottage_publicly_discoverable('30000000-0000-4000-8000-000000003201')
+  then raise exception 'Restoration did not restore ordinary owner/cottage eligibility'; end if;
+  if (select jsonb_build_array(customer.customer_suspension_revision,owner_context.owner_suspension_revision,profiles.suspension_revision)
+      from public.booking_request_submission_attempts attempts
+      join public.account_contexts customer on customer.user_id=attempts.customer_user_id
+      join public.owner_application_cottage_profiles profiles on profiles.id=attempts.profile_id
+      join public.account_contexts owner_context on owner_context.user_id=profiles.owner_user_id
+      where attempts.id=target_attempt)
+      is distinct from jsonb_set(original_revisions,'{2}',to_jsonb((original_revisions->>2)::bigint+2))
+  then raise exception 'cottage restoration did not isolate exactly its changed revision'; end if;
+  result:=public.prepare_booking_request_submission('00000000-0000-0000-0000-000000003202','11111111-1111-4111-8111-111111113201',(select journey.submission from journey_submission journey));
+  if result->>'status' is distinct from 'unavailable' then raise exception 'Retired old preparation did not remain terminal after cottage restoration: %',result; end if;
+  result := public.begin_booking_request_authorization_claim(target_attempt,snapshot,identity);
+  if result->>'status' is distinct from 'quote-stale' then raise exception 'Fresh claim revived old revision: %',result; end if;
+  if exists(select 1 from public.booking_request_authorization_claims where attempt_id=target_attempt)
+    or exists(select 1 from public.payment_provider_operations)
+    or exists(select 1 from public.booking_requests)
+    or exists(select 1 from public.cottage_booking_period_commitments)
+  then raise exception 'Rejected fresh claim created authorization, request or hold'; end if;
+  if (select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_revisions then raise exception 'cottage fresh rebased stored attempt revisions'; end if;
+end;
+$body$;
+$test$,'suspension_fences_prepared_and_issued_authorizations: cottage fresh restoration');
+rollback to savepoint suspension_cottage_fresh;
+
+savepoint suspension_fresh_claim;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select lives_ok($test$
+do $body$
+declare result jsonb;
+declare target_attempt uuid := (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+declare snapshot jsonb := (select payment.snapshot from pending_authorization_payment payment);
+declare identity jsonb := '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}';
+begin
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result := public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','suspend',0,'Fictional fresh claim restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  result := public.begin_booking_request_authorization_claim(target_attempt,snapshot,identity);
+  if result->>'status' is distinct from 'customer-suspended' then raise exception 'Fresh claim bypassed suspension: %',result; end if;
+  result := public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','reactivate',1,'Prospective restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  result := public.begin_booking_request_authorization_claim(target_attempt,snapshot,identity);
+  if result->>'status' is distinct from 'quote-stale' then raise exception 'Fresh claim revived old revision: %',result; end if;
+  if exists(select 1 from public.booking_request_authorization_claims where attempt_id=target_attempt)
+    or exists(select 1 from public.payment_provider_operations)
+    or exists(select 1 from public.booking_requests)
+    or exists(select 1 from public.cottage_booking_period_commitments)
+  then raise exception 'Rejected fresh claim created authorization, request or hold'; end if;
+end;
+$body$;
+$test$,'suspension_fences_prepared_and_issued_authorizations: fresh claim');
+rollback to savepoint suspension_fresh_claim;
+
+savepoint suspension_issued_claim;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select lives_ok($test$
+do $body$
+declare result jsonb;
+declare target_attempt uuid := (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+declare snapshot jsonb := (select payment.snapshot from pending_authorization_payment payment);
+declare identity jsonb := '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}';
+declare original_attempt jsonb;
+declare original_graph jsonb;
+declare original_claim jsonb;
+declare original_outbox jsonb;
+begin
+  result := public.begin_booking_request_authorization_claim(target_attempt,snapshot,identity);
+  if result->>'status' is distinct from 'ready' then raise exception 'Issued claim fixture failed: %',result; end if;
+  select to_jsonb(attempts) into original_attempt
+  from public.booking_request_submission_attempts attempts where attempts.id=target_attempt;
+  select to_jsonb(claims) into original_claim
+  from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt;
+  select to_jsonb(outbox) into original_outbox
+  from public.booking_request_authorization_reconciliation_outbox outbox
+  where outbox.claim_id=(original_claim->>'id')::uuid;
+  if original_attempt->'payment_snapshot' is null
+    or original_claim is null or original_outbox is null
+  then raise exception 'Issued claim fixture lacks durable reconciliation evidence'; end if;
+  original_graph:=pg_temp.booking_submission_graph();
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result := public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','suspend',0,'Fictional issued claim restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  result := public.begin_booking_request_authorization_claim(target_attempt,snapshot,identity);
+  if result->>'status' is distinct from 'customer-suspended' then raise exception 'Issued claim replay bypassed suspension: %',result; end if;
+  result := public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','reactivate',1,'Prospective issued claim restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  result := public.begin_booking_request_authorization_claim(target_attempt,snapshot,identity);
+  if result->>'status' is distinct from 'quote-stale' then raise exception 'Issued claim replay revived old revision: %',result; end if;
+  if (select to_jsonb(attempts) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt)
+      is distinct from original_attempt
+    or (select to_jsonb(claims) from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt)
+      is distinct from original_claim
+    or (select to_jsonb(outbox) from public.booking_request_authorization_reconciliation_outbox outbox where outbox.claim_id=(original_claim->>'id')::uuid)
+      is distinct from original_outbox
+  then raise exception 'Rejected issued claim replay changed durable reconciliation evidence'; end if;
+  if (select count(*) from public.booking_request_authorization_claims where attempt_id=target_attempt)<>1
+    or exists(select 1 from public.payment_provider_operations)
+    or exists(select 1 from public.booking_requests)
+    or exists(select 1 from public.cottage_booking_period_commitments)
+  then raise exception 'Rejected issued claim replay created authorization, request or hold'; end if;
+  if public.retire_unusable_prepared_booking_request_submission(target_attempt)
+    or pg_temp.booking_submission_graph() is distinct from original_graph
+  then raise exception 'Issued claim refusal changed attempt snapshot claim occupancy operation outbox or financial history'; end if;
+
+end;
+$body$;
+$test$,'suspension_fences_prepared_and_issued_authorizations: issued claim replay');
+rollback to savepoint suspension_issued_claim;
 
 savepoint stale_claim_preparation;
 update public.cottage_inventory_standard_prices set price_iqd = 120000
@@ -1941,6 +2403,28 @@ select is(
   interval '5 minutes',
   'unfinished pre-finalization work has an exact five-minute recovery window'
 );
+savepoint claimed_preparation_null_snapshot;
+update public.booking_request_submission_attempts
+set state='authorizing', payment_snapshot=null
+where id=(select (result->>'attemptId')::uuid from prepared_submission);
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+do $fixture$
+declare result jsonb;
+begin
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result:=public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','suspend',0,'Fictional hostile claim probe',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Hostile claim fixture suspension failed: %',result; end if;
+end;
+$fixture$;
+create temporary table claimed_null_snapshot_before as select pg_temp.booking_submission_graph() record;
+select is(public.retire_unusable_prepared_booking_request_submission(
+  (select (result->>'attemptId')::uuid from prepared_submission)),false,
+  'restriction_stale_preparation_replacement: a real claim protects hostile null snapshot preparation');
+select is(pg_temp.booking_submission_graph(),(select record from claimed_null_snapshot_before),
+  'claimed null snapshot refusal preserves exact attempt claim outbox occupancy operation request hold link and history');
+rollback to savepoint claimed_preparation_null_snapshot;
+
 savepoint claim_started_replacement_guard;
 create temporary table claim_started_history_before as select jsonb_build_object(
   'booking_request_submission_attempts',(select coalesce(jsonb_agg(to_jsonb(rows) order by to_jsonb(rows)::text),'[]'::jsonb) from public.booking_request_submission_attempts rows),
@@ -2012,6 +2496,321 @@ select jsonb_build_object(
 ) as operation
 from public.booking_request_authorization_claims claims;
 grant select on simulated_authorization_operation to service_role;
+
+savepoint suspension_owner_issued;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+values('20000000-0000-4000-8000-000000003290','00000000-0000-0000-0000-000000003201','individual','Fictional Admission Owner','submitted',now(),now(),now()+interval '72 hours');
+insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+values('42000000-0000-4000-8000-000000003290','20000000-0000-4000-8000-000000003290','identity','fictional/pending/identity.pdf','identity.pdf','application/pdf',128);
+update public.owner_verification_documents set content_digest=repeat('e',64),digest_source='sha256' where id='42000000-0000-4000-8000-000000003290';
+select public.review_owner_application('20000000-0000-4000-8000-000000003290',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+select lives_ok($test$
+do $body$
+declare target_attempt uuid := (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+declare operation jsonb := (select original.operation from simulated_authorization_operation original);
+declare original_attempt jsonb;
+declare original_graph jsonb;
+declare original_claim jsonb;
+declare original_revisions jsonb;
+declare result jsonb;
+declare denied boolean;
+begin
+  original_revisions:=(select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt);
+  if not public.owner_can_start_new_business('00000000-0000-0000-0000-000000003201')
+    or not public.is_cottage_publicly_discoverable('30000000-0000-4000-8000-000000003201')
+  then raise exception 'Restoration did not restore ordinary owner/cottage eligibility'; end if;
+  select to_jsonb(attempts) into strict original_attempt from public.booking_request_submission_attempts attempts where attempts.id=target_attempt;
+  select to_jsonb(claims) into strict original_claim from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt;
+  original_graph:=pg_temp.booking_submission_graph();
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000003201','suspend',2,'Fictional direct admission restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  result:=public.begin_booking_request_authorization_claim(target_attempt,(select payments.snapshot from pending_authorization_payment payments),operation->'providerIdentity');
+  if result->>'status' is distinct from 'quote-stale' then raise exception 'Issued claim revived after owner transition: %',result; end if;
+  denied:=false;
+  perform set_config('role','service_role',true);
+  begin
+    result:=public.admit_booking_request_provider_operation(operation);
+  exception when sqlstate 'RC409' then denied:=true;
+  end;
+  perform set_config('role','none',true);
+  if not denied then raise exception 'Direct authorization admission bypassed owner suspension: %',result; end if;
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000003201','reactivate',3,'Prospective direct admission restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  if not public.owner_can_start_new_business('00000000-0000-0000-0000-000000003201')
+    or not public.is_cottage_publicly_discoverable('30000000-0000-4000-8000-000000003201')
+  then raise exception 'Restoration did not restore ordinary owner/cottage eligibility'; end if;
+  if (select jsonb_build_array(customer.customer_suspension_revision,owner_context.owner_suspension_revision,profiles.suspension_revision)
+      from public.booking_request_submission_attempts attempts
+      join public.account_contexts customer on customer.user_id=attempts.customer_user_id
+      join public.owner_application_cottage_profiles profiles on profiles.id=attempts.profile_id
+      join public.account_contexts owner_context on owner_context.user_id=profiles.owner_user_id
+      where attempts.id=target_attempt)
+      is distinct from jsonb_set(original_revisions,'{1}',to_jsonb((original_revisions->>1)::bigint+2))
+  then raise exception 'owner restoration did not isolate exactly its changed revision'; end if;
+  result:=public.begin_booking_request_authorization_claim(target_attempt,(select payments.snapshot from pending_authorization_payment payments),operation->'providerIdentity');
+  if result->>'status' is distinct from 'quote-stale' then raise exception 'Issued claim revived after owner transition: %',result; end if;
+  denied:=false;
+  perform set_config('role','service_role',true);
+  begin
+    result:=public.admit_booking_request_provider_operation(operation);
+  exception when sqlstate 'RC409' then denied:=true;
+  end;
+  perform set_config('role','none',true);
+  if not denied then raise exception 'Direct authorization admission revived old owner revision: %',result; end if;
+  perform set_config('role','service_role',true);
+  result:=public.prepare_booking_request_submission('00000000-0000-0000-0000-000000003202','11111111-1111-4111-8111-111111113201',(select journey.submission from journey_submission journey));
+  perform set_config('role','none',true);
+  if result->>'status' is distinct from 'reconciliation-required' then raise exception 'Issued snapshot recovery was hidden: %',result; end if;
+  if (select to_jsonb(attempts) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_attempt
+    or (select to_jsonb(claims) from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt) is distinct from original_claim
+    or exists(select 1 from public.payment_provider_operations)
+    or exists(select 1 from public.booking_requests)
+    or exists(select 1 from public.cottage_booking_period_commitments)
+  then raise exception 'Denied direct admission changed original attempt, claim or created provider/request/hold rows'; end if;
+  if (select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_revisions then raise exception 'owner issued rebased stored attempt revisions'; end if;
+  if public.retire_unusable_prepared_booking_request_submission(target_attempt)
+    or pg_temp.booking_submission_graph() is distinct from original_graph
+  then raise exception 'Issued claim refusal changed attempt snapshot claim occupancy operation outbox or financial history'; end if;
+
+end;
+$body$;
+$test$,'suspension_fences_prepared_and_issued_authorizations: owner issued restoration');
+rollback to savepoint suspension_owner_issued;
+
+savepoint suspension_cottage_issued;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+values('20000000-0000-4000-8000-000000003290','00000000-0000-0000-0000-000000003201','individual','Fictional Admission Owner','submitted',now(),now(),now()+interval '72 hours');
+insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+values('42000000-0000-4000-8000-000000003290','20000000-0000-4000-8000-000000003290','identity','fictional/pending/identity.pdf','identity.pdf','application/pdf',128);
+update public.owner_verification_documents set content_digest=repeat('e',64),digest_source='sha256' where id='42000000-0000-4000-8000-000000003290';
+select public.review_owner_application('20000000-0000-4000-8000-000000003290',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+select lives_ok($test$
+do $body$
+declare target_attempt uuid := (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+declare operation jsonb := (select original.operation from simulated_authorization_operation original);
+declare original_attempt jsonb;
+declare original_graph jsonb;
+declare original_claim jsonb;
+declare original_revisions jsonb;
+declare result jsonb;
+declare denied boolean;
+begin
+  original_revisions:=(select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt);
+  if not public.owner_can_start_new_business('00000000-0000-0000-0000-000000003201')
+    or not public.is_cottage_publicly_discoverable('30000000-0000-4000-8000-000000003201')
+  then raise exception 'Restoration did not restore ordinary owner/cottage eligibility'; end if;
+  select to_jsonb(attempts) into strict original_attempt from public.booking_request_submission_attempts attempts where attempts.id=target_attempt;
+  select to_jsonb(claims) into strict original_claim from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt;
+  original_graph:=pg_temp.booking_submission_graph();
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result:=public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000003201','suspend',0,'Fictional direct admission restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  result:=public.begin_booking_request_authorization_claim(target_attempt,(select payments.snapshot from pending_authorization_payment payments),operation->'providerIdentity');
+  if result->>'status' is distinct from 'quote-stale' then raise exception 'Issued claim revived after cottage transition: %',result; end if;
+  denied:=false;
+  perform set_config('role','service_role',true);
+  begin
+    result:=public.admit_booking_request_provider_operation(operation);
+  exception when sqlstate 'RC409' then denied:=true;
+  end;
+  perform set_config('role','none',true);
+  if not denied then raise exception 'Direct authorization admission bypassed cottage suspension: %',result; end if;
+  result:=public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000003201','reactivate',1,'Prospective direct admission restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  if not public.owner_can_start_new_business('00000000-0000-0000-0000-000000003201')
+    or not public.is_cottage_publicly_discoverable('30000000-0000-4000-8000-000000003201')
+  then raise exception 'Restoration did not restore ordinary owner/cottage eligibility'; end if;
+  if (select jsonb_build_array(customer.customer_suspension_revision,owner_context.owner_suspension_revision,profiles.suspension_revision)
+      from public.booking_request_submission_attempts attempts
+      join public.account_contexts customer on customer.user_id=attempts.customer_user_id
+      join public.owner_application_cottage_profiles profiles on profiles.id=attempts.profile_id
+      join public.account_contexts owner_context on owner_context.user_id=profiles.owner_user_id
+      where attempts.id=target_attempt)
+      is distinct from jsonb_set(original_revisions,'{2}',to_jsonb((original_revisions->>2)::bigint+2))
+  then raise exception 'cottage restoration did not isolate exactly its changed revision'; end if;
+  result:=public.begin_booking_request_authorization_claim(target_attempt,(select payments.snapshot from pending_authorization_payment payments),operation->'providerIdentity');
+  if result->>'status' is distinct from 'quote-stale' then raise exception 'Issued claim revived after cottage transition: %',result; end if;
+  denied:=false;
+  perform set_config('role','service_role',true);
+  begin
+    result:=public.admit_booking_request_provider_operation(operation);
+  exception when sqlstate 'RC409' then denied:=true;
+  end;
+  perform set_config('role','none',true);
+  if not denied then raise exception 'Direct authorization admission revived old cottage revision: %',result; end if;
+  perform set_config('role','service_role',true);
+  result:=public.prepare_booking_request_submission('00000000-0000-0000-0000-000000003202','11111111-1111-4111-8111-111111113201',(select journey.submission from journey_submission journey));
+  perform set_config('role','none',true);
+  if result->>'status' is distinct from 'reconciliation-required' then raise exception 'Issued snapshot recovery was hidden: %',result; end if;
+  if (select to_jsonb(attempts) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_attempt
+    or (select to_jsonb(claims) from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt) is distinct from original_claim
+    or exists(select 1 from public.payment_provider_operations)
+    or exists(select 1 from public.booking_requests)
+    or exists(select 1 from public.cottage_booking_period_commitments)
+  then raise exception 'Denied direct admission changed original attempt, claim or created provider/request/hold rows'; end if;
+  if (select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_revisions then raise exception 'cottage issued rebased stored attempt revisions'; end if;
+  if public.retire_unusable_prepared_booking_request_submission(target_attempt)
+    or pg_temp.booking_submission_graph() is distinct from original_graph
+  then raise exception 'Issued claim refusal changed attempt snapshot claim occupancy operation outbox or financial history'; end if;
+
+end;
+$body$;
+$test$,'suspension_fences_prepared_and_issued_authorizations: cottage issued restoration');
+rollback to savepoint suspension_cottage_issued;
+
+savepoint suspension_direct_admission;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select lives_ok($test$
+do $body$
+declare target_attempt uuid := (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+declare operation jsonb := (select original.operation from simulated_authorization_operation original);
+declare original_attempt jsonb;
+declare original_graph jsonb;
+declare original_claim jsonb;
+declare result jsonb;
+declare denied boolean;
+begin
+  select to_jsonb(attempts) into strict original_attempt from public.booking_request_submission_attempts attempts where attempts.id=target_attempt;
+  select to_jsonb(claims) into strict original_claim from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt;
+  original_graph:=pg_temp.booking_submission_graph();
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result:=public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','suspend',0,'Fictional direct admission restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  denied:=false;
+  perform set_config('role','service_role',true);
+  begin
+    result:=public.admit_booking_request_provider_operation(operation);
+  exception when sqlstate 'RC409' then denied:=true;
+  end;
+  perform set_config('role','none',true);
+  if not denied then raise exception 'Direct authorization admission bypassed customer suspension: %',result; end if;
+  result:=public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','reactivate',1,'Prospective direct admission restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  denied:=false;
+  perform set_config('role','service_role',true);
+  begin
+    result:=public.admit_booking_request_provider_operation(operation);
+  exception when sqlstate 'RC409' then denied:=true;
+  end;
+  perform set_config('role','none',true);
+  if not denied then raise exception 'Direct authorization admission revived old customer revision: %',result; end if;
+  if (select to_jsonb(attempts) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_attempt
+    or (select to_jsonb(claims) from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt) is distinct from original_claim
+    or exists(select 1 from public.payment_provider_operations)
+    or exists(select 1 from public.booking_requests)
+    or exists(select 1 from public.cottage_booking_period_commitments)
+  then raise exception 'Denied direct admission changed original attempt, claim or created provider/request/hold rows'; end if;
+  if public.retire_unusable_prepared_booking_request_submission(target_attempt)
+    or pg_temp.booking_submission_graph() is distinct from original_graph
+  then raise exception 'Issued claim refusal changed attempt snapshot claim occupancy operation outbox or financial history'; end if;
+
+end;
+$body$;
+$test$,'suspension_fences_prepared_and_issued_authorizations: direct authorization admission');
+rollback to savepoint suspension_direct_admission;
+
+
+savepoint suspension_inflight_authorization;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select lives_ok($test$
+do $body$
+declare target_attempt uuid := (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+declare operation jsonb := (select original.operation from simulated_authorization_operation original);
+declare snapshot jsonb := (select payments.snapshot from authorized_payment payments);
+declare original_attempt jsonb;
+declare original_graph jsonb;
+declare original_operations jsonb;
+declare original_history jsonb;
+declare admission jsonb;
+declare observation jsonb;
+declare result jsonb;
+declare permit jsonb;
+declare denied boolean:=false;
+begin
+  select to_jsonb(attempts) into strict original_attempt from public.booking_request_submission_attempts attempts where attempts.id=target_attempt;
+  perform set_config('role','service_role',true);
+  admission:=public.admit_booking_request_provider_operation(operation);
+  perform set_config('role','none',true);
+  if admission->>'mode' is distinct from 'execute' then raise exception 'Inflight fixture was not admitted: %',admission; end if;
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result:=public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','suspend',0,'Fictional inflight restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Inflight suspension failed: %',result; end if;
+  perform set_config('role','service_role',true);
+  result:=public.admit_booking_request_provider_operation(operation);
+  if result->>'operationId' is distinct from admission->>'operationId' or result->>'mode' is distinct from 'reconcile'
+  then raise exception 'Existing admitted operation was hidden or readmitted: %',result; end if;
+  observation:=pg_temp.payment_fixture_result(admission,'succeeded');
+  if observation->>'outcome' is distinct from 'succeeded' then raise exception 'Inflight observation was lost: %',observation; end if;
+  result:=pg_temp.payment_query(operation,null,null,'succeeded');
+  if result is distinct from observation then raise exception 'Inflight authorization was not exactly reconcilable: %',result; end if;
+  snapshot:=snapshot||jsonb_build_object(
+    'authorization',(snapshot->'authorization')||jsonb_build_object(
+      'providerRequestId',observation->>'providerRequestId','providerReference',observation->>'providerReference','movementReference',observation->>'movementReference'),
+    'movements',jsonb_build_array(jsonb_build_object('kind','authorization',
+      'logicalOperationId',snapshot#>>'{authorization,logicalOperationId}',
+      'attemptId',snapshot#>>'{authorization,attemptId}','amountFils',115000000,
+      'movementReference',observation->>'movementReference','recordedAt',clock_timestamp())));
+  perform public.save_booking_request_payment_snapshot(target_attempt,snapshot,operation->'providerIdentity');
+  result:=public.prepare_booking_request_submission('00000000-0000-0000-0000-000000003202','11111111-1111-4111-8111-111111113201',(select journey.submission from journey_submission journey));
+  if result->>'status' is distinct from 'ready' or result->'paymentSnapshot' is distinct from snapshot
+  then raise exception 'Restriction hid the admitted successful snapshot from cleanup: %',result; end if;
+  perform set_config('role','none',true);
+  select jsonb_agg(to_jsonb(operations) order by operations.id) into original_operations from public.payment_provider_operations operations;
+  select jsonb_agg(to_jsonb(history) order by history.id) into original_history from public.booking_request_payment_history history;
+  original_graph:=pg_temp.booking_submission_graph();
+  begin
+    result:=public.finalize_booking_request_submission(target_attempt,snapshot);
+  exception when sqlstate 'RC409' then denied:=true;
+  end;
+  if not denied or public.lookup_booking_request_submission(target_attempt)->>'status' is distinct from 'absent'
+    or (select jsonb_agg(to_jsonb(operations) order by operations.id) from public.payment_provider_operations operations) is distinct from original_operations
+    or (select jsonb_agg(to_jsonb(history) order by history.id) from public.booking_request_payment_history history) is distinct from original_history
+  then raise exception 'Inflight authorization created a request or lost authoritative evidence: %',result; end if;
+  if public.retire_unusable_prepared_booking_request_submission(target_attempt)
+    or pg_temp.booking_submission_graph() is distinct from original_graph
+  then raise exception 'Admitted authorization refusal changed durable evidence or occupancy'; end if;
+  perform set_config('role','service_role',true);
+  result:=public.reload_booking_request_payment_operation(operation-array['permitPurpose','claimId','claimGeneration','notAfter','idempotencyKey','cleanupAttemptId','workId','leaseGeneration','leaseToken','stateRevision','operationId','operationGeneration'],null,null);
+  if result->>'operationId' is distinct from original_operations->0->>'id'
+  then raise exception 'Restricted admitted authorization is no longer queryable: %',result; end if;
+  snapshot:=snapshot||jsonb_build_object('release',jsonb_build_object(
+    'paymentLifecycleId',snapshot->>'paymentLifecycleId','kind','release',
+    'logicalOperationId',(snapshot->>'paymentLifecycleId')||':release',
+    'attemptId',(snapshot->>'paymentLifecycleId')||':release:attempt-1',
+    'status','pending','amountFils',115000000,'providerRequestId',null,
+    'providerReference',null,'movementReference',null,'reconciliationRequired',false,'retrySafe',false));
+  result:=public.begin_booking_request_submission_cleanup_release(target_attempt,snapshot,operation->'providerIdentity');
+  if result->>'status' is distinct from 'ready' then raise exception 'Restricted authorization cleanup is unreachable: %',result; end if;
+  permit:=result->'executionPermit';
+  result:=public.admit_booking_request_provider_operation(operation||jsonb_build_object(
+    'permitPurpose',permit->>'purpose','idempotencyKey',permit->>'idempotencyKey',
+    'notAfter',permit->>'notAfter','requestFingerprint',permit->>'requestFingerprint',
+    'logicalOperationId',snapshot#>>'{release,logicalOperationId}',
+    'physicalAttemptId',snapshot#>>'{release,attemptId}','operationKind','release',
+    'claimId',permit->>'claimId','claimGeneration',permit->'generation',
+    'stateRevision',permit->'stateRevision','cleanupAttemptId',permit->>'attemptId'));
+  perform set_config('role','none',true);
+  if result->>'mode' is distinct from 'execute'
+    or (select count(*) from public.payment_provider_operations)<>2
+    or exists(select 1 from public.booking_requests)
+    or exists(select 1 from public.cottage_booking_period_commitments)
+    or (select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision)
+      from public.booking_request_submission_attempts attempts where attempts.id=target_attempt)
+      is distinct from jsonb_build_array(original_attempt->'customer_suspension_revision',original_attempt->'owner_suspension_revision',original_attempt->'cottage_suspension_revision')
+  then raise exception 'Restricted cleanup was not admitted exactly or rewrote the attempt revisions: %',result; end if;
+end;
+$body$;
+$test$,'suspension_fences_prepared_and_issued_authorizations: admitted authorization observed after restriction remains recoverable');
+rollback to savepoint suspension_inflight_authorization;
 
 savepoint provider_query_null_input_audit;
 create temporary table provider_query_null_baseline as
@@ -3557,6 +4356,228 @@ set intent_payload = jsonb_set(
   '"Cancel at least 48 hours before the first shift for a full refund. Cancellation inside 48 hours and no-shows receive no refund."'::jsonb
 )
 where id = (select (result ->> 'attemptId')::uuid from prepared_submission);
+savepoint suspension_owner_finalization;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+values('20000000-0000-4000-8000-000000003290','00000000-0000-0000-0000-000000003201','individual','Fictional Admission Owner','submitted',now(),now(),now()+interval '72 hours');
+insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+values('42000000-0000-4000-8000-000000003290','20000000-0000-4000-8000-000000003290','identity','fictional/pending/identity.pdf','identity.pdf','application/pdf',128);
+update public.owner_verification_documents set content_digest=repeat('e',64),digest_source='sha256' where id='42000000-0000-4000-8000-000000003290';
+select public.review_owner_application('20000000-0000-4000-8000-000000003290',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+select lives_ok($test$
+do $body$
+declare target_attempt uuid := (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+declare snapshot jsonb := (select payments.snapshot from authorized_payment payments);
+declare original_attempt jsonb;
+declare original_claim jsonb;
+declare original_operations jsonb;
+declare original_history jsonb;
+declare original_revisions jsonb;
+declare result jsonb;
+declare denied boolean;
+begin
+  original_revisions:=(select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt);
+  if not public.owner_can_start_new_business('00000000-0000-0000-0000-000000003201')
+    or not public.is_cottage_publicly_discoverable('30000000-0000-4000-8000-000000003201')
+  then raise exception 'Restoration did not restore ordinary owner/cottage eligibility'; end if;
+  select to_jsonb(attempts) into strict original_attempt from public.booking_request_submission_attempts attempts where attempts.id=target_attempt;
+  select to_jsonb(claims) into strict original_claim from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt;
+  select jsonb_agg(to_jsonb(operations) order by operations.id) into original_operations from public.payment_provider_operations operations;
+  select jsonb_agg(to_jsonb(history) order by history.id) into original_history from public.booking_request_payment_history history;
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000003201','suspend',2,'Fictional direct finalization restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  denied:=false;
+  begin
+    result:=public.finalize_booking_request_submission(target_attempt,snapshot);
+  exception when sqlstate 'RC409' then denied:=true;
+  end;
+  if not denied then raise exception 'Direct finalization bypassed owner suspension: %',result; end if;
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000003201','reactivate',3,'Prospective finalization restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  if not public.owner_can_start_new_business('00000000-0000-0000-0000-000000003201')
+    or not public.is_cottage_publicly_discoverable('30000000-0000-4000-8000-000000003201')
+  then raise exception 'Restoration did not restore ordinary owner/cottage eligibility'; end if;
+  if (select jsonb_build_array(customer.customer_suspension_revision,owner_context.owner_suspension_revision,profiles.suspension_revision)
+      from public.booking_request_submission_attempts attempts
+      join public.account_contexts customer on customer.user_id=attempts.customer_user_id
+      join public.owner_application_cottage_profiles profiles on profiles.id=attempts.profile_id
+      join public.account_contexts owner_context on owner_context.user_id=profiles.owner_user_id
+      where attempts.id=target_attempt)
+      is distinct from jsonb_set(original_revisions,'{1}',to_jsonb((original_revisions->>1)::bigint+2))
+  then raise exception 'owner restoration did not isolate exactly its changed revision'; end if;
+  denied:=false;
+  begin
+    result:=public.finalize_booking_request_submission(target_attempt,snapshot);
+  exception when sqlstate 'RC409' then denied:=true;
+  end;
+  if not denied then raise exception 'Direct finalization revived old owner revision: %',result; end if;
+  if (select to_jsonb(attempts) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_attempt
+    or (select to_jsonb(claims) from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt) is distinct from original_claim
+    or (select jsonb_agg(to_jsonb(operations) order by operations.id) from public.payment_provider_operations operations) is distinct from original_operations
+    or (select jsonb_agg(to_jsonb(history) order by history.id) from public.booking_request_payment_history history) is distinct from original_history
+    or exists(select 1 from public.booking_requests)
+    or exists(select 1 from public.cottage_booking_period_commitments)
+  then raise exception 'Denied finalization changed immutable evidence or created request/hold'; end if;
+  if (select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_revisions then raise exception 'owner finalization rebased stored attempt revisions'; end if;
+end;
+$body$;
+$test$,'suspension_fences_prepared_and_issued_authorizations: owner finalization restoration');
+rollback to savepoint suspension_owner_finalization;
+
+savepoint suspension_cottage_finalization;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+values('20000000-0000-4000-8000-000000003290','00000000-0000-0000-0000-000000003201','individual','Fictional Admission Owner','submitted',now(),now(),now()+interval '72 hours');
+insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+values('42000000-0000-4000-8000-000000003290','20000000-0000-4000-8000-000000003290','identity','fictional/pending/identity.pdf','identity.pdf','application/pdf',128);
+update public.owner_verification_documents set content_digest=repeat('e',64),digest_source='sha256' where id='42000000-0000-4000-8000-000000003290';
+select public.review_owner_application('20000000-0000-4000-8000-000000003290',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+select lives_ok($test$
+do $body$
+declare target_attempt uuid := (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+declare snapshot jsonb := (select payments.snapshot from authorized_payment payments);
+declare original_attempt jsonb;
+declare original_claim jsonb;
+declare original_operations jsonb;
+declare original_history jsonb;
+declare original_revisions jsonb;
+declare result jsonb;
+declare denied boolean;
+begin
+  original_revisions:=(select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt);
+  if not public.owner_can_start_new_business('00000000-0000-0000-0000-000000003201')
+    or not public.is_cottage_publicly_discoverable('30000000-0000-4000-8000-000000003201')
+  then raise exception 'Restoration did not restore ordinary owner/cottage eligibility'; end if;
+  select to_jsonb(attempts) into strict original_attempt from public.booking_request_submission_attempts attempts where attempts.id=target_attempt;
+  select to_jsonb(claims) into strict original_claim from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt;
+  select jsonb_agg(to_jsonb(operations) order by operations.id) into original_operations from public.payment_provider_operations operations;
+  select jsonb_agg(to_jsonb(history) order by history.id) into original_history from public.booking_request_payment_history history;
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result:=public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000003201','suspend',0,'Fictional direct finalization restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  denied:=false;
+  begin
+    result:=public.finalize_booking_request_submission(target_attempt,snapshot);
+  exception when sqlstate 'RC409' then denied:=true;
+  end;
+  if not denied then raise exception 'Direct finalization bypassed cottage suspension: %',result; end if;
+  result:=public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000003201','reactivate',1,'Prospective finalization restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  if not public.owner_can_start_new_business('00000000-0000-0000-0000-000000003201')
+    or not public.is_cottage_publicly_discoverable('30000000-0000-4000-8000-000000003201')
+  then raise exception 'Restoration did not restore ordinary owner/cottage eligibility'; end if;
+  if (select jsonb_build_array(customer.customer_suspension_revision,owner_context.owner_suspension_revision,profiles.suspension_revision)
+      from public.booking_request_submission_attempts attempts
+      join public.account_contexts customer on customer.user_id=attempts.customer_user_id
+      join public.owner_application_cottage_profiles profiles on profiles.id=attempts.profile_id
+      join public.account_contexts owner_context on owner_context.user_id=profiles.owner_user_id
+      where attempts.id=target_attempt)
+      is distinct from jsonb_set(original_revisions,'{2}',to_jsonb((original_revisions->>2)::bigint+2))
+  then raise exception 'cottage restoration did not isolate exactly its changed revision'; end if;
+  denied:=false;
+  begin
+    result:=public.finalize_booking_request_submission(target_attempt,snapshot);
+  exception when sqlstate 'RC409' then denied:=true;
+  end;
+  if not denied then raise exception 'Direct finalization revived old cottage revision: %',result; end if;
+  if (select to_jsonb(attempts) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_attempt
+    or (select to_jsonb(claims) from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt) is distinct from original_claim
+    or (select jsonb_agg(to_jsonb(operations) order by operations.id) from public.payment_provider_operations operations) is distinct from original_operations
+    or (select jsonb_agg(to_jsonb(history) order by history.id) from public.booking_request_payment_history history) is distinct from original_history
+    or exists(select 1 from public.booking_requests)
+    or exists(select 1 from public.cottage_booking_period_commitments)
+  then raise exception 'Denied finalization changed immutable evidence or created request/hold'; end if;
+  if (select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_revisions then raise exception 'cottage finalization rebased stored attempt revisions'; end if;
+end;
+$body$;
+$test$,'suspension_fences_prepared_and_issued_authorizations: cottage finalization restoration');
+rollback to savepoint suspension_cottage_finalization;
+
+savepoint suspension_direct_finalization;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select lives_ok($test$
+do $body$
+declare target_attempt uuid := (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+declare snapshot jsonb := (select payments.snapshot from authorized_payment payments);
+declare operation jsonb := (select original.operation from simulated_authorization_operation original);
+declare original_attempt jsonb;
+declare original_claim jsonb;
+declare original_operations jsonb;
+declare original_history jsonb;
+declare result jsonb;
+declare permit jsonb;
+declare denied boolean;
+begin
+  select to_jsonb(attempts) into strict original_attempt from public.booking_request_submission_attempts attempts where attempts.id=target_attempt;
+  select to_jsonb(claims) into strict original_claim from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt;
+  select jsonb_agg(to_jsonb(operations) order by operations.id) into original_operations from public.payment_provider_operations operations;
+  select jsonb_agg(to_jsonb(history) order by history.id) into original_history from public.booking_request_payment_history history;
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result:=public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','suspend',0,'Fictional direct finalization restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  denied:=false;
+  begin
+    result:=public.finalize_booking_request_submission(target_attempt,snapshot);
+  exception when sqlstate 'RC409' then denied:=true;
+  end;
+  if not denied then raise exception 'Direct finalization bypassed customer suspension: %',result; end if;
+  result:=public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','reactivate',1,'Prospective finalization restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  denied:=false;
+  begin
+    result:=public.finalize_booking_request_submission(target_attempt,snapshot);
+  exception when sqlstate 'RC409' then denied:=true;
+  end;
+  if not denied then raise exception 'Direct finalization revived old customer revision: %',result; end if;
+  if (select to_jsonb(attempts) from public.booking_request_submission_attempts attempts where attempts.id=target_attempt) is distinct from original_attempt
+    or (select to_jsonb(claims) from public.booking_request_authorization_claims claims where claims.attempt_id=target_attempt) is distinct from original_claim
+    or (select jsonb_agg(to_jsonb(operations) order by operations.id) from public.payment_provider_operations operations) is distinct from original_operations
+    or (select jsonb_agg(to_jsonb(history) order by history.id) from public.booking_request_payment_history history) is distinct from original_history
+    or exists(select 1 from public.booking_requests)
+    or exists(select 1 from public.cottage_booking_period_commitments)
+  then raise exception 'Denied finalization changed immutable evidence or created request/hold'; end if;
+  result:=public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','suspend',2,'Fictional cleanup under restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Cleanup restriction failed: %',result; end if;
+  perform set_config('role','service_role',true);
+  result:=public.reload_booking_request_payment_operation(operation-array['permitPurpose','claimId','claimGeneration','notAfter','idempotencyKey','cleanupAttemptId','workId','leaseGeneration','leaseToken','stateRevision','operationId','operationGeneration'],null,null);
+  if result->>'operationId' is distinct from original_operations->0->>'id'
+  then raise exception 'Restricted admitted authorization is no longer queryable: %',result; end if;
+  snapshot:=snapshot||jsonb_build_object('release',jsonb_build_object(
+    'paymentLifecycleId',snapshot->>'paymentLifecycleId','kind','release',
+    'logicalOperationId',(snapshot->>'paymentLifecycleId')||':release',
+    'attemptId',(snapshot->>'paymentLifecycleId')||':release:attempt-1',
+    'status','pending','amountFils',115000000,'providerRequestId',null,
+    'providerReference',null,'movementReference',null,'reconciliationRequired',false,'retrySafe',false));
+  result:=public.begin_booking_request_submission_cleanup_release(target_attempt,snapshot,operation->'providerIdentity');
+  if result->>'status' is distinct from 'ready' then raise exception 'Restricted authorization cleanup is unreachable: %',result; end if;
+  permit:=result->'executionPermit';
+  result:=public.admit_booking_request_provider_operation(operation||jsonb_build_object(
+    'permitPurpose',permit->>'purpose','idempotencyKey',permit->>'idempotencyKey',
+    'notAfter',permit->>'notAfter','requestFingerprint',permit->>'requestFingerprint',
+    'logicalOperationId',snapshot#>>'{release,logicalOperationId}',
+    'physicalAttemptId',snapshot#>>'{release,attemptId}','operationKind','release',
+    'claimId',permit->>'claimId','claimGeneration',permit->'generation',
+    'stateRevision',permit->'stateRevision','cleanupAttemptId',permit->>'attemptId'));
+  perform set_config('role','none',true);
+  if result->>'mode' is distinct from 'execute'
+    or (select count(*) from public.payment_provider_operations)<>2
+    or exists(select 1 from public.booking_requests)
+    or exists(select 1 from public.cottage_booking_period_commitments)
+    or (select jsonb_build_array(attempts.customer_suspension_revision,attempts.owner_suspension_revision,attempts.cottage_suspension_revision)
+      from public.booking_request_submission_attempts attempts where attempts.id=target_attempt)
+      is distinct from jsonb_build_array(original_attempt->'customer_suspension_revision',original_attempt->'owner_suspension_revision',original_attempt->'cottage_suspension_revision')
+  then raise exception 'Restricted cleanup was not admitted exactly or rewrote the attempt revisions: %',result; end if;
+end;
+$body$;
+$test$,'suspension_fences_prepared_and_issued_authorizations: direct finalization and retained cleanup');
+rollback to savepoint suspension_direct_finalization;
+
 create temporary table finalized_submission as
 select public.finalize_booking_request_submission(
   (select result ->> 'attemptId' from prepared_submission)::uuid,
@@ -3681,6 +4702,139 @@ create temporary table booking_request_lifecycle_target as
 select id, owner_user_id, customer_user_id, booking_request_reference
 from public.booking_requests limit 1;
 grant select on booking_request_lifecycle_target to service_role, authenticated;
+
+savepoint suspension_pending_preparation;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select lives_ok($test$
+do $body$
+declare request_before public.booking_requests;
+declare hold_before jsonb;
+declare snapshot_before jsonb;
+declare provider_before jsonb;
+declare result jsonb;
+declare action_id uuid;
+declare lease jsonb;
+declare work_id uuid;
+declare work_before jsonb;
+declare history_before jsonb;
+declare occupancies_before jsonb;
+declare prior_role text:=current_setting('role');
+begin
+  select * into request_before from public.booking_requests where id=(select id from booking_request_lifecycle_target);
+  select to_jsonb(holds) into hold_before from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id;
+  select to_jsonb(snapshots) into snapshot_before from public.booking_snapshots snapshots where id=request_before.booking_snapshot_id;
+  select coalesce(jsonb_agg(to_jsonb(operations) order by operations.id),'[]') into provider_before from public.payment_provider_operations operations;
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result:=public.set_marketplace_suspension('customer',request_before.customer_user_id,'suspend',0,'Private platform reason','00000000-0000-4000-8000-000000003291');
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension did not complete: %',result; end if;
+  action_id:=(result->>'actionId')::uuid;
+  if result#>'{target,releaseSummary}' is distinct from '{"affected":1,"resolved":0,"processing":1,"quarantined":0}'::jsonb
+    or not exists(select 1 from jsonb_array_elements(result#>'{target,actions}') action where (action->>'id')::uuid=action_id and action->'affected'='1'::jsonb and action->'resolved'='0'::jsonb and action->'processing'='1'::jsonb and action->'quarantined'='0'::jsonb)
+  then raise exception 'Reader release counts do not match the one persisted processing case'; end if;
+  if not exists(select 1 from public.booking_requests where id=request_before.id and status='processing' and outcome_actor_user_id='00000000-0000-4000-8000-000000003290' and decline_reason='other' and decline_note is null) then raise exception 'Pending request did not enter actor-neutral release processing'; end if;
+  if not exists(select 1 from public.booking_request_release_work where booking_request_id=request_before.id and suspension_action_id=action_id and state='processing' and lease_generation=0 and lease_token is null and outcome='declined' and decline_note is null) then raise exception 'Suspension did not prepare exactly unleased work'; end if;
+  if (select count(*) from public.booking_request_release_operations)<>0 or (select count(*) from public.booking_request_status_notifications where booking_request_id=request_before.id)<>0 then raise exception 'Preparation leased work or notified recipient under authority locks'; end if;
+  if (select to_jsonb(holds) from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id) is distinct from hold_before or (select to_jsonb(snapshots) from public.booking_snapshots snapshots where id=request_before.booking_snapshot_id) is distinct from snapshot_before or (select coalesce(jsonb_agg(to_jsonb(operations) order by operations.id),'[]') from public.payment_provider_operations operations) is distinct from provider_before then raise exception 'Preparation changed authoritative payment, hold or snapshot facts'; end if;
+  select jsonb_agg(to_jsonb(occupancies) order by to_jsonb(occupancies)::text) into occupancies_before from public.cottage_booking_period_occupancies occupancies where booking_period_commitment_id=request_before.booking_period_commitment_id;
+  select id into work_id from public.booking_request_release_work where booking_request_id=request_before.id;
+  lease:=public.lease_booking_request_release_work(work_id);
+  select to_jsonb(work) into work_before from public.booking_request_release_work work where booking_request_id=request_before.id;
+  select jsonb_agg(to_jsonb(history) order by id) into history_before from public.booking_request_payment_history history;
+  if lease->>'status' is distinct from 'release-required' then raise exception 'Prepared suspension work could not be leased'; end if;
+  perform set_config('role','service_role',true);
+  result:=public.finalize_booking_request_release((lease->>'workId')::uuid,(lease->>'leaseGeneration')::bigint,(lease->>'leaseToken')::uuid);
+  perform set_config('role',prior_role,true);
+  if result->>'status' is distinct from 'processing'
+    or not exists(select 1 from public.booking_requests where id=request_before.id and status='processing')
+    or (select to_jsonb(work) from public.booking_request_release_work work where booking_request_id=request_before.id) is distinct from work_before
+    or (select to_jsonb(holds) from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id) is distinct from hold_before
+    or (select jsonb_agg(to_jsonb(occupancies) order by to_jsonb(occupancies)::text) from public.cottage_booking_period_occupancies occupancies where booking_period_commitment_id=request_before.booking_period_commitment_id) is distinct from occupancies_before
+    or (select to_jsonb(snapshots) from public.booking_snapshots snapshots where id=request_before.booking_snapshot_id) is distinct from snapshot_before
+    or (select coalesce(jsonb_agg(to_jsonb(operations) order by operations.id),'[]') from public.payment_provider_operations operations) is distinct from provider_before
+    or (select jsonb_agg(to_jsonb(history) order by id) from public.booking_request_payment_history history) is distinct from history_before
+    or exists(select 1 from public.booking_request_status_notifications where booking_request_id=request_before.id)
+  then raise exception 'Suspension finalized without authoritative successful release or changed retained facts: result %, work %, hold %, snapshot %, provider %, history %, occupancies %',
+    result,
+    (select to_jsonb(work) from public.booking_request_release_work work where booking_request_id=request_before.id) is not distinct from work_before,
+    (select to_jsonb(holds) from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id) is not distinct from hold_before,
+    (select to_jsonb(snapshots) from public.booking_snapshots snapshots where id=request_before.booking_snapshot_id) is not distinct from snapshot_before,
+    (select coalesce(jsonb_agg(to_jsonb(operations) order by operations.id),'[]') from public.payment_provider_operations operations) is not distinct from provider_before,
+    (select jsonb_agg(to_jsonb(history) order by id) from public.booking_request_payment_history history) is not distinct from history_before,
+    (select jsonb_agg(to_jsonb(occupancies) order by to_jsonb(occupancies)::text) from public.cottage_booking_period_occupancies occupancies where booking_period_commitment_id=request_before.booking_period_commitment_id) is not distinct from occupancies_before;
+  end if;
+end;
+$body$;
+$test$,'suspension_release_never_precedes_provider_truth');
+rollback to savepoint suspension_pending_preparation;
+
+savepoint legacy_owner_suspension_pending;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+select '20000000-0000-4000-8000-000000003290',owner_user_id,'individual','Fictional Pending Owner','submitted',now(),now(),now()+interval '72 hours' from booking_request_lifecycle_target;
+insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+values('42000000-0000-4000-8000-000000003290','20000000-0000-4000-8000-000000003290','identity','fictional/pending/identity.pdf','identity.pdf','application/pdf',128);
+update public.owner_verification_documents set content_digest=repeat('e',64),digest_source='sha256' where id='42000000-0000-4000-8000-000000003290';
+select public.review_owner_application('20000000-0000-4000-8000-000000003290',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+select lives_ok($test$
+do $body$
+declare request_before public.booking_requests;
+declare result jsonb;
+declare action private.marketplace_suspension_actions;
+declare replay jsonb;
+declare hold_before jsonb;
+declare snapshot_before jsonb;
+begin
+  select * into request_before from public.booking_requests where id=(select id from booking_request_lifecycle_target);
+  select to_jsonb(holds) into hold_before from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id;
+  select to_jsonb(snapshots) into snapshot_before from public.booking_snapshots snapshots where id=request_before.booking_snapshot_id;
+  result:=public.review_owner_application('20000000-0000-4000-8000-000000003290',2,'suspend','Fictional legacy restriction','{}','{}',null,null,null,'{}'::jsonb);
+  select * into strict action from private.marketplace_suspension_actions where target_kind='owner' and account_user_id=request_before.owner_user_id;
+  if result->>'status'<>'suspended' or (result->>'version')::integer<>3 or action.actor_user_id<>'00000000-0000-4000-8000-000000003290'
+    or not exists(select 1 from public.booking_requests where id=request_before.id and status='processing' and decline_reason='other' and decline_note is null)
+    or not exists(select 1 from public.booking_request_release_work where booking_request_id=request_before.id and suspension_action_id=action.id and lease_generation=0 and lease_token is null and outcome='declined')
+  then raise exception 'Legacy owner suspension did not use the pending case'; end if;
+  replay:=public.set_marketplace_suspension('owner',request_before.owner_user_id,'suspend',2,'Fictional legacy restriction',action.command_id);
+  if replay->>'status' is distinct from 'completed' or (replay->>'actionId')::uuid<>action.id
+    or (select count(*) from private.marketplace_suspension_actions where target_kind='owner' and account_user_id=request_before.owner_user_id)<>1
+    or (select count(*) from public.owner_application_transitions where application_id=(result->>'application_id')::uuid and to_status='suspended')<>1
+    or (select count(*) from public.owner_application_notices where application_id=(result->>'application_id')::uuid and kind='suspended')<>1
+    or (select count(*) from public.booking_request_release_work where booking_request_id=request_before.id)<>1
+  then raise exception 'Legacy replay duplicated attributed state'; end if;
+  if (select to_jsonb(holds) from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id) is distinct from hold_before
+    or (select to_jsonb(snapshots) from public.booking_snapshots snapshots where id=request_before.booking_snapshot_id) is distinct from snapshot_before
+    or exists(select 1 from public.booking_request_status_notifications where booking_request_id=request_before.id)
+  then raise exception 'Legacy preparation changed retained facts or notified before release'; end if;
+end;
+$body$;
+$test$,'legacy_owner_suspend_uses_pending_case');
+rollback to savepoint legacy_owner_suspension_pending;
+
+savepoint cottage_suspension_deadline;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+update public.booking_requests set created_at=due.deadline-interval '4 hours',response_deadline=due.deadline
+from (select clock_timestamp()-interval '1 second' as deadline) due
+where id=(select id from booking_request_lifecycle_target);
+select lives_ok($test$
+do $body$
+declare result jsonb;
+declare request_before public.booking_requests;
+begin
+  select * into request_before from public.booking_requests where id=(select id from booking_request_lifecycle_target);
+  result:=public.set_marketplace_suspension('cottage',request_before.profile_id,'suspend',0,'Fictional deadline case',gen_random_uuid());
+  if result->>'status' is distinct from 'completed'
+    or not exists(select 1 from public.booking_request_release_work where booking_request_id=request_before.id and suspension_action_id=(result->>'actionId')::uuid and outcome='expired' and actor_user_id is null and decline_reason is null and decline_note is null and lease_generation=0)
+    or not exists(select 1 from public.booking_requests where id=request_before.id and status='processing' and outcome_actor_user_id is null and response_deadline=request_before.response_deadline and created_at=request_before.created_at)
+  then raise exception 'Cottage suspension reinterpreted the expired deadline'; end if;
+end;
+$body$;
+$test$,'suspension_preserves_authoritative_expired_deadline');
+rollback to savepoint cottage_suspension_deadline;
+
 
 savepoint booking_request_null_withdraw_actor;
 set local role service_role;
@@ -4012,6 +5166,52 @@ select is(
   'the owning Customer reads exactly one scoped acceptance notification receipt'
 );
 reset role;
+
+savepoint suspension_preserves_acceptance;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+select '20000000-0000-4000-8000-000000003290',owner_user_id,'individual','Fictional Pending Owner','submitted',now(),now(),now()+interval '72 hours' from booking_request_lifecycle_target;
+insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+values('42000000-0000-4000-8000-000000003290','20000000-0000-4000-8000-000000003290','identity','fictional/pending/identity.pdf','identity.pdf','application/pdf',128);
+update public.owner_verification_documents set content_digest=repeat('e',64),digest_source='sha256' where id='42000000-0000-4000-8000-000000003290';
+select public.review_owner_application('20000000-0000-4000-8000-000000003290',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+select lives_ok($test$
+do $body$
+declare request_before public.booking_requests;
+declare attempt_before jsonb;
+declare capture_before jsonb;
+declare hold_before jsonb;
+declare provider_before jsonb;
+declare notices_before jsonb;
+declare kind text;
+declare result jsonb;
+begin
+  select * into request_before from public.booking_requests where id=(select id from booking_request_lifecycle_target);
+  if request_before.status<>'accepted' then raise exception 'Accepted fixture is missing'; end if;
+  select to_jsonb(attempts) into attempt_before from public.booking_request_submission_attempts attempts where booking_request_id=request_before.id;
+  select to_jsonb(work) into capture_before from public.booking_request_capture_work work where booking_request_id=request_before.id;
+  select to_jsonb(holds) into hold_before from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id;
+  select jsonb_agg(to_jsonb(operations) order by id) into provider_before from public.payment_provider_operations operations;
+  select jsonb_agg(to_jsonb(notices) order by id) into notices_before from public.booking_request_status_notifications notices;
+  foreach kind in array array['customer','owner','cottage'] loop
+    result:=public.set_marketplace_suspension(kind,case kind when 'customer' then request_before.customer_user_id when 'owner' then request_before.owner_user_id else request_before.profile_id end,'suspend',case when kind='owner' then 2 else 0 end,'Accepted obligations remain authoritative',gen_random_uuid());
+    if result->>'status' is distinct from 'completed' then raise exception 'Restriction failed for %: %',kind,result; end if;
+  end loop;
+  if (select to_jsonb(requests) from public.booking_requests requests where id=request_before.id) is distinct from to_jsonb(request_before)
+    or (select to_jsonb(attempts) from public.booking_request_submission_attempts attempts where booking_request_id=request_before.id) is distinct from attempt_before
+    or (select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id=request_before.id) is distinct from capture_before
+    or (select to_jsonb(holds) from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id) is distinct from hold_before
+    or (select jsonb_agg(to_jsonb(operations) order by id) from public.payment_provider_operations operations) is distinct from provider_before
+    or (select jsonb_agg(to_jsonb(notices) order by id) from public.booking_request_status_notifications notices) is distinct from notices_before
+    or exists(select 1 from public.booking_request_release_work where booking_request_id=request_before.id)
+  then raise exception 'Suspension rewrote the accepted obligation or started a release'; end if;
+end;
+$body$;
+$test$,'suspension_preserves_accepted_payment_obligation');
+rollback to savepoint suspension_preserves_acceptance;
+
 rollback to savepoint booking_request_owner_acceptance;
 
 savepoint booking_request_malformed_decline_reason;
@@ -5676,6 +6876,46 @@ from public.booking_request_release_work work
 join public.booking_requests requests on requests.id=work.booking_request_id
 where work.id=(select work_id from quarantine_snapshots);
 grant select on quarantine_history_expected to authenticated;
+savepoint suspension_preserves_quarantine;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000006220","role":"authenticated","aal":"aal2"}',true);
+select lives_ok($test$
+do $body$
+declare request_before public.booking_requests;
+declare work_before jsonb;
+declare attempt_before jsonb;
+declare hold_before jsonb;
+declare history_before jsonb;
+declare notices_before jsonb;
+declare kind text;
+declare target_id uuid;
+declare result jsonb;
+begin
+  select * into request_before from public.booking_requests where id=(select id from booking_request_lifecycle_target);
+  select to_jsonb(work) into work_before from public.booking_request_release_work work where booking_request_id=request_before.id;
+  if work_before->>'state'<>'quarantined' then raise exception 'Definitively refused release fixture is missing'; end if;
+  select to_jsonb(attempts) into attempt_before from public.booking_request_submission_attempts attempts where booking_request_id=request_before.id;
+  select to_jsonb(holds) into hold_before from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id;
+  select jsonb_agg(to_jsonb(history) order by id) into history_before from public.booking_request_payment_history history;
+  select jsonb_agg(to_jsonb(notices) order by id) into notices_before from public.booking_request_status_notifications notices;
+  foreach kind in array array['customer','cottage'] loop
+    target_id:=case kind when 'customer' then request_before.customer_user_id else request_before.profile_id end;
+    result:=public.set_marketplace_suspension(kind,target_id,'suspend',0,'Fictional quarantined request restriction',gen_random_uuid());
+    if result->>'status' is distinct from 'completed' then raise exception 'Quarantine restriction unavailable: %',result; end if;
+    result:=public.set_marketplace_suspension(kind,target_id,'reactivate',1,'Prospective restoration cannot resume quarantine',gen_random_uuid());
+    if result->>'status' is distinct from 'completed' then raise exception 'Prospective restoration unavailable: %',result; end if;
+  end loop;
+  if (select to_jsonb(requests) from public.booking_requests requests where id=request_before.id) is distinct from to_jsonb(request_before)
+    or (select to_jsonb(work) from public.booking_request_release_work work where booking_request_id=request_before.id) is distinct from work_before
+    or (select to_jsonb(attempts) from public.booking_request_submission_attempts attempts where booking_request_id=request_before.id) is distinct from attempt_before
+    or (select to_jsonb(holds) from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id) is distinct from hold_before
+    or (select jsonb_agg(to_jsonb(history) order by id) from public.booking_request_payment_history history) is distinct from history_before
+    or (select jsonb_agg(to_jsonb(notices) order by id) from public.booking_request_status_notifications notices) is distinct from notices_before
+  then raise exception 'Restriction/restoration changed quarantined facts or invented completion'; end if;
+end;
+$body$;
+$test$,'suspension_and_reactivation_never_resume_quarantined_release');
+rollback to savepoint suspension_preserves_quarantine;
+
 select ok((select created_at<>quarantined_at from quarantine_history_expected),
   'ordinary release quarantine history fixture distinguishes creation from quarantine');
 select set_config('request.jwt.claims',
@@ -6362,9 +7602,11 @@ update public.booking_requests
 set created_at = timed.deadline - interval '4 hours',
   response_deadline = timed.deadline
 from (select clock_timestamp() as deadline) timed;
--- Two clock reads never agree on purpose, so this observer alone makes the action's one
--- clock read return the stored Response Deadline; the rollback restores the real clock.
+-- Pin both the action decision and extracted preparation clock at the Response Deadline;
+-- the savepoint rollback restores the real clocks.
 do $$begin execute replace(pg_get_functiondef('public.claim_booking_request_action(uuid,uuid,text,text,text)'::regprocedure),
+  'clock_timestamp()','target_request.response_deadline');end$$;
+do $$begin execute replace(pg_get_functiondef('private.prepare_booking_request_release(uuid,uuid,text,text,text,uuid)'::regprocedure),
   'clock_timestamp()','target_request.response_deadline');end$$;
 set local role service_role;
 select is(

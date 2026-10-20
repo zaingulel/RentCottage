@@ -602,9 +602,7 @@ begin
     update public.account_contexts
     set owner_approval_state = 'expired', updated_at = now()
     where user_id = candidate.owner_user_id;
-    insert into public.owner_application_renewal_work (
-      application_id, verification_record_id, requested_document_kinds
-    ) values (candidate.id, candidate.verification_record_id, expired_kinds);
+    perform private.prepare_owner_application_renewal(candidate.id,candidate.verification_record_id,expired_kinds);
     insert into public.owner_application_transitions (
       application_id, from_status, to_status, application_version, actor_subject_id,
       reason
@@ -612,8 +610,6 @@ begin
       candidate.id, 'approved', 'expired', candidate.version + 1,
       'owner-application-expiry-processor', 'Required evidence expired'
     );
-    insert into public.owner_application_notices (application_id, owner_user_id, kind)
-    values (candidate.id, candidate.owner_user_id, 'expired');
     processed := processed + 1;
   end loop;
   return processed;
@@ -1292,9 +1288,26 @@ declare
   evidence_version_ids uuid[];
   evidence_types public.owner_verification_document_kind[];
   result_status public.owner_application_status;
+  suspension_result jsonb;
+  target_owner_id uuid;
 begin
   if not (select public.is_platform_administrator('aal2')) then
     raise exception 'Platform Administrator MFA is required' using errcode = '42501';
+  end if;
+
+  if requested_action='suspend' then
+    select owner_user_id into target_owner_id from public.owner_applications where id=target_application_id;
+    if not found then
+    raise exception 'Owner Application was not found' using errcode='RC404'; end if;
+    suspension_result:=public.set_marketplace_suspension('owner',target_owner_id,'suspend',expected_version,requested_reason,gen_random_uuid());
+    if suspension_result->>'status'='access-required' then
+    raise exception 'Platform Administrator MFA is required' using errcode='42501';
+    elsif suspension_result->>'status'='invalid' then
+    raise exception 'This suspension is invalid' using errcode='RC422';
+    elsif suspension_result->>'status'<>'completed' then
+    raise exception 'Owner Application changed before this action' using errcode='RC409'; end if;
+    select * into application from public.owner_applications where id=target_application_id;
+    return jsonb_build_object('application_id',application.id,'status',application.status,'version',application.version,'occurred_at',application.updated_at,'review_due_at',application.review_due_at);
   end if;
 
   select * into application from public.owner_applications
@@ -1443,20 +1456,6 @@ begin
       case requested_action when 'approve' then 'approved' else 'rejected' end,
       btrim(requested_reason)
     );
-  elsif requested_action = 'suspend' then
-    if application.status not in ('approved', 'expired')
-      or char_length(btrim(coalesce(requested_reason, ''))) not between 1 and 1000 then
-      raise exception 'This suspension is invalid' using errcode = 'RC422';
-    end if;
-    result_status := 'suspended';
-    update public.owner_applications
-    set status = result_status, review_due_at = null, review_paused_at = null,
-      version = version + 1, updated_at = now()
-    where id = application.id returning * into application;
-    update public.account_contexts set owner_approval_state = 'suspended', updated_at = now()
-    where user_id = application.owner_user_id;
-    insert into public.owner_application_notices (application_id, owner_user_id, kind, reason)
-    values (application.id, application.owner_user_id, 'suspended', btrim(requested_reason));
   else
     raise exception 'Unknown Owner Application review action' using errcode = 'RC422';
   end if;
@@ -1823,3 +1822,22 @@ end;
 $$;
 
 ALTER FUNCTION "public"."submit_owner_application_renewal"("expected_version" bigint, "confirmed_document_kinds" "public"."owner_verification_document_kind"[]) OWNER TO "postgres";
+CREATE OR REPLACE FUNCTION private.prepare_owner_application_renewal(
+  target_application_id uuid,
+  target_verification_record_id uuid,
+  expired_kinds public.owner_verification_document_kind[]
+) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+begin
+  insert into public.owner_application_renewal_work(application_id, verification_record_id, requested_document_kinds)
+  values(target_application_id, target_verification_record_id, expired_kinds)
+  on conflict (application_id) where status in ('open','submitted') do nothing;
+  if found then
+    insert into public.owner_application_notices(application_id, owner_user_id, kind)
+    select applications.id, applications.owner_user_id,'expired'
+    from public.owner_applications applications
+    where applications.id=target_application_id;
+  end if;
+end;
+$$;
+ALTER FUNCTION private.prepare_owner_application_renewal(uuid, uuid, public.owner_verification_document_kind[]) OWNER TO postgres;

@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 
+import { loadMarketplaceSuspension } from "@/administrator-records/supabase-marketplace-suspension";
+import { MarketplaceSuspensionControls } from "@/components/marketplace-suspension-controls";
 import { loadAdministratorRecord } from "@/administrator-records/supabase-administrator-records";
 import { AdministratorRecordDetailView } from "@/components/administrator-records";
 import { ActionFeedback, ActionLink } from "@/components/interaction-controls";
@@ -15,12 +17,40 @@ export default async function AdministratorRecordDetailPage({
   if (!isLocale(locale)) notFound();
   const result = await loadAdministratorRecord(recordKind, recordId);
   if (result.status === "invalid") notFound();
-  if (result.status === "ready")
+  if (result.status === "ready") {
+    const record = result.record;
+    const [customer, owner] = await Promise.all([
+      record.kind === "account"
+        ? loadMarketplaceSuspension({ kind: "customer", id: record.id })
+        : null,
+      record.kind === "account" && record.applicationId
+        ? loadMarketplaceSuspension({ kind: "owner", id: record.id })
+        : null,
+    ]);
     return (
       <main className="page results-page page-record">
-        <AdministratorRecordDetailView locale={locale} record={result.record} />
+        <div className="administrator-review-detail">
+          <AdministratorRecordDetailView locale={locale} record={record} />
+          {customer ? (
+            <MarketplaceSuspensionControls
+              key={`customer-${record.id}`}
+              locale={locale}
+              target={{ kind: "customer", id: record.id }}
+              initial={customer}
+            />
+          ) : null}
+          {owner ? (
+            <MarketplaceSuspensionControls
+              key={`owner-${record.id}`}
+              locale={locale}
+              target={{ kind: "owner", id: record.id }}
+              initial={owner}
+            />
+          ) : null}
+        </div>
       </main>
     );
+  }
   const copy = administratorRecordsMessages[locale];
   return (
     <main className="page results-page page-record">

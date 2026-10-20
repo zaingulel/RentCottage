@@ -129,3 +129,9 @@ CREATE UNIQUE INDEX booking_notification_events_recovery_source_idx ON public.bo
 CREATE INDEX customer_reviews_profile_cursor_idx ON public.customer_reviews (profile_id, submitted_at DESC, id DESC);
 CREATE INDEX customer_reviews_administrator_cursor_idx ON public.customer_reviews (submitted_at DESC, id DESC);
 CREATE INDEX customer_review_translation_reports_cursor_idx ON public.customer_review_translation_reports (created_at DESC, id DESC);
+
+CREATE INDEX marketplace_suspension_actions_account_history_idx ON private.marketplace_suspension_actions(account_user_id,target_kind,created_at DESC,id DESC) WHERE account_user_id IS NOT NULL;
+CREATE INDEX marketplace_suspension_actions_profile_history_idx ON private.marketplace_suspension_actions(profile_id,created_at DESC,id DESC) WHERE profile_id IS NOT NULL;
+
+CREATE INDEX booking_request_release_work_suspension_action_idx ON public.booking_request_release_work(suspension_action_id) WHERE suspension_action_id IS NOT NULL;
+CREATE INDEX booking_requests_pending_profile_idx ON public.booking_requests(profile_id,id) WHERE status='pending';

@@ -26,6 +26,7 @@ const header = {
     publicSlug: "cottage-00000000000040008000000000000029",
   },
   actorRole: "customer",
+  sendRestriction: null,
   createdAt: "2099-08-20T12:00:00.000Z",
   canContinueBookingRequest: true,
   booking,
@@ -34,6 +35,92 @@ const header = {
 };
 
 describe("Supabase messaging reader", () => {
+  it("requires a finite customer-correlated send restriction in conversation and inbox reads", async () => {
+    for (const actorRole of [
+      "customer",
+      "cottage_owner",
+      "platform_administrator",
+    ]) {
+      for (const sendRestriction of [
+        null,
+        "customer-suspended",
+        undefined,
+        "unknown",
+        false,
+      ]) {
+        const valid =
+          sendRestriction === null ||
+          (actorRole === "customer" &&
+            sendRestriction === "customer-suspended");
+        const restrictedHeader = {
+          ...header,
+          actorRole,
+          sendRestriction,
+          canContinueBookingRequest: false,
+        };
+        const client = { rpc: vi.fn() };
+        const reader = new SupabaseMessagingReader(client as never);
+        client.rpc.mockResolvedValue({
+          data: { ...restrictedHeader, messages: [], nextMessageCursor: null },
+          error: null,
+        });
+        const result = reader.getConversation({ conversationId, limit: 20 });
+        if (valid)
+          await expect(result).resolves.toMatchObject({
+            actorRole,
+            sendRestriction,
+          });
+        else
+          await expect(result).rejects.toThrow(
+            "Database returned an invalid messaging conversation",
+          );
+        client.rpc.mockResolvedValue({
+          data: {
+            items: [
+              {
+                ...restrictedHeader,
+                activityAt: header.createdAt,
+                preview: null,
+              },
+            ],
+            nextCursor: null,
+          },
+          error: null,
+        });
+        const inbox = reader.listConversations({ limit: 20 });
+        if (valid)
+          await expect(inbox).resolves.toMatchObject({
+            items: [{ actorRole, sendRestriction }],
+          });
+        else
+          await expect(inbox).rejects.toThrow(
+            "Database returned an invalid messaging inbox",
+          );
+      }
+    }
+  });
+
+  it("refuses an optimistic booking continuation for a suspended customer", async () => {
+    const client = {
+      rpc: vi.fn().mockResolvedValue({
+        data: {
+          ...header,
+          sendRestriction: "customer-suspended",
+          canContinueBookingRequest: true,
+          messages: [],
+          nextMessageCursor: null,
+        },
+        error: null,
+      }),
+    };
+    await expect(
+      new SupabaseMessagingReader(client as never).getConversation({
+        conversationId,
+        limit: 20,
+      }),
+    ).rejects.toThrow("Database returned an invalid messaging conversation");
+  });
+
   it("parses a bounded conversation page and forwards its position cursor", async () => {
     const client = {
       rpc: vi.fn().mockResolvedValue({

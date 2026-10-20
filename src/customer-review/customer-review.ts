@@ -126,6 +126,7 @@ export type SubmitCustomerReviewResult =
         | "access-required"
         | "invalid"
         | "ineligible"
+        | "suspended"
         | "prohibited-content"
         | "unavailable";
     }>;
@@ -141,6 +142,7 @@ export type SubmitCustomerReviewActionResult =
         | "access-required"
         | "invalid"
         | "ineligible"
+        | "suspended"
         | "prohibited-content";
     }>
   | Readonly<{
@@ -354,7 +356,12 @@ export type OwnCustomerReviewResult =
     }>
   | Readonly<{ status: "eligible"; reviewExpiresAt: string }>
   | Readonly<{
-      status: "access-required" | "invalid" | "ineligible" | "unavailable";
+      status:
+        | "access-required"
+        | "invalid"
+        | "ineligible"
+        | "suspended"
+        | "unavailable";
     }>;
 
 export type OwnerCustomerReviewReply = CustomerReviewReplyFacts &

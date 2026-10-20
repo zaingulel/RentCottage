@@ -116,6 +116,9 @@ begin
   select * into cycle from public.cottage_profile_review_cycles where id = target_review_cycle_id for update;
   if not found or cycle.state <> 'in_review' then raise exception 'Cottage review cycle is unavailable' using errcode = 'RC204'; end if;
   select * into profile from public.owner_application_cottage_profiles where id = cycle.profile_id for update;
+  if profile.business_suspended then
+    raise exception 'Cottage publication is unavailable while activity is suspended' using errcode='RC204';
+  end if;
   select * into owner_context from public.account_contexts
     where user_id = profile.owner_user_id for update;
   if not found or owner_context.role <> 'cottage_owner'
@@ -1340,7 +1343,7 @@ CREATE OR REPLACE FUNCTION "public"."is_cottage_publicly_discoverable"("target_p
     join public.cottage_shift_schedule_revisions schedules
       on schedules.id = profiles.current_shift_schedule_id
       and schedules.profile_id = profiles.id
-    where profiles.id = target_profile_id
+    where profiles.id = target_profile_id and not profiles.business_suspended
   );
 $$;
 
@@ -2495,6 +2498,15 @@ begin
   if not found or profile.owner_user_id <> (select auth.uid()) then
     raise exception 'Cottage Profile access is denied' using errcode = '42501';
   end if;
+  if not exists (
+    select 1 from public.account_contexts
+    where user_id = (select auth.uid())
+      and role = 'cottage_owner'
+      and owner_approval_state = 'approved'
+  ) then
+    raise exception 'Approved Cottage Owner access is required'
+      using errcode = '42501';
+  end if;
   if profile.status <> 'draft' then
     raise exception 'A submitted Cottage Profile Shift Schedule is read-only'
       using errcode = 'RC202';
@@ -3477,6 +3489,15 @@ begin
   if not found or profile.owner_user_id <> (select auth.uid()) then
     raise exception 'Cottage Profile access is denied' using errcode = '42501';
   end if;
+  if not exists (
+    select 1
+    from public.account_contexts
+    where user_id = (select auth.uid())
+      and role = 'cottage_owner'
+      and owner_approval_state = 'approved'
+  ) then
+    raise exception 'Approved Cottage Owner access is required' using errcode = '42501';
+  end if;
   if profile.current_shift_schedule_id is distinct from target_schedule_revision_id then
     raise exception 'The Shift Schedule revision is no longer current' using errcode = 'RC409';
   end if;
@@ -3836,6 +3857,14 @@ begin
   if not found or profile.owner_user_id <> (select auth.uid()) then
     raise exception 'Cottage Profile access is denied' using errcode = '42501';
   end if;
+  if not exists (
+    select 1 from public.account_contexts
+    where user_id = (select auth.uid())
+      and role = 'cottage_owner'
+      and owner_approval_state = 'approved'
+  ) then
+    raise exception 'Approved Cottage Owner access is required' using errcode = '42501';
+  end if;
   if profile.current_shift_schedule_id is distinct from target_schedule_revision_id then
     raise exception 'The Shift Schedule revision is no longer current' using errcode = 'RC409';
   end if;
@@ -3970,6 +3999,15 @@ begin
 
   if not found or profile.owner_user_id <> (select auth.uid()) then
     raise exception 'Cottage Profile access is denied' using errcode = '42501';
+  end if;
+  if not exists (
+    select 1 from public.account_contexts
+    where user_id = (select auth.uid())
+      and role = 'cottage_owner'
+      and owner_approval_state = 'approved'
+  ) then
+    raise exception 'Approved Cottage Owner access is required'
+      using errcode = '42501';
   end if;
   if profile.status = 'submitted_for_content_approval' then
     return profile;
@@ -4168,6 +4206,16 @@ begin
 
   if not found or profile.owner_user_id <> (select auth.uid()) then
     raise exception 'Cottage Profile access is denied' using errcode = '42501';
+  end if;
+  if not exists (
+    select 1
+    from public.account_contexts
+    where user_id = (select auth.uid())
+      and role = 'cottage_owner'
+      and owner_approval_state = 'approved'
+  ) then
+    raise exception 'Approved Cottage Owner access is required'
+      using errcode = '42501';
   end if;
   if profile.status <> 'draft' then
     raise exception 'A submitted Cottage Profile cannot be changed by its owner'

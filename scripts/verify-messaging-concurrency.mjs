@@ -93,6 +93,8 @@ try {
     )
   );
   reset role;
+  insert into auth.users(id,aud,role,email,email_confirmed_at) values('10000000-0000-4000-8000-000000003801','authenticated','authenticated','cancellation-admin@example.test',now());
+  insert into public.account_contexts(user_id,role) values('10000000-0000-4000-8000-000000003801','platform_administrator');
 `;
   const originalRanges =
     `'{["2101-01-01 05:00+00","2101-01-01 09:00+00"),` +
@@ -118,6 +120,14 @@ try {
   const stranger = "10000000-0000-4000-8000-000000001003";
   const owner = "10000000-0000-4000-8000-000000001001";
   const profile = "20000000-0000-4000-8000-000000001001";
+  const sourceRevisionId = "37000000-0000-4000-8000-000000003601";
+  const reviewCycleId = "37000000-0000-4000-8000-000000003602";
+  const publicationId = "37000000-0000-4000-8000-000000003603";
+  const publicationResidueSql = `select jsonb_build_object(
+    'sourceRevisions',(select count(*) from public.cottage_profile_source_revisions where id='${sourceRevisionId}'),
+    'reviewCycles',(select count(*) from public.cottage_profile_review_cycles where id='${reviewCycleId}'),
+    'publications',(select count(*) from public.cottage_publication_snapshots where id='${publicationId}')
+  );`;
   const sessions = [];
   const cleanup = `
   set session_replication_role=replica;
@@ -175,15 +185,39 @@ try {
       "0",
       "Refuse a pre-existing messaging concurrency fixture",
     );
-    harness.runSql(`
+    assert.equal(
+      harness.runSql(`select
+      (select count(*) from public.cottage_profile_source_revisions where id='${sourceRevisionId}')+
+      (select count(*) from public.cottage_profile_review_cycles where id='${reviewCycleId}')+
+      (select count(*) from public.cottage_publication_snapshots where id='${publicationId}');
+    `),
+      "0",
+      "Refuse pre-existing messaging publication fixture rows",
+    );
+    const confirmedFixtureSql = `
     ${fixture("PAYMENT EVIDENCE FIXTURE")}
     ${cancellationFixture}
     select pg_temp.seed_cancellation_booking(
       ((clock_timestamp() at time zone 'Asia/Baghdad')::date + 60)
     );
-    insert into public.cottage_marketplace_listings(profile_id,public_slug,state)
-    values('${profile}','cottage-20000000000040008000000000001001','published');
-  `);
+    insert into public.cottage_profile_source_revisions(id,profile_id,owner_user_id,source_language,description,house_rules,revision)
+    values('${sourceRevisionId}','${profile}','${owner}','en','Fixture description','Fixture rules',1);
+    insert into public.cottage_profile_review_cycles(id,profile_id,owner_user_id,source_revision_id,name,governorate,approximate_location,capacity,bedrooms,bathrooms,amenities,cycle_number,state,decided_at)
+    values('${reviewCycleId}','${profile}','${owner}','${sourceRevisionId}','Confirmation Cottage','Baghdad','Karrada',8,3,2,array['garden'],1,'approved',clock_timestamp());
+    insert into public.cottage_publication_snapshots(id,profile_id,review_cycle_id,publication_number,name,governorate,approximate_location,capacity,bedrooms,bathrooms,amenities)
+    values('${publicationId}','${profile}','${reviewCycleId}',1,'Confirmation Cottage','Baghdad','Karrada',8,3,2,array['garden']);
+    update public.owner_application_cottage_profiles
+    set current_publication_id='${publicationId}',current_shift_schedule_id='30000000-0000-4000-8000-000000001001'
+    where id='${profile}';
+  `;
+    harness.runSql(confirmedFixtureSql);
+    assert.equal(
+      harness.runSql(`select public.is_cottage_publicly_discoverable('${profile}')
+      and (select count(*) from public.cottage_shifts where schedule_revision_id='30000000-0000-4000-8000-000000001001')=3
+      and (select quote_payload#>>'{items,1,position}' from public.booking_snapshots where id='40000000-0000-4000-8000-000000001001')='3';`),
+      "t",
+      "Inquiry fixture is public without rewriting the historical purchased three-shift snapshot",
+    );
     assert.equal(
       harness.runSql(`
       select public.booking_request_payment_status(requests)
@@ -191,6 +225,357 @@ try {
     `),
       "paid-confirmed",
       "The reused fixture must establish the production paid-access state",
+    );
+    const administrator = "10000000-0000-4000-8000-000000003801";
+    const restriction = (kind, target, action, revision, command) => `
+      set local role authenticated;
+      set local request.jwt.claim.sub='${administrator}';
+      set local request.jwt.claims='{"sub":"${administrator}","aal":"aal2"}';
+      select public.set_marketplace_suspension('${kind}','${target}','${action}',${revision},'Fictional messaging safety','36000000-0000-4000-8000-${String(command).padStart(12, "0")}');
+      reset role;
+    `;
+    harness.markTimingPhase("execution");
+    const suspensionHolder = harness.startSession(`begin;
+      set application_name='messaging_suspension_holder';
+      select id from public.booking_requests where id='${request}' for update;
+      select 'MESSAGING_SUSPENSION_HELD';
+    `);
+    sessions.push(suspensionHolder);
+    await harness.waitForMarker(suspensionHolder, "MESSAGING_SUSPENSION_HELD");
+    const suspendedOpen = harness.startSession(
+      `begin;
+      set application_name='messaging_suspended_open';
+      set local role service_role;
+      select public.open_messaging_conversation_for_booking('${customer}','RC-REQ-0000000000001001','36000000-0000-4000-8000-000000003701');
+      commit;
+    `,
+      true,
+    );
+    sessions.push(suspendedOpen);
+    await harness.waitForLock("messaging_suspended_open", suspendedOpen);
+    suspensionHolder.child.stdin
+      .write(`${restriction("customer", customer, "suspend", 0, 3700)}
+      select 'MESSAGING_CUSTOMER_SUSPENDED';
+`);
+    await harness.waitForMarker(
+      suspensionHolder,
+      "MESSAGING_CUSTOMER_SUSPENDED",
+    );
+    assert.equal(
+      JSON.parse(resultLine(suspensionHolder)).status,
+      "completed",
+      "Actual AAL2 administrator restriction wins before waiting booking entry",
+    );
+    await harness.finishSession(suspensionHolder, { action: "commit" });
+    await harness.finishSession(suspendedOpen);
+    assert.equal(
+      JSON.parse(resultLine(suspendedOpen)).status,
+      "suspended",
+      "customer_suspension_blocks_new_conversation_and_send: booking entry rechecks customer after request wait",
+    );
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.messaging_conversation_booking_requests where booking_request_id='${request}';`,
+      ),
+      "0",
+      "Suspended booking entry creates no link",
+    );
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.messaging_conversations where customer_user_id='${customer}';`,
+      ),
+      "0",
+      "Suspended booking entry creates no conversation",
+    );
+    assert.equal(
+      JSON.parse(
+        harness.runSql(
+          `begin; ${restriction("customer", customer, "reactivate", 1, 3702)} commit;`,
+        ),
+      ).status,
+      "completed",
+    );
+
+    const openingFirst = harness.startSession(`begin;
+      set application_name='messaging_open_first';
+      set local role service_role;
+      select public.open_messaging_conversation_for_booking('${customer}','RC-REQ-0000000000001001','36000000-0000-4000-8000-000000003703');
+      select 'MESSAGING_OPEN_FIRST_HELD';
+    `);
+    sessions.push(openingFirst);
+    await harness.waitForMarker(openingFirst, "MESSAGING_OPEN_FIRST_HELD");
+    const openingActorProbe = harness.runDocker(
+      harness.psqlArguments(),
+      `begin;
+      select user_id from public.account_contexts
+      where user_id='${customer}' for no key update nowait;
+      rollback;
+`,
+    );
+    assert.notEqual(
+      openingActorProbe.status,
+      0,
+      "Booking entry holds actor SHARE independently of foreign-key KEY SHARE",
+    );
+    assert.match(
+      openingActorProbe.stderr,
+      /could not obtain lock on row in relation "account_contexts"/,
+      "The non-key actor update is refused by its row lock, not a timeout or fixture error",
+    );
+    const restrictionAfterOpen = harness.startSession(
+      `begin;
+      set application_name='messaging_restriction_after_open';
+      ${restriction("customer", customer, "suspend", 2, 3704)}
+      commit;
+    `,
+      true,
+    );
+    sessions.push(restrictionAfterOpen);
+    await harness.waitForLock(
+      "messaging_restriction_after_open",
+      restrictionAfterOpen,
+    );
+    assert.equal(
+      harness.runSql(`select count(*) from pg_catalog.pg_stat_activity waiter
+      join pg_catalog.pg_stat_activity holder on holder.pid=any(pg_catalog.pg_blocking_pids(waiter.pid))
+      where waiter.application_name='messaging_restriction_after_open' and holder.application_name='messaging_open_first'
+      and holder.wait_event_type is distinct from 'Lock';`),
+      "1",
+      "Booking writer holds actor authority; administrator waits without a reciprocal request/attempt cycle",
+    );
+    await harness.finishSession(openingFirst, { action: "commit" });
+    await harness.finishSession(restrictionAfterOpen);
+    const retainedBookingConversation = JSON.parse(resultLine(openingFirst));
+    assert.equal(retainedBookingConversation.status, "created");
+    assert.equal(
+      JSON.parse(resultLine(restrictionAfterOpen)).status,
+      "completed",
+    );
+    assert.equal(
+      JSON.parse(
+        harness.runSql(`set role service_role;
+      select public.open_messaging_conversation_for_booking('${customer}','RC-REQ-0000000000001001','36000000-0000-4000-8000-000000003705');
+    `),
+      ).conversationId,
+      retainedBookingConversation.conversationId,
+      "Suspended customer retrieves the already attached booking conversation",
+    );
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.messaging_conversation_booking_requests where booking_request_id='${request}';`,
+      ),
+      "1",
+      "Existing attached history adds no second link",
+    );
+    harness.markTimingPhase("cleanup");
+    harness.runSql(cleanup);
+    assert.deepEqual(
+      JSON.parse(harness.runSql(publicationResidueSql)),
+      { sourceRevisions: 0, reviewCycles: 0, publications: 0 },
+      "Owned inquiry publication rows are absent before reseeding",
+    );
+    harness.markTimingPhase("setup");
+    harness.runSql(confirmedFixtureSql);
+    assert.equal(
+      harness.runSql(`select public.is_cottage_publicly_discoverable('${profile}')
+      and (select count(*) from public.cottage_shifts where schedule_revision_id='30000000-0000-4000-8000-000000001001')=3
+      and (select quote_payload#>>'{items,1,position}' from public.booking_snapshots where id='40000000-0000-4000-8000-000000001001')='3';`),
+      "t",
+      "Inquiry fixture is public without rewriting the historical purchased three-shift snapshot",
+    );
+    harness.markTimingPhase("execution");
+
+    const inquiryRestriction = harness.startSession(`begin;
+      set application_name='messaging_inquiry_restriction';
+      select user_id from public.account_contexts where user_id='${customer}' for update;
+      select 'MESSAGING_INQUIRY_RESTRICTION_HELD';
+    `);
+    sessions.push(inquiryRestriction);
+    await harness.waitForMarker(
+      inquiryRestriction,
+      "MESSAGING_INQUIRY_RESTRICTION_HELD",
+    );
+    const waitingInquiry = harness.startSession(
+      `begin;
+      set application_name='messaging_waiting_inquiry';
+      set local role service_role;
+      select public.create_messaging_conversation('${customer}','${profile}','36000000-0000-4000-8000-000000003706');
+      commit;
+    `,
+      true,
+    );
+    sessions.push(waitingInquiry);
+    await harness.waitForLock("messaging_waiting_inquiry", waitingInquiry);
+    inquiryRestriction.child.stdin
+      .write(`${restriction("customer", customer, "suspend", 0, 3707)}
+      select 'MESSAGING_INQUIRY_RESTRICTION_APPLIED';
+`);
+    await harness.waitForMarker(
+      inquiryRestriction,
+      "MESSAGING_INQUIRY_RESTRICTION_APPLIED",
+    );
+    assert.equal(
+      JSON.parse(resultLine(inquiryRestriction)).status,
+      "completed",
+    );
+    await harness.finishSession(inquiryRestriction, { action: "commit" });
+    await harness.finishSession(waitingInquiry);
+    assert.equal(
+      JSON.parse(resultLine(waitingInquiry)).status,
+      "suspended",
+      "Inquiry reads current customer restriction after actor wait",
+    );
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.messaging_conversations where customer_user_id='${customer}';`,
+      ),
+      "0",
+    );
+    assert.equal(
+      JSON.parse(
+        harness.runSql(
+          `begin; ${restriction("customer", customer, "reactivate", 1, 3708)} commit;`,
+        ),
+      ).status,
+      "completed",
+    );
+    const inquiryFirst = harness.startSession(`begin;
+      set application_name='messaging_inquiry_first';
+      set local role service_role;
+      select public.create_messaging_conversation('${customer}','${profile}','36000000-0000-4000-8000-000000003709');
+      select 'MESSAGING_INQUIRY_FIRST_HELD';
+    `);
+    sessions.push(inquiryFirst);
+    await harness.waitForMarker(inquiryFirst, "MESSAGING_INQUIRY_FIRST_HELD");
+    const restrictionAfterInquiry = harness.startSession(
+      `begin;
+      set application_name='messaging_restriction_after_inquiry';
+      ${restriction("customer", customer, "suspend", 2, 3710)}
+      commit;
+    `,
+      true,
+    );
+    sessions.push(restrictionAfterInquiry);
+    await harness.waitForLock(
+      "messaging_restriction_after_inquiry",
+      restrictionAfterInquiry,
+    );
+    assert.equal(
+      harness.runSql(`select count(*) from pg_catalog.pg_stat_activity waiter
+      join pg_catalog.pg_stat_activity holder on holder.pid=any(pg_catalog.pg_blocking_pids(waiter.pid))
+      where waiter.application_name='messaging_restriction_after_inquiry' and holder.application_name='messaging_inquiry_first'
+      and holder.wait_event_type is distinct from 'Lock';`),
+      "1",
+      "Inquiry serializes before restriction with no reciprocal profile/actor cycle",
+    );
+    await harness.finishSession(inquiryFirst, { action: "commit" });
+    await harness.finishSession(restrictionAfterInquiry);
+    const retainedInquiry = JSON.parse(resultLine(inquiryFirst));
+    assert.equal(retainedInquiry.status, "created");
+    assert.equal(
+      JSON.parse(resultLine(restrictionAfterInquiry)).status,
+      "completed",
+    );
+    assert.equal(
+      JSON.parse(
+        harness.runSql(`set role service_role;
+      select public.create_messaging_conversation('${customer}','${profile}','36000000-0000-4000-8000-000000003709');
+    `),
+      ).conversationId,
+      retainedInquiry.conversationId,
+      "Restriction preserves inquiry creation accepted before its serialization point",
+    );
+    assert.equal(
+      JSON.parse(
+        harness.runSql(
+          `begin; ${restriction("customer", customer, "reactivate", 3, 3711)} commit;`,
+        ),
+      ).status,
+      "completed",
+    );
+    const cottageRestrictionHolder = harness.startSession(`begin;
+      set application_name='messaging_cottage_restriction';
+      select id from public.owner_application_cottage_profiles where id='${profile}' for update;
+      select 'MESSAGING_COTTAGE_RESTRICTION_HELD';
+    `);
+    sessions.push(cottageRestrictionHolder);
+    await harness.waitForMarker(
+      cottageRestrictionHolder,
+      "MESSAGING_COTTAGE_RESTRICTION_HELD",
+    );
+    const waitingCottageInquiry = harness.startSession(
+      `begin;
+      set application_name='messaging_waiting_cottage_inquiry';
+      set local role service_role;
+      select public.create_messaging_conversation('${customer}','${profile}','36000000-0000-4000-8000-000000003721');
+      commit;
+    `,
+      true,
+    );
+    sessions.push(waitingCottageInquiry);
+    await harness.waitForLock(
+      "messaging_waiting_cottage_inquiry",
+      waitingCottageInquiry,
+    );
+    assert.equal(
+      harness.runSql(`select count(*) from pg_catalog.pg_stat_activity waiter
+      join pg_catalog.pg_stat_activity holder on holder.pid=any(pg_catalog.pg_blocking_pids(waiter.pid))
+      where waiter.application_name='messaging_waiting_cottage_inquiry' and holder.application_name='messaging_cottage_restriction'
+      and holder.wait_event_type is distinct from 'Lock';`),
+      "1",
+      "Inquiry waits only for the profile; cottage restriction needs no reciprocal customer authority lock",
+    );
+    cottageRestrictionHolder.child.stdin
+      .write(`${restriction("cottage", profile, "suspend", 0, 3722)}
+      select 'MESSAGING_COTTAGE_RESTRICTION_APPLIED';
+`);
+    await harness.waitForMarker(
+      cottageRestrictionHolder,
+      "MESSAGING_COTTAGE_RESTRICTION_APPLIED",
+    );
+    assert.equal(
+      JSON.parse(resultLine(cottageRestrictionHolder)).status,
+      "completed",
+    );
+    await harness.finishSession(cottageRestrictionHolder, { action: "commit" });
+    await harness.finishSession(waitingCottageInquiry);
+    assert.equal(
+      JSON.parse(resultLine(waitingCottageInquiry)).status,
+      "access-required",
+      "Inquiry rechecks full current public eligibility after the profile wait",
+    );
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.messaging_conversations where creation_command_id='36000000-0000-4000-8000-000000003721';`,
+      ),
+      "0",
+    );
+    const cottageRestoration = JSON.parse(
+      harness.runSql(
+        `begin; ${restriction("cottage", profile, "reactivate", 1, 3723)} commit;`,
+      ),
+    );
+    assert.equal(cottageRestoration.status, "completed");
+    assert.equal(
+      cottageRestoration.target.state,
+      "paused",
+      "A cottage without owner verification restores paused rather than inventing owner eligibility",
+    );
+    harness.markTimingPhase("cleanup");
+    harness.runSql(cleanup);
+    assert.deepEqual(
+      JSON.parse(harness.runSql(publicationResidueSql)),
+      { sourceRevisions: 0, reviewCycles: 0, publications: 0 },
+      "Cottage-wait fixture publication rows are absent before independent inquiry setup",
+    );
+    harness.markTimingPhase("setup");
+    harness.runSql(confirmedFixtureSql);
+    assert.equal(
+      harness.runSql(`select public.is_cottage_publicly_discoverable('${profile}')
+      and (select count(*) from public.cottage_shifts where schedule_revision_id='30000000-0000-4000-8000-000000001001')=3
+      and (select quote_payload#>>'{items,1,position}' from public.booking_snapshots where id='40000000-0000-4000-8000-000000001001')='3';`),
+      "t",
+      "Independent inquiry starts from the original public historical purchase fixture",
     );
     harness.markTimingPhase("execution");
     const created = JSON.parse(
@@ -237,6 +622,25 @@ try {
       "messaging_association_contender",
       associationContender,
     );
+    const associationActorProbe = harness.runDocker(
+      harness.psqlArguments(),
+      `\\set VERBOSITY verbose
+      begin;
+      select user_id from public.account_contexts
+      where user_id='${customer}' for no key update nowait;
+      rollback;
+`,
+    );
+    assert.notEqual(
+      associationActorProbe.status,
+      0,
+      "Message admission holds actor SHARE before its conversation wait",
+    );
+    assert.match(
+      associationActorProbe.stderr,
+      /55P03: could not obtain lock on row in relation "account_contexts"/,
+      "The waiting sender holds actor authority, not a timeout or fixture error",
+    );
     await harness.finishSession(associationHolder, { action: "commit" });
     await harness.finishSession(associationContender);
     assert.equal(
@@ -250,6 +654,178 @@ try {
       ),
       "0",
       "A changed association admits no message and writes no rejection audit",
+    );
+
+    const committedBookingFacts = harness.runSql(`select jsonb_build_object(
+      'request',(select to_jsonb(rows) from public.booking_requests rows where id='${request}'),
+      'snapshot',(select to_jsonb(rows) from public.booking_snapshots rows where id=(select booking_snapshot_id from public.booking_requests where id='${request}')),
+      'confirmation',(select to_jsonb(rows) from public.booking_confirmations rows where booking_request_id='${request}'),
+      'link',(select to_jsonb(rows) from public.messaging_conversation_booking_requests rows where booking_request_id='${request}')
+    );`);
+    const sendRestrictionHolder = harness.startSession(`begin;
+      set application_name='messaging_send_restriction';
+      select id from public.booking_requests where id='${request}' for update;
+      select id from public.messaging_conversations where id='${conversation}' for update;
+      select 'MESSAGING_SEND_RESTRICTION_HELD';
+    `);
+    sessions.push(sendRestrictionHolder);
+    await harness.waitForMarker(
+      sendRestrictionHolder,
+      "MESSAGING_SEND_RESTRICTION_HELD",
+    );
+    const waitingSend = harness.startSession(
+      `begin;
+      set application_name='messaging_suspended_send';
+      set local role service_role;
+      select public.admit_messaging_message('${customer}','${conversation}','36000000-0000-4000-8000-000000003712','en','A restricted question');
+      commit;
+    `,
+      true,
+    );
+    sessions.push(waitingSend);
+    await harness.waitForLock("messaging_suspended_send", waitingSend);
+    sendRestrictionHolder.child.stdin
+      .write(`${restriction("customer", customer, "suspend", 0, 3713)}
+      select 'MESSAGING_SEND_RESTRICTION_APPLIED';
+`);
+    await harness.waitForMarker(
+      sendRestrictionHolder,
+      "MESSAGING_SEND_RESTRICTION_APPLIED",
+    );
+    assert.equal(
+      JSON.parse(resultLine(sendRestrictionHolder)).status,
+      "completed",
+    );
+    await harness.finishSession(sendRestrictionHolder, { action: "commit" });
+    await harness.finishSession(waitingSend);
+    assert.equal(
+      JSON.parse(resultLine(waitingSend)).status,
+      "suspended",
+      "Send rechecks customer after request/conversation wait",
+    );
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.messaging_send_attempts where conversation_id='${conversation}';`,
+      ),
+      "0",
+      "Suspended send writes no attempt or moderation receipt",
+    );
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.messaging_messages where conversation_id='${conversation}';`,
+      ),
+      "0",
+      "Suspended send writes no message",
+    );
+    assert.equal(
+      JSON.parse(
+        harness.runSql(
+          `begin; ${restriction("customer", customer, "reactivate", 1, 3714)} commit;`,
+        ),
+      ).status,
+      "completed",
+    );
+    const sendingFirst = harness.startSession(`begin;
+      set application_name='messaging_send_first';
+      set local role service_role;
+      select public.admit_messaging_message('${customer}','${conversation}','36000000-0000-4000-8000-000000003715','en','A retained message');
+      select 'MESSAGING_SEND_FIRST_HELD';
+    `);
+    sessions.push(sendingFirst);
+    await harness.waitForMarker(sendingFirst, "MESSAGING_SEND_FIRST_HELD");
+    const sendingActorProbe = harness.runDocker(
+      harness.psqlArguments(),
+      `begin;
+      select user_id from public.account_contexts
+      where user_id='${customer}' for no key update nowait;
+      rollback;
+`,
+    );
+    assert.notEqual(
+      sendingActorProbe.status,
+      0,
+      "Message admission holds actor SHARE independently of foreign-key KEY SHARE",
+    );
+    assert.match(
+      sendingActorProbe.stderr,
+      /could not obtain lock on row in relation "account_contexts"/,
+      "The non-key actor update is refused by its row lock, not a timeout or fixture error",
+    );
+    const restrictionAfterSend = harness.startSession(
+      `begin;
+      set application_name='messaging_restriction_after_send';
+      ${restriction("customer", customer, "suspend", 2, 3716)}
+      commit;
+    `,
+      true,
+    );
+    sessions.push(restrictionAfterSend);
+    await harness.waitForLock(
+      "messaging_restriction_after_send",
+      restrictionAfterSend,
+    );
+    assert.equal(
+      harness.runSql(`select count(*) from pg_catalog.pg_stat_activity waiter
+      join pg_catalog.pg_stat_activity holder on holder.pid=any(pg_catalog.pg_blocking_pids(waiter.pid))
+      where waiter.application_name='messaging_restriction_after_send' and holder.application_name='messaging_send_first'
+      and holder.wait_event_type is distinct from 'Lock';`),
+      "1",
+      "Message writer owns current actor authority without a reciprocal request/conversation cycle",
+    );
+    await harness.finishSession(sendingFirst, { action: "commit" });
+    await harness.finishSession(restrictionAfterSend);
+    const retainedMessage = JSON.parse(resultLine(sendingFirst));
+    assert.equal(retainedMessage.status, "sent");
+    assert.equal(
+      JSON.parse(resultLine(restrictionAfterSend)).status,
+      "completed",
+    );
+    assert.deepEqual(
+      JSON.parse(
+        harness.runSql(`set role service_role;
+      select public.admit_messaging_message('${customer}','${conversation}','36000000-0000-4000-8000-000000003715','en','A retained message');
+    `),
+      ),
+      retainedMessage,
+      "A message admitted before suspension retains its exact original receipt",
+    );
+    const restrictedHistory = JSON.parse(
+      harness.runSql(`begin;
+      set local request.jwt.claim.sub='${customer}';
+      set local request.jwt.claims='{"sub":"${customer}","aal":"aal1"}';
+      set local role authenticated;
+      select public.get_messaging_conversation('${conversation}',null,20);
+      commit;
+    `),
+    );
+    assert.equal(restrictedHistory.sendRestriction, "customer-suspended");
+    assert.equal(restrictedHistory.canContinueBookingRequest, false);
+    assert.equal(restrictedHistory.booking.contactAllowed, true);
+    assert.equal(
+      restrictedHistory.messages[0].messageId,
+      retainedMessage.messageId,
+    );
+    assert.equal(
+      restrictedHistory.messages[0].originalBody,
+      "A retained message",
+    );
+    assert.equal(
+      harness.runSql(`select jsonb_build_object(
+      'request',(select to_jsonb(rows) from public.booking_requests rows where id='${request}'),
+      'snapshot',(select to_jsonb(rows) from public.booking_snapshots rows where id=(select booking_snapshot_id from public.booking_requests where id='${request}')),
+      'confirmation',(select to_jsonb(rows) from public.booking_confirmations rows where booking_request_id='${request}'),
+      'link',(select to_jsonb(rows) from public.messaging_conversation_booking_requests rows where booking_request_id='${request}')
+    );`),
+      committedBookingFacts,
+      "Suspension preserves exact financial/history bytes, participant IDs, confirmation and attached link",
+    );
+    assert.equal(
+      JSON.parse(
+        harness.runSql(
+          `begin; ${restriction("customer", customer, "reactivate", 3, 3717)} commit;`,
+        ),
+      ).status,
+      "completed",
     );
 
     const requestHolder = harness.startSession(`
@@ -391,6 +967,13 @@ try {
 
     harness.markTimingPhase("setup");
     harness.runSql(cleanup);
+    assert.equal(
+      harness.runSql(`select
+      (select count(*) from auth.users where id='${administrator}')+
+      (select count(*) from public.account_contexts where user_id='${administrator}');`),
+      "0",
+      "Recovered fixture owns an absent synthetic administrator",
+    );
     harness.runSql(`begin;
     ${recoveredPaymentFixture}
     insert into public.cottage_marketplace_listings(profile_id,public_slug,state)
@@ -444,6 +1027,49 @@ try {
       from public.booking_requests requests where id='${request}';`),
       "paid-confirmed",
       "The payment recheck scenario begins from a production recovered confirmation",
+    );
+
+    assert.equal(
+      JSON.parse(
+        harness.runSql(
+          `begin; ${restriction("cottage", profile, "suspend", 0, 3718)} commit;`,
+        ),
+      ).status,
+      "completed",
+    );
+    const cottageRestrictedSend = JSON.parse(
+      harness.runSql(`set role service_role;
+      select public.admit_messaging_message('${customer}','${conversation}','36000000-0000-4000-8000-000000003719','en','Call +964 750 123 4567');
+    `),
+    );
+    assert.equal(
+      cottageRestrictedSend.status,
+      "sent",
+      "suspension_preserves_conversation_history_and_confirmed_cottage_rights: cottage-only restriction preserves confirmed communication/contact rights",
+    );
+    const cottageRestrictedHistory = JSON.parse(
+      harness.runSql(`begin;
+      set local request.jwt.claim.sub='${customer}';
+      set local request.jwt.claims='{"sub":"${customer}","aal":"aal1"}';
+      set local role authenticated;
+      select public.get_messaging_conversation('${conversation}',null,20);
+      commit;
+    `),
+    );
+    assert.equal(cottageRestrictedHistory.sendRestriction, null);
+    assert.equal(cottageRestrictedHistory.booking.contactAllowed, true);
+    assert.equal(cottageRestrictedHistory.booking.writingClosed, false);
+    assert.equal(
+      cottageRestrictedHistory.messages[0].messageId,
+      cottageRestrictedSend.messageId,
+    );
+    assert.equal(
+      JSON.parse(
+        harness.runSql(
+          `begin; ${restriction("cottage", profile, "reactivate", 1, 3720)} commit;`,
+        ),
+      ).status,
+      "completed",
     );
 
     const paymentHolder = harness.startSession(`
@@ -632,7 +1258,7 @@ try {
     );
 
     console.log(
-      "Messaging concurrency passed association revalidation, pre-lock stranger rejection, nonlocking committed reader projection, post-wait authority and payment rechecks, report retry deduplication, Booking Request before conversation lock order, and post-wait cutoff enforcement.",
+      "Messaging suspension passed actual administrator restriction before and after inquiry, booking-link and message writes, immutable confirmed history and cottage-only communication rights. Messaging concurrency passed association revalidation, pre-lock stranger rejection, nonlocking committed reader projection, post-wait authority and payment rechecks, report retry deduplication, Booking Request before conversation lock order, and post-wait cutoff enforcement.",
     );
   } catch (error) {
     failure = error;
@@ -660,6 +1286,10 @@ try {
             '10000000-0000-4000-8000-000000001001','${customer}','${stranger}',
             '10000000-0000-4000-8000-000000003801')),
           'profiles',(select count(*) from public.owner_application_cottage_profiles where id='${profile}'),
+          'sourceRevisions',(select count(*) from public.cottage_profile_source_revisions where id='${sourceRevisionId}'),
+          'reviewCycles',(select count(*) from public.cottage_profile_review_cycles where id='${reviewCycleId}'),
+          'publications',(select count(*) from public.cottage_publication_snapshots where id='${publicationId}'),
+          'suspensionActions',(select count(*) from private.marketplace_suspension_actions where account_user_id in ('${customer}','${owner}') or profile_id='${profile}'),
           'listings',(select count(*) from public.cottage_marketplace_listings where profile_id='${profile}'),
           'requests',(select count(*) from public.booking_requests where id='${request}'),
           'attempts',(select count(*) from public.booking_request_submission_attempts where id='${attempt}'),
@@ -681,6 +1311,10 @@ try {
           users: 0,
           contexts: 0,
           profiles: 0,
+          sourceRevisions: 0,
+          reviewCycles: 0,
+          publications: 0,
+          suspensionActions: 0,
           listings: 0,
           requests: 0,
           attempts: 0,

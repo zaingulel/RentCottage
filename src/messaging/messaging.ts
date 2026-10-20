@@ -6,7 +6,13 @@ const bookingRequestReference = /^RC-REQ-[A-F0-9]{16}$/;
 
 export type CreateConversationResult =
   | { readonly status: "created"; readonly conversationId: string }
-  | { readonly status: "invalid" | "access-required" | "unavailable" };
+  | {
+      readonly status:
+        | "invalid"
+        | "access-required"
+        | "suspended"
+        | "unavailable";
+    };
 
 export type SendMessageResult =
   | { readonly status: "sent"; readonly messageId: string }
@@ -15,6 +21,7 @@ export type SendMessageResult =
       readonly status:
         | "invalid"
         | "access-required"
+        | "suspended"
         | "read-only"
         | "retry"
         | "unavailable";

@@ -698,3 +698,411 @@ begin
 end;
 $$;
 ALTER FUNCTION public.list_administrator_booking_money(text,date,date) OWNER TO postgres;
+CREATE OR REPLACE FUNCTION private.set_marketplace_suspension_core(
+  target_kind text,
+  target_id uuid,
+  target_action text,
+  expected_revision bigint,
+  target_reason text,
+  target_command_id uuid
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare administrator public.account_contexts;
+declare target public.account_contexts;
+declare application public.owner_applications;
+declare profile public.owner_application_cottage_profiles;
+declare listing public.cottage_marketplace_listings;
+declare verification public.owner_application_verification_records;
+declare previous private.marketplace_suspension_actions;
+declare recorded private.marketplace_suspension_actions;
+declare reason text:=regexp_replace(target_reason,'^[[:space:]]+|[[:space:]]+$','','g');
+declare request_ids uuid[];
+declare request_id uuid;
+declare current_revision bigint;
+declare from_state text;
+declare to_state text;
+declare expired_kinds public.owner_verification_document_kind[];
+declare target_summary jsonb;
+begin
+  select * into administrator from public.account_contexts where user_id=(select auth.uid()) for share;
+  if not found
+    or administrator.role<>'platform_administrator'
+    or (select auth.jwt()->>'aal') is distinct from 'aal2' then
+    return jsonb_build_object('status','access-required');
+  end if;
+  if target_kind is null
+    or target_kind not in ('customer','owner','cottage')
+    or target_id is null
+    or target_action is null
+    or target_action not in ('suspend','reactivate')
+    or expected_revision is null
+    or expected_revision<0
+    or target_command_id is null
+    or reason is null
+    or char_length(reason) not between 1 and 1000 then
+    return jsonb_build_object('status','invalid');
+  end if;
+  select * into previous from private.marketplace_suspension_actions where command_id=target_command_id;
+  if found then
+    if (previous.actor_user_id, previous.target_kind, coalesce(previous.account_user_id, previous.profile_id), previous.action, previous.expected_revision, previous.reason)
+      is distinct from (administrator.user_id, target_kind, target_id, target_action, expected_revision, reason) then
+      return jsonb_build_object('status','conflict');
+    end if;
+    return jsonb_build_object('status','completed','actionId', previous.id,'target', public.get_marketplace_suspension(target_kind, target_id));
+  end if;
+  if target_kind='cottage' then
+    select * into profile from public.owner_application_cottage_profiles where id=target_id for update;
+    if not found then
+      return jsonb_build_object('status','not-found');
+    end if;
+  else
+    if target_kind='owner' then
+      select * into application from public.owner_applications where owner_user_id=target_id for update;
+      if not found then
+        return jsonb_build_object('status','not-found');
+      end if;
+    end if;
+    select * into target from public.account_contexts
+    where user_id=target_id and role<>'platform_administrator' for update;
+    if not found or target.role='platform_administrator'
+      or (target_kind='owner' and target.role<>'cottage_owner') then
+      return jsonb_build_object('status','not-found');
+    end if;
+  end if;
+  -- A same-target contender may have committed while this command waited for its target.
+  select * into previous from private.marketplace_suspension_actions where command_id=target_command_id;
+  if found then
+    if (previous.actor_user_id, previous.target_kind, coalesce(previous.account_user_id, previous.profile_id), previous.action, previous.expected_revision, previous.reason)
+      is distinct from (administrator.user_id, target_kind, target_id, target_action, expected_revision, reason) then
+      return jsonb_build_object('status','conflict');
+    end if;
+    return jsonb_build_object('status','completed','actionId', previous.id,'target', public.get_marketplace_suspension(target_kind, target_id));
+  end if;
+  if target_kind='cottage' then
+    if profile.status='abandoned' then
+      return jsonb_build_object('status','conflict','reason','abandoned-profile');
+    end if;
+    select * into listing from public.cottage_marketplace_listings where profile_id=target_id for update nowait;
+  elsif target_kind='owner' then
+    perform 1 from public.owner_application_cottage_profiles profiles
+    where profiles.owner_user_id=target_id order by profiles.id for update nowait;
+  end if;
+  if target_kind='customer' then
+    current_revision:=target.customer_suspension_revision;
+    from_state:=case when target.customer_suspended then 'suspended' else 'active' end;
+    to_state:=case when target_action='suspend' then 'suspended' else 'active' end;
+  elsif target_kind='cottage' then
+    current_revision:=profile.suspension_revision;
+    from_state:=case when profile.business_suspended then 'suspended' else coalesce(listing.state::text,'unpublished') end;
+    if (profile.business_suspended and listing.profile_id is not null and listing.state<>'suspended')
+      or (not profile.business_suspended and listing.state='suspended')
+      or (profile.business_suspended and ((profile.listing_state_before_suspension is null)<>(listing.profile_id is null))) then
+      return jsonb_build_object('status','unavailable');
+    end if;
+    if profile.business_suspended=(target_action='suspend') then
+      return jsonb_build_object('status','conflict');
+    end if;
+    if target_action='suspend' then
+      to_state:='suspended';
+    else
+      target_summary:=public.get_marketplace_suspension(target_kind, target_id);
+      if target_summary->>'status'<>'ready' then
+        return jsonb_build_object('status','unavailable');
+      end if;
+      to_state:=target_summary->>'restorationState';
+    end if;
+  else
+    current_revision:=application.version;
+    from_state:=application.status::text;
+    if target.owner_approval_state::text is distinct from from_state
+      and from_state in ('approved','expired','suspended') then
+      return jsonb_build_object('status','unavailable');
+    end if;
+    if target_action='suspend' then
+      if from_state not in ('approved','expired') then
+        return jsonb_build_object('status','conflict');
+      end if;
+      to_state:='suspended';
+    else
+      if from_state<>'suspended' then
+        return jsonb_build_object('status','conflict');
+      end if;
+      select * into verification
+      from public.owner_application_verification_records records
+      where records.id=application.current_verification_record_id
+        and records.application_id=application.id
+        and records.decision='approved';
+      if not found
+        or jsonb_typeof(verification.relevant_expiry_dates) is distinct from 'object'
+        or coalesce(cardinality(verification.evidence_version_ids), 0)<1
+        or cardinality(verification.evidence_types) is distinct from cardinality(verification.evidence_version_ids) then
+        return jsonb_build_object('status','unavailable');
+      end if;
+      if exists(select 1
+      from jsonb_each_text(verification.relevant_expiry_dates) expiry
+      where expiry.key not in (select unnest(enum_range(null::public.owner_verification_document_kind))::text)
+        or public.owner_application_parse_expiry_date(expiry.value) is null) then
+        return jsonb_build_object('status','unavailable');
+      end if;
+      select array_agg(expiry.key::public.owner_verification_document_kind
+      order by expiry.key) into expired_kinds
+      from jsonb_each_text(verification.relevant_expiry_dates) expiry
+      where public.owner_application_parse_expiry_date(expiry.value)<=current_date;
+      to_state:=case when cardinality(expired_kinds)>0 then 'expired' else 'approved' end;
+    end if;
+  end if;
+  if current_revision<>expected_revision or from_state=to_state then
+    return jsonb_build_object('status','conflict');
+  end if;
+  if target_action='suspend' then
+    select coalesce(array_agg(selected.id), '{}'::uuid[]) into request_ids
+    from (select requests.id
+    from public.booking_requests requests
+    where requests.status='pending'
+      and ((target_kind='customer'
+      and requests.customer_user_id=target_id)
+      or (target_kind='owner'
+      and requests.owner_user_id=target_id)
+      or (target_kind='cottage'
+      and requests.profile_id=target_id))
+    order by requests.id for update nowait) selected;
+    perform 1
+    from public.booking_request_submission_attempts attempts
+    where attempts.booking_request_id=any(request_ids)
+    order by attempts.id for update nowait;
+    if exists(select 1
+    from public.booking_requests requests left join public.booking_request_submission_attempts attempts on attempts.booking_request_id=requests.id
+    where requests.id=any(request_ids)
+      and (attempts.id is null
+      or attempts.state<>'finalized'
+      or attempts.customer_user_id<>requests.customer_user_id
+      or attempts.profile_id<>requests.profile_id)) then
+      return jsonb_build_object('status','unavailable');
+    end if;
+  end if;
+  insert into private.marketplace_suspension_actions(command_id, target_kind, account_user_id, profile_id, actor_user_id, action, expected_revision, resulting_revision, from_state, to_state, reason)
+  values(target_command_id, target_kind, case when target_kind<>'cottage' then target_id end, case when target_kind='cottage' then target_id end, administrator.user_id, target_action, expected_revision, expected_revision+1, from_state, to_state, reason)
+  on conflict(command_id) do nothing returning * into recorded;
+  if not found then
+    return jsonb_build_object('status','conflict');
+  end if;
+  if target_kind='customer' then
+    update public.account_contexts set customer_suspended=(target_action='suspend'), customer_suspension_revision=customer_suspension_revision+1, updated_at=clock_timestamp()
+    where user_id=target_id;
+  elsif target_kind='cottage' then
+    update public.owner_application_cottage_profiles
+    set business_suspended=(target_action='suspend'), suspension_revision=suspension_revision+1,
+      listing_state_before_suspension=case when target_action='suspend' then listing.state else listing_state_before_suspension end,
+      updated_at=clock_timestamp()
+    where id=target_id;
+    if listing.profile_id is not null then
+      update public.cottage_marketplace_listings set state=to_state::public.cottage_marketplace_state where profile_id=target_id;
+    end if;
+  else
+    update public.owner_applications set status=to_state::public.owner_application_status, version=version+1, review_due_at=null, review_paused_at=null, updated_at=clock_timestamp()
+    where id=application.id;
+    update public.account_contexts set owner_approval_state=to_state::public.owner_approval_state, owner_suspension_revision=owner_suspension_revision+1, updated_at=clock_timestamp()
+    where user_id=target_id;
+    insert into public.owner_application_transitions(application_id, from_status, to_status, application_version, actor_user_id, actor_subject_id, reason) values(application.id, application.status, to_state::public.owner_application_status, application.version+1, administrator.user_id, administrator.user_id::text, reason);
+    if target_action='suspend' then
+      insert into public.owner_application_notices(application_id, owner_user_id, kind, reason) values(application.id, target_id,'suspended', reason);
+    elsif to_state='expired' then
+      perform private.prepare_owner_application_renewal(application.id, verification.id, expired_kinds);
+    end if;
+  end if;
+  if target_action='suspend' then
+    foreach request_id in array request_ids loop
+      perform private.prepare_booking_request_release(request_id, administrator.user_id,'suspend','other', null, recorded.id);
+    end loop;
+  end if;
+  return jsonb_build_object('status','completed','actionId', recorded.id,'target', public.get_marketplace_suspension(target_kind, target_id));
+end;
+$$;
+ALTER FUNCTION private.set_marketplace_suspension_core(text, uuid, text, bigint, text, uuid) OWNER TO postgres;
+CREATE OR REPLACE FUNCTION public.set_marketplace_suspension(
+  target_kind text,
+  target_id uuid,
+  target_action text,
+  expected_revision bigint,
+  target_reason text,
+  target_command_id uuid
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+begin
+  return private.set_marketplace_suspension_core(target_kind, target_id, target_action, expected_revision, target_reason, target_command_id);
+exception when lock_not_available then
+  return jsonb_build_object('status','retry');
+end;
+$$;
+ALTER FUNCTION public.set_marketplace_suspension(text, uuid, text, bigint, text, uuid) OWNER TO postgres;
+CREATE OR REPLACE FUNCTION public.get_marketplace_suspension(
+  target_kind text, target_id uuid, before_created_at timestamptz DEFAULT NULL,
+  before_id uuid DEFAULT NULL, page_size integer DEFAULT 20
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare administrator public.account_contexts;
+declare facts record;
+declare target public.account_contexts;
+declare application public.owner_applications;
+declare profile public.owner_application_cottage_profiles;
+declare listing public.cottage_marketplace_listings;
+declare verification public.owner_application_verification_records;
+declare current_state text;
+declare current_revision bigint;
+declare can_suspend boolean;
+declare can_reactivate boolean;
+declare restriction_reason text;
+declare restoration_state text;
+declare restoration_restriction text;
+declare verification_valid boolean;
+declare verification_expired boolean;
+begin
+  select * into administrator from public.account_contexts
+  where user_id=(select auth.uid()) for share;
+  if not found or administrator.role<>'platform_administrator'
+    or (select auth.jwt()->>'aal') is distinct from 'aal2' then
+    return jsonb_build_object('status','access-required');
+  end if;
+  if get_marketplace_suspension.target_kind is null
+    or get_marketplace_suspension.target_kind not in ('customer','owner','cottage')
+    or get_marketplace_suspension.target_id is null or page_size is null or page_size not between 1 and 50
+    or (before_created_at is null)<>(before_id is null) then
+    return jsonb_build_object('status','invalid');
+  end if;
+  -- Target, immutable history and release counts share one database snapshot.
+  with target_actions as materialized (
+    select actions.* from private.marketplace_suspension_actions actions
+    where actions.target_kind=get_marketplace_suspension.target_kind
+      and ((get_marketplace_suspension.target_kind='cottage' and actions.profile_id=get_marketplace_suspension.target_id)
+        or (get_marketplace_suspension.target_kind<>'cottage' and actions.account_user_id=get_marketplace_suspension.target_id))
+  ), action_counts as materialized (
+    select actions.*, count(work.id) as affected,
+      count(work.id) filter(where work.state='complete') as resolved,
+      count(work.id) filter(where work.state='processing') as processing,
+      count(work.id) filter(where work.state='quarantined') as quarantined
+    from target_actions actions
+    left join public.booking_request_release_work work on work.suspension_action_id=actions.id
+    group by actions.id, actions.command_id, actions.target_kind, actions.account_user_id,
+      actions.profile_id, actions.actor_user_id, actions.action, actions.expected_revision,
+      actions.resulting_revision, actions.from_state, actions.to_state, actions.reason, actions.created_at
+  ), page as materialized (
+    select actions.*, row_number() over(order by created_at desc, id desc) as ordinal
+    from action_counts actions
+    where before_created_at is null or (actions.created_at, actions.id)<(before_created_at, before_id)
+    order by actions.created_at desc, actions.id desc limit page_size+1
+  )
+  select contexts as context, applications as application, profiles as profile,
+    listings as listing, records as verification,
+    exists(select 1 from public.cottage_publication_snapshots publications
+      where publications.id=profiles.current_publication_id and publications.profile_id=profiles.id) as publication_matches,
+    exists(select 1 from public.cottage_shift_schedule_revisions schedules
+      where schedules.id=profiles.current_shift_schedule_id and schedules.profile_id=profiles.id) as schedule_matches,
+    (select jsonb_build_object('affected', coalesce(sum(affected), 0),
+      'resolved', coalesce(sum(resolved), 0),'processing', coalesce(sum(processing), 0),
+      'quarantined', coalesce(sum(quarantined), 0)) from action_counts) as release_summary,
+    (select coalesce(jsonb_agg(jsonb_build_object(
+      'id', id,'commandId', command_id,'actorUserId', actor_user_id,'action', action,
+      'expectedRevision', expected_revision,'resultingRevision', resulting_revision,
+      'fromState', from_state,'toState', to_state,'reason', reason,'createdAt', created_at,
+      'affected', affected,'resolved', resolved,'processing', processing,'quarantined', quarantined
+    ) order by created_at desc, id desc),'[]'::jsonb) from page where ordinal<=page_size) as actions,
+    (select jsonb_build_object('createdAt', created_at,'id', id) from page
+      where ordinal=page_size and exists(select 1 from page where ordinal>page_size)) as next_cursor
+  into facts
+  from (select 1) singleton
+  left join public.owner_application_cottage_profiles profiles on get_marketplace_suspension.target_kind='cottage'
+    and profiles.id=get_marketplace_suspension.target_id
+  left join public.account_contexts contexts
+    on contexts.user_id=case when get_marketplace_suspension.target_kind='cottage' then profiles.owner_user_id else get_marketplace_suspension.target_id end
+      and contexts.role<>'platform_administrator'
+  left join public.owner_applications applications on applications.owner_user_id=contexts.user_id
+    and get_marketplace_suspension.target_kind in ('owner','cottage')
+  left join public.cottage_marketplace_listings listings on listings.profile_id=profiles.id
+  left join public.owner_application_verification_records records
+    on records.id=applications.current_verification_record_id
+      and records.application_id=applications.id;
+  target:=facts.context;
+  application:=facts.application;
+  profile:=facts.profile;
+  listing:=facts.listing;
+  verification:=facts.verification;
+  if (get_marketplace_suspension.target_kind='cottage' and profile.id is null)
+    or (get_marketplace_suspension.target_kind<>'cottage' and target.user_id is null)
+    or (get_marketplace_suspension.target_kind='owner' and (application.id is null or target.role<>'cottage_owner')) then
+    return jsonb_build_object('status','not-found');
+  end if;
+  if verification.id is not null and verification.decision='approved'
+    and jsonb_typeof(verification.relevant_expiry_dates)='object'
+    and coalesce(cardinality(verification.evidence_version_ids), 0)>0
+    and cardinality(verification.evidence_types)=cardinality(verification.evidence_version_ids) then
+    select not exists(select 1 from jsonb_each_text(verification.relevant_expiry_dates) expiry
+      where expiry.key not in (select unnest(enum_range(null::public.owner_verification_document_kind))::text)
+        or public.owner_application_parse_expiry_date(expiry.value) is null),
+      exists(select 1 from jsonb_each_text(verification.relevant_expiry_dates) expiry
+        where public.owner_application_parse_expiry_date(expiry.value)<=current_date)
+    into verification_valid, verification_expired;
+  else
+    verification_valid:=false;
+  end if;
+  if get_marketplace_suspension.target_kind='customer' then
+    current_state:=case when target.customer_suspended then 'suspended' else 'active' end;
+    current_revision:=target.customer_suspension_revision;
+    can_suspend:=not target.customer_suspended;
+    can_reactivate:=target.customer_suspended;
+    restoration_state:='active';
+  elsif get_marketplace_suspension.target_kind='owner' then
+    current_state:=application.status::text;
+    current_revision:=application.version;
+    can_suspend:=application.status in ('approved','expired');
+    can_reactivate:=application.status='suspended';
+    if current_state in ('approved','expired','suspended')
+      and target.owner_approval_state::text is distinct from current_state then
+      return jsonb_build_object('status','unavailable');
+    end if;
+    if not verification_valid then
+      restoration_restriction:='verification-unavailable';
+      if can_reactivate then
+        can_reactivate:=false;restriction_reason:='verification-unavailable';
+      end if;
+    else
+      restoration_state:=case when verification_expired then 'expired' else 'approved' end;
+      if verification_expired then
+        restoration_restriction:='verification-expired';
+      end if;
+    end if;
+    if not can_suspend
+      and not can_reactivate
+      and restriction_reason is null then restriction_reason:='owner-application-ineligible';
+    end if;
+  else
+    current_state:=case when profile.business_suspended then 'suspended' else coalesce(listing.state::text,'unpublished') end;
+    current_revision:=profile.suspension_revision;
+    can_suspend:=not profile.business_suspended;
+    can_reactivate:=profile.business_suspended;
+    if profile.status='abandoned' then
+      can_suspend:=false;can_reactivate:=false;restriction_reason:='abandoned-profile';
+    elsif (profile.business_suspended and listing.profile_id is not null and listing.state<>'suspended')
+      or (not profile.business_suspended and listing.state='suspended')
+      or (profile.business_suspended and ((profile.listing_state_before_suspension is null)<>(listing.profile_id is null))) then
+      return jsonb_build_object('status','unavailable');
+    end if;
+    if profile.listing_state_before_suspension is null then
+      restoration_state:='unpublished';
+    elsif profile.listing_state_before_suspension='paused' then
+      restoration_state:='paused';restoration_restriction:='previously-paused';
+    elsif target.role='cottage_owner' and target.owner_approval_state='approved'
+      and application.status='approved' and verification_valid and not verification_expired
+      and facts.publication_matches and facts.schedule_matches then
+      restoration_state:='published';
+    else
+      restoration_state:='paused';restoration_restriction:='publication-or-owner-ineligible';
+    end if;
+  end if;
+  return jsonb_build_object('status','ready','targetKind', get_marketplace_suspension.target_kind,'targetId', get_marketplace_suspension.target_id,
+    'state', current_state,'revision', current_revision,'applicationId', application.id,
+    'canSuspend', can_suspend,'canReactivate', can_reactivate,'restrictionReason', restriction_reason,
+    'restorationState', restoration_state,'restorationRestriction', restoration_restriction,
+    'releaseSummary', facts.release_summary,'actions', facts.actions,'nextCursor', facts.next_cursor);
+end;
+$$;
+ALTER FUNCTION public.get_marketplace_suspension(text, uuid, timestamptz, uuid, integer) OWNER TO postgres;

@@ -136,21 +136,49 @@ delete from public.booking_refund_intents where booking_request_id='${r.request}
 delete from public.booking_payout_commands where booking_request_id='${r.request}';
 `;
 
+// Hold exact targets before their actions so cleanup cannot race a new restriction or FK reference.
+const suspensionCleanupPreflight = (users, profiles, removedRequests) => `
+create temporary table fixture_suspension_actions_to_delete(id uuid primary key) on commit drop;
+do $suspension_cleanup$
+begin
+  perform 1 from public.account_contexts
+  where user_id=any(array[${users}]::uuid[]) order by user_id for update;
+  perform 1 from public.owner_application_cottage_profiles
+  where id=any(array[${profiles}]::uuid[]) order by id for update;
+  insert into pg_temp.fixture_suspension_actions_to_delete(id)
+  select actions.id from private.marketplace_suspension_actions actions
+  where actions.account_user_id=any(array[${users}]::uuid[])
+    or actions.profile_id=any(array[${profiles}]::uuid[])
+  order by actions.id for update;
+  if exists(
+    select 1 from public.booking_request_release_work work
+    join pg_temp.fixture_suspension_actions_to_delete actions on actions.id=work.suspension_action_id
+    where not work.booking_request_id=any(array[${removedRequests}]::uuid[])
+  ) then
+    raise exception 'Fixture suspension action has an outside release-work reference'
+      using errcode='RC409';
+  end if;
+end;
+$suspension_cleanup$;
+`;
+const suspensionActionDeletes = `delete from private.marketplace_suspension_actions
+where id in (select id from pg_temp.fixture_suspension_actions_to_delete);
+`;
+
 const reset = (
   r,
   { completion, terminalRequest },
-) => `set session_replication_role=replica;
-${completion ? completionDeletes(r) : ""}delete from public.booking_notification_events where booking_request_id='${r.request}';
+) => `${completion ? completionDeletes(r) : ""}delete from public.booking_notification_events where booking_request_id='${r.request}';
 delete from public.booking_cancellation_administrator_audit where cancellation_id in (select id from public.booking_cancellations where booking_request_id='${r.request}');
 delete from public.booking_cancellation_incidents where cancellation_id in (select id from public.booking_cancellations where booking_request_id='${r.request}');
 delete from public.booking_cancellations where booking_request_id='${r.request}';
 ${terminalRequest ? terminalRequestDeletes(r) : ""}delete from public.booking_request_payment_history where booking_request_id='${r.request}' and to_state='cancelled';
 update public.cottage_booking_period_commitments set status='confirmed_booking' where id='${r.commitment}';
-update public.cottage_booking_period_occupancies set active=true where booking_period_commitment_id='${r.commitment}';
-set session_replication_role=origin;`;
+update public.cottage_booking_period_occupancies set active=true where booking_period_commitment_id='${r.commitment}';`;
 
 export const cancellationReset = ({ completion = false } = {}) =>
-  reset(rows("100"), { completion, terminalRequest: false });
+  `set session_replication_role=replica;
+${reset(rows("100"), { completion, terminalRequest: false })}set session_replication_role=origin;`;
 
 export const refundReset = ({ stem = "100" } = {}) => {
   const r = rows(stem);
@@ -217,7 +245,7 @@ delete from public.cottage_booking_period_commitments where id='${r.commitment}'
 delete from public.booking_snapshots where id='${r.snapshot}';
 ${listedCottage ? listedCottageDeletes(r) : ""}delete from public.cottage_shifts where schedule_revision_id='${r.schedule}';
 delete from public.cottage_shift_schedule_revisions where id='${r.schedule}';
-delete from public.owner_application_cottage_profiles where id='${r.profile}';
+${suspensionActionDeletes}delete from public.owner_application_cottage_profiles where id='${r.profile}';
 delete from public.account_names where user_id in (${users});
 delete from public.account_contexts where user_id in (${users});
 delete from auth.users where id in (${users});
@@ -234,8 +262,10 @@ export const confirmedBookingCleanup = ({
   // Request events have no receipt; cleanup follows the actual work identity.
   const workIdentity = terminalRequest ? "notification_id" : "receipt_id";
   const users = `'${r.owner}','${r.customer}','${r.third}','${selectedAdministrator}'`;
-  return `${reset(r, { completion, terminalRequest })} set session_replication_role=replica;
-${settlement ? settlementDeletes(r) : ""}${confirmedBookingDeletes(r, { workIdentity, listedCottage: false, users })}set session_replication_role=origin;`;
+  return `begin;
+${suspensionCleanupPreflight(users, `'${r.profile}'`, terminalRequest ? `'${r.request}'` : "")}set local session_replication_role=replica;
+${reset(r, { completion, terminalRequest })}${settlement ? settlementDeletes(r) : ""}${confirmedBookingDeletes(r, { workIdentity, listedCottage: true, users })}set local session_replication_role=origin;
+commit;`;
 };
 
 export const customerReviewCleanup = (
@@ -260,7 +290,12 @@ export const customerReviewCleanup = (
 delete from public.account_contexts where user_id in (${reusedAuthUsers.map((user) => `'${user}'`).join(",")});
 `
     : "";
-  return `set session_replication_role=replica;
+  const targetUsers = [
+    users,
+    ...reusedAuthUsers.map((user) => `'${user}'`),
+  ].join(",");
+  return `begin;
+${suspensionCleanupPreflight(targetUsers, `'${r.profile}'`, "")}set local session_replication_role=replica;
 delete from public.customer_review_translation_reports where translation_id in (select translations.id from public.customer_review_translations translations join public.customer_reviews reviews on reviews.id=translations.review_id where reviews.booking_request_id='${r.request}');
 delete from public.customer_review_translations where review_id in (select id from public.customer_reviews where booking_request_id='${r.request}');
 delete from public.customer_review_reply_hides where review_id in (select id from public.customer_reviews where booking_request_id='${r.request}');
@@ -268,7 +303,8 @@ delete from public.customer_review_replies where review_id in (select id from pu
 delete from public.customer_review_hides where review_id in (select id from public.customer_reviews where booking_request_id='${r.request}');
 delete from public.customer_reviews where booking_request_id='${r.request}';
 ${completionDeletes(r)}delete from public.booking_notification_events where booking_request_id='${r.request}';
-${confirmedBookingDeletes(r, { workIdentity: "receipt_id", listedCottage: true, users })}${reusedAccountContextDeletes}set session_replication_role=origin;`;
+${confirmedBookingDeletes(r, { workIdentity: "receipt_id", listedCottage: true, users })}${reusedAccountContextDeletes}set local session_replication_role=origin;
+commit;`;
 };
 
 const lifecycleDeletes = (
@@ -286,7 +322,8 @@ export const confirmedBookingAccessCleanup = ({
   lifecycle = false,
 } = {}) => {
   const r = rows(stem);
-  return `set session_replication_role=replica;
+  return `begin;
+${suspensionCleanupPreflight(`'${owner}','${customer}','${r.third}'`, `'${r.profile}'`, "")}set local session_replication_role=replica;
 delete from public.booking_confirmation_notification_attempts where notification_id in (select notification_id from public.booking_confirmation_notification_work where booking_request_id='${r.request}');
 delete from public.fictional_booking_confirmation_notification_effects where booking_request_id='${r.request}';
 delete from public.booking_confirmation_notification_work where booking_request_id='${r.request}';
@@ -297,7 +334,8 @@ delete from public.payment_provider_operations where id='${r.operation}';
 delete from public.booking_receipts where booking_confirmation_id='${r.confirmation}'; delete from public.booking_confirmations where id='${r.confirmation}';
 delete from public.booking_request_capture_work where booking_request_id='${r.request}'; delete from public.booking_requests where id='${r.request}';
 delete from public.cottage_booking_period_commitments where id='${r.commitment}'; delete from public.booking_snapshots where id='${r.snapshot}';
-delete from public.owner_application_cottage_profiles where id='${r.profile}'; delete from public.account_names where user_id in ('${owner}','${customer}','${r.third}'); delete from public.account_contexts where user_id in ('${owner}','${customer}','${r.third}'); delete from auth.users where id in ('${owner}','${customer}','${r.third}'); set session_replication_role=origin;`;
+${suspensionActionDeletes}delete from public.owner_application_cottage_profiles where id='${r.profile}'; delete from public.account_names where user_id in ('${owner}','${customer}','${r.third}'); delete from public.account_contexts where user_id in ('${owner}','${customer}','${r.third}'); delete from auth.users where id in ('${owner}','${customer}','${r.third}'); set local session_replication_role=origin;
+commit;`;
 };
 
 export const preparationReminderCleanup = (event) => {
@@ -386,7 +424,7 @@ export const captureCleanup = ({
 } = {}) => {
   const r = rows(stem);
   return `begin;
-${paymentRecovery ? paymentRecoveryOpeningDeletes(r) : ""}  alter table public.booking_notification_events disable trigger reject_booking_notification_events_change;
+${suspensionCleanupPreflight(`'${r.owner}','${r.customer}','${r.third}'`, `'${r.profile}'`, `'${r.request}'`)}${paymentRecovery ? paymentRecoveryOpeningDeletes(r) : ""}  alter table public.booking_notification_events disable trigger reject_booking_notification_events_change;
   delete from public.booking_notification_events where booking_request_id = '${r.request}';
   alter table public.booking_notification_events enable trigger reject_booking_notification_events_change;
   alter table public.payment_provider_operations disable trigger guard_payment_provider_admission;
@@ -430,7 +468,7 @@ ${publishedCottage ? publishedCottageDeletes(r) : ""}  alter table public.cottag
   alter table public.cottage_shift_schedule_revisions disable trigger reject_cottage_shift_schedule_revision_delete;
   delete from public.cottage_shift_schedule_revisions where id = '${r.schedule}';
   alter table public.cottage_shift_schedule_revisions enable trigger reject_cottage_shift_schedule_revision_delete;
-  delete from public.owner_application_cottage_profiles where id = '${r.profile}';
+${suspensionActionDeletes}  delete from public.owner_application_cottage_profiles where id = '${r.profile}';
   delete from public.account_contexts where user_id in ('${r.owner}', '${r.customer}', '${r.third}');
   delete from auth.users where id in ('${r.owner}', '${r.customer}', '${r.third}');
 alter table public.payment_provider_operations enable trigger guard_payment_provider_admission;
@@ -444,7 +482,7 @@ export const publishedCottageCleanup = ({ profiles, users }) => {
   const userList = quoted(users);
   const schedules = `select id from public.cottage_shift_schedule_revisions where profile_id in (${profileList})`;
   return `begin;
-  delete from public.cottage_booking_period_commitments where profile_id in (${profileList});
+${suspensionCleanupPreflight(userList, profileList, "")}  delete from public.cottage_booking_period_commitments where profile_id in (${profileList});
   delete from public.cottage_inventory_availability where schedule_revision_id in (${schedules});
   delete from public.cottage_inventory_date_price_overrides where schedule_revision_id in (${schedules});
   delete from public.cottage_inventory_weekday_price_overrides where schedule_revision_id in (${schedules});
@@ -465,7 +503,7 @@ export const publishedCottageCleanup = ({ profiles, users }) => {
   alter table public.cottage_profile_source_revisions disable trigger reject_cottage_profile_source_delete;
   delete from public.cottage_profile_source_revisions where profile_id in (${profileList});
   alter table public.cottage_profile_source_revisions enable trigger reject_cottage_profile_source_delete;
-  delete from public.owner_application_cottage_profiles where id in (${profileList});
+${suspensionActionDeletes}  delete from public.owner_application_cottage_profiles where id in (${profileList});
   delete from public.account_contexts where user_id in (${userList});
   delete from auth.users where id in (${userList});
 commit;`;

@@ -2,23 +2,40 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { push, refresh, send, translate, report } = vi.hoisted(() => ({
-  push: vi.fn(),
-  refresh: vi.fn(),
-  send: vi.fn(),
-  translate: vi.fn(),
-  report: vi.fn(),
-}));
+const { push, refresh, send, translate, report, openBooking } = vi.hoisted(
+  () => ({
+    push: vi.fn(),
+    refresh: vi.fn(),
+    send: vi.fn(),
+    translate: vi.fn(),
+    report: vi.fn(),
+    openBooking: vi.fn(),
+  }),
+);
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh }) }));
 vi.mock("@/messaging/actions", () => ({
+  openBookingMessagingConversation: openBooking,
   sendMessagingMessage: send,
   translateMessagingMessage: translate,
   reportMessagingTranslation: report,
 }));
 
 import type { MessagingConversation as Conversation } from "@/messaging/supabase-messaging-reader";
+import { messagingMessages } from "@/i18n/messaging-messages";
+import { MessagingBookingLink } from "./messaging-booking-link";
 import { MessagingConversation } from "./messaging-conversation";
+
+const suspensionExplanations = {
+  en: "Your customer access is suspended. You can read existing conversations, but cannot start a conversation or send messages.",
+  ar: "صلاحية العميل لديك معلقة. يمكنك قراءة المحادثات السابقة، لكن لا يمكنك بدء محادثة أو إرسال رسائل.",
+  ckb: "دەسەڵاتی کڕیاریی تۆ ڕاگیراوە. دەتوانیت گفتوگۆکانی پێشوو بخوێنیتەوە، بەڵام ناتوانیت گفتوگۆیەک دەست پێ بکەیت یان نامە بنێریت.",
+} as const;
+const openingFailureExplanations = {
+  en: "The conversation could not be opened. Try again.",
+  ar: "تعذر فتح المحادثة. حاول مرة أخرى.",
+  ckb: "گفتوگۆکە نەکرایەوە. دووبارە هەوڵ بدەرەوە.",
+} as const;
 
 const conversation: Conversation = {
   conversationId: "33333333-3333-4333-8333-333333333333",
@@ -28,6 +45,7 @@ const conversation: Conversation = {
     publicSlug: "cottage-0123456789abcdef0123456789abcdef",
   },
   actorRole: "customer",
+  sendRestriction: null,
   createdAt: "2099-08-20T12:00:00.000Z",
   canContinueBookingRequest: true,
   booking: null,
@@ -58,6 +76,71 @@ const conversation: Conversation = {
 
 describe("Messaging conversation", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it.each(["en", "ar", "ckb"] as const)(
+    "keeps suspended history and translation readable in %s",
+    async (locale) => {
+      const copy = messagingMessages[locale];
+      const user = userEvent.setup();
+      const { rerender } = render(
+        <MessagingConversation
+          locale={locale}
+          conversation={{
+            ...conversation,
+            sendRestriction: "customer-suspended",
+            canContinueBookingRequest: false,
+          }}
+        />,
+      );
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        suspensionExplanations[locale],
+      );
+      expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: copy.refresh })).toBeEnabled();
+      if (locale === "en") {
+        await user.click(
+          screen.getByRole("button", { name: copy.viewOriginal }),
+        );
+        expect(
+          screen.getByText("هل يمكننا استخدام الحديقة؟"),
+        ).toBeInTheDocument();
+      }
+      rerender(
+        <MessagingConversation locale={locale} conversation={conversation} />,
+      );
+      expect(screen.getByRole("textbox")).toBeInTheDocument();
+    },
+  );
+
+  it.each(["en", "ar", "ckb"] as const)(
+    "becomes explicitly read-only after a suspended send in %s",
+    async (locale) => {
+      const copy = messagingMessages[locale];
+      send.mockResolvedValue({ status: "suspended" });
+      const user = userEvent.setup();
+      render(
+        <MessagingConversation
+          locale={locale}
+          conversation={conversation}
+          contextQuery="guests=4"
+        />,
+      );
+      expect(
+        screen.getByRole("link", { name: copy.booking }),
+      ).toBeInTheDocument();
+      await user.type(screen.getByRole("textbox"), "A safe question");
+      await user.click(screen.getByRole("button", { name: copy.send }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        suspensionExplanations[locale],
+      );
+      expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: copy.refresh })).toBeEnabled();
+      expect(refresh).toHaveBeenCalled();
+      expect(
+        screen.queryByRole("link", { name: copy.booking }),
+      ).not.toBeInTheDocument();
+    },
+  );
 
   it("renders authoritative current and prior booking lifecycle", () => {
     const booking = {
@@ -373,4 +456,50 @@ describe("Messaging conversation", () => {
       screen.queryByRole("button", { name: "Send message" }),
     ).not.toBeInTheDocument();
   });
+});
+
+describe("Messaging booking link", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    openBooking.mockReset();
+  });
+  it.each(["en", "ar", "ckb"] as const)(
+    "distinguishes suspended from unavailable entry in %s",
+    async (locale) => {
+      const copy = messagingMessages[locale];
+      const user = userEvent.setup();
+      openBooking
+        .mockResolvedValueOnce({ status: "suspended" })
+        .mockResolvedValueOnce({ status: "unavailable" })
+        .mockResolvedValueOnce({
+          status: "created",
+          conversationId: conversation.conversationId,
+        });
+      render(
+        <MessagingBookingLink
+          locale={locale}
+          reference="RC-REQ-0123456789ABCDEF"
+        />,
+      );
+      const button = screen.getByRole("button", { name: copy.open });
+      await user.click(button);
+      await waitFor(() => expect(button).toBeEnabled());
+      const suspendedText = (await screen.findByRole("status")).textContent;
+      expect(push).not.toHaveBeenCalled();
+      await user.click(button);
+      await waitFor(() => expect(button).toBeEnabled());
+      expect([suspendedText, screen.getByRole("status").textContent]).toEqual([
+        suspensionExplanations[locale],
+        openingFailureExplanations[locale],
+      ]);
+      expect(screen.getByRole("status")).not.toHaveTextContent(
+        copy.unavailable,
+      );
+      expect(push).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: copy.open }));
+      expect(push).toHaveBeenCalledWith(
+        `/${locale}/messages/${conversation.conversationId}`,
+      );
+    },
+  );
 });

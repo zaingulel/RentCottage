@@ -783,6 +783,91 @@ select is(
 reset role;
 rollback to savepoint customer_review_phone_confirmation_control;
 
+savepoint customer_review_suspension;
+select lives_ok($test$
+do $body$
+declare result jsonb;
+begin
+  perform set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003802',true);
+  perform set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003802","role":"authenticated","aal":"aal2"}',true);
+  set local role authenticated;
+  result:=public.set_marketplace_suspension('customer','10000000-0000-4000-8000-000000001002','suspend',0,'Review safety restriction','44000000-0000-4000-8000-000000000301');
+  if result->>'status' is distinct from 'completed' then raise exception 'restriction failed: %',result; end if;
+  perform set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+  perform set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001002","role":"authenticated","aal":"aal1"}',true);
+  result:=public.get_customer_review('RC-REQ-0000000000001001');
+  if result is distinct from '{"status":"suspended"}'::jsonb then raise exception 'new eligibility must be suspended: %',result; end if;
+  result:=public.submit_customer_review('RC-REQ-0000000000001001',5,'en','Blocked new review');
+  if result is distinct from '{"status":"suspended"}'::jsonb then raise exception 'new write must be suspended: %',result; end if;
+  reset role;
+  if exists(select 1 from public.customer_reviews where booking_request_id='60000000-0000-4000-8000-000000001001') then raise exception 'suspended write stored a review'; end if;
+end;
+$body$;
+$test$,'customer_suspension_blocks_only_new_review');
+reset role;
+rollback to savepoint customer_review_suspension;
+
+savepoint customer_review_suspension;
+update public.account_contexts set role='cottage_owner',owner_approval_state='approved' where user_id='10000000-0000-4000-8000-000000001002';
+select lives_ok($test$
+do $body$
+declare result jsonb;
+begin
+  perform set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003802',true);
+  perform set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003802","role":"authenticated","aal":"aal2"}',true);
+  set local role authenticated;
+  result:=public.set_marketplace_suspension('customer','10000000-0000-4000-8000-000000001002','suspend',0,'Review safety restriction','44000000-0000-4000-8000-000000000301');
+  if result->>'status' is distinct from 'completed' then raise exception 'restriction failed: %',result; end if;
+  perform set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+  perform set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001002","role":"authenticated","aal":"aal1"}',true);
+  result:=public.get_customer_review('RC-REQ-0000000000001001');
+  if result is distinct from '{"status":"suspended"}'::jsonb then raise exception 'new eligibility must be suspended: %',result; end if;
+  result:=public.submit_customer_review('RC-REQ-0000000000001001',5,'en','Blocked new review');
+  if result is distinct from '{"status":"suspended"}'::jsonb then raise exception 'new write must be suspended: %',result; end if;
+  reset role;
+  if exists(select 1 from public.customer_reviews where booking_request_id='60000000-0000-4000-8000-000000001001') then raise exception 'suspended write stored a review'; end if;
+end;
+$body$;
+$test$,'customer_suspension_also_blocks_owner_classified_customer_new_review');
+reset role;
+rollback to savepoint customer_review_suspension;
+
+savepoint customer_review_history_retained;
+select lives_ok($test$
+do $body$
+declare submitted jsonb; own_before jsonb; row_before jsonb; result jsonb;
+begin
+  -- Owner restriction leaves this identity's independent Customer capability available.
+  update public.account_contexts set role='cottage_owner',owner_approval_state='suspended'
+    where user_id='10000000-0000-4000-8000-000000001002';
+  perform set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+  perform set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001002","role":"authenticated","aal":"aal1"}',true);
+  set local role authenticated;
+  submitted:=public.submit_customer_review('RC-REQ-0000000000001001',4,'ar',E'هدوء الحديقة\nOriginal preserved.');
+  if submitted->>'status' is distinct from 'submitted' then raise exception 'owner-only restriction blocked customer capability: %',submitted; end if;
+  own_before:=public.get_customer_review('RC-REQ-0000000000001001');
+  reset role;
+  select to_jsonb(reviews) into row_before from public.customer_reviews reviews
+    where booking_request_id='60000000-0000-4000-8000-000000001001';
+  perform set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003802',true);
+  perform set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003802","role":"authenticated","aal":"aal2"}',true);
+  set local role authenticated;
+  result:=public.set_marketplace_suspension('customer','10000000-0000-4000-8000-000000001002','suspend',0,'Preserve prior review','44000000-0000-4000-8000-000000000302');
+  if result->>'status' is distinct from 'completed' then raise exception 'history restriction failed: %',result; end if;
+  perform set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+  perform set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001002","role":"authenticated","aal":"aal1"}',true);
+  if public.get_customer_review('RC-REQ-0000000000001001') is distinct from own_before then raise exception 'submitted history changed'; end if;
+  result:=public.submit_customer_review('RC-REQ-0000000000001001',1,'en','Replacement must not publish');
+  if result is distinct from jsonb_build_object('status','duplicate','reviewId',submitted->'reviewId','submittedAt',submitted->'submittedAt') then raise exception 'duplicate history changed: %',result; end if;
+  reset role;
+  if (select to_jsonb(reviews) from public.customer_reviews reviews where booking_request_id='60000000-0000-4000-8000-000000001001') is distinct from row_before then raise exception 'immutable review bytes changed'; end if;
+end;
+$body$;
+$test$,'customer_suspension_preserves_exact_review_history_and_independent_customer_capability');
+reset role;
+rollback to savepoint customer_review_history_retained;
+
+
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001003',true);
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001003","role":"authenticated","aal":"aal1"}',true);
 set local role authenticated;

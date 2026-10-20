@@ -5,7 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "esbuild";
 import { createLocalSupabaseConcurrencyHarness } from "./local-supabase-concurrency-harness.mjs";
-import { captureCleanup } from "./lib/booking-fixture.mjs";
+import {
+  captureCleanup,
+  confirmedBookingCleanup,
+  confirmedBookingAccessCleanup,
+  customerReviewCleanup,
+  publishedCottageCleanup,
+} from "./lib/booking-fixture.mjs";
 
 const harness = createLocalSupabaseConcurrencyHarness({
   timing: {
@@ -267,7 +273,11 @@ try {
     'intentActive', (select intent_dedupe_active from public.booking_request_submission_attempts where booking_request_id = '${requestId}'),
     'confirmations', (select coalesce(jsonb_agg(to_jsonb(c) order by id),'[]') from public.booking_confirmations c),
     'receipts', (select coalesce(jsonb_agg(to_jsonb(r) order by id),'[]') from public.booking_receipts r),
-    'releases', (select count(*) from public.booking_request_release_work) + (select count(*) from public.payment_provider_operations where operation_kind = 'release')
+    'releases', (select count(*) from public.booking_request_release_work where booking_request_id = '${requestId}') + (select count(*) from public.payment_provider_operations where payment_lifecycle_id = '73000000-0000-4000-8000-000000001001' and operation_kind = 'release'),
+    'releaseGraph', jsonb_build_object(
+      'work', (select coalesce(jsonb_agg(to_jsonb(w) order by w.id),'[]') from public.booking_request_release_work w),
+      'operations', (select coalesce(jsonb_agg(to_jsonb(o) order by o.id),'[]') from public.payment_provider_operations o where o.operation_kind = 'release')
+    )
   );`,
       ),
     );
@@ -370,7 +380,13 @@ try {
       before.occupancies,
       "Every original Shift occupancy must remain active",
     );
+    assert.equal(before.releases, 0);
     assert.equal(after.releases, 0);
+    assert.deepEqual(
+      after.releaseGraph,
+      before.releaseGraph,
+      "Capture recovery preserves every pre-existing release work and provider operation",
+    );
   }
   async function proveApplicationRecovery(source) {
     harness.markTimingPhase("setup");
@@ -1034,6 +1050,669 @@ try {
       `update public.booking_requests set status = 'pending', settled_at = null, created_at = statement_timestamp() - interval '1 hour', response_deadline = statement_timestamp() + interval '3 hours' where id = '${requestId}';`
     );
   }
+  async function proveSuspensionFixtureCleanup(source) {
+    const administratorId = "10000000-0000-4000-8000-000000001098";
+    const commandId = "90000000-0000-4000-8000-000000001098";
+    const unrelatedCommandId = "90000000-0000-4000-8000-000000001099";
+    const outsideRequestId = "60000000-0000-4000-8000-000000001011";
+    const ownedCleanup = confirmedBookingCleanup({
+      administrator: administratorId,
+      terminalRequest: true,
+    });
+    const outsideCleanup = captureCleanup({
+      stem: "101",
+      releaseOperations: true,
+    });
+    const unrelatedCleanup = captureCleanup({
+      stem: "102",
+      releaseOperations: true,
+    });
+    const cloned = pendingSource(source)
+      .replaceAll("1001", "1011")
+      .replaceAll("1002", "1012")
+      .replaceAll("1003", "1013")
+      .replaceAll("2101-", "2102-")
+      .replaceAll("repeat('b',64)", "repeat('f',64)")
+      .replaceAll("CONFIRMATION-HOLD-1", "SUSPENSION-CLEANUP-OUTSIDE-HOLD")
+      .replaceAll("confirmation-auth-request-1", "cleanup-outside-auth-request")
+      .replaceAll(
+        "confirmation-auth-reference-1",
+        "cleanup-outside-auth-reference",
+      )
+      .replaceAll(
+        "confirmation-auth-movement-1",
+        "cleanup-outside-auth-movement",
+      );
+    const unrelated = pendingSource(source)
+      .replaceAll("1001", "1021")
+      .replaceAll("1002", "1022")
+      .replaceAll("1003", "1023")
+      .replaceAll("CONFIRMATION-HOLD-1", "SUSPENSION-CLEANUP-UNRELATED-HOLD")
+      .replaceAll(
+        "confirmation-auth-request-1",
+        "cleanup-unrelated-auth-request",
+      )
+      .replaceAll(
+        "confirmation-auth-reference-1",
+        "cleanup-unrelated-auth-reference",
+      )
+      .replaceAll(
+        "confirmation-auth-movement-1",
+        "cleanup-unrelated-auth-movement",
+      );
+    const outside = `
+      insert into auth.users(id,aud,role,phone,phone_confirmed_at) values
+        ('10000000-0000-4000-8000-000000001011','authenticated','authenticated','+9647500001011',now()),
+        ('10000000-0000-4000-8000-000000001013','authenticated','authenticated','+9647500001013',now());
+      insert into public.account_contexts(user_id,role,owner_approval_state) values
+        ('10000000-0000-4000-8000-000000001011','cottage_owner','approved'),
+        ('10000000-0000-4000-8000-000000001013','customer',null);
+      ${cloned.slice(cloned.indexOf("insert into public.owner_application_cottage_profiles")).replaceAll("10000000-0000-4000-8000-000000001012", customerId)}
+    `;
+    const authorization = `set local request.jwt.claims=
+      '{"sub":"${administratorId}","role":"authenticated","aal":"aal2"}';`;
+    const observe = () =>
+      harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `
+      select jsonb_build_object(
+        'actions',(select jsonb_agg(to_jsonb(actions) order by id) from private.marketplace_suspension_actions actions where command_id in ('${commandId}','${unrelatedCommandId}')),
+        'work',(select jsonb_agg(to_jsonb(work) order by id) from public.booking_request_release_work work where booking_request_id in ('${requestId}','${outsideRequestId}','60000000-0000-4000-8000-000000001021')),
+        'requests',(select jsonb_agg(to_jsonb(requests) order by id) from public.booking_requests requests where id in ('${requestId}','${outsideRequestId}','60000000-0000-4000-8000-000000001021')),
+        'profiles',(select jsonb_agg(to_jsonb(profiles) order by id) from public.owner_application_cottage_profiles profiles where id in ('20000000-0000-4000-8000-000000001001','20000000-0000-4000-8000-000000001011','20000000-0000-4000-8000-000000001021')),
+        'accounts',(select jsonb_agg(to_jsonb(contexts) order by user_id) from public.account_contexts contexts where user_id in ('${ownerId}','${customerId}','10000000-0000-4000-8000-000000001011','10000000-0000-4000-8000-000000001013','10000000-0000-4000-8000-000000001021','10000000-0000-4000-8000-000000001022','10000000-0000-4000-8000-000000001023','10000000-0000-4000-8000-000000001099','${administratorId}'))
+      );
+    `,
+      );
+    try {
+      harness.markTimingPhase("setup");
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `begin;
+        ${pendingSource(source)} ${outside} ${unrelated}
+        insert into auth.users(id,aud,role,phone,phone_confirmed_at) values
+          ('${administratorId}','authenticated','authenticated','+9647500001098',now()),
+          ('10000000-0000-4000-8000-000000001099','authenticated','authenticated','+9647500001099',now());
+        insert into public.account_contexts(user_id,role) values
+          ('${administratorId}','platform_administrator'),('10000000-0000-4000-8000-000000001099','customer');
+        ${authorization}
+        savepoint cottage_scope;
+        select public.set_marketplace_suspension('cottage','20000000-0000-4000-8000-000000001001','suspend',0,'Fictional cottage scope','90000000-0000-4000-8000-000000001086');
+        do $scope$ begin
+          if (select count(*) from public.booking_request_release_work where booking_request_id in ('${requestId}','${outsideRequestId}','60000000-0000-4000-8000-000000001021'))<>1
+            or not exists(select 1 from public.booking_requests where id='${requestId}' and status='processing')
+            or not exists(select 1 from public.booking_requests where id='${outsideRequestId}' and status='pending')
+            or not exists(select 1 from public.booking_requests where id='60000000-0000-4000-8000-000000001021' and status='pending')
+          then raise exception 'Cottage suspension crossed the exact pending request scope'; end if;
+        end; $scope$;
+        rollback to savepoint cottage_scope;
+        savepoint owner_scope;
+        insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+        values('90000000-0000-4000-8000-000000001085','${ownerId}','individual','Fictional Scope Owner','submitted',now(),now(),now()+interval '72 hours');
+        insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+        values('90000000-0000-4000-8000-000000001085','90000000-0000-4000-8000-000000001085','identity','fictional/scope/identity.pdf','identity.pdf','application/pdf',128);
+        update public.owner_verification_documents set content_digest=repeat('f',64),digest_source='sha256' where id='90000000-0000-4000-8000-000000001085';
+        select public.review_owner_application('90000000-0000-4000-8000-000000001085',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+        select public.set_marketplace_suspension('owner','${ownerId}','suspend',2,'Fictional owner scope','90000000-0000-4000-8000-000000001084');
+        do $scope$ begin
+          if (select count(*) from public.booking_request_release_work where booking_request_id in ('${requestId}','${outsideRequestId}','60000000-0000-4000-8000-000000001021'))<>1
+            or not exists(select 1 from public.booking_requests where id='${requestId}' and status='processing')
+            or not exists(select 1 from public.booking_requests where id='${outsideRequestId}' and status='pending')
+            or not exists(select 1 from public.booking_requests where id='60000000-0000-4000-8000-000000001021' and status='pending')
+            or exists(select 1 from public.account_contexts where user_id='${customerId}' and customer_suspended)
+          then raise exception 'Owner suspension crossed pending scope or changed customer capability'; end if;
+        end; $scope$;
+        rollback to savepoint owner_scope;
+        select public.set_marketplace_suspension('customer','${customerId}','suspend',0,'Fictional shared-customer cleanup case','${commandId}');
+        select public.set_marketplace_suspension('customer','10000000-0000-4000-8000-000000001099','suspend',0,'Unrelated fixture action','${unrelatedCommandId}');
+        commit;`,
+      );
+      seeded = true;
+      harness.markTimingPhase("execution");
+      assert.equal(
+        await harness.runSqlAfterSetup(
+          paymentEvidenceSql,
+          `
+        select count(*) from public.booking_request_release_work work join private.marketplace_suspension_actions actions on actions.id=work.suspension_action_id where actions.command_id='${commandId}';
+      `,
+        ),
+        "2",
+        "Customer scope must include the request on the other cottage",
+      );
+      assert.equal(
+        await harness.runSqlAfterSetup(
+          paymentEvidenceSql,
+          `select status from public.booking_requests where id='60000000-0000-4000-8000-000000001021';`,
+        ),
+        "pending",
+        "Customer suspension must preserve another customer's pending request",
+      );
+      const before = await observe();
+      const noReleaseCleanupVariants = [
+        confirmedBookingCleanup({ administrator: administratorId }),
+        customerReviewCleanup("10"),
+        customerReviewCleanup("11", { reusedAuthUsers: [customerId] }),
+        confirmedBookingAccessCleanup({ stem: "100" }),
+        publishedCottageCleanup({
+          profiles: ["20000000-0000-4000-8000-000000001001"],
+          users: [ownerId, customerId, "10000000-0000-4000-8000-000000001003"],
+        }),
+      ];
+      for (const selectedCleanup of [
+        ownedCleanup,
+        captureCleanup(),
+        ...noReleaseCleanupVariants,
+      ]) {
+        let refusal;
+        try {
+          await harness.runSqlAfterSetup(paymentEvidenceSql, selectedCleanup);
+        } catch (error) {
+          refusal = error;
+        }
+        assert.equal(
+          await observe(),
+          before,
+          "Outside release references must preserve every owned and outside fact before cleanup",
+        );
+        assert.match(
+          refusal?.message ?? "",
+          /outside.*release|release.*outside/i,
+          "Every whole-fixture cleanup must explicitly refuse another fixture's release reference",
+        );
+      }
+      const actionId = await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `select id from private.marketplace_suspension_actions where command_id='${commandId}';`,
+      );
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `update public.booking_request_release_work set suspension_action_id=null where booking_request_id='${outsideRequestId}';`,
+      );
+      const releaseHolder = await start(
+        `begin; set application_name='suspension_cleanup_release_holder'; select 1 from public.booking_request_release_work where booking_request_id='${requestId}' for update; select 'CLEANUP_RELEASE_HELD';`,
+      );
+      await harness.waitForMarker(releaseHolder, "CLEANUP_RELEASE_HELD");
+      const cleaning = await start(
+        `set application_name='suspension_cleanup_preflight_holder'; ${ownedCleanup}`,
+        true,
+      );
+      await blockedBy(
+        "suspension_cleanup_preflight_holder",
+        cleaning,
+        "suspension_cleanup_release_holder",
+      );
+      const newReference = await start(
+        `begin; set application_name='suspension_cleanup_fk_contender'; update public.booking_request_release_work set suspension_action_id='${actionId}' where booking_request_id='${outsideRequestId}'; select 'CLEANUP_NEW_REFERENCE_ATTACHED';`,
+      );
+      try {
+        await blockedBy(
+          "suspension_cleanup_fk_contender",
+          newReference,
+          "suspension_cleanup_preflight_holder",
+        );
+        await harness.runSqlAfterSetup(
+          paymentEvidenceSql,
+          `select pg_cancel_backend(pid) from pg_stat_activity where application_name='suspension_cleanup_preflight_holder';`,
+        );
+        await finish(cleaning, { expectedState: "57014" });
+        await harness.waitForMarker(
+          newReference,
+          "CLEANUP_NEW_REFERENCE_ATTACHED",
+        );
+        await finish(newReference, { action: "rollback" });
+      } finally {
+        await finish(releaseHolder, { action: "rollback" });
+      }
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `update public.booking_request_release_work set suspension_action_id='${actionId}' where booking_request_id='${outsideRequestId}';`,
+      );
+      assert.equal(
+        await observe(),
+        before,
+        "Canceled cleanup and new reference attempt preserve exact owned and outside rows",
+      );
+      harness.markTimingPhase("cleanup");
+      await harness.runSqlAfterSetup(paymentEvidenceSql, outsideCleanup);
+      harness.markTimingPhase("execution");
+      assert.equal(
+        await harness.runSqlAfterSetup(
+          paymentEvidenceSql,
+          `
+        select count(*) from private.marketplace_suspension_actions where command_id='${unrelatedCommandId}';
+      `,
+        ),
+        "1",
+        "Outside fixture teardown retains an unrelated target action",
+      );
+      const ownedOnly = await observe();
+      for (const selectedCleanup of noReleaseCleanupVariants) {
+        let refusal;
+        try {
+          await harness.runSqlAfterSetup(paymentEvidenceSql, selectedCleanup);
+        } catch (error) {
+          refusal = error;
+        }
+        assert.equal(
+          await observe(),
+          ownedOnly,
+          "A cleanup that deletes no release work must preserve even its own referenced target/action",
+        );
+        assert.match(
+          refusal?.message ?? "",
+          /outside.*release|release.*outside/i,
+          "No-release variants must use the empty allowed request set",
+        );
+      }
+      await harness.runSqlAfterSetup(paymentEvidenceSql, ownedCleanup);
+      seeded = false;
+      assert.equal(
+        await harness.runSqlAfterSetup(
+          paymentEvidenceSql,
+          `
+        select count(*) from private.marketplace_suspension_actions where command_id='${commandId}';
+      `,
+        ),
+        "0",
+        "Whole-fixture teardown removes its prechecked action after owned release work",
+      );
+      assert.equal(
+        await harness.runSqlAfterSetup(
+          paymentEvidenceSql,
+          `
+        select count(*) from private.marketplace_suspension_actions where command_id='${unrelatedCommandId}';
+      `,
+        ),
+        "1",
+        "Owned teardown must retain the unrelated fixture action",
+      );
+      harness.markTimingPhase("setup");
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `begin; ${pendingSource(source)} commit;`,
+      );
+      seeded = true;
+      harness.markTimingPhase("execution");
+      assert.equal(
+        await harness.runSqlAfterSetup(
+          paymentEvidenceSql,
+          `
+        select customer_suspension_revision from public.account_contexts where user_id='${customerId}';
+      `,
+        ),
+        "0",
+        "The exact fixed fixture reseeds without retained restriction history",
+      );
+    } finally {
+      harness.markTimingPhase("cleanup");
+      // These exact commands and release rows belong to this scenario, including an old replica-mode teardown.
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `begin;
+        delete from public.booking_request_release_operations where work_id in (
+          select id from public.booking_request_release_work where booking_request_id in ('${requestId}','${outsideRequestId}','60000000-0000-4000-8000-000000001021')
+        );
+        delete from public.booking_request_release_work where booking_request_id in ('${requestId}','${outsideRequestId}','60000000-0000-4000-8000-000000001021');
+        delete from private.marketplace_suspension_actions where command_id in ('${commandId}','${unrelatedCommandId}');
+        commit;
+      `,
+      );
+      await harness.runSqlAfterSetup(paymentEvidenceSql, outsideCleanup);
+      await harness.runSqlAfterSetup(paymentEvidenceSql, unrelatedCleanup);
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        captureCleanup({ releaseOperations: true }),
+      );
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `
+        delete from public.account_contexts where user_id in ('${administratorId}','10000000-0000-4000-8000-000000001099');
+        delete from auth.users where id in ('${administratorId}','10000000-0000-4000-8000-000000001099');
+      `,
+      );
+      seeded = false;
+      harness.markTimingPhase("execution");
+    }
+    console.log(
+      "Suspension fixture cleanup refuses outside references before replica mode, preserves exact facts, deletes only owned actions, and reseeds the fixed graph.",
+    );
+  }
+  async function proveMarketplaceSuspension(source) {
+    const administratorId = "10000000-0000-4000-8000-000000001098";
+    const otherAdministratorId = "10000000-0000-4000-8000-000000001099";
+    const applicationId = "90000000-0000-4000-8000-000000001097";
+    const secondProfileId = "20000000-0000-4000-8000-000000001097";
+    const authorization = `set local request.jwt.claims=
+      '{"sub":"${administratorId}","role":"authenticated","aal":"aal2"}';`;
+    const command = (kind, target, action, revision, commandId) =>
+      `select public.set_marketplace_suspension('${kind}','${target}','${action}',${revision},'Fictional concurrent restriction','${commandId}');`;
+    const observe = () =>
+      harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `
+      select jsonb_build_object(
+        'accounts',(select jsonb_agg(to_jsonb(contexts) order by user_id) from public.account_contexts contexts where user_id in ('${ownerId}','${customerId}')),
+        'application',(select to_jsonb(applications) from public.owner_applications applications where id='${applicationId}'),
+        'profiles',(select jsonb_agg(to_jsonb(profiles) order by id) from public.owner_application_cottage_profiles profiles where owner_user_id='${ownerId}'),
+        'actions',(select jsonb_agg(to_jsonb(actions) order by id) from private.marketplace_suspension_actions actions where account_user_id in ('${ownerId}','${customerId}') or profile_id in ('20000000-0000-4000-8000-000000001001','${secondProfileId}')),
+        'requests',(select to_jsonb(requests) from public.booking_requests requests where id='${requestId}'),
+        'attempts',(select to_jsonb(attempts) from public.booking_request_submission_attempts attempts where booking_request_id='${requestId}'),
+        'work',(select jsonb_agg(to_jsonb(work) order by id) from public.booking_request_release_work work where booking_request_id='${requestId}'),
+        'notices',(select jsonb_agg(to_jsonb(notices) order by id) from public.owner_application_notices notices where application_id='${applicationId}')
+      );
+    `,
+      );
+    const clear = async () => {
+      harness.markTimingPhase("cleanup");
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `begin;
+        set local session_replication_role=replica;
+        delete from public.owner_application_notices where application_id='${applicationId}';
+        delete from public.owner_application_transitions where application_id='${applicationId}';
+        delete from public.owner_application_verification_records where application_id='${applicationId}';
+        delete from public.owner_verification_document_versions where application_id='${applicationId}';
+        delete from public.owner_verification_documents where application_id='${applicationId}';
+        delete from public.owner_applications where id='${applicationId}';
+        delete from public.owner_application_cottage_profiles where id='${secondProfileId}';
+        commit;`,
+      );
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        captureCleanup({ releaseOperations: true }),
+      );
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `
+        delete from public.account_contexts where user_id in ('${administratorId}','${otherAdministratorId}');
+        delete from auth.users where id in ('${administratorId}','${otherAdministratorId}');
+      `,
+      );
+      seeded = false;
+      harness.markTimingPhase("execution");
+    };
+    const reset = async () => {
+      harness.markTimingPhase("setup");
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `begin;
+        ${pendingSource(source)}
+        insert into auth.users(id,aud,role,phone,phone_confirmed_at) values
+          ('${administratorId}','authenticated','authenticated','+9647500001098',now()),
+          ('${otherAdministratorId}','authenticated','authenticated','+9647500001099',now());
+        insert into public.account_contexts(user_id,role) values
+          ('${administratorId}','platform_administrator'),('${otherAdministratorId}','platform_administrator');
+        insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+        values('${applicationId}','${ownerId}','individual','Fictional Concurrency Owner','submitted',now(),now(),now()+interval '72 hours');
+        insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+        values('${applicationId}','${applicationId}','identity','fictional/concurrency/identity.pdf','identity.pdf','application/pdf',128);
+        update public.owner_verification_documents set content_digest=repeat('f',64),digest_source='sha256' where id='${applicationId}';
+        ${authorization}
+        select public.review_owner_application('${applicationId}',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+        insert into public.owner_application_cottage_profiles(id,owner_user_id,status) values('${secondProfileId}','${ownerId}','draft');
+        commit;`,
+      );
+      seeded = true;
+      harness.markTimingPhase("execution");
+    };
+    try {
+      for (const [label, lock, kind, target, revision] of [
+        [
+          "profile",
+          `public.owner_application_cottage_profiles where id='${secondProfileId}'`,
+          "owner",
+          ownerId,
+          2,
+        ],
+        [
+          "request",
+          `public.booking_requests where id='${requestId}'`,
+          "customer",
+          customerId,
+          0,
+        ],
+        [
+          "attempt",
+          `public.booking_request_submission_attempts where booking_request_id='${requestId}'`,
+          "customer",
+          customerId,
+          0,
+        ],
+      ]) {
+        await reset();
+        const before = await observe();
+        const holderName = `suspension_${label}_holder`;
+        const contenderName = `suspension_${label}_contender`;
+        const holder = await start(
+          `begin; set application_name='${holderName}'; select 1 from ${lock} for update; select 'SUSPENSION_BOUNDARY_HELD';`,
+        );
+        await harness.waitForMarker(holder, "SUSPENSION_BOUNDARY_HELD");
+        const sql = command(
+          kind,
+          target,
+          "suspend",
+          revision,
+          "90000000-0000-4000-8000-000000001096",
+        );
+        const contender = await start(
+          `begin; set application_name='${contenderName}'; ${authorization} ${sql} commit;`,
+          true,
+        );
+        let forbiddenWait = false;
+        try {
+          await harness.waitForLock(contenderName, contender);
+          forbiddenWait = true;
+          await blockedBy(contenderName, contender, holderName);
+          await harness.runSqlAfterSetup(
+            paymentEvidenceSql,
+            `select pg_cancel_backend(pid) from pg_stat_activity where application_name='${contenderName}';`,
+          );
+          await finish(contender, { expectedState: "57014" });
+        } catch (error) {
+          if (forbiddenWait || contender.exit?.code !== 0) throw error;
+          await finish(contender);
+        } finally {
+          await finish(holder, { action: "rollback" });
+        }
+        assert.equal(
+          forbiddenWait,
+          false,
+          "Suspension must never wait from an authority lock onto a dependent row",
+        );
+        assert.deepEqual(result(contender), { status: "retry" });
+        assert.equal(
+          await observe(),
+          before,
+          "A contended later row must roll back the entire restriction/audit/work graph",
+        );
+        const retried = JSON.parse(
+          (
+            await harness.runSqlAfterSetup(
+              paymentEvidenceSql,
+              `begin; ${authorization} ${sql} commit;`,
+            )
+          )
+            .split("\n")
+            .at(-1),
+        );
+        assert.equal(retried.status, "completed");
+        assert.equal(
+          await harness.runSqlAfterSetup(
+            paymentEvidenceSql,
+            `select count(*) from private.marketplace_suspension_actions where command_id='90000000-0000-4000-8000-000000001096';`,
+          ),
+          "1",
+        );
+        await clear();
+      }
+      for (const acceptFirst of [true, false]) {
+        await reset();
+        const suspendSql = command(
+          "customer",
+          customerId,
+          "suspend",
+          0,
+          "90000000-0000-4000-8000-000000001095",
+        );
+        const holder = await start(
+          `begin; set application_name='suspension_accept_holder'; ${authorization} ${acceptFirst ? acceptSql : suspendSql} select 'SUSPENSION_DECISION_HELD';`,
+        );
+        await harness.waitForMarker(holder, "SUSPENSION_DECISION_HELD");
+        const contender = await start(
+          `begin; set application_name='suspension_accept_contender'; ${authorization} ${acceptFirst ? suspendSql : acceptSql} commit;`,
+          true,
+        );
+        await blockedBy(
+          "suspension_accept_contender",
+          contender,
+          "suspension_accept_holder",
+        );
+        if (acceptFirst) {
+          assert.equal(
+            await harness.runSqlAfterSetup(
+              paymentEvidenceSql,
+              `
+            select count(*) from pg_locks locks
+            join pg_stat_activity activity on activity.pid=locks.pid
+            join public.account_contexts contexts on contexts.ctid=concat('(',locks.page,',',locks.tuple,')')::tid
+            where activity.application_name='suspension_accept_contender'
+              and locks.locktype='tuple' and locks.relation='public.account_contexts'::regclass
+              and contexts.user_id='${customerId}';
+          `,
+            ),
+            "1",
+            "Acceptance may serialize the command at its primary customer target lock",
+          );
+        }
+        await finish(holder, { action: "commit" });
+        await finish(contender);
+        assert.equal(
+          result(contender).status,
+          acceptFirst ? "completed" : "release-required",
+        );
+        assert.equal(
+          await harness.runSqlAfterSetup(
+            paymentEvidenceSql,
+            `select status||'|'||(select count(*) from public.booking_request_release_work where booking_request_id=requests.id)||'|'||(select count(*) from public.booking_request_capture_work where booking_request_id=requests.id) from public.booking_requests requests where id='${requestId}';`,
+          ),
+          acceptFirst ? "accepted|0|1" : "processing|1|0",
+        );
+        await clear();
+      }
+      await reset();
+      const exactSql = command(
+        "customer",
+        "10000000-0000-4000-8000-000000001003",
+        "suspend",
+        0,
+        "90000000-0000-4000-8000-000000001094",
+      );
+      const holder = await start(
+        `begin; set application_name='suspension_replay_holder'; ${authorization} ${exactSql} select 'SUSPENSION_REPLAY_HELD';`,
+      );
+      await harness.waitForMarker(holder, "SUSPENSION_REPLAY_HELD");
+      const contender = await start(
+        `begin; set application_name='suspension_replay_contender'; ${authorization} ${exactSql} commit;`,
+        true,
+      );
+      await blockedBy(
+        "suspension_replay_contender",
+        contender,
+        "suspension_replay_holder",
+      );
+      await finish(holder, { action: "commit" });
+      await finish(contender);
+      assert.equal(result(holder).status, "completed");
+      assert.equal(result(contender).status, "completed");
+      assert.equal(result(contender).actionId, result(holder).actionId);
+      assert.equal(
+        await harness.runSqlAfterSetup(
+          paymentEvidenceSql,
+          `select count(*) from private.marketplace_suspension_actions where command_id='90000000-0000-4000-8000-000000001094';`,
+        ),
+        "1",
+      );
+      const reusedCommand = "90000000-0000-4000-8000-000000001093";
+      const differentHolder = await start(
+        `begin; set application_name='suspension_intent_holder'; ${authorization} ${command("customer", "10000000-0000-4000-8000-000000001003", "reactivate", 1, reusedCommand)} select 'SUSPENSION_INTENT_HELD';`,
+      );
+      await harness.waitForMarker(differentHolder, "SUSPENSION_INTENT_HELD");
+      const differentContender = await start(
+        `begin; set application_name='suspension_intent_contender'; ${authorization} ${command("customer", customerId, "suspend", 0, reusedCommand)} commit;`,
+        true,
+      );
+      await blockedBy(
+        "suspension_intent_contender",
+        differentContender,
+        "suspension_intent_holder",
+      );
+      await finish(differentHolder, { action: "commit" });
+      await finish(differentContender);
+      assert.deepEqual(result(differentContender), { status: "conflict" });
+      assert.equal(
+        await harness.runSqlAfterSetup(
+          paymentEvidenceSql,
+          `select customer_suspended||'|'||customer_suspension_revision from public.account_contexts where user_id='${customerId}';`,
+        ),
+        "false|0",
+      );
+      const administrators = [administratorId, otherAdministratorId];
+      const administratorSessions = [];
+      for (const [index, actor] of administrators.entries()) {
+        const session = await start(
+          `begin; select 1 from public.account_contexts where user_id='${actor}' for share; select 'ADMINISTRATOR_CONTEXT_HELD';`,
+        );
+        await harness.waitForMarker(session, "ADMINISTRATOR_CONTEXT_HELD");
+        administratorSessions.push(session);
+        if (index === 1) {
+          for (const [position, active] of administratorSessions.entries()) {
+            active.child.stdin.end(
+              `set local request.jwt.claims='{"sub":"${administrators[position]}","role":"authenticated","aal":"aal2"}'; ${command("customer", administrators[1 - position], "suspend", 0, `90000000-0000-4000-8000-00000000109${position}`)} commit;`,
+            );
+          }
+        }
+      }
+      for (const session of administratorSessions) {
+        await finish(session);
+        assert.deepEqual(
+          result(session),
+          { status: "not-found" },
+          "Forbidden administrator targets must not form reciprocal upgrade waits",
+        );
+      }
+      await clear();
+      await reset();
+      const legacyHolder = await start(
+        `begin; set application_name='suspension_legacy_holder'; ${authorization} select public.review_owner_application('${applicationId}',2,'suspend','Fictional concurrent restriction','{}','{}',null,null,null,'{}'); select 'LEGACY_SUSPENSION_HELD';`,
+      );
+      await harness.waitForMarker(legacyHolder, "LEGACY_SUSPENSION_HELD");
+      const legacyContender = await start(
+        `begin; set application_name='suspension_legacy_contender'; ${authorization} ${command("owner", ownerId, "suspend", 2, "90000000-0000-4000-8000-000000001089")} commit;`,
+        true,
+      );
+      await blockedBy(
+        "suspension_legacy_contender",
+        legacyContender,
+        "suspension_legacy_holder",
+      );
+      await finish(legacyHolder, { action: "commit" });
+      await finish(legacyContender);
+      assert.deepEqual(result(legacyContender), { status: "conflict" });
+      assert.equal(
+        await harness.runSqlAfterSetup(
+          paymentEvidenceSql,
+          `select applications.version||'|'||contexts.owner_suspension_revision||'|'||(select count(*) from private.marketplace_suspension_actions where target_kind='owner' and account_user_id='${ownerId}')||'|'||(select count(*) from public.owner_application_notices where application_id='${applicationId}' and kind='suspended')||'|'||(select count(*) from public.booking_request_release_work where booking_request_id='${requestId}') from public.owner_applications applications join public.account_contexts contexts on contexts.user_id=applications.owner_user_id where applications.id='${applicationId}';`,
+        ),
+        "3|1|1|1|1",
+      );
+      await clear();
+      console.log(
+        "Suspension real sessions proved complete multi-profile/request/attempt NOWAIT rollback, one reattempt, both acceptance orders, legacy-writer serialization, reciprocal forbidden admin targets and exact/altered command races.",
+      );
+    } finally {
+      if (seeded) await clear();
+    }
+  }
   async function proveOwnerAdmission(source) {
     const pending = pendingSource(source);
     const reset = async () => {
@@ -1369,6 +2048,12 @@ try {
 
   async function provePaymentOrchestration() {
     harness.markTimingPhase("setup");
+    const outsideOccupancies = JSON.parse(
+      await harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `select coalesce(jsonb_agg(to_jsonb(o) order by to_jsonb(o)::text),'[]') from public.cottage_booking_period_occupancies o where o.booking_period_commitment_id <> '50000000-0000-4000-8000-000000001001';`,
+      ),
+    );
     const source = readFileSync(
       "supabase/tests/database/booking_request_payment_recovery.test.sql",
       "utf8",
@@ -1405,15 +2090,16 @@ try {
         harness.markTimingPhase("execution");
       }
     };
-    const state = async () =>
-      JSON.parse(
+    const state = async () => {
+      const result = JSON.parse(
         await harness.runSqlAfterSetup(
           paymentEvidenceSql,
           `select jsonb_build_object(
     'attempts',(select jsonb_agg(to_jsonb(v) order by generation) from public.booking_request_payment_recovery_attempts v),
     'operations',(select jsonb_agg(pg_temp.payment_fixture_operation_json(v) order by created_at,id) from public.payment_provider_operations v where recovery_attempt_id is not null or operation_kind='refund'),
     'effects',(select coalesce(sum(e.physical_execution_count),0) from public.simulated_payment_effects e join public.payment_provider_operations l on l.id=e.operation_id where l.recovery_attempt_id is not null or l.operation_kind='refund'),
-    'active',(select count(*) from public.cottage_booking_period_occupancies where active),
+    'active',(select count(*) from public.cottage_booking_period_occupancies where booking_period_commitment_id = '50000000-0000-4000-8000-000000001001' and active),
+    'outsideOccupancies',(select coalesce(jsonb_agg(to_jsonb(o) order by to_jsonb(o)::text),'[]') from public.cottage_booking_period_occupancies o where o.booking_period_commitment_id <> '50000000-0000-4000-8000-000000001001'),
     'confirmations',(select count(*) from public.booking_confirmations),
     'receipts',(select count(*) from public.booking_receipts),
     'invalidations',(select count(*) from public.booking_request_confirmation_invalidations),
@@ -1423,6 +2109,13 @@ try {
     'notices',(select count(*) from public.booking_request_status_notifications where status='expired'));`,
         ),
       );
+      assert.deepEqual(
+        result.outsideOccupancies,
+        outsideOccupancies,
+        "Payment orchestration preserves every unrelated booking-period occupancy",
+      );
+      return result;
+    };
     const stop = async (worker) => {
       harness.markTimingPhase("cleanup");
       try {
@@ -1990,6 +2683,60 @@ try {
       "0",
       "Successful finalization must not create release work",
     );
+    const confirmedFacts = () =>
+      harness.runSqlAfterSetup(
+        paymentEvidenceSql,
+        `
+      select jsonb_build_object(
+        'request',(select to_jsonb(requests) from public.booking_requests requests where id='${requestId}'),
+        'confirmation',(select to_jsonb(confirmations) from public.booking_confirmations confirmations where booking_request_id='${requestId}'),
+        'receipts',(select jsonb_agg(to_jsonb(receipts) order by id) from public.booking_receipts receipts where booking_confirmation_id in (select id from public.booking_confirmations where booking_request_id='${requestId}')),
+        'snapshot',(select to_jsonb(snapshots) from public.booking_snapshots snapshots where id='40000000-0000-4000-8000-000000001001'),
+        'hold',(select to_jsonb(commitments) from public.cottage_booking_period_commitments commitments where id='50000000-0000-4000-8000-000000001001'),
+        'occupancies',(select jsonb_agg(to_jsonb(occupancies) order by to_jsonb(occupancies)::text) from public.cottage_booking_period_occupancies occupancies where booking_period_commitment_id='50000000-0000-4000-8000-000000001001'),
+        'provider',(select jsonb_agg(to_jsonb(operations) order by id) from public.payment_provider_operations operations where payment_lifecycle_id='73000000-0000-4000-8000-000000001001')
+      );
+    `,
+      );
+    const confirmedBeforeRestriction = await confirmedFacts();
+    await harness.runSqlAfterSetup(
+      paymentEvidenceSql,
+      `
+      update public.account_contexts set role='platform_administrator' where user_id='10000000-0000-4000-8000-000000001003';
+    `,
+    );
+    for (const [action, revision, commandId] of [
+      ["suspend", 0, "90000000-0000-4000-8000-000000001087"],
+      ["reactivate", 1, "90000000-0000-4000-8000-000000001088"],
+    ]) {
+      const changed = JSON.parse(
+        (
+          await harness.runSqlAfterSetup(
+            paymentEvidenceSql,
+            `begin;
+        set local role authenticated;
+        select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000001003","role":"authenticated","aal":"aal2"}',true);
+        select public.set_marketplace_suspension('customer','${customerId}','${action}',${revision},'Confirmed obligations and history remain intact','${commandId}'); commit;
+      `,
+          )
+        )
+          .split("\n")
+          .at(-1),
+      );
+      assert.equal(changed.status, "completed");
+      assert.equal(
+        await confirmedFacts(),
+        confirmedBeforeRestriction,
+        "Suspension/reactivation must preserve captured money, confirmed receipt IDs/content and complete occupancy",
+      );
+      assert.equal(
+        await harness.runSqlAfterSetup(
+          paymentEvidenceSql,
+          `select count(*) from public.booking_request_release_work where booking_request_id='${requestId}';`,
+        ),
+        "0",
+      );
+    }
     console.log(
       "Booking Request Capture contention proved one lease, one physical provider execution, one Capture identity and movement, exact replay, ordered locks for all three entry points through the completed Capture identity, and admission refusal after a blocked deadline. Confirmation contention then proved one identical outcome, two receipts, retained complete occupancy, no release work, and the same ordered Capture lock prefix through the commitment.",
     );
@@ -2004,6 +2751,8 @@ try {
       recoverySource,
       "Capture recovery needs the complete source-only fixture",
     );
+    await proveSuspensionFixtureCleanup(recoverySource);
+    await proveMarketplaceSuspension(recoverySource);
     await proveOwnerAdmission(recoverySource);
     await proveRecoveryProgress(recoverySource);
     await proveApplicationRecovery(recoverySource);

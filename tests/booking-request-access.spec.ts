@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { observeRecordHeading } from "./fixtures/record-heading";
 import { accessMessages } from "../src/i18n/access-messages";
 import { triggerScheduled } from "./fixtures/trigger-scheduled";
@@ -9,6 +10,8 @@ const paymentEvidenceSql =
   readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
   "\n-- END PAYMENT EVIDENCE FIXTURE\n";
 import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import * as OTPAuth from "otpauth";
 import { selectPaymentRequiredExpiry } from "../src/booking-request/booking-request-payment-required-expiry";
 import { bookingRequestPaymentFactsFrom } from "../src/booking-request/supabase-booking-request-payment-observation";
 import { bookingTermsFixture } from "../src/booking-request/booking-terms-fixture";
@@ -2162,5 +2165,622 @@ test("a verified Customer double-submit creates one Pending request and one mini
       await ownerDetailPage.close();
     }
   }
+  if (testInfo.project.name === "worker")
+    await test.step("suspension resolves a waiting request through authoritative local release and delivery once", async () => {
+      const pendingDay = serviceDay(dayOffset + 2);
+      const opened = await fixtureOwner.rpc(
+        "set_cottage_inventory_availability",
+        {
+          target_profile_id: profile.id,
+          target_schedule_revision_id: profile.current_shift_schedule_id,
+          target_service_day: pendingDay,
+          requested_states: [
+            ...shifts.map((item) => ({
+              unitId: item.id,
+              unitKind: "shift",
+              state: "open",
+            })),
+            {
+              unitId: schedule.full_day_bundle_id,
+              unitKind: "full_day_bundle",
+              state: "open",
+            },
+          ],
+        },
+      );
+      expect(opened.error).toBeNull();
+      query.set("from", pendingDay);
+      query.set("to", pendingDay);
+      query.set("selection", `${pendingDay}:shift:${shift.position}`);
+      const reference = await submitAnotherRequest("en");
+      const requests = JSON.parse(
+        harness.runSql(
+          `select jsonb_agg(to_jsonb(requests)) from public.booking_requests requests where booking_request_reference='${reference}';`,
+        ),
+      );
+      expect(requests).toHaveLength(1);
+      const request = requests[0];
+      expect(request.status).toBe("pending");
+      const privileged = createClient(
+        process.env.SUPABASE_URL!,
+        process.env.SUPABASE_SECRET_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } },
+      );
+      const administrator = await privileged.auth.admin.createUser({
+        email: `pending-suspension-${randomUUID()}@rentcottage.test`,
+        password: "Local-test-password-2026",
+        email_confirm: true,
+      });
+      expect(administrator.error).toBeNull();
+      const actorId = administrator.data.user!.id;
+      const provisioned = await privileged.rpc(
+        "provision_platform_administrator",
+        { target_user_id: actorId },
+      );
+      expect(provisioned.error).toBeNull();
+      const readRestriction = () =>
+        JSON.parse(
+          harness.runSql(`begin; set local role authenticated;
+          set local request.jwt.claims='{"sub":"${actorId}","role":"authenticated","aal":"aal2"}';
+          select public.get_marketplace_suspension('customer','${request.customer_user_id}'); commit;`),
+        );
+      const initialRestriction = readRestriction();
+      expect(initialRestriction).toMatchObject({
+        status: "ready",
+        targetKind: "customer",
+        targetId: request.customer_user_id,
+        state: "active",
+      });
+      expect(Number.isSafeInteger(initialRestriction.revision)).toBe(true);
+      expect(initialRestriction.revision).toBeGreaterThanOrEqual(0);
+      const expectedRevision: number = initialRestriction.revision;
+      const commandId = randomUUID();
+      const suspend = () =>
+        JSON.parse(
+          harness.runSql(`begin; set local role authenticated;
+      set local request.jwt.claims='{"sub":"${actorId}","role":"authenticated","aal":"aal2"}';
+      select public.set_marketplace_suspension('customer','${request.customer_user_id}','suspend',${expectedRevision},'Fictional pending suspension','${commandId}'); commit;`),
+        );
+      const evidence = () =>
+        JSON.parse(
+          harness.runSql(`select jsonb_build_object(
+      'request',(select to_jsonb(rows) from public.booking_requests rows where rows.id='${request.id}'),
+      'snapshot',(select to_jsonb(rows) from public.booking_snapshots rows where rows.id='${request.booking_snapshot_id}'),
+      'work',(select to_jsonb(rows) from public.booking_request_release_work rows where booking_request_id='${request.id}'),
+      'hold',(select to_jsonb(rows) from public.cottage_booking_period_commitments rows where rows.id='${request.booking_period_commitment_id}'),
+      'occupancies',(select jsonb_agg(to_jsonb(rows) order by service_day,shift_id) from public.cottage_booking_period_occupancies rows where booking_period_commitment_id='${request.booking_period_commitment_id}'),
+      'release',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]') from public.payment_provider_operations rows where payment_lifecycle_id='${request.payment_lifecycle_id}' and operation_kind='release'),
+      'effects',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]') from public.fictional_booking_confirmation_notification_effects rows where booking_request_id='${request.id}'),
+      'events',(select coalesce(jsonb_agg(jsonb_build_object('event',to_jsonb(events),'work',to_jsonb(work)) order by events.id),'[]') from public.booking_notification_events events left join public.booking_confirmation_notification_work work on work.event_id=events.id where events.booking_request_id='${request.id}'),
+      'confirmations',(select coalesce(jsonb_agg(to_jsonb(rows) order by rows.id),'[]') from public.booking_confirmations rows where booking_request_id='${request.id}')
+    );`),
+        );
+      const before = evidence();
+      expect(before.hold.status).toBe("pending_hold");
+      expect(before.release).toEqual([]);
+      let failed = false;
+      let failure: unknown;
+      try {
+        const restricted = suspend();
+        expect(restricted.status).toBe("completed");
+        expect(restricted.target.releaseSummary).toEqual({
+          affected: 1,
+          resolved: 0,
+          processing: 1,
+          quarantined: 0,
+        });
+        const processing = evidence();
+        expect(processing.request.status).toBe("processing");
+        expect(processing.work).toMatchObject({
+          booking_request_id: request.id,
+          suspension_action_id: restricted.actionId,
+          outcome: "declined",
+          state: "processing",
+        });
+        expect(processing.hold).toEqual(before.hold);
+        expect(processing.occupancies).toEqual(before.occupancies);
+        expect(processing.release).toEqual([]);
+        expect(suspend()).toMatchObject({
+          status: "completed",
+          actionId: restricted.actionId,
+        });
+        expect(evidence()).toEqual(processing);
+        harness.runSql(
+          `insert into public.account_names (user_id, first_name) values ('${actorId}', 'Sara') on conflict (user_id) do update set first_name=excluded.first_name;`,
+        );
+        const administratorContext = await browser.newContext({
+          baseURL,
+          viewport: { width: 390, height: 844 },
+        });
+        try {
+          const administratorPage = await administratorContext.newPage();
+          await administratorPage.goto("/en/administrator/access");
+          await administratorPage
+            .getByLabel("Email")
+            .fill(administrator.data.user!.email!);
+          await administratorPage
+            .getByLabel("Password")
+            .fill("Local-test-password-2026");
+          await administratorPage
+            .getByRole("button", { name: "Continue", exact: true })
+            .click();
+          const secret = await administratorPage
+            .getByTestId("mfa-secret")
+            .textContent();
+          if (!secret)
+            throw new Error(
+              "Pending suspension administrator enrollment is unavailable",
+            );
+          await administratorPage.getByLabel("Authenticator app code").fill(
+            new OTPAuth.TOTP({
+              secret: OTPAuth.Secret.fromBase32(secret),
+            }).generate(),
+          );
+          await administratorPage
+            .getByRole("button", { name: "Verify", exact: true })
+            .click();
+          await expect(
+            administratorPage.getByText(/Administrator access is ready/),
+          ).toBeVisible();
+          await administratorPage.goto(
+            `/ar/administrator/records/account/${request.customer_user_id}`,
+          );
+          await expect(administratorPage.locator("html")).toHaveAttribute(
+            "lang",
+            "ar",
+          );
+          await expect(administratorPage.locator("html")).toHaveAttribute(
+            "dir",
+            "rtl",
+          );
+          const customerPanel = administratorPage.getByRole("region", {
+            name: "نشاط العميل",
+            exact: true,
+          });
+          await expect(customerPanel.locator(".status-badge")).toHaveText(
+            "معلّق",
+          );
+          const progress = customerPanel.getByRole("group", {
+            name: "تقدّم تحرير الدفعات",
+            exact: true,
+          });
+          for (const [label, value] of [
+            ["المتأثرة", "1"],
+            ["المحسومة", "0"],
+            ["قيد المعالجة", "1"],
+            ["يحتاج إلى متابعة", "0"],
+          ]) {
+            await expect(
+              progress
+                .locator(".fact-list > div")
+                .filter({
+                  has: administratorPage.getByText(label, { exact: true }),
+                })
+                .locator("dd"),
+            ).toHaveText(value);
+          }
+          await expect(
+            customerPanel
+              .getByRole("listitem")
+              .filter({ hasText: "Fictional pending suspension" })
+              .getByText(actorId, { exact: true }),
+          ).toBeVisible();
+          const summary = JSON.parse(
+            harness.runSql(`begin; set local role authenticated;
+          set local request.jwt.claims='{"sub":"${actorId}","role":"authenticated","aal":"aal2"}';
+          select public.get_marketplace_suspension('customer','${request.customer_user_id}'); commit;`),
+          );
+          expect(summary.releaseSummary).toEqual({
+            affected: 1,
+            resolved: 0,
+            processing: 1,
+            quarantined: 0,
+          });
+          expect(summary.actions[0].id).toBe(restricted.actionId);
+          expect(evidence()).toEqual(processing);
+          const accessibility = await (async () => {
+            const savedViewport = administratorPage.viewportSize();
+            expect(savedViewport).not.toBeNull();
+            const savedZoom = await administratorPage
+              .locator("html")
+              .evaluate((element) => ({
+                value: element.style.getPropertyValue("zoom"),
+                priority: element.style.getPropertyPriority("zoom"),
+              }));
+            const readFocus = (element: HTMLElement) => {
+              const style = getComputedStyle(element);
+              return {
+                outlineStyle: style.outlineStyle,
+                outlineWidth: style.outlineWidth,
+                outlineColor: style.outlineColor,
+                outlineOffset: style.outlineOffset,
+                boxShadow: style.boxShadow,
+                borderColor: style.borderColor,
+              };
+            };
+            try {
+              const reason = customerPanel.getByRole("textbox", {
+                name: "السبب",
+                exact: true,
+              });
+              const submit = customerPanel.locator("form").getByRole("button");
+              await expect(submit).toHaveCount(1);
+              await expect(submit).toBeEnabled();
+              await reason.focus();
+              await expect(reason).toBeFocused();
+              const reasonFocus = await reason.evaluate(readFocus);
+              await reason.press("Tab");
+              await expect(submit).toBeFocused();
+              const submitFocus = await submit.evaluate(readFocus);
+              for (const focus of [reasonFocus, submitFocus]) {
+                expect(
+                  (focus.outlineStyle !== "none" &&
+                    Number.parseFloat(focus.outlineWidth) > 0 &&
+                    !["transparent", "rgba(0, 0, 0, 0)"].includes(
+                      focus.outlineColor,
+                    )) ||
+                    focus.boxShadow !== "none",
+                ).toBe(true);
+              }
+              const rendered = await customerPanel.evaluate((region) => {
+                const visible = (element: Element) => {
+                  const style = getComputedStyle(element);
+                  const box = element.getBoundingClientRect();
+                  return (
+                    style.display !== "none" &&
+                    style.visibility === "visible" &&
+                    box.width > 0 &&
+                    box.height > 0
+                  );
+                };
+                const styles = Array.from(
+                  region.querySelectorAll(
+                    "h2,h3,p,label,dt,dd,time,.status-badge,button,a,textarea",
+                  ),
+                )
+                  .filter(visible)
+                  .map((element) => {
+                    const style = getComputedStyle(element);
+                    const backgrounds = [];
+                    for (
+                      let ancestor: Element | null = element;
+                      ancestor;
+                      ancestor = ancestor.parentElement
+                    ) {
+                      const ancestorStyle = getComputedStyle(ancestor);
+                      backgrounds.push({
+                        tag: ancestor.tagName,
+                        backgroundColor: ancestorStyle.backgroundColor,
+                        backgroundImage: ancestorStyle.backgroundImage,
+                        opacity: ancestorStyle.opacity,
+                      });
+                    }
+                    return {
+                      tag: element.tagName,
+                      text: element.textContent?.trim(),
+                      color: style.color,
+                      fontFamily: style.fontFamily,
+                      fontSize: style.fontSize,
+                      lineHeight: style.lineHeight,
+                      fontWeight: style.fontWeight,
+                      borderColor: style.borderColor,
+                      borderWidth: style.borderWidth,
+                      backgrounds,
+                      rect: element.getBoundingClientRect().toJSON(),
+                    };
+                  });
+                const targets = Array.from(
+                  region.querySelectorAll("button,a[href]"),
+                )
+                  .filter(
+                    (element) =>
+                      visible(element) &&
+                      !element.matches(":disabled") &&
+                      element.getAttribute("aria-disabled") !== "true",
+                  )
+                  .map((element) => ({
+                    tag: element.tagName,
+                    text: element.textContent?.trim(),
+                    ariaLabel: element.getAttribute("aria-label"),
+                    rect: element.getBoundingClientRect().toJSON(),
+                  }));
+                return {
+                  lang: document.documentElement.lang,
+                  dir: document.documentElement.dir,
+                  viewport: { width: innerWidth, height: innerHeight },
+                  region: region.getBoundingClientRect().toJSON(),
+                  styles,
+                  targets,
+                };
+              });
+              expect(rendered.targets.length).toBeGreaterThan(0);
+              for (const target of rendered.targets) {
+                expect(target.rect.width, target.text).toBeGreaterThanOrEqual(
+                  24,
+                );
+                expect(target.rect.height, target.text).toBeGreaterThanOrEqual(
+                  24,
+                );
+              }
+              await administratorPage.setViewportSize({
+                width: 320,
+                height: savedViewport!.height,
+              });
+              const narrow = await customerPanel.evaluate((region) => ({
+                viewportWidth: innerWidth,
+                documentWidth: document.documentElement.clientWidth,
+                scrollWidth: document.documentElement.scrollWidth,
+                region: region.getBoundingClientRect().toJSON(),
+              }));
+              expect(narrow.scrollWidth).toBeLessThanOrEqual(
+                narrow.documentWidth + 1,
+              );
+              expect(narrow.region.left).toBeGreaterThanOrEqual(-1);
+              expect(narrow.region.right).toBeLessThanOrEqual(
+                narrow.viewportWidth + 1,
+              );
+              await administratorPage.setViewportSize(savedViewport!);
+              return {
+                minimumTargetCssPixels: 24,
+                keyboard: {
+                  order: ["labelled reason textarea", "enabled form submit"],
+                  reasonFocus,
+                  submitFocus,
+                },
+                rendered,
+                narrow,
+                savedViewport,
+                savedZoom,
+              };
+            } finally {
+              await administratorPage
+                .locator("html")
+                .evaluate((element, saved) => {
+                  if (saved.value)
+                    element.style.setProperty(
+                      "zoom",
+                      saved.value,
+                      saved.priority,
+                    );
+                  else element.style.removeProperty("zoom");
+                }, savedZoom);
+              await administratorPage.setViewportSize(savedViewport!);
+              expect(administratorPage.viewportSize()).toEqual(savedViewport);
+              expect(
+                await administratorPage.locator("html").evaluate((element) => ({
+                  value: element.style.getPropertyValue("zoom"),
+                  priority: element.style.getPropertyPriority("zoom"),
+                })),
+              ).toEqual(savedZoom);
+            }
+          })();
+          const capture = testInfo.outputPath("administrator-ar-mobile.png");
+          await administratorPage.screenshot({ path: capture, fullPage: true });
+          await testInfo.attach("administrator-ar-mobile", {
+            path: capture,
+            contentType: "image/png",
+          });
+          const administratorArMobileStatePath = testInfo.outputPath(
+            "administrator-ar-mobile-state.json",
+          );
+          await writeFile(
+            administratorArMobileStatePath,
+            JSON.stringify({
+              actorId,
+              targetId: request.customer_user_id,
+              actionId: restricted.actionId,
+              requestId: request.id,
+              workId: processing.work.id,
+              summary,
+              accessibility,
+              viewport: administratorPage.viewportSize(),
+              lang: await administratorPage
+                .locator("html")
+                .getAttribute("lang"),
+              dir: await administratorPage.locator("html").getAttribute("dir"),
+            }),
+          );
+          await testInfo.attach("administrator-ar-mobile-state", {
+            path: administratorArMobileStatePath,
+            contentType: "application/json",
+          });
+        } finally {
+          await administratorContext.close();
+        }
+        expect(evidence()).toEqual(processing);
+        for (let tick = 0; tick < 2; tick++) {
+          const result = await triggerScheduled(baseURL, "/__scheduled");
+          expect(result.ok, await result.text()).toBe(true);
+        }
+        const resolved = evidence();
+        expect(resolved.request).toMatchObject({
+          id: request.id,
+          status: "declined",
+          decline_reason: "other",
+          decline_note: null,
+        });
+        expect(resolved.snapshot).toEqual(before.snapshot);
+        expect(resolved.work).toMatchObject({
+          id: processing.work.id,
+          state: "complete",
+          suspension_action_id: restricted.actionId,
+        });
+        expect(resolved.hold).toMatchObject({
+          id: before.hold.id,
+          status: "released_hold",
+        });
+        expect(
+          resolved.occupancies.every((row: { active: boolean }) => !row.active),
+        ).toBe(true);
+        expect(resolved.confirmations).toEqual([]);
+        expect(resolved.release).toHaveLength(1);
+        expect(resolved.release[0]).toMatchObject({
+          provider: "fictional-payments",
+          environment: "local-test",
+          current_outcome: "succeeded",
+          operation_kind: "release",
+        });
+        expect(resolved.release[0].movement_reference).toEqual(
+          expect.any(String),
+        );
+        const terminal = resolved.events.filter(
+          (row: { event: { event_kind: string } }) =>
+            row.event.event_kind === "request_declined",
+        );
+        expect(terminal).toHaveLength(2);
+        const customerDelivery = terminal.find(
+          (row: { event: { recipient_user_id: string } }) =>
+            row.event.recipient_user_id === request.customer_user_id,
+        );
+        expect(customerDelivery).toMatchObject({
+          event: { recipient_role: "customer" },
+          work: { state: "delivered" },
+        });
+        const delivered = resolved.effects.filter((row: { event_id: string }) =>
+          terminal.some(
+            (event: { event: { id: string } }) =>
+              event.event.id === row.event_id,
+          ),
+        );
+        expect(delivered).toHaveLength(2);
+        for (const effect of delivered)
+          expect(effect).toMatchObject({
+            supplier: "fictional-notifications",
+            environment: "local-test",
+          });
+        await page.goto(`/en/booking-requests/${reference}`);
+        await expect(page.getByRole("main")).toContainText("Declined");
+        await expect(page.getByRole("main")).not.toContainText(
+          "Fictional pending suspension",
+        );
+        await page.reload();
+        const repeated = await triggerScheduled(baseURL, "/__scheduled");
+        expect(repeated.ok, await repeated.text()).toBe(true);
+        expect(suspend()).toMatchObject({
+          status: "completed",
+          actionId: restricted.actionId,
+          target: {
+            releaseSummary: {
+              affected: 1,
+              resolved: 1,
+              processing: 0,
+              quarantined: 0,
+            },
+          },
+        });
+        expect(evidence()).toEqual(resolved);
+      } catch (error) {
+        failed = true;
+        failure = error;
+      } finally {
+        try {
+          const committed = JSON.parse(
+            harness.runSql(`select coalesce(jsonb_agg(to_jsonb(actions)),'[]')
+            from private.marketplace_suspension_actions actions where command_id='${commandId}';`),
+          );
+          expect(committed.length).toBeLessThanOrEqual(1);
+          const suspension = committed[0];
+          if (suspension)
+            expect(suspension).toMatchObject({
+              command_id: commandId,
+              actor_user_id: actorId,
+              target_kind: "customer",
+              account_user_id: request.customer_user_id,
+              action: "suspend",
+              reason: "Fictional pending suspension",
+              expected_revision: expectedRevision,
+              resulting_revision: expectedRevision + 1,
+            });
+          const current = readRestriction();
+          expect(current.status).toBe("ready");
+          const retainedBeforeRestoration = evidence();
+          let reactivationActionId: string | null = null;
+          if (current.state === "suspended") {
+            expect(
+              suspension,
+              "Only this invocation's restriction can be restored",
+            ).toBeDefined();
+            expect(current.revision).toBe(suspension.resulting_revision);
+            expect(current.actions[0]).toMatchObject({
+              id: suspension.id,
+              commandId,
+              actorUserId: actorId,
+              action: "suspend",
+            });
+            const reactivated = JSON.parse(
+              harness.runSql(`begin; set local role authenticated;
+              set local request.jwt.claims='{"sub":"${actorId}","role":"authenticated","aal":"aal2"}';
+              select public.set_marketplace_suspension('customer','${request.customer_user_id}','reactivate',${current.revision},'Fictional pending customer fixture restored','${randomUUID()}'); commit;`),
+            );
+            expect(reactivated.status).toBe("completed");
+            reactivationActionId = reactivated.actionId;
+          } else expect(current.state).toBe("active");
+          const finalRestriction = readRestriction();
+          expect(finalRestriction).toMatchObject({
+            status: "ready",
+            targetKind: "customer",
+            targetId: request.customer_user_id,
+            state: "active",
+          });
+          expect(Number.isSafeInteger(finalRestriction.revision)).toBe(true);
+          expect(finalRestriction.revision).toBeGreaterThanOrEqual(
+            expectedRevision,
+          );
+          expect(finalRestriction.revision).toBe(
+            reactivationActionId ? current.revision + 1 : current.revision,
+          );
+          if (suspension)
+            expect(finalRestriction.actions).toContainEqual(
+              expect.objectContaining({
+                id: suspension.id,
+                commandId,
+                actorUserId: actorId,
+              }),
+            );
+          if (reactivationActionId)
+            expect(finalRestriction.actions[0]).toMatchObject({
+              id: reactivationActionId,
+              actorUserId: actorId,
+              action: "reactivate",
+              expectedRevision: current.revision,
+              resultingRevision: finalRestriction.revision,
+            });
+          const retainedAfterRestoration = evidence();
+          expect(retainedAfterRestoration).toEqual(retainedBeforeRestoration);
+          const suspensionRetainedPendingGraphPath = testInfo.outputPath(
+            "suspension-retained-pending-graph.json",
+          );
+          await writeFile(
+            suspensionRetainedPendingGraphPath,
+            JSON.stringify({
+              actorId,
+              commandId,
+              expectedRevision,
+              reference,
+              suspensionActionId: suspension?.id ?? null,
+              reactivationActionId,
+              finalRestriction,
+              evidence: retainedAfterRestoration,
+            }),
+          );
+          await testInfo.attach("suspension-retained-pending-graph", {
+            path: suspensionRetainedPendingGraphPath,
+            contentType: "application/json",
+          });
+        } catch (error) {
+          if (failed)
+            testInfo.annotations.push({
+              type: "fixture restoration failed",
+              description:
+                error instanceof Error ? error.message : String(error),
+            });
+          else {
+            failed = true;
+            failure = error;
+          }
+        }
+      }
+      if (failed) throw failure;
+    });
   await ownerContext.close();
 });

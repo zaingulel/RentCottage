@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS "public"."account_contexts" (
     "user_id" "uuid" NOT NULL,
     "role" "public"."account_role" NOT NULL,
     "owner_approval_state" "public"."owner_approval_state",
+    "customer_suspended" boolean DEFAULT false NOT NULL,
+    "customer_suspension_revision" bigint DEFAULT 0 NOT NULL,
+    "owner_suspension_revision" bigint DEFAULT 0 NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     CONSTRAINT "owner_approval_matches_role" CHECK (((("role" = 'cottage_owner'::"public"."account_role") AND ("owner_approval_state" IS NOT NULL)) OR (("role" <> 'cottage_owner'::"public"."account_role") AND ("owner_approval_state" IS NULL))))
@@ -46,3 +49,26 @@ CREATE TABLE IF NOT EXISTS "public"."privileged_sign_in_attempts" (
 ALTER TABLE "public"."privileged_sign_in_attempts" OWNER TO "postgres";
 
 COMMENT ON TABLE "public"."privileged_sign_in_attempts" IS 'Privileged access security audit retained for 180 days';
+
+CREATE TABLE IF NOT EXISTS private.marketplace_suspension_actions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    command_id uuid NOT NULL,
+    target_kind text NOT NULL,
+    account_user_id uuid,
+    profile_id uuid,
+    actor_user_id uuid NOT NULL,
+    action text NOT NULL,
+    expected_revision bigint NOT NULL,
+    resulting_revision bigint NOT NULL,
+    from_state text NOT NULL,
+    to_state text NOT NULL,
+    reason text NOT NULL,
+    created_at timestamptz DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT marketplace_suspension_action_target CHECK (
+      (target_kind IN ('customer','owner') AND account_user_id IS NOT NULL AND profile_id IS NULL)
+      OR (target_kind='cottage' AND profile_id IS NOT NULL AND account_user_id IS NULL)),
+    CONSTRAINT marketplace_suspension_action_kind CHECK (action IN ('suspend','reactivate')),
+    CONSTRAINT marketplace_suspension_action_reason CHECK (reason=regexp_replace(reason,'^[[:space:]]+|[[:space:]]+$','','g') AND char_length(reason) >= 1 AND char_length(reason) <= 1000),
+    CONSTRAINT marketplace_suspension_action_revision CHECK (expected_revision>=0 AND resulting_revision=expected_revision+1)
+);
+ALTER TABLE private.marketplace_suspension_actions OWNER TO postgres;

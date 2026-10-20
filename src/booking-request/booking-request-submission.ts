@@ -61,6 +61,7 @@ export type SubmissionFailureStatus =
   | "invalid"
   | "self-booking-not-allowed"
   | "access-required"
+  | "customer-suspended"
   | "quote-stale"
   | "too-late"
   | "authorization-failed"
@@ -107,7 +108,12 @@ export interface BookingRequestSubmissionRepository {
 
 export class BookingRequestPreAuthorizationRejected extends Error {
   constructor(
-    readonly status: "invalid" | "quote-stale" | "too-late" | "unavailable",
+    readonly status:
+      | "invalid"
+      | "customer-suspended"
+      | "quote-stale"
+      | "too-late"
+      | "unavailable",
   ) {
     super(`booking_request_pre_authorization_${status}`);
     this.name = "BookingRequestPreAuthorizationRejected";

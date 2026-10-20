@@ -53,6 +53,7 @@ export function MessagingConversation({
   const reportCommands = useRef<Record<string, string>>({});
   const [reported, setReported] = useState<Record<string, boolean>>({});
   const [forcedReadOnly, setForcedReadOnly] = useState(false);
+  const [forcedSuspended, setForcedSuspended] = useState(false);
 
   function send() {
     const originalBody = body;
@@ -71,6 +72,9 @@ export function MessagingConversation({
         router.push(
           `/${locale}/messages/${conversation.conversationId}${contextQuery ? `?${contextQuery}` : ""}`,
         );
+        router.refresh();
+      } else if (result.status === "suspended") {
+        setForcedSuspended(true);
         router.refresh();
       } else if (result.status === "blocked") {
         setFeedback(copy.blocked);
@@ -135,8 +139,12 @@ export function MessagingConversation({
   }
 
   const canMutate = conversation.actorRole !== "platform_administrator";
+  const customerSuspended =
+    forcedSuspended || conversation.sendRestriction === "customer-suspended";
   const readOnly =
-    forcedReadOnly || (conversation.booking?.writingClosed ?? false);
+    customerSuspended ||
+    forcedReadOnly ||
+    (conversation.booking?.writingClosed ?? false);
   const scopedInboxQuery =
     conversation.cottage.publicSlug && contextQuery
       ? `cottage=${conversation.cottage.publicSlug}&${contextQuery}`
@@ -224,7 +232,8 @@ export function MessagingConversation({
         <div className="messaging-conversation-actions">
           {contextQuery &&
           conversation.cottage.publicSlug &&
-          conversation.canContinueBookingRequest ? (
+          conversation.canContinueBookingRequest &&
+          !customerSuspended ? (
             <ActionLink
               kind="text"
               href={`/${locale}/request/${conversation.cottage.publicSlug}?${contextQuery}&conversation=${conversation.conversationId}`}
@@ -371,7 +380,7 @@ export function MessagingConversation({
             kind="error"
             focusTargetId={!pending ? "message-send-read-only" : undefined}
           >
-            {copy.readOnly}
+            {customerSuspended ? copy.customerSuspended : copy.readOnly}
           </ActionFeedback>
         ) : (
           <form

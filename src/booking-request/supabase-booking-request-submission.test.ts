@@ -10,6 +10,7 @@ import type { PaymentLifecycleSnapshot } from "@/payment/payment-contract";
 
 import {
   BookingRequestAuthorizationClaimNotPersisted,
+  BookingRequestPreAuthorizationRejected,
   type SubmissionInput,
 } from "./booking-request-submission";
 import { bookingRequestAcceptanceEvidence } from "./booking-request-policy";
@@ -113,6 +114,110 @@ describe("Supabase Booking Request submission repository", () => {
         target_attempt_id: "22222222-2222-4222-8222-222222222222",
         target_provider_identity: provider.identity,
       }),
+    );
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it("rejects an exact customer-suspended authorization claim before provider execution", async () => {
+    let pendingSnapshot: PaymentLifecycleSnapshot | undefined;
+    const provider = new PaymentSimulator({
+      now: () => "2099-08-21T17:00:00.000Z",
+      outcomes: ["succeeded"],
+    });
+    const payment = createPaymentLifecycle(
+      {
+        paymentLifecycleId: "33333333-3333-4333-8333-333333333333",
+        bookingPriceFils: 100_003_000,
+        bookingServiceFeeFils: 5_000_000,
+      },
+      provider,
+      {
+        save: async (snapshot) => {
+          pendingSnapshot = snapshot;
+          throw new Error("captured-before-provider");
+        },
+      },
+    );
+    await expect(payment.authorize()).rejects.toThrow(
+      "captured-before-provider",
+    );
+    expect(pendingSnapshot).toBeDefined();
+    const client = clientWith({
+      data: { status: "customer-suspended" },
+      error: null,
+    });
+    const repository = new SupabaseBookingRequestSubmissionRepository(client);
+    const result = repository.savePaymentSnapshot(
+      "22222222-2222-4222-8222-222222222222",
+      pendingSnapshot!,
+      provider.identity,
+    );
+
+    await expect(result).rejects.toBeInstanceOf(
+      BookingRequestPreAuthorizationRejected,
+    );
+    await expect(result).rejects.toMatchObject({
+      status: "customer-suspended",
+    });
+    expect(client.rpc).toHaveBeenCalledExactlyOnceWith(
+      "begin_booking_request_authorization_claim",
+      {
+        target_attempt_id: "22222222-2222-4222-8222-222222222222",
+        target_payment_snapshot: pendingSnapshot,
+        target_provider_identity: provider.identity,
+      },
+    );
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it("rejects an extra-key customer-suspended authorization outcome as an invalid permit", async () => {
+    let pendingSnapshot: PaymentLifecycleSnapshot | undefined;
+    const provider = new PaymentSimulator({
+      now: () => "2099-08-21T17:00:00.000Z",
+      outcomes: ["succeeded"],
+    });
+    const payment = createPaymentLifecycle(
+      {
+        paymentLifecycleId: "33333333-3333-4333-8333-333333333333",
+        bookingPriceFils: 100_003_000,
+        bookingServiceFeeFils: 5_000_000,
+      },
+      provider,
+      {
+        save: async (snapshot) => {
+          pendingSnapshot = snapshot;
+          throw new Error("captured-before-provider");
+        },
+      },
+    );
+    await expect(payment.authorize()).rejects.toThrow(
+      "captured-before-provider",
+    );
+    expect(pendingSnapshot).toBeDefined();
+    const client = clientWith({
+      data: { status: "customer-suspended", ready: true },
+      error: null,
+    });
+    const repository = new SupabaseBookingRequestSubmissionRepository(client);
+    const result = repository.savePaymentSnapshot(
+      "22222222-2222-4222-8222-222222222222",
+      pendingSnapshot!,
+      provider.identity,
+    );
+
+    await expect(result).rejects.toThrow(
+      "Database returned an invalid provider execution permit",
+    );
+    await expect(result).rejects.not.toBeInstanceOf(
+      BookingRequestPreAuthorizationRejected,
+    );
+    expect(client.rpc).toHaveBeenCalledExactlyOnceWith(
+      "begin_booking_request_authorization_claim",
+      {
+        target_attempt_id: "22222222-2222-4222-8222-222222222222",
+        target_payment_snapshot: pendingSnapshot,
+        target_provider_identity: provider.identity,
+      },
     );
     expect(provider.requests).toHaveLength(0);
   });
@@ -314,6 +419,24 @@ describe("Supabase Booking Request submission repository", () => {
           intent: expect.objectContaining({ conversationId }),
         }),
       }),
+    );
+  });
+
+  it("decodes customer suspension only as an exact finite failure", async () => {
+    const repository = new SupabaseBookingRequestSubmissionRepository(
+      clientWith({ data: { status: "customer-suspended" }, error: null }),
+    );
+    await expect(repository.prepare(input)).resolves.toEqual({
+      status: "customer-suspended",
+    });
+    const malformed = new SupabaseBookingRequestSubmissionRepository(
+      clientWith({
+        data: { status: "customer-suspended", ready: true },
+        error: null,
+      }),
+    );
+    await expect(malformed.prepare(input)).rejects.toThrow(
+      /invalid Booking Request submission result/i,
     );
   });
 

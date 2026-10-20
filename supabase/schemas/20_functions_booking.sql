@@ -42,6 +42,9 @@ CREATE OR REPLACE FUNCTION "public"."begin_booking_request_authorization_claim"(
     AS $$
 declare attempt public.booking_request_submission_attempts;
 declare existing_claim public.booking_request_authorization_claims;
+declare customer_context public.account_contexts;
+declare current_profile public.owner_application_cottage_profiles;
+declare owner_revision bigint;
 declare claim_id uuid := gen_random_uuid();
 declare claim_generation integer := 1;
 declare provider_idempotency_key text;
@@ -137,6 +140,48 @@ begin
       or existing_claim.intent_fingerprint is distinct from attempt.intent_fingerprint then
       return jsonb_build_object('status', 'invalid');
     end if;
+  end if;
+
+  select * into customer_context
+  from public.account_contexts contexts
+  where contexts.user_id = attempt.customer_user_id
+  for update;
+  select * into current_profile
+  from public.owner_application_cottage_profiles profiles
+  where profiles.id = attempt.profile_id
+  for update;
+  target_schedule_revision_id := current_profile.current_shift_schedule_id;
+  select contexts.owner_suspension_revision into owner_revision
+  from public.account_contexts contexts
+  where contexts.user_id = current_profile.owner_user_id;
+  if customer_context.customer_suspended then
+    return jsonb_build_object('status', 'customer-suspended');
+  end if;
+  if target_schedule_revision_id is null
+    or customer_context.customer_suspension_revision is null
+    or customer_context.customer_suspension_revision < 0
+    or owner_revision is null or owner_revision < 0
+    or current_profile.suspension_revision is null
+    or current_profile.suspension_revision < 0
+    or attempt.customer_suspension_revision is null
+    or attempt.customer_suspension_revision < 0
+    or attempt.owner_suspension_revision is null
+    or attempt.owner_suspension_revision < 0
+    or attempt.cottage_suspension_revision is null
+    or attempt.cottage_suspension_revision < 0 then
+    return jsonb_build_object('status', 'unavailable');
+  end if;
+  if current_profile.business_suspended
+    or attempt.customer_suspension_revision
+      is distinct from customer_context.customer_suspension_revision
+    or attempt.owner_suspension_revision is distinct from owner_revision
+    or attempt.cottage_suspension_revision
+      is distinct from current_profile.suspension_revision then
+    perform public.retire_unusable_prepared_booking_request_submission(attempt.id);
+    return jsonb_build_object('status', 'quote-stale');
+  end if;
+
+  if existing_claim.id is not null then
     if public.booking_request_claim_state_allows_authorization(existing_claim.state)
       and attempt.payment_snapshot -> 'release' = 'null'::jsonb
       and clock_timestamp() < existing_claim.not_after then
@@ -153,18 +198,6 @@ begin
       );
     end if;
     return jsonb_build_object('status', 'too-late');
-  end if;
-
-  perform contexts.user_id
-  from public.account_contexts contexts
-  where contexts.user_id = attempt.customer_user_id
-  for update;
-  select profiles.current_shift_schedule_id into target_schedule_revision_id
-  from public.owner_application_cottage_profiles profiles
-  where profiles.id = attempt.profile_id
-  for update;
-  if target_schedule_revision_id is null then
-    return jsonb_build_object('status', 'unavailable');
   end if;
 
   if attempt.payment_snapshot is not null
@@ -1467,7 +1500,6 @@ declare target_attempt public.booking_request_submission_attempts;
 declare work public.booking_request_release_work;
 declare authorization_claim public.booking_request_authorization_claims;
 declare effective_action text;
-declare outcome text;
 declare evaluated_at timestamptz;
 declare normalized_note text := nullif(btrim(target_decline_note), '');
 declare fingerprint text;
@@ -1477,7 +1509,8 @@ begin
   end if;
   select * into target_request from public.booking_requests requests
   where requests.id = target_booking_request_id for update;
-  if not found then return jsonb_build_object('status', 'access-required'); end if;
+  if not found then
+    return jsonb_build_object('status', 'access-required'); end if;
 
   if target_action not in ('accept', 'decline', 'withdraw') then
     return jsonb_build_object('status', 'access-required');
@@ -1536,7 +1569,8 @@ begin
     target_decline_reason is null
     or char_length(coalesce(normalized_note, '')) > 500
     or not public.booking_request_content_is_safe(coalesce(normalized_note, ''))
-  ) then return jsonb_build_object('status', 'invalid'); end if;
+  ) then
+    return jsonb_build_object('status', 'invalid'); end if;
 
   if effective_action = 'accept' then
     update public.booking_requests set status = 'accepted',
@@ -1588,35 +1622,7 @@ begin
     );
   end if;
 
-  outcome := case effective_action
-    when 'decline' then 'declined'
-    when 'withdraw' then 'withdrawn'
-    else 'expired'
-  end;
-  select * into target_attempt from public.booking_request_submission_attempts attempts
-  where attempts.booking_request_id = target_request.id for update;
-  fingerprint := encode(extensions.digest(convert_to(jsonb_build_object(
-    'bookingRequestId', target_request.id,
-    'outcome', outcome,
-    'actorUserId', case when effective_action = 'expire' then null else target_actor_user_id end,
-    'declineReason', case when outcome = 'declined' then target_decline_reason else null end,
-    'declineNote', case when outcome = 'declined' then normalized_note else null end
-  )::text, 'UTF8'), 'sha256'), 'hex');
-  insert into public.booking_request_release_work (
-    booking_request_id, attempt_id, outcome, actor_user_id,
-    decline_reason, decline_note, outcome_fingerprint, created_at
-  ) values (
-    target_request.id, target_attempt.id, outcome,
-    case when effective_action = 'expire' then null else target_actor_user_id end,
-    case when outcome = 'declined' then target_decline_reason end,
-    case when outcome = 'declined' then normalized_note end,
-    fingerprint, evaluated_at
-  ) returning * into work;
-  update public.booking_requests set status = 'processing',
-    outcome_actor_user_id = work.actor_user_id,
-    decline_reason = work.decline_reason, decline_note = work.decline_note,
-    outcome_fingerprint = work.outcome_fingerprint
-  where id = target_request.id;
+  work := private.prepare_booking_request_release(target_request.id,target_actor_user_id,effective_action,target_decline_reason,normalized_note,null);
   return public.lease_booking_request_release_work(work.id);
 end;
 $$;
@@ -1628,16 +1634,15 @@ CREATE OR REPLACE FUNCTION "public"."claim_booking_request_expiry"("target_booki
     SET "search_path" TO ''
     AS $$
 declare target_request public.booking_requests;
-declare target_attempt public.booking_request_submission_attempts;
 declare work public.booking_request_release_work;
 declare evaluated_at timestamptz;
-declare fingerprint text;
 begin
   select * into target_request
   from public.booking_requests requests
   where requests.id = target_booking_request_id
   for update;
-  if not found then return jsonb_build_object('status', 'access-required'); end if;
+  if not found then
+    return jsonb_build_object('status', 'access-required'); end if;
   if target_request.status = 'processing' then
     select * into work from public.booking_request_release_work release_work
     where release_work.booking_request_id = target_request.id;
@@ -1654,27 +1659,7 @@ begin
       or evaluated_at < target_request.response_deadline then
     return jsonb_build_object('status', 'not-due');
   end if;
-  select * into target_attempt from public.booking_request_submission_attempts attempts
-  where attempts.booking_request_id = target_request.id for update;
-  fingerprint := encode(extensions.digest(convert_to(jsonb_build_object(
-    'bookingRequestId', target_request.id,
-    'outcome', 'expired',
-    'actorUserId', null,
-    'declineReason', null,
-    'declineNote', null
-  )::text, 'UTF8'), 'sha256'), 'hex');
-  insert into public.booking_request_release_work (
-    booking_request_id, attempt_id, outcome, actor_user_id,
-    decline_reason, decline_note, outcome_fingerprint, created_at
-  ) values (
-    target_request.id, target_attempt.id, 'expired', null,
-    null, null, fingerprint, evaluated_at
-  ) returning * into work;
-  update public.booking_requests set status = 'processing',
-    outcome_actor_user_id = null,
-    decline_reason = null, decline_note = null,
-    outcome_fingerprint = work.outcome_fingerprint
-  where id = target_request.id;
+  work := private.prepare_booking_request_release(target_request.id,null,'expire',null,null,null);
   return public.lease_booking_request_release_work(work.id);
 end;
 $$;
@@ -3641,6 +3626,9 @@ CREATE OR REPLACE FUNCTION "public"."finalize_booking_request_submission"("targe
     SET "search_path" TO ''
     AS $$
 declare attempt public.booking_request_submission_attempts;
+declare customer_context public.account_contexts;
+declare current_profile public.owner_application_cottage_profiles;
+declare owner_revision bigint;
 declare current_quote jsonb;
 declare first_starts_at timestamptz;
 declare owner_user_id uuid;
@@ -3673,16 +3661,30 @@ begin
   where claims.attempt_id = attempt.id
   for update;
   authorization_claim_found := found;
-  perform contexts.user_id
+  select * into customer_context
   from public.account_contexts contexts
   where contexts.user_id = attempt.customer_user_id
   for update;
-  select profiles.owner_user_id into owner_user_id
+  select * into current_profile
   from public.owner_application_cottage_profiles profiles
   where profiles.id = attempt.profile_id
   for update;
+  owner_user_id := current_profile.owner_user_id;
   if owner_user_id is null then
     raise exception 'Published Cottage was not found' using errcode = 'RC404';
+  end if;
+  select contexts.owner_suspension_revision into owner_revision
+  from public.account_contexts contexts
+  where contexts.user_id = current_profile.owner_user_id;
+  if customer_context.customer_suspended
+    or current_profile.business_suspended
+    or attempt.customer_suspension_revision
+      is distinct from customer_context.customer_suspension_revision
+    or attempt.owner_suspension_revision is distinct from owner_revision
+    or attempt.cottage_suspension_revision
+      is distinct from current_profile.suspension_revision then
+    raise exception 'Booking Request submission eligibility changed'
+      using errcode = 'RC409';
   end if;
   perform public.save_booking_request_payment_snapshot(
     target_attempt_id,
@@ -5098,6 +5100,9 @@ declare existing_projection jsonb;
 declare target_conversation public.messaging_conversations;
 declare locked_attempt_ids uuid[] := '{}'::uuid[];
 declare locked_attempt_id uuid;
+declare customer_context public.account_contexts;
+declare current_profile public.owner_application_cottage_profiles;
+declare owner_revision bigint;
 begin
   if target_customer_user_id is null
     or target_idempotency_key is null
@@ -5238,7 +5243,7 @@ begin
     end if;
   end if;
 
-  perform contexts.user_id
+  select * into customer_context
   from public.account_contexts contexts
   where contexts.user_id = target_customer_user_id
   for no key update;
@@ -5252,6 +5257,34 @@ begin
   if current_profile_id is null then
     perform public.retire_unusable_prepared_booking_request_submission(existing_attempt.id);
     return jsonb_build_object('status', 'quote-stale');
+  end if;
+  select * into current_profile from public.owner_application_cottage_profiles
+  where id = current_profile_id;
+  select contexts.owner_suspension_revision into owner_revision
+  from public.account_contexts contexts where contexts.user_id = current_profile.owner_user_id;
+  if customer_context.customer_suspended then
+    return jsonb_build_object('status', 'customer-suspended');
+  end if;
+  if customer_context.customer_suspension_revision is null
+    or customer_context.customer_suspension_revision < 0
+    or owner_revision is null or owner_revision < 0
+    or current_profile.suspension_revision is null or current_profile.suspension_revision < 0 then
+    return jsonb_build_object('status', 'unavailable');
+  end if;
+  if current_profile.business_suspended then
+    perform public.retire_unusable_prepared_booking_request_submission(existing_attempt.id);
+    return jsonb_build_object('status', 'quote-stale');
+  end if;
+  if existing_attempt.id is not null and (
+    existing_attempt.customer_suspension_revision is distinct from customer_context.customer_suspension_revision
+    or existing_attempt.owner_suspension_revision is distinct from owner_revision
+    or existing_attempt.cottage_suspension_revision is distinct from current_profile.suspension_revision
+  ) then
+    if not public.retire_unusable_prepared_booking_request_submission(existing_attempt.id)
+      or key_attempt.id is not null then
+      return jsonb_build_object('status', 'quote-stale');
+    end if;
+    existing_attempt := null;
   end if;
   if target_conversation_id is not null then
     select * into target_conversation
@@ -5355,12 +5388,12 @@ begin
     customer_user_id, idempotency_key, payment_lifecycle_id,
     profile_id, conversation_id, locale, public_slug, requested_search,
     quote_fingerprint, quote_payload, intent_fingerprint, intent_payload,
-    state
+    state, customer_suspension_revision, owner_suspension_revision, cottage_suspension_revision
   ) values (
     target_customer_user_id, target_idempotency_key, gen_random_uuid(),
     current_profile_id, target_conversation_id, target_locale, target_slug, target_search,
     displayed_fingerprint, current_quote - 'status', target_intent_fingerprint, intent,
-    'authorizing'
+    'authorizing', customer_context.customer_suspension_revision, owner_revision, current_profile.suspension_revision
   )
   on conflict do nothing
   returning * into inserted_attempt;
@@ -6006,11 +6039,34 @@ begin
   for update;
   if not found
     or attempt.state <> 'authorizing'
-    or attempt.payment_snapshot is not null then
+    or attempt.payment_snapshot is not null
+    or attempt.booking_request_id is not null
+    or exists (
+      select 1 from public.booking_request_authorization_claims claims
+      where claims.attempt_id = attempt.id
+    ) then
     return false;
   end if;
 
   perform public.validate_public_cottage_search(attempt.requested_search);
+  select exists (
+    select 1
+    from public.account_contexts customer
+    join public.owner_application_cottage_profiles profiles on profiles.id = attempt.profile_id
+    join public.account_contexts owner_context on owner_context.user_id = profiles.owner_user_id
+    where customer.user_id = attempt.customer_user_id
+      and customer.customer_suspension_revision >= 0
+      and owner_context.owner_suspension_revision >= 0
+      and profiles.suspension_revision >= 0
+      and attempt.customer_suspension_revision >= 0
+      and attempt.owner_suspension_revision >= 0
+      and attempt.cottage_suspension_revision >= 0
+      and (
+        attempt.customer_suspension_revision <> customer.customer_suspension_revision
+        or attempt.owner_suspension_revision <> owner_context.owner_suspension_revision
+        or attempt.cottage_suspension_revision <> profiles.suspension_revision
+      )
+  ) into unusable;
   begin
     perform public.validate_public_cottage_discovery_admission(attempt.requested_search);
   exception when sqlstate '22023' then
@@ -7267,6 +7323,9 @@ declare provider_identity jsonb := target_operation -> 'providerIdentity';
 declare permit_purpose text := target_operation ->> 'permitPurpose';
 declare claim public.booking_request_authorization_claims;
 declare attempt public.booking_request_submission_attempts;
+declare customer_context public.account_contexts;
+declare current_profile public.owner_application_cottage_profiles;
+declare owner_revision bigint;
 declare work public.booking_request_release_work;
 declare release_operation public.booking_request_release_operations;
 declare operation_id uuid := gen_random_uuid();
@@ -7465,8 +7524,22 @@ begin
       raise exception 'Payment authorization permit has foreign-purpose fields'
         using errcode = 'RC409';
     end if;
+    select * into attempt
+    from public.booking_request_submission_attempts attempts
+    where attempts.id = (
+      select claims.attempt_id from public.booking_request_authorization_claims claims
+      where claims.id = (target_operation ->> 'claimId')::uuid
+    ) for update;
     select * into claim from public.booking_request_authorization_claims claims
-    where claims.id = (target_operation ->> 'claimId')::uuid for update;
+    where claims.id = (target_operation ->> 'claimId')::uuid
+      and claims.attempt_id = attempt.id for update;
+    select * into customer_context from public.account_contexts contexts
+    where contexts.user_id = attempt.customer_user_id for update;
+    select * into current_profile from public.owner_application_cottage_profiles profiles
+    where profiles.id = attempt.profile_id for update;
+    select contexts.owner_suspension_revision into owner_revision
+    from public.account_contexts contexts
+    where contexts.user_id = current_profile.owner_user_id;
     effective_idempotency_key := claim.provider_idempotency_key;
     if claim.id is null
       or claim.generation <> (target_operation ->> 'claimGeneration')::integer
@@ -7485,6 +7558,25 @@ begin
       or not public.booking_request_claim_state_allows_authorization(claim.state)
       or clock_timestamp() >= claim.not_after then
       raise exception 'Payment authorization permit is invalid or expired'
+        using errcode = 'RC409';
+    end if;
+    if not exists (
+      select 1 from public.payment_provider_operations operations
+      where operations.provider = claim.provider
+        and operations.environment = claim.environment
+        and operations.merchant_id = claim.merchant_id
+        and operations.terminal_id = claim.terminal_id
+        and operations.provider_idempotency_key = effective_idempotency_key
+    ) and (
+      customer_context.customer_suspended
+      or current_profile.business_suspended
+      or attempt.customer_suspension_revision
+        is distinct from customer_context.customer_suspension_revision
+      or attempt.owner_suspension_revision is distinct from owner_revision
+      or attempt.cottage_suspension_revision
+        is distinct from current_profile.suspension_revision
+    ) then
+      raise exception 'Payment authorization eligibility changed'
         using errcode = 'RC409';
     end if;
   else
@@ -8315,3 +8407,92 @@ $$;
 
 ALTER FUNCTION public.quarantine_booking_request_release_work(uuid) OWNER TO postgres;
 ALTER FUNCTION public.record_booking_request_release_observation(uuid,jsonb,boolean) OWNER TO postgres;
+CREATE OR REPLACE FUNCTION private.prepare_booking_request_release(
+  target_request_id uuid,
+  target_actor_id uuid,
+  requested_action text,
+  target_decline_reason text,
+  target_decline_note text,
+  target_suspension_action_id uuid
+) RETURNS public.booking_request_release_work
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare target_request public.booking_requests;
+declare target_attempt public.booking_request_submission_attempts;
+declare action private.marketplace_suspension_actions;
+declare work public.booking_request_release_work;
+declare evaluated_at timestamptz;
+declare effective_action text;
+declare outcome text;
+declare normalized_note text:=nullif(btrim(target_decline_note),'');
+declare fingerprint_payload jsonb;
+begin
+  select * into target_request from public.booking_requests
+  where id=target_request_id for update;
+  if not found or target_request.status<>'pending' then
+    raise exception 'Pending Booking Request is unavailable' using errcode='RC409';
+  end if;
+  select * into target_attempt from public.booking_request_submission_attempts
+  where booking_request_id=target_request.id for update;
+  if not found
+    or target_attempt.customer_user_id<>target_request.customer_user_id
+    or target_attempt.profile_id<>target_request.profile_id then
+    raise exception 'Booking Request release binding is unavailable' using errcode='RC409';
+  end if;
+  if target_suspension_action_id is not null then
+    select * into action from private.marketplace_suspension_actions
+    where id=target_suspension_action_id;
+    if not found
+      or requested_action is distinct from 'suspend'
+      or action.action<>'suspend'
+      or action.actor_user_id is distinct from target_actor_id
+      or target_actor_id is distinct from (select auth.uid())
+      or public.is_platform_administrator('aal2') is not true
+      or not (
+        (action.target_kind='customer' and action.account_user_id=target_request.customer_user_id)
+        or (action.target_kind='owner' and action.account_user_id=target_request.owner_user_id)
+        or (action.target_kind='cottage' and action.profile_id=target_request.profile_id)
+      ) then
+      raise exception 'Suspension release scope is invalid' using errcode='42501';
+    end if;
+  elsif requested_action is null or requested_action not in ('decline','withdraw','expire') then
+    raise exception 'Booking Request release action is invalid' using errcode='22023';
+  end if;
+  evaluated_at:=clock_timestamp();
+  effective_action:=case
+    when target_suspension_action_id is not null and evaluated_at>=target_request.response_deadline
+      then 'expire'
+    when requested_action='suspend' then 'decline'
+    else requested_action end;
+  outcome:=case effective_action when 'decline' then 'declined' when 'withdraw' then 'withdrawn' else 'expired' end;
+  if target_suspension_action_id is not null then
+    target_decline_reason:='other';
+    normalized_note:=null;
+  end if;
+  fingerprint_payload:=jsonb_build_object(
+    'bookingRequestId', target_request.id, 'outcome', outcome,
+    'actorUserId', case when effective_action='expire' then null else target_actor_id end,
+    'declineReason', case when outcome='declined' then target_decline_reason end,
+    'declineNote', case when outcome='declined' then normalized_note end
+  );
+  if target_suspension_action_id is not null then
+    fingerprint_payload:=fingerprint_payload||jsonb_build_object('suspensionActionId', target_suspension_action_id);
+  end if;
+  insert into public.booking_request_release_work(
+    booking_request_id, attempt_id, outcome, actor_user_id, decline_reason,
+    decline_note, outcome_fingerprint, created_at, suspension_action_id
+  ) values(
+    target_request.id, target_attempt.id, outcome,
+    case when effective_action='expire' then null else target_actor_id end,
+    case when outcome='declined' then target_decline_reason end,
+    case when outcome='declined' then normalized_note end,
+    encode(extensions.digest(convert_to(fingerprint_payload::text,'UTF8'),'sha256'),'hex'),
+    evaluated_at, target_suspension_action_id
+  ) returning * into work;
+  update public.booking_requests set status='processing',
+    outcome_actor_user_id=work.actor_user_id, decline_reason=work.decline_reason,
+    decline_note=work.decline_note, outcome_fingerprint=work.outcome_fingerprint
+  where id=target_request.id;
+  return work;
+end;
+$$;
+ALTER FUNCTION private.prepare_booking_request_release(uuid, uuid, text, text, text, uuid) OWNER TO postgres;

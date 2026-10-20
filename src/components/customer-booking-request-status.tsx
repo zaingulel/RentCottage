@@ -47,7 +47,7 @@ const messages = {
     note: "Cottage Owner note",
     withdraw: "Withdraw pending request",
     processing:
-      "Reserved money and held inventory are being released. Do not submit another request yet.",
+      "This request is not settled. Money and inventory remain reserved until release is confirmed. Do not submit another request yet.",
     failed: "The request could not be updated safely. Try again.",
     notification: "Status notification",
     paymentDeadline: "Payment deadline",
@@ -56,11 +56,9 @@ const messages = {
         "Waiting for the Cottage Owner to accept or decline this request. The booking is not confirmed yet.",
       accepted:
         "The Cottage Owner accepted the request. The booking is not confirmed yet.",
-      declined:
-        "The Cottage Owner declined this request. The booking is not confirmed.",
+      declined: "This request was declined. The booking is not confirmed.",
       withdrawn: "You withdrew this request. The booking is not confirmed.",
-      expired:
-        "The Cottage Owner did not respond before the response deadline. The booking is not confirmed.",
+      expired: "The response deadline passed. The booking is not confirmed.",
     },
   },
   ar: {
@@ -75,7 +73,8 @@ const messages = {
     reason: "سبب الرفض",
     note: "ملاحظة مالك البيت",
     withdraw: "سحب الطلب قيد الانتظار",
-    processing: "جارٍ تحرير المبلغ والفترة المحجوزين. لا ترسل طلباً آخر الآن.",
+    processing:
+      "لم يُحسم هذا الطلب. يبقى المبلغ والفترة محجوزين حتى تأكيد التحرير. لا ترسل طلباً آخر الآن.",
     failed: "تعذر تحديث الطلب بأمان. حاول مرة أخرى.",
     notification: "إشعار الحالة",
     paymentDeadline: "موعد الدفع",
@@ -83,9 +82,9 @@ const messages = {
       pending:
         "بانتظار قبول مالك البيت لهذا الطلب أو رفضه. الحجز غير مؤكد بعد.",
       accepted: "وافق مالك البيت على الطلب. الحجز غير مؤكد بعد.",
-      declined: "رفض مالك البيت هذا الطلب. الحجز غير مؤكد.",
+      declined: "رُفض هذا الطلب. الحجز غير مؤكد.",
       withdrawn: "سحبت هذا الطلب. الحجز غير مؤكد.",
-      expired: "لم يرد مالك البيت قبل موعد الرد. الحجز غير مؤكد.",
+      expired: "انتهى موعد الرد. الحجز غير مؤكد.",
     },
   },
   ckb: {
@@ -101,7 +100,7 @@ const messages = {
     note: "تێبینی خاوەنی کۆتێج",
     withdraw: "کشاندنەوەی داواکاری چاوەڕێ",
     processing:
-      "پارە و ماوەی گیراو ئازاد دەکرێن. هێشتا داواکارییەکی تر مەبنێرە.",
+      "ئەم داواکارییە هێشتا یەکلا نەکراوەتەوە. پارە و ماوەکە تا پشتڕاستکردنەوەی ئازادکردن بە گیراوی دەمێننەوە. هێشتا داواکارییەکی تر مەبنێرە.",
     failed: "داواکارییەکە بە سەلامەتی نوێ نەکرایەوە. دووبارە هەوڵ بدە.",
     notification: "ئاگادارکردنەوەی دۆخ",
     paymentDeadline: "کاتی کۆتایی پارەدان",
@@ -110,11 +109,9 @@ const messages = {
         "چاوەڕێی خاوەنی کۆتێجین کە ئەم داواکارییە قبوڵ بکات یان ڕەتی بکاتەوە. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
       accepted:
         "خاوەنی کۆتێج داواکارییەکەی قبوڵ کرد. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
-      declined:
-        "خاوەنی کۆتێج ئەم داواکارییەی ڕەت کردەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
+      declined: "ئەم داواکارییە ڕەت کرایەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
       withdrawn: "ئەم داواکارییەت کشاندەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
-      expired:
-        "خاوەنی کۆتێج پێش کاتی کۆتایی وەڵام وەڵامی نەدایەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
+      expired: "کاتی کۆتایی وەڵام بەسەرچووە. حجزەکە پشتڕاست نەکراوەتەوە.",
     },
   },
 } as const;

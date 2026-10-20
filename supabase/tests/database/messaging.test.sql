@@ -60,10 +60,51 @@ insert into public.owner_application_cottage_profiles(id,owner_user_id,name,gove
 ('36100000-0000-4000-8000-000000000001','36000000-0000-4000-8000-000000000001','Messaging Cottage','Baghdad','Karrada','Private',8,3,2,array['garden'],'en','Description','Rules','draft'),
 ('36100000-0000-4000-8000-000000000002','36000000-0000-4000-8000-000000000004','Other Cottage','Baghdad','Mansour','Private',6,2,1,array['parking'],'en','Description','Rules','draft'),
 ('36100000-0000-4000-8000-000000000003','36000000-0000-4000-8000-000000000007','Suspended Cottage','Baghdad','Adhamiya','Private',4,2,1,array['wifi'],'en','Description','Rules','draft');
+savepoint listing_only_inquiry;
 insert into public.cottage_marketplace_listings(profile_id,public_slug,state) values
-('36100000-0000-4000-8000-000000000001','cottage-36100000000040008000000000000001','published'),
-('36100000-0000-4000-8000-000000000002','cottage-36100000000040008000000000000002','published'),
-('36100000-0000-4000-8000-000000000003','cottage-36100000000040008000000000000003','published');
+('36100000-0000-4000-8000-000000000001','cottage-36100000000040008000000000000001','published');
+set local role service_role;
+select is(public.create_messaging_conversation('36000000-0000-4000-8000-000000000002','36100000-0000-4000-8000-000000000001','36500000-0000-4000-8000-000000000020')->>'status','access-required','a published listing without current publication and schedule cannot admit a new inquiry');
+reset role;
+rollback to listing_only_inquiry;
+
+insert into public.cottage_profile_source_revisions(id,profile_id,owner_user_id,source_language,description,house_rules,revision)
+select replace(id::text,'36100000','36600000')::uuid,id,owner_user_id,source_language,description,house_rules,1
+from public.owner_application_cottage_profiles where id in (
+'36100000-0000-4000-8000-000000000001','36100000-0000-4000-8000-000000000002','36100000-0000-4000-8000-000000000003');
+insert into public.cottage_profile_review_cycles(id,profile_id,owner_user_id,source_revision_id,name,governorate,approximate_location,capacity,bedrooms,bathrooms,amenities,cycle_number,state,decided_at)
+select replace(id::text,'36100000','36700000')::uuid,id,owner_user_id,replace(id::text,'36100000','36600000')::uuid,name,governorate,approximate_location,capacity,bedrooms,bathrooms,amenities,1,'approved',clock_timestamp()
+from public.owner_application_cottage_profiles where id in (
+'36100000-0000-4000-8000-000000000001','36100000-0000-4000-8000-000000000002','36100000-0000-4000-8000-000000000003');
+insert into public.cottage_publication_snapshots(id,profile_id,review_cycle_id,publication_number,name,governorate,approximate_location,capacity,bedrooms,bathrooms,amenities)
+select replace(id::text,'36100000','36800000')::uuid,id,replace(id::text,'36100000','36700000')::uuid,1,name,governorate,approximate_location,capacity,bedrooms,bathrooms,amenities
+from public.owner_application_cottage_profiles where id in (
+'36100000-0000-4000-8000-000000000001','36100000-0000-4000-8000-000000000002','36100000-0000-4000-8000-000000000003');
+do $$
+declare profile_id uuid;
+declare schedule_id uuid;
+begin
+  foreach profile_id in array array['36100000-0000-4000-8000-000000000001','36100000-0000-4000-8000-000000000002','36100000-0000-4000-8000-000000000003']::uuid[] loop
+    schedule_id:=replace(profile_id::text,'36100000','36900000')::uuid;
+    insert into public.cottage_shift_schedule_revisions(id,profile_id,revision,full_day_bundle_id)
+    values(schedule_id,profile_id,1,replace(profile_id::text,'36100000','36910000')::uuid);
+    perform set_config('rentcottage.shift_schedule_write_revision_id',schedule_id::text,true);
+    insert into public.cottage_shifts(id,schedule_revision_id,position,name,start_time,end_time) values
+    (replace(profile_id::text,'36100000','36920000')::uuid,schedule_id,1,'Day','09:00','14:00'),
+    (replace(profile_id::text,'36100000','36930000')::uuid,schedule_id,2,'Night','19:00','23:00');
+    perform set_config('rentcottage.shift_schedule_write_revision_id','',true);
+  end loop;
+end;
+$$;
+update public.owner_application_cottage_profiles
+set current_publication_id=replace(id::text,'36100000','36800000')::uuid,
+    current_shift_schedule_id=replace(id::text,'36100000','36900000')::uuid
+where id in ('36100000-0000-4000-8000-000000000001','36100000-0000-4000-8000-000000000002','36100000-0000-4000-8000-000000000003');
+select ok(public.is_cottage_publicly_discoverable('36100000-0000-4000-8000-000000000001')
+ and public.is_cottage_publicly_discoverable('36100000-0000-4000-8000-000000000002')
+ and not public.is_cottage_publicly_discoverable('36100000-0000-4000-8000-000000000003')
+ and (select count(*) from public.cottage_shifts where schedule_revision_id in ('36900000-0000-4000-8000-000000000001','36900000-0000-4000-8000-000000000002','36900000-0000-4000-8000-000000000003'))=6,
+ 'eligible inquiry fixtures have approved publications and actual two-shift schedules while suspended supply remains private');
 
 set local role authenticated;
 select throws_ok($$select public.create_messaging_conversation('36000000-0000-4000-8000-000000000002','36100000-0000-4000-8000-000000000001','36200000-0000-4000-8000-000000000001')$$,'42501',null,'authenticated callers cannot bypass the server conversation boundary');
@@ -330,6 +371,78 @@ select set_config('request.jwt.claims','{"sub":"36000000-0000-4000-8000-00000000
 select ok((select count(*) from public.messaging_conversations)=23 and (select count(*) from public.messaging_conversation_booking_requests)=0 and (select count(*) from public.messaging_messages)=2 and (select count(*) from public.messaging_send_attempts)=4 and (select count(*) from public.messaging_translations)=1 and (select count(*) from public.messaging_translation_reports)=2,'support with multi-factor assurance reads originals, saved translations, reports and moderation facts');
 select ok(jsonb_array_length(public.get_messaging_moderation(null,null,null,3)->'items')=3 and public.get_messaging_moderation(null,null,null,3)->'nextCursor' is not null and exists(select 1 from jsonb_array_elements(public.get_messaging_moderation(null,null,null,3)->'items') item where item->>'type'='blocked' and item->>'actorRole'='customer' and (item->>'conversationBlockedAttemptCount')::integer=2),'support review is bounded, paged and gives body-free actor and repeated-attempt context');
 reset role;
+
+savepoint cottage_suspension_messaging;
+select set_config('request.jwt.claim.sub','36000000-0000-4000-8000-000000000005',true);
+select set_config('request.jwt.claims','{"sub":"36000000-0000-4000-8000-000000000005","aal":"aal2"}',true);
+set local role authenticated;
+select is(public.set_marketplace_suspension('cottage','36100000-0000-4000-8000-000000000001','suspend',0,'Restrict new inquiries','36500000-0000-4000-8000-000000000021')->>'status','completed','actual cottage restriction removes new public eligibility');
+reset role;
+set local role service_role;
+select is(public.create_messaging_conversation_for_cottage('36000000-0000-4000-8000-000000000002','cottage-36100000000040008000000000000001','36200000-0000-4000-8000-000000000001'),(select result from created_conversation),'exact authorized inquiry replay remains history when the cottage is no longer public');
+select is(public.create_messaging_conversation('36000000-0000-4000-8000-000000000003','36100000-0000-4000-8000-000000000001','36500000-0000-4000-8000-000000000022')->>'status','access-required','cottage restriction refuses a genuinely new inquiry');
+reset role;
+select set_config('request.jwt.claim.sub','36000000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claims','{"sub":"36000000-0000-4000-8000-000000000001","aal":"aal1"}',true);
+set local role authenticated;
+select ok(not (public.get_messaging_conversation((select (result->>'conversationId')::uuid from created_conversation),null,20)->>'canContinueBookingRequest')::boolean
+ and public.get_messaging_conversation((select (result->>'conversationId')::uuid from created_conversation),null,20)->'sendRestriction'='null'::jsonb,
+ 'nonpublic cottage history disallows new booking continuation without inventing a customer send restriction');
+reset role;
+rollback to cottage_suspension_messaging;
+
+-- customer_suspension_blocks_new_conversation_and_send
+savepoint customer_suspension_messaging;
+set local role service_role;
+create temp table owner_customer_inquiry as select public.create_messaging_conversation('36000000-0000-4000-8000-000000000004','36100000-0000-4000-8000-000000000001','36500000-0000-4000-8000-000000000023') result;
+reset role;
+grant select on owner_customer_inquiry to service_role;
+create temp table approved_owner_conversation as select id from public.messaging_conversations where owner_user_id='36000000-0000-4000-8000-000000000004' limit 1;
+grant select on approved_owner_conversation to service_role;
+select is((select result->>'status' from owner_customer_inquiry),'created','an approved owner can independently inquire as a customer at another cottage');
+create temp table suspension_messaging_before as select
+  (select jsonb_agg(to_jsonb(conversations) order by id) from public.messaging_conversations conversations) conversations,
+  (select jsonb_agg(to_jsonb(messages) order by id) from public.messaging_messages messages) messages,
+  (select jsonb_agg(to_jsonb(attempts) order by id) from public.messaging_send_attempts attempts) attempts,
+  (select jsonb_agg(to_jsonb(translations) order by id) from public.messaging_translations translations) translations;
+select set_config('request.jwt.claim.sub','36000000-0000-4000-8000-000000000005',true);
+select set_config('request.jwt.claims','{"sub":"36000000-0000-4000-8000-000000000005","aal":"aal2"}',true);
+set local role authenticated;
+select is(public.set_marketplace_suspension('customer','36000000-0000-4000-8000-000000000002','suspend',0,'Messaging safety','36500000-0000-4000-8000-000000000001')->>'status','completed','the actual administrator command suspends customer messaging capability');
+select is(public.set_marketplace_suspension('customer','36000000-0000-4000-8000-000000000004','suspend',0,'Customer capability only','36500000-0000-4000-8000-000000000002')->>'status','completed','an owner-classified customer has an independent customer restriction');
+reset role;
+set local role service_role;
+select is(public.create_messaging_conversation('36000000-0000-4000-8000-000000000002','36100000-0000-4000-8000-000000000001','36500000-0000-4000-8000-000000000003')->>'status','suspended','customer_suspension_blocks_new_conversation_and_send: no new inquiry');
+select is(public.create_messaging_conversation('36000000-0000-4000-8000-000000000004','36100000-0000-4000-8000-000000000001','36500000-0000-4000-8000-000000000004')->>'status','suspended','customer_suspension_blocks_new_conversation_and_send: owner-classified customer cannot create');
+select is(public.admit_messaging_message('36000000-0000-4000-8000-000000000002',(select (result->>'conversationId')::uuid from created_conversation),'36500000-0000-4000-8000-000000000005','en','A new safe question')->>'status','suspended','customer_suspension_blocks_new_conversation_and_send: no new message or attempt');
+select is(public.admit_messaging_message('36000000-0000-4000-8000-000000000004',(select (result->>'conversationId')::uuid from owner_customer_inquiry),'36500000-0000-4000-8000-000000000024','en','A restricted customer question')->>'status','suspended','owner classification cannot bypass its separate customer send restriction');
+select is(public.create_messaging_conversation('36000000-0000-4000-8000-000000000002','36100000-0000-4000-8000-000000000001','36200000-0000-4000-8000-000000000001'),(select result from created_conversation),'suspended customer can replay the exact existing inquiry without new writes');
+select is(public.admit_messaging_message('36000000-0000-4000-8000-000000000002',(select (result->>'conversationId')::uuid from created_conversation),'36300000-0000-4000-8000-000000000001','en','Could we use the garden?'),(select result from safe_message),'suspended customer can retrieve an already admitted exact message receipt');
+reset role;
+select ok((select conversations = (select jsonb_agg(to_jsonb(rows) order by id) from public.messaging_conversations rows)
+ and messages = (select jsonb_agg(to_jsonb(rows) order by id) from public.messaging_messages rows)
+ and attempts = (select jsonb_agg(to_jsonb(rows) order by id) from public.messaging_send_attempts rows)
+ and translations = (select jsonb_agg(to_jsonb(rows) order by id) from public.messaging_translations rows)
+ from suspension_messaging_before),'suspension preserves original participant IDs, message bytes, translations and attempts with zero new writes');
+select set_config('request.jwt.claim.sub','36000000-0000-4000-8000-000000000002',true);
+select set_config('request.jwt.claims','{"sub":"36000000-0000-4000-8000-000000000002","aal":"aal1"}',true);
+set local role authenticated;
+select ok(public.get_messaging_conversation((select (result->>'conversationId')::uuid from created_conversation),null,20)->>'sendRestriction'='customer-suspended'
+ and not (public.get_messaging_conversation((select (result->>'conversationId')::uuid from created_conversation),null,20)->>'canContinueBookingRequest')::boolean
+ and (select count(*) from public.messaging_messages)=2
+ and (select count(*) from public.messaging_translations)=1,'suspension_preserves_conversation_history_and_confirmed_cottage_rights: customer history remains readable with explicit restriction');
+reset role;
+select set_config('request.jwt.claim.sub','36000000-0000-4000-8000-000000000004',true);
+select set_config('request.jwt.claims','{"sub":"36000000-0000-4000-8000-000000000004","aal":"aal1"}',true);
+set local role authenticated;
+select ok(exists(select 1 from public.messaging_conversations where owner_user_id='36000000-0000-4000-8000-000000000004')
+ and public.get_messaging_conversation((select id from public.messaging_conversations where owner_user_id='36000000-0000-4000-8000-000000000004' limit 1),null,20)->'sendRestriction'='null'::jsonb,'customer restriction leaves approved owner history and owner send restriction independent');
+reset role;
+set local role service_role;
+select is(public.admit_messaging_message('36000000-0000-4000-8000-000000000004',(select id from approved_owner_conversation),'36500000-0000-4000-8000-000000000025','en','An approved owner reply')->>'status','sent','customer suspension preserves the separately approved owner send capability');
+select is(public.create_messaging_conversation('36000000-0000-4000-8000-000000000007','36100000-0000-4000-8000-000000000001','36500000-0000-4000-8000-000000000006')->>'status','created','owner-only suspension preserves customer inquiry capability at another cottage');
+reset role;
+rollback to customer_suspension_messaging;
 
 update public.account_contexts set owner_approval_state='expired' where user_id='36000000-0000-4000-8000-000000000001';
 select set_config('request.jwt.claim.sub','36000000-0000-4000-8000-000000000001',true);

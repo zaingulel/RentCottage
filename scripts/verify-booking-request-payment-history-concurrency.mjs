@@ -75,33 +75,265 @@ const sequences = (session) =>
     .filter((line) => line.startsWith("SEQUENCES:"))
     .map((line) => JSON.parse(line.slice(10)));
 
-// Reuse the established public submission scenario through its first finalized
-// request: one indeterminate authorization is resolved by the real query RPC.
+// Build one public authorization and resolve its indeterminate execution through the real query RPC.
 export async function verifyProviderResolution(databaseHarness) {
   databaseHarness.markTimingPhase("setup");
-  const submission = readFileSync(
-    "supabase/tests/database/booking_request_submission.test.sql",
-    "utf8",
+  const setup = `begin;
+  ${paymentEvidenceSql}
+insert into auth.users (id, aud, role, phone, phone_confirmed_at) values
+('00000000-0000-0000-0000-000000003201','authenticated','authenticated','+9647500003201',now()),
+('00000000-0000-0000-0000-000000003202','authenticated','authenticated','+9647500003202',now()),
+('00000000-0000-0000-0000-000000003203','authenticated','authenticated','+9647500003203',now());
+insert into public.account_contexts (user_id, role, owner_approval_state) values
+('00000000-0000-0000-0000-000000003201','cottage_owner','approved'),
+('00000000-0000-0000-0000-000000003202','cottage_owner','suspended'),
+('00000000-0000-0000-0000-000000003203','customer',null);
+
+insert into public.owner_application_cottage_profiles (
+  id, owner_user_id, name, governorate, approximate_location, exact_address,
+  capacity, bedrooms, bathrooms, amenities, source_language, description,
+  house_rules, status
+) values (
+  '30000000-0000-4000-8000-000000003201',
+  '00000000-0000-0000-0000-000000003201',
+  'Submission Cottage', 'Baghdad', 'Karrada', 'Private address',
+  8, 3, 2, array['pool'], 'en', 'Description', 'No smoking', 'draft'
+);
+insert into public.cottage_shift_schedule_revisions (
+  id, profile_id, revision, full_day_bundle_id
+) values (
+  '60000000-0000-4000-8000-000000003201',
+  '30000000-0000-4000-8000-000000003201', 1,
+  '61000000-0000-4000-8000-000000003201'
+);
+select set_config(
+  'rentcottage.shift_schedule_write_revision_id',
+  '60000000-0000-4000-8000-000000003201', true
+);
+insert into public.cottage_shifts (
+  id, schedule_revision_id, position, name, start_time, end_time
+) values
+  (
+    '62000000-0000-4000-8000-000000003201',
+    '60000000-0000-4000-8000-000000003201', 1, 'Morning', '08:00', '12:00'
+  ),
+  (
+    '62000000-0000-4000-8000-000000003202',
+    '60000000-0000-4000-8000-000000003201', 2, 'Evening', '17:00', '23:00'
   );
-  const cutoff =
-    "  'successful authorization finalizes one Pending Booking Request'\n);";
-  assert.ok(submission.includes(cutoff));
-  // This self-contained submission source supplies its ordinary authorization helpers.
-  // Prepending the recovery/expiry helper overloads would make those calls ambiguous.
-  const setup =
-    submission
-      .slice(0, submission.indexOf(cutoff) + cutoff.length)
-      .replace(
-        "begin;",
-        "begin; create extension if not exists pgtap with schema extensions; set local search_path=public,extensions;",
-      ) +
-    `
-    reset role;
-    update public.account_contexts set role='platform_administrator', owner_approval_state=null where user_id=(select customer_user_id from public.booking_requests);
-    select set_config('request.jwt.claims',jsonb_build_object('sub',(select customer_user_id from public.booking_requests),'role','authenticated','aal','aal2')::text,true);
-    create temp table history_reference as select booking_request_reference reference from public.booking_requests;
-    grant select on history_reference to authenticated;
-    set local role authenticated;
+select set_config('rentcottage.shift_schedule_write_revision_id', '', true);
+update public.owner_application_cottage_profiles
+set current_shift_schedule_id = '60000000-0000-4000-8000-000000003201'
+where id = '30000000-0000-4000-8000-000000003201';
+
+insert into public.cottage_profile_source_revisions (
+  id, profile_id, owner_user_id, source_language, description, house_rules, revision
+) values (
+  '63000000-0000-4000-8000-000000003201',
+  '30000000-0000-4000-8000-000000003201',
+  '00000000-0000-0000-0000-000000003201',
+  'en', 'Description', 'No smoking', 1
+);
+insert into public.cottage_profile_review_cycles (
+  id, profile_id, owner_user_id, source_revision_id, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities,
+  cycle_number, state, decided_at
+) values (
+  '64000000-0000-4000-8000-000000003201',
+  '30000000-0000-4000-8000-000000003201',
+  '00000000-0000-0000-0000-000000003201',
+  '63000000-0000-4000-8000-000000003201',
+  'Submission Cottage', 'Baghdad', 'Karrada', 8, 3, 2,
+  array['pool'], 1, 'approved', now()
+);
+insert into public.cottage_profile_localized_revisions (
+  id, review_cycle_id, locale, revision, origin, description, house_rules
+) values (
+  '65000000-0000-4000-8000-000000003201',
+  '64000000-0000-4000-8000-000000003201',
+  'en', 1, 'owner_source', 'Description', 'No smoking'
+);
+insert into public.cottage_profile_publication_decisions (
+  review_cycle_id, administrator_user_id, approved, reason
+) values (
+  '64000000-0000-4000-8000-000000003201',
+  '00000000-0000-0000-0000-000000003203', true, 'Approved fixture'
+);
+insert into public.cottage_publication_snapshots (
+  id, profile_id, review_cycle_id, publication_number, name, governorate,
+  approximate_location, capacity, bedrooms, bathrooms, amenities
+) values (
+  '66000000-0000-4000-8000-000000003201',
+  '30000000-0000-4000-8000-000000003201',
+  '64000000-0000-4000-8000-000000003201',
+  1, 'Submission Cottage', 'Baghdad', 'Karrada', 8, 3, 2, array['pool']
+);
+insert into public.cottage_publication_localizations (
+  publication_id, locale, localized_revision_id, description, house_rules
+) values (
+  '66000000-0000-4000-8000-000000003201', 'en',
+  '65000000-0000-4000-8000-000000003201', 'Description', 'No smoking'
+);
+update public.owner_application_cottage_profiles
+set current_publication_id = '66000000-0000-4000-8000-000000003201'
+where id = '30000000-0000-4000-8000-000000003201';
+
+insert into public.cottage_inventory_standard_prices (
+  schedule_revision_id, unit_kind, unit_id, price_iqd
+) values
+  (
+    '60000000-0000-4000-8000-000000003201', 'shift',
+    '62000000-0000-4000-8000-000000003201', 100000
+  ),
+  (
+    '60000000-0000-4000-8000-000000003201', 'shift',
+    '62000000-0000-4000-8000-000000003202', 110000
+  ),
+  (
+    '60000000-0000-4000-8000-000000003201', 'full_day_bundle',
+    '61000000-0000-4000-8000-000000003201', 190000
+  );
+insert into public.cottage_inventory_availability (
+  schedule_revision_id, unit_kind, unit_id, service_day, state
+)
+select schedule_revision_id, unit_kind, unit_id, service_day, 'open'
+from public.cottage_inventory_standard_prices
+cross join (values ('2099-08-21'::date), ('2099-08-22'::date)) days(service_day)
+where schedule_revision_id = '60000000-0000-4000-8000-000000003201';
+
+create temporary table submission_fixture as
+select
+  '{"from":"2099-08-21","to":"2099-08-21","guests":4,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":2}]}'::jsonb as search,
+  public.get_public_booking_quote_with_fingerprint(
+    'en', 'cottage-30000000000040008000000000003201',
+    '{"from":"2099-08-21","to":"2099-08-21","guests":4,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":2}]}'::jsonb
+  ) as quote;
+grant select on submission_fixture to service_role;
+
+create temporary table valid_submission as
+select jsonb_build_object(
+  'locale', 'en',
+  'publicSlug', 'cottage-30000000000040008000000000003201',
+  'discoveryQuery', search,
+  'quoteFingerprint', quote ->> 'quoteFingerprint',
+  'contentVersion', 1,
+  'termsVersion', 'fictional-local-test-2026-08-22-v1',
+  'bookingPriceIqd', 110000,
+  'serviceFeeIqd', 5000,
+  'customerTotalIqd', 115000,
+  'firstStartsAt', '2099-08-21T17:00:00+03:00',
+  'intent', jsonb_build_object(
+    'customerName', 'Ava Hassan',
+    'partySize', 4,
+    'bookingNote', 'Please prepare the garden seating.',
+    'acceptedHouseRules', true,
+    'acceptedCancellationPolicy', true,
+    'acceptedMarketplaceTerms', true,
+    'acceptedInside48HourNoRefund', false,
+    'cancellationPolicyVersion', 'rentcottage-mvp-2026-08-04',
+    'acceptanceEvidence', jsonb_build_object(
+      'locale', 'en',
+      'cancellationPolicy', 'Cancel at least 48 hours before the first shift for a full refund. Cancellation inside 48 hours and no-shows receive no refund.',
+      'cancellationAcceptance', 'I accept the cancellation policy.',
+      'marketplaceTermsAcceptance', 'I accept the marketplace booking terms.',
+      'inside48Warning', null,
+      'inside48Acceptance', null
+    )
+  )
+) as submission
+from submission_fixture;
+grant select on valid_submission to service_role;
+
+create temporary table simulated_authorization_operation(operation jsonb);
+grant select on simulated_authorization_operation to service_role;
+create temp table history_reference(reference text, request_id uuid, lifecycle_id uuid, operation_id uuid);
+do $history_fixture$
+declare quote jsonb; declare submission jsonb; declare prepared jsonb;
+declare customer_id uuid := '00000000-0000-0000-0000-000000003202';
+declare attempt uuid; declare lifecycle text; declare pending jsonb; declare snapshot jsonb;
+declare claimed jsonb; declare operation jsonb; declare outcome jsonb; declare finalized jsonb;
+declare price_fils bigint; declare fee_fils bigint; declare total_fils bigint;
+declare owned_request public.booking_requests; declare owned_operation_id uuid;
+declare identity jsonb := ${literal(identity)};
+begin
+  select fixture.quote into strict quote from submission_fixture fixture;
+  if quote ->> 'status' is distinct from 'quoted' then raise exception 'Expected a quoted Booking Period: %', quote; end if;
+  select fixture.submission into strict submission from valid_submission fixture;
+  price_fils := (submission ->> 'bookingPriceIqd')::bigint * 1000;
+  fee_fils := (submission ->> 'serviceFeeIqd')::bigint * 1000;
+  total_fils := (submission ->> 'customerTotalIqd')::bigint * 1000;
+
+  perform set_config('role', 'service_role', true);
+  prepared := public.prepare_booking_request_submission(customer_id, '11111111-1111-4111-8111-111111113201', submission);
+  if prepared ->> 'status' is distinct from 'ready' then raise exception 'Expected a ready submission attempt: %', prepared; end if;
+  attempt := (prepared ->> 'attemptId')::uuid;
+  lifecycle := prepared ->> 'paymentLifecycleId';
+  pending := jsonb_build_object('paymentLifecycleId', lifecycle, 'kind', 'authorization',
+    'logicalOperationId', lifecycle || ':authorization', 'attemptId', lifecycle || ':authorization:attempt-1',
+    'status', 'pending', 'amountFils', total_fils, 'providerRequestId', null, 'providerReference', null,
+    'movementReference', null, 'reconciliationRequired', false, 'retrySafe', false);
+  snapshot := jsonb_build_object('paymentLifecycleId', lifecycle, 'currency', 'IQD',
+    'bookingPriceFils', price_fils, 'bookingServiceFeeFils', fee_fils, 'customerTotalFils', total_fils,
+    'authorization', pending, 'capture', null, 'release', null, 'refunds', jsonb_build_array(),
+    'financials', jsonb_build_object('refundedBookingPriceFils', 0, 'refundedBookingServiceFeeFils', 0,
+      'remainingBookingPriceFils', price_fils, 'remainingBookingServiceFeeFils', fee_fils,
+      'marketplaceCommissionFils', price_fils / 10, 'ownerEntitlementFils', price_fils / 10 * 9),
+    'payout', jsonb_build_object('status', 'not_eligible', 'eligibleFils', price_fils / 10 * 9,
+      'paidFils', 0, 'providerFeeFils', 0, 'providerReserveFils', 0, 'recoveryExposureFils', 0,
+      'recoveryBalanceFils', 0, 'automaticOwnerDebitFils', 0, 'paidWhileBlocked', false, 'settlement', null),
+    'holds', jsonb_build_object('administrator', false, 'dispute', false),
+    'dispute', null, 'audits', jsonb_build_array(), 'movements', jsonb_build_array());
+  claimed := public.begin_booking_request_authorization_claim(attempt, snapshot, identity);
+  if claimed ->> 'status' is distinct from 'ready' then raise exception 'Expected a ready authorization claim: %', claimed; end if;
+  perform set_config('role', 'none', true);
+
+  select jsonb_build_object(
+      'providerIdentity', jsonb_build_object('provider', claims.provider, 'environment', claims.environment,
+        'merchantId', claims.merchant_id, 'terminalId', claims.terminal_id),
+      'permitPurpose', 'booking-request-authorization', 'idempotencyKey', claims.provider_idempotency_key,
+      'notAfter', to_char(claims.not_after at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+      'requestFingerprint', repeat('a', 64), 'paymentLifecycleId', claims.payment_lifecycle_id,
+      'logicalOperationId', claims.logical_operation_id, 'physicalAttemptId', claims.physical_attempt_id,
+      'operationKind', 'authorization', 'amountFils', claims.amount_fils, 'currency', claims.currency,
+      'claimId', claims.id, 'claimGeneration', claims.generation, 'stateRevision', null, 'cleanupAttemptId', null,
+      'workId', null, 'leaseGeneration', null, 'leaseToken', null, 'operationId', null, 'operationGeneration', null)
+    into strict operation
+    from public.booking_request_authorization_claims claims where claims.attempt_id = attempt;
+  insert into simulated_authorization_operation values(operation);
+
+  perform set_config('role', 'service_role', true);
+  outcome := pg_temp.payment_execute(operation, 'indeterminate');
+  if outcome ->> 'outcome' is distinct from 'indeterminate' then raise exception 'Expected an indeterminate Payment Authorization: %', outcome; end if;
+  outcome := pg_temp.payment_query(operation, outcome ->> 'providerRequestId', outcome ->> 'providerReference', 'succeeded');
+  if outcome ->> 'outcome' is distinct from 'succeeded' then raise exception 'Expected a resolved Payment Authorization: %', outcome; end if;
+  snapshot := snapshot || jsonb_build_object(
+    'authorization', pending || jsonb_build_object('status', 'succeeded',
+      'providerRequestId', outcome ->> 'providerRequestId', 'providerReference', outcome ->> 'providerReference',
+      'movementReference', outcome ->> 'movementReference'),
+    'movements', jsonb_build_array(jsonb_build_object('kind', 'authorization',
+      'logicalOperationId', pending ->> 'logicalOperationId', 'attemptId', pending ->> 'attemptId',
+      'amountFils', total_fils, 'movementReference', outcome ->> 'movementReference',
+      'recordedAt', to_char(clock_timestamp() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))));
+  perform public.save_booking_request_payment_snapshot(attempt, snapshot, identity);
+  finalized := public.finalize_booking_request_submission(attempt, snapshot);
+  if finalized ->> 'status' is distinct from 'pending' then raise exception 'Expected a pending Booking Request: %', finalized; end if;
+  perform set_config('role', 'none', true);
+
+  select requests.* into strict owned_request from public.booking_requests requests
+    join public.booking_request_submission_attempts attempts on attempts.booking_request_id=requests.id
+    where attempts.id=attempt;
+  select operations.id into strict owned_operation_id from public.payment_provider_operations operations
+    where operations.claim_id=(operation->>'claimId')::uuid
+      and operations.claim_generation=(operation->>'claimGeneration')::integer
+      and operations.payment_lifecycle_id=lifecycle::uuid and operations.operation_kind='authorization';
+  insert into history_reference values(owned_request.booking_request_reference,owned_request.id,lifecycle::uuid,owned_operation_id);
+end;
+$history_fixture$;
+update public.account_contexts set role='platform_administrator',owner_approval_state=null
+  where user_id='00000000-0000-0000-0000-000000003202';
+select set_config('request.jwt.claims',jsonb_build_object('sub','00000000-0000-0000-0000-000000003202','role','authenticated','aal','aal2')::text,true);
+grant select on history_reference to authenticated;
+set local role authenticated;
   `;
   let session;
   databaseHarness.markTimingPhase("execution");
@@ -111,25 +343,25 @@ export async function verifyProviderResolution(databaseHarness) {
       `
     select 'RESOLVED:'||public.get_administrator_booking_request_payment_history((select reference from history_reference))::text;
     reset role;
-    select 'SOURCE:'||jsonb_build_object('id',id,'originalOutcome',original_outcome,'outcome',current_outcome,'executions',(select physical_execution_count from public.simulated_payment_effects where operation_id=payment_provider_operations.id),'physicalAttemptId',physical_attempt_id,'request',provider_request_id,'reference',provider_reference,'movement',movement_reference)::text from public.payment_provider_operations;
-    select 'RECEIPTS:'||count(*)::text from public.booking_request_payment_correction_observations;
+    select 'SOURCE:'||jsonb_build_object('id',id,'originalOutcome',original_outcome,'outcome',current_outcome,'executions',(select physical_execution_count from public.simulated_payment_effects where operation_id=payment_provider_operations.id),'physicalAttemptId',physical_attempt_id,'request',provider_request_id,'reference',provider_reference,'movement',movement_reference)::text from public.payment_provider_operations where id=(select operation_id from history_reference);
+    select 'RECEIPTS:'||count(*)::text from public.booking_request_payment_correction_observations where booking_request_id=(select request_id from history_reference);
     set local role service_role;
     select 'REPEAT:'||(pg_temp.payment_query((select operation from simulated_authorization_operation),null,null,'succeeded')->>'outcome');
     reset role;
-    update public.payment_provider_operations set updated_at=updated_at+interval '1 second';
+    update public.payment_provider_operations set updated_at=updated_at+interval '1 second' where id=(select operation_id from history_reference);
     set local role authenticated;
     select 'RESOLVED:'||public.get_administrator_booking_request_payment_history((select reference from history_reference))::text;
     reset role;
     -- Controlled retained-source updates isolate each meaningful observation field.
-    update public.payment_provider_operations set authoritative_outcome_at='2099-01-01T00:00:00Z';
+    update public.payment_provider_operations set authoritative_outcome_at='2099-01-01T00:00:00Z' where id=(select operation_id from history_reference);
     set local role authenticated;
     select 'EVIDENCE_TIME:'||public.get_administrator_booking_request_payment_history((select reference from history_reference))::text;
     reset role;
-    update public.payment_provider_operations set movement_reference='sim-movement-1234567890abcdef1234567890abcdef';
+    update public.payment_provider_operations set movement_reference='sim-movement-1234567890abcdef1234567890abcdef' where id=(select operation_id from history_reference);
     set local role authenticated;
     select 'EVIDENCE_MOVEMENT:'||public.get_administrator_booking_request_payment_history((select reference from history_reference))::text;
     reset role;
-    update public.payment_provider_operations set movement_reference=movement_reference,authoritative_outcome_at=authoritative_outcome_at,updated_at=updated_at+interval '1 second';
+    update public.payment_provider_operations set movement_reference=movement_reference,authoritative_outcome_at=authoritative_outcome_at,updated_at=updated_at+interval '1 second' where id=(select operation_id from history_reference);
     set local role authenticated;
     select 'EVIDENCE_MOVEMENT:'||public.get_administrator_booking_request_payment_history((select reference from history_reference))::text;
     select 'RC330_HISTORY_EXECUTION_READY';
@@ -143,11 +375,6 @@ export async function verifyProviderResolution(databaseHarness) {
     await databaseHarness.finishSession(session, { action: "rollback" });
     databaseHarness.markTimingPhase("execution");
     const result = session.setupStdout + session.stdout;
-    assert.doesNotMatch(
-      result,
-      /not ok /,
-      "The established submission setup must pass",
-    );
     const values = (prefix) =>
       result
         .split("\n")

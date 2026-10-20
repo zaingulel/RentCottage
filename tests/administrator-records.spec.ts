@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
@@ -629,6 +630,827 @@ test("an administrator discovers accounts and approval records with authoritativ
       "Fictional Queue Owner",
     ])
       expect(surface).not.toContain(value);
+});
+
+test("suspension controls preserve independent capabilities and immutable history through reactivation", async ({
+  page,
+}, testInfo) => {
+  const url = localUrl();
+  const fixture = accessBrowserFixture(testInfo.project.name);
+  const owner = createClient(url, process.env.SUPABASE_PUBLISHABLE_KEY!, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const signedIn = await owner.auth.signInWithPassword({
+    phone: fixture.bookingOwnerPhone,
+    password,
+  });
+  expect(signedIn.error).toBeNull();
+  const ownerId = signedIn.data.user!.id;
+  const profile = await owner
+    .from("owner_application_cottage_profiles")
+    .select(
+      "id,application_id,current_publication_id,current_shift_schedule_id",
+    )
+    .eq("name", fixture.bookingCottageName)
+    .single();
+  expect(profile.error).toBeNull();
+  expect(profile.data!.current_publication_id).toMatch(uuidPattern);
+  expect(profile.data!.current_shift_schedule_id).toMatch(uuidPattern);
+  const email = `suspension-records-${testInfo.project.name}-${randomUUID()}@rentcottage.test`;
+  const administrator = await privilegedClient.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+  expect(administrator.error).toBeNull();
+  const actorId = administrator.data.user!.id;
+  const provisioned = await privilegedClient.rpc(
+    "provision_platform_administrator",
+    {
+      target_user_id: actorId,
+    },
+  );
+  expect(provisioned.error).toBeNull();
+  harness.runSql(
+    `insert into public.account_names (user_id, first_name) values ('${actorId}', 'Sara') on conflict (user_id) do update set first_name = excluded.first_name;`,
+  );
+  await page.goto("/en/administrator/access");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Continue" }).click();
+  const secret = await page.getByTestId("mfa-secret").textContent();
+  if (!secret)
+    throw new Error("Suspension administrator enrollment is unavailable");
+  await page.getByLabel("Authenticator app code").fill(
+    new OTPAuth.TOTP({
+      secret: OTPAuth.Secret.fromBase32(secret),
+    }).generate(),
+  );
+  await page.getByRole("button", { name: "Verify", exact: true }).click();
+  await expect(page.getByText(/Administrator access is ready/)).toBeVisible();
+  const readHistory = () =>
+    JSON.parse(
+      harness.runSql(`select coalesce(jsonb_agg(to_jsonb(actions) order by created_at,id),'[]')
+    from private.marketplace_suspension_actions actions where actor_user_id='${actorId}';`),
+    ) as Array<{
+      id: string;
+      target_kind: string;
+      account_user_id: string | null;
+      profile_id: string | null;
+      actor_user_id: string;
+      action: string;
+      reason: string;
+      from_state: string;
+      to_state: string;
+      expected_revision: number;
+      resulting_revision: number;
+      created_at: string;
+    }>;
+  expect(readHistory()).toEqual([]);
+  const capability = async () => {
+    const result = await owner.rpc("owner_can_start_new_business", {
+      target_owner_user_id: ownerId,
+    });
+    expect(result.error).toBeNull();
+    return result.data;
+  };
+  expect(await capability()).toBe(true);
+  await page.goto(`/en/administrator/records/account/${ownerId}`);
+  const customer = page.getByRole("region", {
+    name: "Customer activity",
+    exact: true,
+  });
+  const ownerPanel = page.getByRole("region", {
+    name: "Owner activity",
+    exact: true,
+  });
+  await expect(customer.locator(".status-badge")).toHaveText("Active");
+  await expect(ownerPanel.locator(".status-badge")).toHaveText("Approved");
+  await customer
+    .getByRole("button", { name: "Suspend new activity", exact: true })
+    .click();
+  await expect(customer.getByLabel("Reason", { exact: true })).toHaveJSProperty(
+    "required",
+    true,
+  );
+  expect(readHistory()).toEqual([]);
+  const act = async (
+    panel: ReturnType<Page["getByRole"]>,
+    action: "suspend" | "reactivate",
+    reason: string,
+    state: string,
+  ) => {
+    await panel.getByLabel("Reason", { exact: true }).fill(reason);
+    await panel
+      .getByRole("button", {
+        name:
+          action === "suspend"
+            ? "Suspend new activity"
+            : "Reactivate eligible activity",
+        exact: true,
+      })
+      .click();
+    await expect(panel.getByRole("status")).toContainText("Command completed.");
+    await expect(panel.locator(".status-badge")).toHaveText(state);
+    const history = readHistory();
+    const recorded = history.at(-1)!;
+    expect(recorded).toMatchObject({
+      actor_user_id: actorId,
+      action,
+      reason,
+      to_state: state.toLowerCase(),
+    });
+    expect(recorded.id).toMatch(uuidPattern);
+    expect(recorded.resulting_revision).toBe(recorded.expected_revision + 1);
+    const audit = panel
+      .getByRole("listitem")
+      .filter({ hasText: reason })
+      .filter({
+        has: page.getByText(actorId, { exact: true }),
+      });
+    await expect(audit).toHaveCount(1);
+    await expect(audit.getByText(actorId, { exact: true })).toBeVisible();
+    expect(
+      Date.parse((await audit.locator("time").getAttribute("datetime"))!),
+    ).toBe(Date.parse(recorded.created_at));
+    await panel
+      .getByRole("button", {
+        name: "Refresh restriction and release progress",
+        exact: true,
+      })
+      .click();
+    await expect(panel.getByRole("status")).toContainText(
+      "progress refreshed.",
+    );
+    expect(readHistory()).toEqual(history);
+    return recorded;
+  };
+  const suspendedCustomer = await act(
+    customer,
+    "suspend",
+    "Fictional customer capability safety restriction",
+    "Suspended",
+  );
+  expect(suspendedCustomer).toMatchObject({
+    target_kind: "customer",
+    account_user_id: ownerId,
+    from_state: "active",
+  });
+  expect(await capability()).toBe(true);
+  await expect(ownerPanel.locator(".status-badge")).toHaveText("Approved");
+  const observeAccessibility = async (
+    panel: ReturnType<Page["getByRole"]>,
+    reasonLabel: string,
+    includeCssZoom = false,
+  ) => {
+    const savedViewport = page.viewportSize();
+    expect(savedViewport).not.toBeNull();
+    const savedZoom = await page.locator("html").evaluate((element) => ({
+      value: element.style.getPropertyValue("zoom"),
+      priority: element.style.getPropertyPriority("zoom"),
+    }));
+    const readFocus = (element: HTMLElement) => {
+      const style = getComputedStyle(element);
+      return {
+        outlineStyle: style.outlineStyle,
+        outlineWidth: style.outlineWidth,
+        outlineColor: style.outlineColor,
+        outlineOffset: style.outlineOffset,
+        boxShadow: style.boxShadow,
+        borderColor: style.borderColor,
+      };
+    };
+    try {
+      const reason = panel.getByRole("textbox", {
+        name: reasonLabel,
+        exact: true,
+      });
+      const submit = panel.locator("form").getByRole("button");
+      await expect(submit).toHaveCount(1);
+      await expect(submit).toBeEnabled();
+      await reason.focus();
+      await expect(reason).toBeFocused();
+      const reasonFocus = await reason.evaluate(readFocus);
+      await reason.press("Tab");
+      await expect(submit).toBeFocused();
+      const submitFocus = await submit.evaluate(readFocus);
+      for (const focus of [reasonFocus, submitFocus]) {
+        expect(
+          (focus.outlineStyle !== "none" &&
+            Number.parseFloat(focus.outlineWidth) > 0 &&
+            !["transparent", "rgba(0, 0, 0, 0)"].includes(
+              focus.outlineColor,
+            )) ||
+            focus.boxShadow !== "none",
+        ).toBe(true);
+      }
+      const rendered = await panel.evaluate((region) => {
+        const visible = (element: Element) => {
+          const style = getComputedStyle(element);
+          const box = element.getBoundingClientRect();
+          return (
+            style.display !== "none" &&
+            style.visibility === "visible" &&
+            box.width > 0 &&
+            box.height > 0
+          );
+        };
+        const styles = Array.from(
+          region.querySelectorAll(
+            "h2,h3,p,label,dt,dd,time,.status-badge,button,a,textarea",
+          ),
+        )
+          .filter(visible)
+          .map((element) => {
+            const style = getComputedStyle(element);
+            const backgrounds = [];
+            for (
+              let ancestor: Element | null = element;
+              ancestor;
+              ancestor = ancestor.parentElement
+            ) {
+              const ancestorStyle = getComputedStyle(ancestor);
+              backgrounds.push({
+                tag: ancestor.tagName,
+                backgroundColor: ancestorStyle.backgroundColor,
+                backgroundImage: ancestorStyle.backgroundImage,
+                opacity: ancestorStyle.opacity,
+              });
+            }
+            return {
+              tag: element.tagName,
+              text: element.textContent?.trim(),
+              color: style.color,
+              fontFamily: style.fontFamily,
+              fontSize: style.fontSize,
+              lineHeight: style.lineHeight,
+              fontWeight: style.fontWeight,
+              borderColor: style.borderColor,
+              borderWidth: style.borderWidth,
+              backgrounds,
+              rect: element.getBoundingClientRect().toJSON(),
+            };
+          });
+        const targets = Array.from(region.querySelectorAll("button,a[href]"))
+          .filter(
+            (element) =>
+              visible(element) &&
+              !element.matches(":disabled") &&
+              element.getAttribute("aria-disabled") !== "true",
+          )
+          .map((element) => ({
+            tag: element.tagName,
+            text: element.textContent?.trim(),
+            ariaLabel: element.getAttribute("aria-label"),
+            rect: element.getBoundingClientRect().toJSON(),
+          }));
+        return {
+          lang: document.documentElement.lang,
+          dir: document.documentElement.dir,
+          viewport: { width: innerWidth, height: innerHeight },
+          region: region.getBoundingClientRect().toJSON(),
+          styles,
+          targets,
+        };
+      });
+      expect(rendered.targets.length).toBeGreaterThan(0);
+      for (const target of rendered.targets) {
+        expect(target.rect.width, target.text).toBeGreaterThanOrEqual(24);
+        expect(target.rect.height, target.text).toBeGreaterThanOrEqual(24);
+      }
+      await page.setViewportSize({ width: 320, height: savedViewport!.height });
+      const narrow = await panel.evaluate((region) => ({
+        viewportWidth: innerWidth,
+        documentWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        region: region.getBoundingClientRect().toJSON(),
+      }));
+      expect(narrow.scrollWidth).toBeLessThanOrEqual(narrow.documentWidth + 1);
+      expect(narrow.region.left).toBeGreaterThanOrEqual(-1);
+      expect(narrow.region.right).toBeLessThanOrEqual(narrow.viewportWidth + 1);
+      await page.setViewportSize(savedViewport!);
+      let cssZoom;
+      if (includeCssZoom) {
+        await page
+          .locator("html")
+          .evaluate((element) => element.style.setProperty("zoom", "2"));
+        cssZoom = await panel.evaluate((region) => ({
+          method: "CSS documentElement.style.zoom; not native browser zoom",
+          computedZoom: getComputedStyle(document.documentElement).zoom,
+          viewportWidth: innerWidth,
+          documentWidth: document.documentElement.clientWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+          region: region.getBoundingClientRect().toJSON(),
+        }));
+        expect(Number.parseFloat(cssZoom.computedZoom)).toBe(2);
+      }
+      return {
+        minimumTargetCssPixels: 24,
+        keyboard: {
+          order: ["labelled reason textarea", "enabled form submit"],
+          reasonFocus,
+          submitFocus,
+        },
+        rendered,
+        narrow,
+        cssZoom,
+        savedViewport,
+        savedZoom,
+      };
+    } finally {
+      await page.locator("html").evaluate((element, saved) => {
+        if (saved.value)
+          element.style.setProperty("zoom", saved.value, saved.priority);
+        else element.style.removeProperty("zoom");
+      }, savedZoom);
+      await page.setViewportSize(savedViewport!);
+      expect(page.viewportSize()).toEqual(savedViewport);
+      expect(
+        await page.locator("html").evaluate((element) => ({
+          value: element.style.getPropertyValue("zoom"),
+          priority: element.style.getPropertyPriority("zoom"),
+        })),
+      ).toEqual(savedZoom);
+    }
+  };
+  if (testInfo.project.name === "worker") {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
+    await expect(customer.locator(".status-badge")).toHaveText("Suspended");
+    await expect(ownerPanel.locator(".status-badge")).toHaveText("Approved");
+    const customerAudit = customer
+      .getByRole("listitem")
+      .filter({
+        has: page.getByText(suspendedCustomer.reason, { exact: true }),
+      })
+      .filter({ has: page.getByText(actorId, { exact: true }) });
+    await expect(customerAudit).toHaveCount(1);
+    await expect(
+      customerAudit.getByText(suspendedCustomer.reason, { exact: true }),
+    ).toBeVisible();
+    await expect(
+      customerAudit.getByText(actorId, { exact: true }),
+    ).toBeVisible();
+    const accessibility = await observeAccessibility(customer, "Reason", true);
+    const capture = testInfo.outputPath("administrator-en-desktop.png");
+    await page.screenshot({ path: capture, fullPage: true });
+    await testInfo.attach("administrator-en-desktop", {
+      path: capture,
+      contentType: "image/png",
+    });
+    const administratorEnDesktopStatePath = testInfo.outputPath(
+      "administrator-en-desktop-state.json",
+    );
+    await writeFile(
+      administratorEnDesktopStatePath,
+      JSON.stringify({
+        viewport: page.viewportSize(),
+        lang: await page.locator("html").getAttribute("lang"),
+        dir: await page.locator("html").getAttribute("dir"),
+        action: suspendedCustomer,
+        accessibility,
+      }),
+    );
+    await testInfo.attach("administrator-en-desktop-state", {
+      path: administratorEnDesktopStatePath,
+      contentType: "application/json",
+    });
+  }
+  await act(
+    customer,
+    "reactivate",
+    "Fictional customer capability restored",
+    "Active",
+  );
+  const suspendedOwner = await act(
+    ownerPanel,
+    "suspend",
+    "Fictional owner capability safety restriction",
+    "Suspended",
+  );
+  expect(suspendedOwner).toMatchObject({
+    target_kind: "owner",
+    account_user_id: ownerId,
+    from_state: "approved",
+  });
+  expect(await capability()).toBe(false);
+  await expect(customer.locator(".status-badge")).toHaveText("Active");
+  const context = await owner
+    .from("account_contexts")
+    .select("role,customer_suspended,owner_approval_state")
+    .eq("user_id", ownerId)
+    .single();
+  expect(context.error).toBeNull();
+  expect(context.data).toEqual({
+    role: "cottage_owner",
+    customer_suspended: false,
+    owner_approval_state: "suspended",
+  });
+  await act(
+    ownerPanel,
+    "reactivate",
+    "Fictional eligible owner activity restored",
+    "Approved",
+  );
+  expect(await capability()).toBe(true);
+  await page.goto(`/en/administrator/cottages/${profile.data!.id}`);
+  const cottage = page.getByRole("region", {
+    name: "Cottage activity",
+    exact: true,
+  });
+  await expect(cottage.locator(".status-badge")).toHaveText("Published");
+  const suspendedCottage = await act(
+    cottage,
+    "suspend",
+    "Fictional cottage business safety restriction",
+    "Suspended",
+  );
+  expect(suspendedCottage).toMatchObject({
+    target_kind: "cottage",
+    profile_id: profile.data!.id,
+    from_state: "published",
+  });
+  await act(
+    cottage,
+    "reactivate",
+    "Fictional eligible cottage listing restored",
+    "Published",
+  );
+  const restored = JSON.parse(
+    harness.runSql(`select jsonb_build_object('profileId',profiles.id,'publicationId',profiles.current_publication_id,'scheduleId',profiles.current_shift_schedule_id,'state',listings.state,'discoverable',public.is_cottage_publicly_discoverable(profiles.id))
+    from public.owner_application_cottage_profiles profiles join public.cottage_marketplace_listings listings on listings.profile_id=profiles.id where profiles.id='${profile.data!.id}';`),
+  );
+  expect(restored).toEqual({
+    profileId: profile.data!.id,
+    publicationId: profile.data!.current_publication_id,
+    scheduleId: profile.data!.current_shift_schedule_id,
+    state: "published",
+    discoverable: true,
+  });
+  const retained = readHistory();
+  expect(retained).toHaveLength(6);
+  await page.reload();
+  await expect(cottage.locator(".status-badge")).toHaveText("Published");
+  expect(readHistory()).toEqual(retained);
+  let canonicalRetention: unknown;
+  let canonicalFailed = false;
+  let canonicalFailure: unknown;
+  let canonicalRestorationError: string | null = null;
+  if (testInfo.project.name === "worker") {
+    const canonicalId = "25000000-0000-4000-8000-000000000401";
+    const canonicalFacts = () => {
+      const rows = JSON.parse(
+        harness.runSql(`select jsonb_agg(jsonb_build_object(
+        'profileId',profiles.id,'state',listings.state,'restricted',profiles.business_suspended,
+        'revision',profiles.suspension_revision,'previousListingState',profiles.listing_state_before_suspension,
+        'owner',(select to_jsonb(contexts) from public.account_contexts contexts where contexts.user_id=profiles.owner_user_id),
+        'application',(select to_jsonb(applications) from public.owner_applications applications where applications.id=profiles.application_id),
+        'publication',(select to_jsonb(snapshots) from public.cottage_publication_snapshots snapshots where snapshots.id=profiles.current_publication_id),
+        'schedule',(select to_jsonb(schedules) from public.cottage_shift_schedule_revisions schedules where schedules.id=profiles.current_shift_schedule_id),
+        'sources',(select jsonb_agg(to_jsonb(sources) order by sources.revision) from public.cottage_profile_source_revisions sources where sources.profile_id=profiles.id),
+        'actions',(select coalesce(jsonb_agg(to_jsonb(actions) order by actions.resulting_revision desc),'[]') from private.marketplace_suspension_actions actions where actions.target_kind='cottage' and actions.profile_id=profiles.id),
+        'publicationId',profiles.current_publication_id,'scheduleId',profiles.current_shift_schedule_id,
+        'publicationMatches',exists(select 1 from public.cottage_publication_snapshots snapshots where snapshots.id=profiles.current_publication_id and snapshots.profile_id=profiles.id),
+        'scheduleMatches',exists(select 1 from public.cottage_shift_schedule_revisions schedules where schedules.id=profiles.current_shift_schedule_id and schedules.profile_id=profiles.id),
+        'content',to_jsonb(profiles)-array['business_suspended','suspension_revision','listing_state_before_suspension','updated_at'],
+        'pending',(select count(*) from public.booking_requests requests where requests.profile_id=profiles.id and requests.status='pending')
+      )) from public.owner_application_cottage_profiles profiles join public.cottage_marketplace_listings listings on listings.profile_id=profiles.id where profiles.id='${canonicalId}';`),
+      );
+      expect(rows).toHaveLength(1);
+      return rows[0];
+    };
+    const restoreCanonicalListing = (
+      facts: ReturnType<typeof canonicalFacts>,
+      latestActionId: string,
+    ) => {
+      const content = JSON.stringify(facts.content).replaceAll("'", "''");
+      const owner = JSON.stringify(facts.owner).replaceAll("'", "''");
+      const application = JSON.stringify(facts.application).replaceAll(
+        "'",
+        "''",
+      );
+      harness.runSql(`begin;
+        do $fixture$
+        declare profile public.owner_application_cottage_profiles;
+          listing public.cottage_marketplace_listings; changed integer;
+        begin
+          select * into profile from public.owner_application_cottage_profiles profiles where profiles.id='${canonicalId}' for update;
+          select * into listing from public.cottage_marketplace_listings listings where listings.profile_id='${canonicalId}' for update;
+          if profile.id is null or listing.profile_id is null or profile.business_suspended
+            or profile.suspension_revision<>${facts.revision} or profile.listing_state_before_suspension is distinct from 'published'::public.cottage_marketplace_state
+            or listing.state<>'paused' or (to_jsonb(profile)-array['business_suspended','suspension_revision','listing_state_before_suspension','updated_at']) is distinct from '${content}'::jsonb
+            or (select to_jsonb(contexts) from public.account_contexts contexts where contexts.user_id=profile.owner_user_id) is distinct from '${owner}'::jsonb
+            or (select to_jsonb(applications) from public.owner_applications applications where applications.id=profile.application_id) is distinct from '${application}'::jsonb
+            or (select actions.id from private.marketplace_suspension_actions actions where actions.target_kind='cottage' and actions.profile_id=profile.id order by actions.resulting_revision desc limit 1) is distinct from '${latestActionId}'::uuid
+            or exists(select 1 from public.booking_requests requests where requests.profile_id=profile.id and requests.status='pending') then
+            raise exception 'Canonical listing restoration refused: ownership or baseline changed';
+          end if;
+          update public.cottage_marketplace_listings set state='published' where profile_id=profile.id and state='paused';
+          get diagnostics changed=row_count;
+          if changed<>1 then raise exception 'Canonical listing restoration must update exactly one row'; end if;
+        end $fixture$;
+        commit;`);
+    };
+    let baseline = canonicalFacts();
+    expect(baseline).toMatchObject({
+      profileId: canonicalId,
+      restricted: false,
+      publicationMatches: true,
+      scheduleMatches: true,
+      pending: 0,
+      owner: {
+        user_id: "25000000-0000-4000-8000-000000000101",
+        role: "cottage_owner",
+        owner_approval_state: "approved",
+      },
+      application: {
+        id: "25000000-0000-4000-8000-000000000305",
+        owner_user_id: "25000000-0000-4000-8000-000000000101",
+        status: "approved",
+        current_verification_record_id: null,
+      },
+      publication: {
+        profile_id: canonicalId,
+        review_cycle_id: historicId,
+        publication_number: 1,
+        name: "Fictional Historic Snapshot",
+      },
+      schedule: { profile_id: canonicalId, revision: 1 },
+      content: {
+        name: "Fictional Historic Snapshot",
+        description: "Fictional description",
+        house_rules: "Fictional rules",
+      },
+    });
+    expect(baseline.publicationId).toMatch(uuidPattern);
+    expect(baseline.scheduleId).toMatch(uuidPattern);
+    expect(baseline.sources).toContainEqual(
+      expect.objectContaining({
+        profile_id: canonicalId,
+        revision: 1,
+        description: "Fictional description",
+        house_rules: "Fictional rules",
+      }),
+    );
+    if (baseline.state === "paused") {
+      const [restoration, restriction] = baseline.actions;
+      expect(restoration).toMatchObject({
+        target_kind: "cottage",
+        profile_id: canonicalId,
+        action: "reactivate",
+        reason: "Fictional canonical cottage eligible paused restoration",
+        from_state: "suspended",
+        to_state: "paused",
+        resulting_revision: baseline.revision,
+      });
+      expect(restriction).toMatchObject({
+        target_kind: "cottage",
+        profile_id: canonicalId,
+        actor_user_id: restoration.actor_user_id,
+        action: "suspend",
+        reason: "Fictional canonical cottage safety restriction",
+        from_state: "published",
+        to_state: "suspended",
+        expected_revision: baseline.revision - 2,
+        resulting_revision: baseline.revision - 1,
+      });
+      expect(restoration.expected_revision).toBe(
+        restriction.resulting_revision,
+      );
+      expect(baseline.previousListingState).toBe("published");
+      const paused = baseline;
+      restoreCanonicalListing(paused, restoration.id);
+      baseline = canonicalFacts();
+      expect(baseline).toEqual({ ...paused, state: "published" });
+    }
+    expect(baseline.state).toBe("published");
+    let captureFacts: ReturnType<typeof canonicalFacts> | undefined;
+    try {
+      await page.goto(`/en/administrator/cottages/${canonicalId}`);
+      await expect(cottage.locator(".status-badge")).toHaveText("Published");
+      const restriction = await act(
+        cottage,
+        "suspend",
+        "Fictional canonical cottage safety restriction",
+        "Suspended",
+      );
+      const prediction = JSON.parse(
+        harness.runSql(`begin; set local role authenticated;
+      set local request.jwt.claims='{"sub":"${actorId}","role":"authenticated","aal":"aal2"}';
+      select public.get_marketplace_suspension('cottage','${canonicalId}'); commit;`),
+      );
+      expect(prediction).toMatchObject({
+        status: "ready",
+        targetKind: "cottage",
+        targetId: canonicalId,
+        state: "suspended",
+        restorationState: "paused",
+        restorationRestriction: "publication-or-owner-ineligible",
+      });
+      expect(prediction.actions[0].id).toBe(restriction.id);
+      const restoration = await act(
+        cottage,
+        "reactivate",
+        "Fictional canonical cottage eligible paused restoration",
+        "Paused",
+      );
+      const after = canonicalFacts();
+      expect(after).toEqual({
+        ...baseline,
+        state: "paused",
+        revision: baseline.revision + 2,
+        previousListingState: "published",
+        actions: after.actions,
+      });
+      expect(
+        after.actions.slice(0, 2).map((action: { id: string }) => action.id),
+      ).toEqual([restoration.id, restriction.id]);
+      expect(after.actions.slice(2)).toEqual(baseline.actions);
+      captureFacts = after;
+      const actions = readHistory();
+      expect(actions).toHaveLength(8);
+      expect(actions.slice(0, 6)).toEqual(retained);
+      expect(actions.slice(6)).toEqual([restriction, restoration]);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`/ckb/administrator/cottages/${canonicalId}`);
+      await expect(page.locator("html")).toHaveAttribute("lang", "ckb");
+      await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+      const soraniCottage = page.getByRole("region", {
+        name: "چالاکی ماڵ",
+        exact: true,
+      });
+      await expect(soraniCottage.locator(".status-badge")).toHaveText(
+        "وەستێنراو",
+      );
+      await expect(soraniCottage).toContainText(
+        "شایستەیی بڵاوکردنەوە یان خشتە یان خاوەن ڕێگە بە بڵاوکردنەوەی ڕیکلام نادات.",
+      );
+      const restorationAudit = soraniCottage
+        .getByRole("listitem")
+        .filter({
+          has: page.getByText(restoration.reason, { exact: true }),
+        })
+        .filter({ has: page.getByText(actorId, { exact: true }) });
+      await expect(restorationAudit).toHaveCount(1);
+      await expect(
+        restorationAudit.getByText(restoration.reason, { exact: true }),
+      ).toBeVisible();
+      expect(readHistory()).toEqual(actions);
+      const accessibility = await observeAccessibility(soraniCottage, "هۆکار");
+      const capture = testInfo.outputPath("administrator-ckb-mobile.png");
+      await soraniCottage.screenshot({ path: capture });
+      await testInfo.attach("administrator-ckb-mobile", {
+        path: capture,
+        contentType: "image/png",
+      });
+      const administratorCkbMobileStatePath = testInfo.outputPath(
+        "administrator-ckb-mobile-state.json",
+      );
+      await writeFile(
+        administratorCkbMobileStatePath,
+        JSON.stringify({
+          viewport: page.viewportSize(),
+          lang: await page.locator("html").getAttribute("lang"),
+          dir: await page.locator("html").getAttribute("dir"),
+          facts: after,
+          actions: [restriction, restoration],
+          accessibility,
+        }),
+      );
+      await testInfo.attach("administrator-ckb-mobile-state", {
+        path: administratorCkbMobileStatePath,
+        contentType: "application/json",
+      });
+    } catch (error) {
+      canonicalFailed = true;
+      canonicalFailure = error;
+    } finally {
+      try {
+        let current = canonicalFacts();
+        expect(current).toEqual({
+          ...baseline,
+          state: current.state,
+          restricted: current.restricted,
+          revision: current.revision,
+          previousListingState: current.previousListingState,
+          actions: current.actions,
+        });
+        const ownActions = current.actions.filter(
+          (action: { actor_user_id: string }) =>
+            action.actor_user_id === actorId,
+        );
+        if (current.revision !== baseline.revision) {
+          const latest = current.actions[0];
+          expect(
+            latest.actor_user_id,
+            "An outside canonical restriction must remain untouched",
+          ).toBe(actorId);
+          if (current.restricted) {
+            expect(current.state).toBe("suspended");
+            expect(latest).toMatchObject({
+              action: "suspend",
+              reason: "Fictional canonical cottage safety restriction",
+              from_state: "published",
+              to_state: "suspended",
+              expected_revision: baseline.revision,
+              resulting_revision: current.revision,
+            });
+            expect(current.revision).toBe(baseline.revision + 1);
+            const reactivated = JSON.parse(
+              harness.runSql(`begin; set local role authenticated;
+              set local request.jwt.claims='{"sub":"${actorId}","role":"authenticated","aal":"aal2"}';
+              select public.set_marketplace_suspension('cottage','${canonicalId}','reactivate',${current.revision},'Fictional canonical cottage eligible paused restoration','${randomUUID()}'); commit;`),
+            );
+            expect(reactivated.status).toBe("completed");
+            current = canonicalFacts();
+            expect(current.actions[0].id).toBe(reactivated.actionId);
+          }
+          expect(current).toMatchObject({
+            state: "paused",
+            restricted: false,
+            revision: baseline.revision + 2,
+            previousListingState: "published",
+            pending: 0,
+          });
+          expect(current.actions[0]).toMatchObject({
+            actor_user_id: actorId,
+            action: "reactivate",
+            reason: "Fictional canonical cottage eligible paused restoration",
+            from_state: "suspended",
+            to_state: "paused",
+            resulting_revision: current.revision,
+          });
+          expect(current.actions[1]).toMatchObject({
+            actor_user_id: actorId,
+            action: "suspend",
+            reason: "Fictional canonical cottage safety restriction",
+            from_state: "published",
+            to_state: "suspended",
+            resulting_revision: baseline.revision + 1,
+          });
+          expect(current.actions.slice(2)).toEqual(baseline.actions);
+          const paused = current;
+          restoreCanonicalListing(paused, current.actions[0].id);
+          current = canonicalFacts();
+          expect(current).toEqual({ ...paused, state: baseline.state });
+        } else {
+          expect(ownActions).toEqual([]);
+          expect(current).toEqual(baseline);
+        }
+        expect(current.state).toBe("published");
+        expect(current.restricted).toBe(false);
+        canonicalRetention = {
+          baseline,
+          captureFacts,
+          restoredBaseline: current,
+          actions: current.actions.filter(
+            (action: { actor_user_id: string }) =>
+              action.actor_user_id === actorId,
+          ),
+        };
+      } catch (error) {
+        canonicalRestorationError =
+          error instanceof Error ? error.message : String(error);
+        if (canonicalFailed)
+          testInfo.annotations.push({
+            type: "fixture restoration failed",
+            description: canonicalRestorationError,
+          });
+        else {
+          canonicalFailed = true;
+          canonicalFailure = error;
+        }
+      }
+    }
+  }
+  const suspensionRetainedAdministratorGraphPath = testInfo.outputPath(
+    "suspension-retained-administrator-graph.json",
+  );
+  try {
+    await writeFile(
+      suspensionRetainedAdministratorGraphPath,
+      JSON.stringify({
+        actorId,
+        ownerId,
+        profile: profile.data,
+        actions: readHistory(),
+        canonicalRetention,
+        canonicalRestorationError,
+      }),
+    );
+    await testInfo.attach("suspension-retained-administrator-graph", {
+      path: suspensionRetainedAdministratorGraphPath,
+      contentType: "application/json",
+    });
+  } catch (error) {
+    if (!canonicalFailed) throw error;
+    testInfo.annotations.push({
+      type: "fixture receipt failed",
+      description: error instanceof Error ? error.message : String(error),
+    });
+  }
+  if (canonicalFailed) throw canonicalFailure;
 });
 
 const queueArgs = {

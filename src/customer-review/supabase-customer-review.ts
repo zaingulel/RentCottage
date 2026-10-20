@@ -227,19 +227,18 @@ function parsePublicListResult(value: unknown): PublicCustomerReviewListResult {
   };
 }
 
-type CommittedSubmitResult<Committed extends "submitted" | "replied"> =
-  | Readonly<{
-      status: Committed;
-      reviewId: string;
-      submittedAt: string;
-      affectedPublicSlug: string;
-    }>
-  | Exclude<SubmitCustomerReviewResult, { status: "submitted" }>;
-
-function parseSubmitResult<Committed extends "submitted" | "replied">(
+function parseSubmitResult(
   value: unknown,
-  committed: Committed,
-): CommittedSubmitResult<Committed> {
+  committed: "submitted",
+): SubmitCustomerReviewResult;
+function parseSubmitResult(
+  value: unknown,
+  committed: "replied",
+): SubmitCustomerReviewReplyResult;
+function parseSubmitResult(
+  value: unknown,
+  committed: "submitted" | "replied",
+): SubmitCustomerReviewResult | SubmitCustomerReviewReplyResult {
   if (!isRecord(value) || typeof value.status !== "string") {
     return { status: "unavailable" };
   }
@@ -280,10 +279,19 @@ function parseSubmitResult<Committed extends "submitted" | "replied">(
   }
 
   if (
-    ["invalid", "ineligible", "prohibited-content"].includes(value.status) &&
+    (value.status === "invalid" ||
+      value.status === "ineligible" ||
+      value.status === "prohibited-content") &&
     hasExactKeys(value, ["status"])
   ) {
-    return { status: value.status } as CommittedSubmitResult<Committed>;
+    return { status: value.status };
+  }
+  if (
+    committed === "submitted" &&
+    value.status === "suspended" &&
+    hasExactKeys(value, ["status"])
+  ) {
+    return { status: "suspended" };
   }
 
   return { status: "unavailable" };
@@ -334,7 +342,9 @@ function parseOwnReviewResult(value: unknown): OwnCustomerReviewResult {
     return { status: "eligible", reviewExpiresAt: value.reviewExpiresAt };
   }
   if (
-    (value.status === "ineligible" || value.status === "unavailable") &&
+    (value.status === "ineligible" ||
+      value.status === "unavailable" ||
+      value.status === "suspended") &&
     hasExactKeys(value, ["status"])
   ) {
     return { status: value.status };

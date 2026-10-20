@@ -19,6 +19,8 @@ export const messagingMessages: Record<
     blocked: string;
     unavailable: string;
     readOnly: string;
+    customerSuspended: string;
+    openUnavailable: string;
     contactAllowed: string;
     contactProtected: string;
     automaticTranslation: string;
@@ -52,6 +54,9 @@ export const messagingMessages: Record<
 > = {
   en: {
     emptyMessages: "No messages yet.",
+    customerSuspended:
+      "Your customer access is suspended. You can read existing conversations, but cannot start a conversation or send messages.",
+    openUnavailable: "The conversation could not be opened. Try again.",
     categories: {
       contact: "Contact details",
       incorrect: "Incorrect translation",
@@ -103,6 +108,9 @@ export const messagingMessages: Record<
   },
   ar: {
     emptyMessages: "لا توجد رسائل بعد.",
+    customerSuspended:
+      "صلاحية العميل لديك معلقة. يمكنك قراءة المحادثات السابقة، لكن لا يمكنك بدء محادثة أو إرسال رسائل.",
+    openUnavailable: "تعذر فتح المحادثة. حاول مرة أخرى.",
     categories: {
       contact: "تفاصيل الاتصال",
       incorrect: "ترجمة غير صحيحة",
@@ -153,6 +161,9 @@ export const messagingMessages: Record<
   },
   ckb: {
     emptyMessages: "هێشتا هیچ نامەیەک نییە.",
+    customerSuspended:
+      "دەسەڵاتی کڕیاریی تۆ ڕاگیراوە. دەتوانیت گفتوگۆکانی پێشوو بخوێنیتەوە، بەڵام ناتوانیت گفتوگۆیەک دەست پێ بکەیت یان نامە بنێریت.",
+    openUnavailable: "گفتوگۆکە نەکرایەوە. دووبارە هەوڵ بدەرەوە.",
     categories: {
       contact: "زانیاریی پەیوەندی",
       incorrect: "وەرگێڕانی هەڵە",

@@ -25,7 +25,9 @@ export function MessagingStart({
   const router = useRouter();
   const [commandId, setCommandId] = useState(() => crypto.randomUUID());
   const [pending, startTransition] = useTransition();
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<"suspended" | "unavailable" | null>(
+    null,
+  );
   return (
     <div>
       <p>{copy.newEnquiryHelp}</p>
@@ -46,7 +48,9 @@ export function MessagingStart({
                 `/${locale}/messages/${result.conversationId}${contextQuery ? `?${contextQuery}` : ""}`,
               );
             } else {
-              setFailed(true);
+              setFailure(
+                result.status === "suspended" ? "suspended" : "unavailable",
+              );
               if (
                 result.status === "invalid" ||
                 result.status === "access-required"
@@ -59,8 +63,10 @@ export function MessagingStart({
       >
         {copy.newEnquiry}
       </ActionButton>
-      {failed ? (
-        <ActionFeedback kind="error">{copy.unavailable}</ActionFeedback>
+      {failure ? (
+        <ActionFeedback kind="error">
+          {failure === "suspended" ? copy.customerSuspended : copy.unavailable}
+        </ActionFeedback>
       ) : null}
     </div>
   );
