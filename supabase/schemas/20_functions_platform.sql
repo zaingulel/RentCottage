@@ -1106,3 +1106,37 @@ begin
 end;
 $$;
 ALTER FUNCTION public.get_marketplace_suspension(text, uuid, timestamptz, uuid, integer) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.record_administrator_booking_money_export(
+  target_state text, target_from date, target_through date
+) RETURNS jsonb
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = '' AS $$
+declare
+  selection jsonb;
+  export_id uuid;
+  recorded_at timestamptz;
+begin
+  selection:=public.list_administrator_booking_money(target_state,target_from,target_through);
+  if selection->>'status'='too_many' then return selection; end if;
+  if jsonb_array_length(selection->'bookings')=0 and jsonb_array_length(selection->'missingPaymentEvidence')=0 then
+    return jsonb_build_object('status','empty');
+  end if;
+  insert into private.administrator_booking_money_exports
+    (administrator_user_id,recorded_at,filter_state,filter_from,filter_through,booking_request_ids)
+  select auth.uid(),statement_timestamp(),target_state,target_from,target_through,
+    array_agg(distinct (booking->>'bookingRequestId')::uuid order by (booking->>'bookingRequestId')::uuid)
+  from jsonb_array_elements((selection->'bookings')||(selection->'missingPaymentEvidence')) booking
+  returning id,administrator_booking_money_exports.recorded_at into export_id,recorded_at;
+  return jsonb_build_object('status','recorded','exportId',export_id,
+    'recordedAt',to_char(recorded_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"+00:00"'),'selection',selection);
+end;
+$$;
+ALTER FUNCTION public.record_administrator_booking_money_export(text,date,date) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION private.reject_administrator_booking_money_export_change() RETURNS trigger
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+begin
+  raise exception 'Administrator money export records are immutable' using errcode='RC409';
+end;
+$$;
+ALTER FUNCTION private.reject_administrator_booking_money_export_change() OWNER TO postgres;

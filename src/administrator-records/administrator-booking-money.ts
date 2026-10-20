@@ -158,7 +158,7 @@ export function bookingMoneyFigures(
 }
 
 // Confirmation time is fixed-width UTC text, so text order is time order.
-function newerFirst(
+export function newerFirst(
   a: Pick<BookingMoneyRow, "bookingRequestId" | "confirmedAt">,
   b: Pick<BookingMoneyRow, "bookingRequestId" | "confirmedAt">,
 ): number {
@@ -226,7 +226,7 @@ const refundStates = [
   "failed",
 ] as const;
 
-function exactObject(
+export function exactObject(
   value: unknown,
   keys: readonly string[],
 ): Record<string, unknown> {

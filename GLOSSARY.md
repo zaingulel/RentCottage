@@ -25,7 +25,7 @@ A RentCottage team member who reviews owner applications and verification docume
 _Avoid_: Owner, customer, finance operator
 
 **Administrator Audit Record**:
-The timestamped record of which platform administrator approved or changed cottage content, approved an owner, paused or deactivated an account, or recorded an incident.
+The timestamped record of which platform administrator approved or changed cottage content, approved an owner, paused or deactivated an account, recorded an incident, or requested a money export. A money export record preserves the requesting administrator, database time, applied filters and selected bookings; it does not prove file delivery.
 _Avoid_: Unattributed admin action, general analytics
 
 **Customer**:

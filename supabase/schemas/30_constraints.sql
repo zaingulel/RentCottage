@@ -1158,3 +1158,5 @@ ALTER TABLE ONLY public.booking_request_submission_attempts
       customer_suspension_revision >= 0 AND owner_suspension_revision >= 0
       AND cottage_suspension_revision >= 0
     );
+
+ALTER TABLE private.administrator_booking_money_exports ADD CONSTRAINT administrator_booking_money_exports_pkey PRIMARY KEY (id);

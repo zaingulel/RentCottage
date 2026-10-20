@@ -22,6 +22,7 @@ import {
 } from "../src/i18n/administrator-payment-history-messages";
 import { administratorQueuesMessages } from "../src/i18n/administrator-queues-messages";
 import { administratorRecordsMessages } from "../src/i18n/administrator-records-messages";
+import { administratorBookingMoneyExportMessages } from "../src/i18n/administrator-booking-money-export-messages";
 import { administratorTotalsMessages } from "../src/i18n/administrator-totals-messages";
 import { bookingManagementMessages as messages } from "../src/i18n/booking-management-messages";
 import { accessMessages } from "../src/i18n/access-messages";
@@ -30,6 +31,7 @@ import { ownerBookingEarningsMessages as earningsMessages } from "../src/i18n/ow
 import { ownerBookingEarnings } from "../src/booking-request/owner-booking-earnings";
 import { messagingMessages } from "../src/i18n/messaging-messages";
 import { customerReviewMessages } from "../src/i18n/customer-review-messages";
+import { formatInteger } from "../src/i18n/format";
 import type { Locale } from "../src/i18n/routing";
 const { createLocalSupabaseConcurrencyHarness } = createRequire(
   import.meta.url,
@@ -70,6 +72,7 @@ const {
   confirmedBookingCleanup(options?: {
     stem?: string;
     administrator?: string;
+    exportAdministrator?: string | null;
     completion?: boolean;
     settlement?: boolean;
     terminalRequest?: boolean;
@@ -196,9 +199,11 @@ const observeConnectedStay = () =>
   JSON.parse(harness.runSql(connectedStaySql()));
 
 const clear = () => {
+  const exportAdministrator = activeAdministratorId;
   const cleanup = confirmedBookingCleanup({
     stem: identity.stem,
     administrator: identity.administrator,
+    exportAdministrator,
     completion: true,
     settlement: true,
   });
@@ -216,6 +221,7 @@ const clear = () => {
     'links',(select count(*) from public.messaging_conversation_booking_requests l where l.booking_request_id='${request}' or l.conversation_id in (select id from owned)),
     'conversations',(select count(*) from public.messaging_conversations c where c.id in (select id from owned)),
     'messages',(select count(*) from public.messaging_messages m where m.conversation_id in (select id from owned)),
+    'exportAudits',(select count(*) from private.administrator_booking_money_exports where administrator_user_id='${identity.administrator}' or administrator_user_id=${exportAdministrator ? `'${exportAdministrator}'::uuid` : "null::uuid"}),
     'sendAttempts',(select count(*) from public.messaging_send_attempts a where a.conversation_id in (select id from owned))
   );`),
     ),
@@ -225,6 +231,7 @@ const clear = () => {
     conversations: 0,
     messages: 0,
     sendAttempts: 0,
+    exportAudits: 0,
   });
 };
 function connection() {
@@ -962,6 +969,330 @@ test.describe("retained cancellation and refund controls", () => {
           }),
         )
         .toEqual({ noOverflow: true, contained: true });
+      const exporting = administratorBookingMoneyExportMessages[locale];
+      if (
+        locale === "en" &&
+        (await page
+          .getByRole("button", { name: exporting.export, exact: true })
+          .count()) === 0
+      )
+        await page.screenshot({
+          path: testInfo.outputPath("totals-before-export.png"),
+          fullPage: true,
+        });
+      const exportButton = page.getByRole("button", {
+        name: exporting.export,
+        exact: true,
+      });
+      await expect(exportButton).toBeVisible();
+      await expect(exportButton).toHaveAccessibleDescription(
+        `${exporting.help} ${exporting.applyHelp}`,
+      );
+      harness.guardDisposableLocalDatabase();
+      const confirmation = JSON.parse(
+        harness.runSql(
+          `select jsonb_build_object('at',to_char(confirmed_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"+00:00"'),'day',(confirmed_at at time zone 'Asia/Baghdad')::date) from public.booking_confirmations where booking_request_id='${request}';`,
+        ),
+      ) as { at: string; day: string };
+      expect(confirmation.day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      const uuidPattern =
+        "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+      const canonicalUuid = new RegExp(`^${uuidPattern}$`);
+      const selection: unknown = JSON.parse(
+        harness.runSql(`
+          select coalesce(jsonb_agg(jsonb_build_object(
+            'id',requests.id,'reference',requests.booking_request_reference
+          ) order by requests.id),'[]'::jsonb)
+          from public.booking_requests requests
+          join public.booking_confirmations confirmations on confirmations.booking_request_id=requests.id
+          where (confirmations.confirmed_at at time zone 'Asia/Baghdad')::date='${confirmation.day}'::date
+            and not exists(select 1 from public.booking_request_confirmation_invalidations invalidation where invalidation.booking_request_id=requests.id)
+            and not exists(select 1 from public.booking_request_payment_required_expiry_work expiry where expiry.booking_request_id=requests.id and expiry.state='quarantined')
+            and (
+              (exists(select 1 from public.booking_lifecycle_outcomes outcome where outcome.booking_request_id=requests.id and outcome.outcome='completed')
+                and (public.booking_request_payment_status(requests)='paid-confirmed'
+                  or exists(select 1 from public.booking_cancellations cancellation where cancellation.booking_request_id=requests.id)))
+              or (not exists(select 1 from public.booking_cancellations cancellation where cancellation.booking_request_id=requests.id)
+                and public.booking_request_payment_status(requests) is distinct from 'paid-confirmed')
+            );
+        `),
+      );
+      if (!Array.isArray(selection))
+        throw new Error("Expected a complete booking selection array");
+      const expectedBookings = selection.map((row: unknown) => {
+        if (
+          typeof row !== "object" ||
+          row === null ||
+          !("id" in row) ||
+          typeof row.id !== "string" ||
+          !canonicalUuid.test(row.id) ||
+          !("reference" in row) ||
+          typeof row.reference !== "string" ||
+          !/^RC-REQ-[A-F0-9]{16}$/.test(row.reference)
+        )
+          throw new Error("Invalid booking selection identity");
+        return { id: row.id, reference: row.reference };
+      });
+      const expectedBookingIds = expectedBookings.map((booking) => booking.id);
+      expect(expectedBookings.length).toBeGreaterThan(0);
+      expect(expectedBookings.length).toBeLessThanOrEqual(500);
+      expect(new Set(expectedBookingIds).size).toBe(expectedBookings.length);
+      expect(
+        new Set(expectedBookings.map((booking) => booking.reference)).size,
+      ).toBe(expectedBookings.length);
+      expect(expectedBookings).toContainEqual({ id: request, reference });
+      await page
+        .locator('form[method="get"] select[name="state"]')
+        .selectOption("completed");
+      await page
+        .locator('form[method="get"] input[name="from"]')
+        .fill(confirmation.day);
+      await page
+        .locator('form[method="get"] input[name="through"]')
+        .fill(confirmation.day);
+      await apply.click();
+      await expect(page).toHaveURL(
+        new RegExp(
+          `state=completed&from=${confirmation.day}&through=${confirmation.day}$`,
+        ),
+      );
+      await expect(count.locator("strong")).toHaveText(
+        formatInteger(expectedBookingIds.length, locale),
+      );
+      const appliedUrl = page.url();
+      await page
+        .locator('form[method="get"] input[name="from"]')
+        .fill("2101-12-31");
+      const downloadSelection = async () => {
+        await exportButton.focus();
+        const pending = page.waitForEvent("download");
+        await page.keyboard.press("Enter");
+        const download = await pending;
+        expect(download.suggestedFilename()).toMatch(
+          /^rentcottage-money-[0-9a-f-]{36}\.csv$/,
+        );
+        const saved = await download.path();
+        expect(saved).not.toBeNull();
+        const bytes = readFileSync(saved!);
+        expect([...bytes.subarray(0, 3)]).toEqual([239, 187, 191]);
+        const csv = bytes.toString("utf8");
+        expect(csv).toContain(`"${exporting.exportRecordId}"`);
+        expect(csv).toContain(`"${copy.bookingPrice} - ${exporting.currency}"`);
+        expect(csv).toContain(`"${reference}"`);
+        expect(csv).toContain(`"${request}"`);
+        for (const privateValue of [
+          owner,
+          customer,
+          activeAdministratorId!,
+          identity.ownerPhone,
+          identity.customerPhone,
+          browserQuote.houseRules,
+          browserQuote.cottageName,
+        ])
+          expect(csv).not.toContain(privateValue);
+        const exportId = download
+          .suggestedFilename()
+          .slice("rentcottage-money-".length, -4);
+        const audit = JSON.parse(
+          harness.runSql(
+            `select jsonb_build_object('actor',administrator_user_id,'state',filter_state,'from',filter_from,'through',filter_through,'ids',booking_request_ids,'at',to_char(recorded_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"+00:00"')) from private.administrator_booking_money_exports where id='${exportId}';`,
+          ),
+        );
+        expect(audit).toEqual({
+          actor: activeAdministratorId,
+          state: "completed",
+          from: confirmation.day,
+          through: confirmation.day,
+          ids: expectedBookingIds,
+          at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        });
+        expect(csv).toContain(`"${exportId}","${audit.at}"`);
+        const lines = csv.slice(1).split("\r\n");
+        expect(lines.pop()).toBe("");
+        const headerPrefix =
+          [
+            exporting.exportRecordId,
+            exporting.recordedAt,
+            exporting.recordType,
+            exporting.reference,
+            exporting.bookingRequestId,
+          ]
+            .map((label) => `"${label}"`)
+            .join(",") + ",";
+        expect(lines.shift()?.startsWith(headerPrefix)).toBe(true);
+        const metadataPrefix = new RegExp(
+          `^"(${uuidPattern})","(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}\\+00:00)","(${exporting.booking}|${exporting.refund})","(RC-REQ-[A-F0-9]{16})","(${uuidPattern})",`,
+        );
+        const records = lines.map((line) => {
+          const metadata = metadataPrefix.exec(line);
+          if (!metadata) throw new Error("Unrecognized export row identity");
+          expect(metadata[1]).toBe(exportId);
+          expect(metadata[2]).toBe(audit.at);
+          return {
+            line,
+            type: metadata[3],
+            reference: metadata[4],
+            id: metadata[5],
+          };
+        });
+        const csvBookingIds = [...new Set(records.map((row) => row.id))].sort();
+        expect(csvBookingIds).toEqual(expectedBookingIds);
+        expect(csvBookingIds).toEqual(audit.ids);
+        const bookingRecords = records.filter(
+          (row) => row.type === exporting.booking,
+        );
+        expect(bookingRecords).toHaveLength(expectedBookings.length);
+        for (const booking of expectedBookings)
+          expect(
+            bookingRecords.filter(
+              (row) =>
+                row.id === booking.id && row.reference === booking.reference,
+            ),
+          ).toHaveLength(1);
+        const targetBookingRecords = bookingRecords.filter(
+          (row) => row.id === request,
+        );
+        expect(targetBookingRecords).toHaveLength(1);
+        expect(targetBookingRecords[0].line).toContain(
+          '"110000","5000","115000","11000"',
+        );
+        expect(targetBookingRecords[0].line).toContain('"99000","0","0"');
+        await writeFile(
+          testInfo.outputPath(`export-audit-${locale}-${exportId}.json`),
+          JSON.stringify(
+            { ...audit, expectedBookingIds, csvBookingIds },
+            null,
+            2,
+          ),
+        );
+        expect(
+          Number(
+            harness.runSql(
+              `select count(*) from private.administrator_booking_money_exports where administrator_user_id='${activeAdministratorId}';`,
+            ),
+          ),
+        ).toBeGreaterThan(0);
+        await expect(exportButton).toBeFocused();
+      };
+      await downloadSelection();
+      expect(page.url()).toBe(appliedUrl);
+      await expect(
+        page.locator('form[method="get"] input[name="from"]'),
+      ).toHaveValue("2101-12-31");
+      for (const evidenceViewport of locale === "en"
+        ? [viewport, { width: 390, height: 844 }]
+        : [viewport]) {
+        await page.setViewportSize(evidenceViewport);
+        await exportButton.focus();
+        const measurement = await exportButton.evaluate((button) => {
+          const box = button.getBoundingClientRect();
+          const css = getComputedStyle(button);
+          let ancestor: Element | null = button;
+          let background = css.backgroundColor;
+          while (background === "rgba(0, 0, 0, 0)" && ancestor?.parentElement) {
+            ancestor = ancestor.parentElement;
+            background = getComputedStyle(ancestor).backgroundColor;
+          }
+          const luminance = (color: string) => {
+            const channels = color
+              .match(/[\d.]+/g)!
+              .slice(0, 3)
+              .map(Number)
+              .map((value) => {
+                const unit = value / 255;
+                return unit <= 0.04045
+                  ? unit / 12.92
+                  : ((unit + 0.055) / 1.055) ** 2.4;
+              });
+            return (
+              channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+            );
+          };
+          const contrast = (foreground: string) => {
+            const a = luminance(foreground),
+              b = luminance(background);
+            return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+          };
+          return {
+            textContrast: contrast(css.color),
+            focusContrast: Math.max(
+              contrast(css.outlineColor),
+              ...(css.boxShadow.match(/rgba?\([^)]+\)/g) ?? []).map(contrast),
+            ),
+            boxShadow: css.boxShadow,
+            focusVisible: button.matches(":focus-visible"),
+            description: (button.getAttribute("aria-describedby") ?? "")
+              .split(" ")
+              .map((id) => document.getElementById(id)?.textContent)
+              .join(" "),
+            effectiveBackground: background,
+            name: button.textContent?.trim(),
+            width: box.width,
+            height: box.height,
+            noOverflow: document.documentElement.scrollWidth <= innerWidth,
+            contained: box.left >= 0 && box.right <= innerWidth,
+            focused: document.activeElement === button,
+            color: css.color,
+            background: css.backgroundColor,
+            outlineColor: css.outlineColor,
+            outlineStyle: css.outlineStyle,
+            outlineWidth: css.outlineWidth,
+            direction: document.documentElement.dir,
+          };
+        });
+        await writeFile(
+          testInfo.outputPath(
+            `totals-export-${locale}-${evidenceViewport.width}.json`,
+          ),
+          JSON.stringify(measurement, null, 2),
+        );
+        expect(measurement.height).toBeGreaterThanOrEqual(44);
+        expect(measurement.textContrast).toBeGreaterThanOrEqual(4.5);
+        expect(measurement.focusContrast).toBeGreaterThanOrEqual(3);
+        expect(measurement.outlineStyle).not.toBe("none");
+        expect(measurement).toMatchObject({
+          noOverflow: true,
+          contained: true,
+          focused: true,
+          focusVisible: true,
+          direction,
+          name: exporting.export,
+          description: `${exporting.help} ${exporting.applyHelp}`,
+        });
+        await page.screenshot({
+          path: testInfo.outputPath(
+            `totals-export-${locale}-${evidenceViewport.width}.png`,
+          ),
+          fullPage: true,
+        });
+      }
+      const continuation = new URL(appliedUrl);
+      continuation.searchParams.set("afterAt", confirmation.at);
+      continuation.searchParams.set("afterId", request);
+      await page.goto(continuation.toString());
+      await expect(
+        page.getByRole("link", { name: reference, exact: true }),
+      ).toHaveCount(0);
+      await expect(count.locator("strong")).toHaveText(
+        formatInteger(expectedBookingIds.length, locale),
+      );
+      await downloadSelection();
+      if (locale === "ar") {
+        await page
+          .locator('form[method="post"] input[name="state"]')
+          .evaluate((input) => {
+            (input as HTMLInputElement).value = "invalid";
+          });
+        await exportButton.click();
+        await expect(page).toHaveURL(/exportError=invalid$/);
+        await expect(page.locator("main").getByRole("alert")).toContainText(
+          exporting.invalid,
+        );
+        await page.screenshot({
+          path: testInfo.outputPath("totals-export-ar-invalid.png"),
+          fullPage: true,
+        });
+      }
     }
   });
   for (const locale of ["en", "ar", "ckb"] as const) {

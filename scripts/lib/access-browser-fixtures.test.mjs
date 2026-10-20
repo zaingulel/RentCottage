@@ -713,6 +713,25 @@ test("browser booking fixtures own disjoint graphs and cleanup", () => {
     ["capture", "desktop", "871", "8711", "8712", "8713", "8718"],
     ["capture", "worker", "872", "8721", "8722", "8723", "8728"],
   ];
+  const fixedAdministrator = "10000000-0000-4000-8000-000000008108";
+  const exportAdministrator = "90000000-0000-4000-8000-000000008108";
+  const exportCleanup = confirmedBookingCleanup({
+    stem: "810",
+    administrator: fixedAdministrator,
+    exportAdministrator,
+  });
+  assert.ok(
+    exportCleanup.includes(
+      `delete from private.administrator_booking_money_exports where administrator_user_id in ('${fixedAdministrator}','${exportAdministrator}');`,
+    ),
+    "audit cleanup owns the fixed and additional exporting administrators",
+  );
+  const authenticationDelete = exportCleanup.match(
+    /delete from auth\.users where id in \(([^;]+)\);/,
+  )?.[1];
+  assert.ok(authenticationDelete?.includes(fixedAdministrator));
+  assert.ok(!authenticationDelete?.includes(exportAdministrator));
+  assert.equal(exportCleanup.split(exportAdministrator).length - 1, 1);
   const primaryPrefixes = {
     profile: "20000000",
     schedule: "30000000",
@@ -949,7 +968,7 @@ test("browser booking fixtures own disjoint graphs and cleanup", () => {
     ],
     [
       confirmedBookingCleanup(),
-      "3a771fa17e67c0be2cb89656489e581ec69f5586d24acc9c60e3185e57e1bea0",
+      "c04cc23e77513c34e9b8cc106f9245de148a02f6ca17e33436aacb116c5a6d55",
     ],
     [
       confirmedBookingAccessCleanup(),

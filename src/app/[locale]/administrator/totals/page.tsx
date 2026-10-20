@@ -5,6 +5,10 @@ import { readAdministratorBookingMoney } from "@/administrator-records/supabase-
 import { AdministratorBookingMoney } from "@/components/administrator-booking-money";
 import { BackofficeNavigation } from "@/components/backoffice-navigation";
 import { ActionFeedback } from "@/components/interaction-controls";
+import {
+  bookingMoneyExportErrors,
+  type BookingMoneyExportError,
+} from "@/i18n/administrator-booking-money-export-messages";
 import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
 import { administratorTotalsMessages } from "@/i18n/administrator-totals-messages";
 import { isLocale } from "@/i18n/routing";
@@ -24,13 +28,21 @@ export default async function AdministratorTotalsPage({
   if (
     Object.entries(query).some(
       ([key, value]) =>
-        !(queryKeys as readonly string[]).includes(key) ||
+        !([...queryKeys, "exportError"] as readonly string[]).includes(key) ||
         typeof value !== "string",
     )
   )
     notFound();
 
-  const outcome = await readAdministratorBookingMoney(query);
+  const { exportError, ...selection } = query;
+  if (
+    exportError !== undefined &&
+    !(bookingMoneyExportErrors as readonly string[]).includes(
+      exportError as string,
+    )
+  )
+    notFound();
+  const outcome = await readAdministratorBookingMoney(selection);
   const title = administratorTotalsMessages[locale].title;
   const records = administratorRecordsMessages[locale];
 
@@ -66,6 +78,7 @@ export default async function AdministratorTotalsPage({
       <h1 className="page-title">{title}</h1>
       <AdministratorBookingMoney
         locale={locale}
+        exportError={exportError as BookingMoneyExportError | undefined}
         filters={{
           state: text("state"),
           from: text("from"),

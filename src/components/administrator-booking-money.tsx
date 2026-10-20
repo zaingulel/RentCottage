@@ -8,6 +8,10 @@ import {
   type BookingMoneyRow,
 } from "@/administrator-records/administrator-booking-money";
 import type { readAdministratorBookingMoney } from "@/administrator-records/supabase-administrator-booking-money";
+import {
+  administratorBookingMoneyExportMessages,
+  type BookingMoneyExportError,
+} from "@/i18n/administrator-booking-money-export-messages";
 import { bookingPayoutMessages } from "@/i18n/administrator-payment-history-messages";
 import { administratorRecordsMessages } from "@/i18n/administrator-records-messages";
 import { administratorTotalsMessages } from "@/i18n/administrator-totals-messages";
@@ -215,14 +219,25 @@ export function AdministratorBookingMoney({
   locale,
   filters,
   outcome,
+  exportError,
 }: {
   locale: Locale;
   filters: Filters;
   outcome: Outcome;
+  exportError?: BookingMoneyExportError;
 }) {
   const copy = administratorTotalsMessages[locale];
   const records = administratorRecordsMessages[locale];
   const base = `/${locale}/administrator/totals`;
+  const exporting = administratorBookingMoneyExportMessages[locale];
+  const exportFeedback =
+    exportError === "too_many"
+      ? copy.tooMany.replace("{limit}", formatInteger(500, locale))
+      : exportError === "access_required"
+        ? exporting.accessRequired
+        : exportError
+          ? exporting[exportError]
+          : null;
 
   function href(cursor?: { afterAt: string; afterId: string }) {
     const search = new URLSearchParams();
@@ -284,6 +299,39 @@ export function AdministratorBookingMoney({
           </ActionLink>
         </div>
       </form>
+      {outcome.status === "ready" && outcome.summary.bookingCount > 0 && (
+        <form
+          action={`${base}/export`}
+          method="post"
+          className={styles.results}
+        >
+          {(["state", "from", "through"] as const).map((key) => (
+            <input
+              key={key}
+              type="hidden"
+              name={key}
+              value={outcome.search[key] ?? ""}
+            />
+          ))}
+          <p id="money-export-help">{exporting.help}</p>
+          <p id="money-export-apply-help">{exporting.applyHelp}</p>
+          <div className={styles.actions}>
+            <ActionButton
+              kind="secondary"
+              size="regular"
+              type="submit"
+              aria-describedby="money-export-help money-export-apply-help"
+            >
+              {exporting.export}
+            </ActionButton>
+          </div>
+        </form>
+      )}
+      {exportFeedback &&
+        !(exportError === "invalid" && outcome.status === "invalid") &&
+        !(exportError === "too_many" && outcome.status === "too_many") && (
+          <ActionFeedback kind="error">{exportFeedback}</ActionFeedback>
+        )}
       {outcome.status === "invalid" ? (
         <ActionFeedback kind="error">{copy.invalid}</ActionFeedback>
       ) : outcome.status === "too_many" ? (
