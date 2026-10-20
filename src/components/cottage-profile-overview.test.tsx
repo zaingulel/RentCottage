@@ -282,119 +282,119 @@ describe("Cottage Profile overview", () => {
     }
   });
 
-  const draftProgressRequirements = [
-    "name",
-    "governorate",
-    "approximateLocation",
-    "capacity",
-    "bedrooms",
-    "bathrooms",
-    "amenities",
-    "exactPoint",
-    "privateDirections",
-    "sourceLanguage",
-    "description",
-    "houseRules",
-    "photos",
-  ] as const satisfies readonly CottageProfileDraftRequirement[];
-  const draftProgressExpectations = {
-    en: {
-      counts: [
-        "0 of 13 requirements complete",
-        "5 of 13 requirements complete",
-        "12 of 13 requirements complete",
-        "13 of 13 requirements complete",
-      ],
-      next: [
-        "Next: add the cottage name.",
-        "Next: choose the governorate.",
-        "Next: add an approximate public location.",
-        "Next: set guest capacity.",
-        "Next: set bedrooms.",
-        "Next: set bathrooms.",
-        "Next: choose at least one amenity.",
-        "Next: enter the cottage's exact coordinates.",
-        "Next: add private directions.",
-        "Next: choose the source language.",
-        "Next: add a description.",
-        "Next: add House Rules.",
-        "Next: add or check your photos. You need 1–12 ready photos.",
-      ],
-      continue: "Continue setup",
-      review: "Review and submit",
-      open: "Open Cottage Profile",
-      ready: "Ready to submit for content approval",
-      unavailable: "Progress unavailable",
-      check: "Open the Cottage Profile to check the required details",
-      readOnly:
-        "Submission is unavailable while your owner account is expired or suspended",
-    },
-    ar: {
-      counts: [
-        "اكتمل 0 من 13 متطلبًا",
-        "اكتمل 5 من 13 متطلبًا",
-        "اكتمل 12 من 13 متطلبًا",
-        "اكتمل 13 من 13 متطلبًا",
-      ],
-      next: [
-        "التالي: أضف اسم الكوخ.",
-        "التالي: اختر المحافظة.",
-        "التالي: أضف موقعًا عامًا تقريبيًا.",
-        "التالي: حدّد سعة الضيوف.",
-        "التالي: حدّد عدد غرف النوم.",
-        "التالي: حدّد عدد الحمامات.",
-        "التالي: اختر مرفقًا واحدًا على الأقل.",
-        "التالي: أدخل إحداثيات الكوخ الدقيقة.",
-        "التالي: أضف اتجاهات الوصول الخاصة.",
-        "التالي: اختر لغة المصدر.",
-        "التالي: أضف وصفًا.",
-        "التالي: أضف قواعد المنزل.",
-        "التالي: أضف صورك أو تحقق منها. تحتاج إلى 1–12 صورة جاهزة.",
-      ],
-      continue: "متابعة الإعداد",
-      review: "المراجعة والإرسال",
-      open: "فتح ملف الكوخ",
-      ready: "جاهز للإرسال للموافقة على المحتوى",
-      unavailable: "التقدم غير متاح",
-      check: "افتح ملف الكوخ للتحقق من التفاصيل المطلوبة",
-      readOnly: "الإرسال غير متاح ما دام حساب المالك منتهي الصلاحية أو موقوفًا",
-    },
-    ckb: {
-      counts: [
-        "٠ لە ١٣ پێداویستی تەواو کراوە",
-        "٥ لە ١٣ پێداویستی تەواو کراوە",
-        "١٢ لە ١٣ پێداویستی تەواو کراوە",
-        "١٣ لە ١٣ پێداویستی تەواو کراوە",
-      ],
-      next: [
-        "دواتر: ناوی کۆتێج زیاد بکە.",
-        "دواتر: پارێزگا هەڵبژێرە.",
-        "دواتر: شوێنێکی گشتیی نزیکەیی زیاد بکە.",
-        "دواتر: ژمارەی میوان دیاری بکە.",
-        "دواتر: ژمارەی ژوورەکانی نوستن دیاری بکە.",
-        "دواتر: ژمارەی حەمامەکان دیاری بکە.",
-        "دواتر: لانیکەم یەک خزمەتگوزاری هەڵبژێرە.",
-        "دواتر: کۆئۆردیناتە وردەکانی کۆتێج بنووسە.",
-        "دواتر: ڕێنمایی تایبەتی گەیشتن زیاد بکە.",
-        "دواتر: زمانی سەرچاوە هەڵبژێرە.",
-        "دواتر: وەسفێک زیاد بکە.",
-        "دواتر: یاساکانی ماڵ زیاد بکە.",
-        "دواتر: وێنەکانت زیاد بکە یان بیانپشکنە. پێویستت بە ١–١٢ وێنەی ئامادەیە.",
-      ],
-      continue: "بەردەوامبوون لە ئامادەکردن",
-      review: "پێداچوونەوە و ناردن",
-      open: "کردنەوەی پرۆفایلی کۆتێج",
-      ready: "ئامادەیە بۆ ناردن بۆ پەسەندکردنی ناوەڕۆک",
-      unavailable: "پێشکەوتن بەردەست نییە",
-      check: "پرۆفایلی کۆتێج بکەرەوە بۆ پشکنینی وردەکارییە پێویستەکان",
-      readOnly:
-        "لە کاتێکدا هەژماری خاوەنەکەت بەسەرچووە یان ڕاگیراوە، ناردن بەردەست نییە",
-    },
-  };
-  it.each(["en", "ar", "ckb"] as const)(
-    "renders authoritative draft progress and one next step in the %s launch language",
-    (locale) => {
-      const expected = draftProgressExpectations[locale];
+  it("renders authoritative draft progress and one next step in every launch language", () => {
+    const requirements = [
+      "name",
+      "governorate",
+      "approximateLocation",
+      "capacity",
+      "bedrooms",
+      "bathrooms",
+      "amenities",
+      "exactPoint",
+      "privateDirections",
+      "sourceLanguage",
+      "description",
+      "houseRules",
+      "photos",
+    ] as const satisfies readonly CottageProfileDraftRequirement[];
+    const expectations = {
+      en: {
+        counts: [
+          "0 of 13 requirements complete",
+          "5 of 13 requirements complete",
+          "12 of 13 requirements complete",
+          "13 of 13 requirements complete",
+        ],
+        next: [
+          "Next: add the cottage name.",
+          "Next: choose the governorate.",
+          "Next: add an approximate public location.",
+          "Next: set guest capacity.",
+          "Next: set bedrooms.",
+          "Next: set bathrooms.",
+          "Next: choose at least one amenity.",
+          "Next: enter the cottage's exact coordinates.",
+          "Next: add private directions.",
+          "Next: choose the source language.",
+          "Next: add a description.",
+          "Next: add House Rules.",
+          "Next: add or check your photos. You need 1–12 ready photos.",
+        ],
+        continue: "Continue setup",
+        review: "Review and submit",
+        open: "Open Cottage Profile",
+        ready: "Ready to submit for content approval",
+        unavailable: "Progress unavailable",
+        check: "Open the Cottage Profile to check the required details",
+        readOnly:
+          "Submission is unavailable while your owner account is expired or suspended",
+      },
+      ar: {
+        counts: [
+          "اكتمل 0 من 13 متطلبًا",
+          "اكتمل 5 من 13 متطلبًا",
+          "اكتمل 12 من 13 متطلبًا",
+          "اكتمل 13 من 13 متطلبًا",
+        ],
+        next: [
+          "التالي: أضف اسم الكوخ.",
+          "التالي: اختر المحافظة.",
+          "التالي: أضف موقعًا عامًا تقريبيًا.",
+          "التالي: حدّد سعة الضيوف.",
+          "التالي: حدّد عدد غرف النوم.",
+          "التالي: حدّد عدد الحمامات.",
+          "التالي: اختر مرفقًا واحدًا على الأقل.",
+          "التالي: أدخل إحداثيات الكوخ الدقيقة.",
+          "التالي: أضف اتجاهات الوصول الخاصة.",
+          "التالي: اختر لغة المصدر.",
+          "التالي: أضف وصفًا.",
+          "التالي: أضف قواعد المنزل.",
+          "التالي: أضف صورك أو تحقق منها. تحتاج إلى 1–12 صورة جاهزة.",
+        ],
+        continue: "متابعة الإعداد",
+        review: "المراجعة والإرسال",
+        open: "فتح ملف الكوخ",
+        ready: "جاهز للإرسال للموافقة على المحتوى",
+        unavailable: "التقدم غير متاح",
+        check: "افتح ملف الكوخ للتحقق من التفاصيل المطلوبة",
+        readOnly:
+          "الإرسال غير متاح ما دام حساب المالك منتهي الصلاحية أو موقوفًا",
+      },
+      ckb: {
+        counts: [
+          "٠ لە ١٣ پێداویستی تەواو کراوە",
+          "٥ لە ١٣ پێداویستی تەواو کراوە",
+          "١٢ لە ١٣ پێداویستی تەواو کراوە",
+          "١٣ لە ١٣ پێداویستی تەواو کراوە",
+        ],
+        next: [
+          "دواتر: ناوی کۆتێج زیاد بکە.",
+          "دواتر: پارێزگا هەڵبژێرە.",
+          "دواتر: شوێنێکی گشتیی نزیکەیی زیاد بکە.",
+          "دواتر: ژمارەی میوان دیاری بکە.",
+          "دواتر: ژمارەی ژوورەکانی نوستن دیاری بکە.",
+          "دواتر: ژمارەی حەمامەکان دیاری بکە.",
+          "دواتر: لانیکەم یەک خزمەتگوزاری هەڵبژێرە.",
+          "دواتر: کۆئۆردیناتە وردەکانی کۆتێج بنووسە.",
+          "دواتر: ڕێنمایی تایبەتی گەیشتن زیاد بکە.",
+          "دواتر: زمانی سەرچاوە هەڵبژێرە.",
+          "دواتر: وەسفێک زیاد بکە.",
+          "دواتر: یاساکانی ماڵ زیاد بکە.",
+          "دواتر: وێنەکانت زیاد بکە یان بیانپشکنە. پێویستت بە ١–١٢ وێنەی ئامادەیە.",
+        ],
+        continue: "بەردەوامبوون لە ئامادەکردن",
+        review: "پێداچوونەوە و ناردن",
+        open: "کردنەوەی پرۆفایلی کۆتێج",
+        ready: "ئامادەیە بۆ ناردن بۆ پەسەندکردنی ناوەڕۆک",
+        unavailable: "پێشکەوتن بەردەست نییە",
+        check: "پرۆفایلی کۆتێج بکەرەوە بۆ پشکنینی وردەکارییە پێویستەکان",
+        readOnly:
+          "لە کاتێکدا هەژماری خاوەنەکەت بەسەرچووە یان ڕاگیراوە، ناردن بەردەست نییە",
+      },
+    };
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      const expected = expectations[locale];
       const cases: {
         report: CottageProfile["draftProgress"];
         count: string;
@@ -423,7 +423,7 @@ describe("Cottage Profile overview", () => {
           next: expected.next[5]!,
           action: expected.continue,
         },
-        ...draftProgressRequirements.map((key, index) => ({
+        ...requirements.map((key, index) => ({
           report: {
             status: "loaded" as const,
             completed: 12,
@@ -549,8 +549,8 @@ describe("Cottage Profile overview", () => {
         ).toHaveAttribute("href", `/${locale}/${actor}/cottages/${profile.id}`);
         unmount();
       }
-    },
-  );
+    }
+  });
 
   it("shows Sorani photo count digits without Sorani locale data", () => {
     const RealNumberFormat = Intl.NumberFormat;

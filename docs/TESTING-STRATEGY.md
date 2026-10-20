@@ -225,10 +225,9 @@ remains authoritative for the command's own exit code; the pipeline's exit statu
 The full local check runs once before push: `node scripts/run-log.mjs convergence -- npm run verify`, which selects
 its route from the changed paths (`npm run verify -- --plan` prints that route without running it) and runs every
 selected group; `npm run verify -- --full` runs every group regardless of the changed paths.
-A local baseline runs both dependency audits, then format checking, lint, type checking and the unit tests
-together, each reported under its own name with its output printed when it ends, then type generation and its diff
-check; when one of the four fails the others still finish and the run stops before type generation. The
-GitHub-hosted baseline runs the same steps one at a time. A local run that includes the browser group builds once,
+The local and GitHub-hosted baselines both run the dependency audits, format checking, lint, type checking, the
+unit tests, type generation and its diff check one at a time in that order. Each step streams its output and records
+its own completion, and a failure stops the run before any later selected check. A local run that includes the browser group builds once,
 inside the access run after the Next.js fixtures; the Next.js journeys, the Worker journeys and the shell checks all
 serve that build. Each hosted browser portion builds what it serves.
 The ordinary unpartitioned local browser group runs each runtime's parallel portion before its exclusive portion,
