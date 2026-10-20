@@ -257,7 +257,9 @@ describe("Customer Booking Request status", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Processing");
     expect(screen.getByRole("status")).toHaveClass("status-banner");
     expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
-    expect(screen.getByRole("status")).toHaveTextContent("Money and inventory remain reserved until release is confirmed.");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Money and inventory remain reserved until release is confirmed.",
+    );
     finish({
       status: "withdrawn",
       bookingRequestReference: request.bookingRequestReference,
@@ -268,7 +270,9 @@ describe("Customer Booking Request status", () => {
       ).toBeInTheDocument(),
     );
     expect(screen.getByRole("status")).toHaveTextContent("Withdrawn");
-    expect(screen.getByRole("status")).not.toHaveTextContent("Money and inventory remain reserved until release is confirmed.");
+    expect(screen.getByRole("status")).not.toHaveTextContent(
+      "Money and inventory remain reserved until release is confirmed.",
+    );
     expect(
       screen.queryByText("pending", { exact: true }),
     ).not.toBeInTheDocument();
@@ -373,12 +377,7 @@ describe("Customer Booking Request status", () => {
     ],
     ["ar", "declined", "مرفوض", "رُفض هذا الطلب. الحجز غير مؤكد."],
     ["ar", "withdrawn", "مسحوب", "سحبت هذا الطلب. الحجز غير مؤكد."],
-    [
-      "ar",
-      "expired",
-      "منتهٍ",
-      "انتهى موعد الرد. الحجز غير مؤكد.",
-    ],
+    ["ar", "expired", "منتهٍ", "انتهى موعد الرد. الحجز غير مؤكد."],
     [
       "ckb",
       "pending",

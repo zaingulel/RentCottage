@@ -390,6 +390,11 @@ begin
     where requests.id = candidate_request_id
     for update of requests;
   end if;
+  -- Keep actor-before-conversation ordering consistent with Booking Request preparation.
+  perform 1 from public.account_contexts contexts
+  where contexts.user_id = target_actor_user_id
+  for share of contexts;
+
   select * into target_conversation
   from public.messaging_conversations conversations
   where conversations.id = target_conversation_id
@@ -405,10 +410,6 @@ begin
   if candidate_request_id is distinct from current_request_id then
     return jsonb_build_object('status', 'retry');
   end if;
-
-  perform 1 from public.account_contexts contexts
-  where contexts.user_id = target_actor_user_id
-  for share of contexts;
 
   evaluated_at := clock_timestamp();
   if not exists (

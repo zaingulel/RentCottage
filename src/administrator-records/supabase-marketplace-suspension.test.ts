@@ -205,15 +205,13 @@ it("preserves retry intent and distinguishes conflict from unknown command resul
       status,
     });
   }
-  rpc
-    .mockResolvedValueOnce({ data: true, error: null })
-    .mockResolvedValueOnce({
-      data: {
-        ...completed,
-        target: { ...completed.target, targetId: command.commandId },
-      },
-      error: null,
-    });
+  rpc.mockResolvedValueOnce({ data: true, error: null }).mockResolvedValueOnce({
+    data: {
+      ...completed,
+      target: { ...completed.target, targetId: command.commandId },
+    },
+    error: null,
+  });
   await expect(executeMarketplaceSuspension(command)).resolves.toEqual({
     status: "unavailable",
   });
@@ -223,12 +221,10 @@ it("preserves retry intent and distinguishes conflict from unknown command resul
   await expect(executeMarketplaceSuspension(command)).resolves.toEqual({
     status: "access_required",
   });
-  rpc
-    .mockResolvedValueOnce({ data: true, error: null })
-    .mockResolvedValueOnce({
-      data: null,
-      error: { code: "XX000", message: "private database details" },
-    });
+  rpc.mockResolvedValueOnce({ data: true, error: null }).mockResolvedValueOnce({
+    data: null,
+    error: { code: "XX000", message: "private database details" },
+  });
   await expect(executeMarketplaceSuspension(command)).resolves.toEqual({
     status: "unavailable",
   });

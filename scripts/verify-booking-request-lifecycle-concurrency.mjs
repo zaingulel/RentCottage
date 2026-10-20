@@ -1175,10 +1175,20 @@ commit;`;
   async function verifySuspensionRelease() {
     const authorization = `set local role authenticated;
       select set_config('request.jwt.claims','{"sub":"${fixtureIds.administratorUser}","role":"authenticated","aal":"aal2"}',true);`;
-    const summary = () => JSON.parse(harness.runSql(`begin; ${authorization}
+    const summary = () =>
+      JSON.parse(
+        harness
+          .runSql(
+            `begin; ${authorization}
       select public.get_marketplace_suspension('customer','${fixtureIds.customerUser}'); commit;
-    `).split("\n").at(-1));
-    const snapshot = () => JSON.parse(harness.runSql(`select jsonb_build_object(
+    `,
+          )
+          .split("\n")
+          .at(-1),
+      );
+    const snapshot = () =>
+      JSON.parse(
+        harness.runSql(`select jsonb_build_object(
       'request',to_jsonb(requests),'hold',to_jsonb(commitments),'snapshot',to_jsonb(snapshots),
       'authorization',attempts.payment_snapshot->'authorization',
       'work',(select to_jsonb(work) from public.booking_request_release_work work where booking_request_id=requests.id),
@@ -1190,8 +1200,10 @@ commit;`;
     join public.cottage_booking_period_commitments commitments on commitments.id=fixture.commitment_id
     join public.booking_snapshots snapshots on snapshots.id=fixture.booking_snapshot_id
     join public.booking_request_submission_attempts attempts on attempts.id=fixture.attempt_id
-    where fixture.label='source';`));
-    const quarantinedFacts = () => harness.runSql(`select jsonb_build_object(
+    where fixture.label='source';`),
+      );
+    const quarantinedFacts = () =>
+      harness.runSql(`select jsonb_build_object(
       'request',to_jsonb(requests),'work',to_jsonb(work),'hold',to_jsonb(commitments),
       'attempt',to_jsonb(attempts)
     ) from public.test_booking_request_lifecycle_fences fixture
@@ -1203,13 +1215,30 @@ commit;`;
     const quarantinedBefore = quarantinedFacts();
     const before = snapshot();
     assert.equal(before.request.status, "pending");
-    assert.equal(harness.runSql(`select count(*) from public.booking_requests where customer_user_id='${fixtureIds.customerUser}' and status='pending';`), "1",
-      "Suspension fixture must own exactly its one remaining pending request");
-    const restricted = JSON.parse(harness.runSql(`begin; ${authorization}
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.booking_requests where customer_user_id='${fixtureIds.customerUser}' and status='pending';`,
+      ),
+      "1",
+      "Suspension fixture must own exactly its one remaining pending request",
+    );
+    const restricted = JSON.parse(
+      harness
+        .runSql(
+          `begin; ${authorization}
       select public.set_marketplace_suspension('customer','${fixtureIds.customerUser}','suspend',0,'Fictional worker composition case','${fixtureIds.suspensionCommand}'); commit;
-    `).split("\n").at(-1));
+    `,
+        )
+        .split("\n")
+        .at(-1),
+    );
     assert.equal(restricted.status, "completed");
-    assert.deepEqual(restricted.target.releaseSummary, { affected: 1, resolved: 0, processing: 1, quarantined: 0 });
+    assert.deepEqual(restricted.target.releaseSummary, {
+      affected: 1,
+      resolved: 0,
+      processing: 1,
+      quarantined: 0,
+    });
     const prepared = snapshot();
     assert.equal(prepared.work.lease_generation, 0);
     assert.equal(prepared.work.suspension_action_id, restricted.actionId);
@@ -1225,12 +1254,29 @@ commit;`;
     assert.deepEqual(unrecorded.occupancies, before.occupancies);
     assert.deepEqual(unrecorded.customerReceipts, []);
     assert.deepEqual(unrecorded.customerEvents, []);
-    assert.deepEqual(summary().releaseSummary, { affected: 1, resolved: 0, processing: 1, quarantined: 0 });
-    assert.equal(harness.runSql(`select count(*) from public.simulated_payment_effects effects join public.payment_provider_operations operations on operations.id=effects.operation_id where operations.payment_lifecycle_id='${fixtureIds.paymentLifecycle}' and operations.operation_kind='release' and effects.state='executed' and operations.current_outcome is distinct from 'succeeded';`), "1",
-      "A provider effect before authoritative recording cannot settle the request");
-    const restored = JSON.parse(harness.runSql(`begin; ${authorization}
+    assert.deepEqual(summary().releaseSummary, {
+      affected: 1,
+      resolved: 0,
+      processing: 1,
+      quarantined: 0,
+    });
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.simulated_payment_effects effects join public.payment_provider_operations operations on operations.id=effects.operation_id where operations.payment_lifecycle_id='${fixtureIds.paymentLifecycle}' and operations.operation_kind='release' and effects.state='executed' and operations.current_outcome is distinct from 'succeeded';`,
+      ),
+      "1",
+      "A provider effect before authoritative recording cannot settle the request",
+    );
+    const restored = JSON.parse(
+      harness
+        .runSql(
+          `begin; ${authorization}
       select public.set_marketplace_suspension('customer','${fixtureIds.customerUser}','reactivate',1,'Prospective restoration while release finishes','${fixtureIds.restorationCommand}'); commit;
-    `).split("\n").at(-1));
+    `,
+        )
+        .split("\n")
+        .at(-1),
+    );
     assert.equal(restored.status, "completed");
     assert.equal(restored.target.state, "active");
     assert.equal(snapshot().work.id, prepared.work.id);
@@ -1238,10 +1284,16 @@ commit;`;
     assert.equal((await finishWorker(worker)).result.status, "declined");
     const completed = snapshot();
     assert.equal(completed.request.status, "declined");
-    assert.equal(completed.request.outcome_actor_user_id, fixtureIds.administratorUser);
+    assert.equal(
+      completed.request.outcome_actor_user_id,
+      fixtureIds.administratorUser,
+    );
     assert.equal(completed.request.decline_reason, "other");
     assert.equal(completed.request.decline_note, null);
-    assert.equal(completed.request.response_deadline, before.request.response_deadline);
+    assert.equal(
+      completed.request.response_deadline,
+      before.request.response_deadline,
+    );
     assert.equal(completed.work.id, prepared.work.id);
     assert.equal(completed.work.state, "complete");
     assert.equal(completed.work.suspension_action_id, restricted.actionId);
@@ -1250,15 +1302,36 @@ commit;`;
     assert.ok(completed.occupancies.every((occupancy) => !occupancy.active));
     assert.deepEqual(completed.snapshot, before.snapshot);
     assert.deepEqual(completed.authorization, before.authorization);
-    assert.deepEqual(summary().releaseSummary, { affected: 1, resolved: 1, processing: 0, quarantined: 0 });
+    assert.deepEqual(summary().releaseSummary, {
+      affected: 1,
+      resolved: 1,
+      processing: 0,
+      quarantined: 0,
+    });
     assert.equal(completed.customerReceipts.length, 1);
     assert.equal(completed.customerReceipts[0].status, "declined");
     assert.equal(completed.customerEvents.length, 1);
-    assert.equal(completed.customerEvents[0].request_status_notification_id, completed.customerReceipts[0].id);
-    assert.equal((await finishWorker(startWorker("source"))).result.status, "declined");
-    assert.deepEqual(snapshot(), completed, "Replay must preserve the same authoritative work, money and durable customer notification receipt");
-    assert.equal(quarantinedFacts(), quarantinedBefore, "Restriction/reactivation cannot resume or rewrite prior definitive-refusal quarantine");
-    console.log("Suspension release composition proved unleased preparation, retained hold/counts/receipts after an unrecorded provider effect, prospective reactivation, authoritative worker completion and one immutable customer status receipt/source.");
+    assert.equal(
+      completed.customerEvents[0].request_status_notification_id,
+      completed.customerReceipts[0].id,
+    );
+    assert.equal(
+      (await finishWorker(startWorker("source"))).result.status,
+      "declined",
+    );
+    assert.deepEqual(
+      snapshot(),
+      completed,
+      "Replay must preserve the same authoritative work, money and durable customer notification receipt",
+    );
+    assert.equal(
+      quarantinedFacts(),
+      quarantinedBefore,
+      "Restriction/reactivation cannot resume or rewrite prior definitive-refusal quarantine",
+    );
+    console.log(
+      "Suspension release composition proved unleased preparation, retained hold/counts/receipts after an unrecorded provider effect, prospective reactivation, authoritative worker completion and one immutable customer status receipt/source.",
+    );
   }
 
   let failure;

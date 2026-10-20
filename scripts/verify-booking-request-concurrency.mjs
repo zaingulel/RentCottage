@@ -1717,6 +1717,8 @@ commit;`;
   `);
     const messageAdmission = await startSession(`
     begin;
+    select contexts.user_id from public.account_contexts contexts
+    where contexts.user_id = '${customerId}' for share of contexts;
     select conversations.id from public.messaging_conversations conversations
     join public.test_booking_request_retirement_fixture race
       on race.conversation_id = conversations.id
@@ -2702,7 +2704,7 @@ commit;`;
       );
     }
     console.log(
-      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=ledger-finalized-stale-lease-conflict; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending; retirement-claim-first=attempt-lock-wait-then-claim-retained; retirement-first=late-claim-blocked-then-invalid-without-payment; retirement-cross-attempt=customer-lock-wait-then-independent-claim-and-replacement-ready; key-collision=profile-lock-wait-then-invalid-without-late-attempt-lock-and-claim-ready; retirement-message=conversation-lock-wait-message-admitted-then-rollback-and-payment-free-replacement-ready.",
+      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=ledger-finalized-stale-lease-conflict; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending; retirement-claim-first=attempt-lock-wait-then-claim-retained; retirement-first=late-claim-blocked-then-invalid-without-payment; retirement-cross-attempt=customer-lock-wait-then-independent-claim-and-replacement-ready; key-collision=profile-lock-wait-then-invalid-without-late-attempt-lock-and-claim-ready; retirement-message=actor-lock-wait-message-admitted-then-rollback-and-payment-free-replacement-ready.",
     );
   }
 

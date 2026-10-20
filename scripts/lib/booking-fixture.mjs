@@ -290,7 +290,10 @@ export const customerReviewCleanup = (
 delete from public.account_contexts where user_id in (${reusedAuthUsers.map((user) => `'${user}'`).join(",")});
 `
     : "";
-  const targetUsers = [users, ...reusedAuthUsers.map((user) => `'${user}'`)].join(",");
+  const targetUsers = [
+    users,
+    ...reusedAuthUsers.map((user) => `'${user}'`),
+  ].join(",");
   return `begin;
 ${suspensionCleanupPreflight(targetUsers, `'${r.profile}'`, "")}set local session_replication_role=replica;
 delete from public.customer_review_translation_reports where translation_id in (select translations.id from public.customer_review_translations translations join public.customer_reviews reviews on reviews.id=translations.review_id where reviews.booking_request_id='${r.request}');

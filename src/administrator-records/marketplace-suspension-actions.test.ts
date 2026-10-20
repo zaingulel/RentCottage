@@ -208,15 +208,13 @@ it("keeps uncertain commands and failed reads unavailable without refreshing inv
       status: status === "not-found" ? "not_found" : status,
     });
   }
-  rpc
-    .mockResolvedValueOnce({ data: true, error: null })
-    .mockResolvedValueOnce({
-      data: {
-        ...completed,
-        target: { ...completed.target, applicationId: "/evil" },
-      },
-      error: null,
-    });
+  rpc.mockResolvedValueOnce({ data: true, error: null }).mockResolvedValueOnce({
+    data: {
+      ...completed,
+      target: { ...completed.target, applicationId: "/evil" },
+    },
+    error: null,
+  });
   await expect(setMarketplaceSuspension(command)).resolves.toEqual({
     status: "unavailable",
   });

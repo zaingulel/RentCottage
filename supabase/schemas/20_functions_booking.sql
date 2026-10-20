@@ -177,6 +177,7 @@ begin
     or attempt.owner_suspension_revision is distinct from owner_revision
     or attempt.cottage_suspension_revision
       is distinct from current_profile.suspension_revision then
+    perform public.retire_unusable_prepared_booking_request_submission(attempt.id);
     return jsonb_build_object('status', 'quote-stale');
   end if;
 
@@ -5270,13 +5271,20 @@ begin
     or current_profile.suspension_revision is null or current_profile.suspension_revision < 0 then
     return jsonb_build_object('status', 'unavailable');
   end if;
-  if current_profile.business_suspended
-    or (existing_attempt.id is not null and (
-      existing_attempt.customer_suspension_revision is distinct from customer_context.customer_suspension_revision
-      or existing_attempt.owner_suspension_revision is distinct from owner_revision
-      or existing_attempt.cottage_suspension_revision is distinct from current_profile.suspension_revision
-    )) then
+  if current_profile.business_suspended then
+    perform public.retire_unusable_prepared_booking_request_submission(existing_attempt.id);
     return jsonb_build_object('status', 'quote-stale');
+  end if;
+  if existing_attempt.id is not null and (
+    existing_attempt.customer_suspension_revision is distinct from customer_context.customer_suspension_revision
+    or existing_attempt.owner_suspension_revision is distinct from owner_revision
+    or existing_attempt.cottage_suspension_revision is distinct from current_profile.suspension_revision
+  ) then
+    if not public.retire_unusable_prepared_booking_request_submission(existing_attempt.id)
+      or key_attempt.id is not null then
+      return jsonb_build_object('status', 'quote-stale');
+    end if;
+    existing_attempt := null;
   end if;
   if target_conversation_id is not null then
     select * into target_conversation
@@ -6031,11 +6039,34 @@ begin
   for update;
   if not found
     or attempt.state <> 'authorizing'
-    or attempt.payment_snapshot is not null then
+    or attempt.payment_snapshot is not null
+    or attempt.booking_request_id is not null
+    or exists (
+      select 1 from public.booking_request_authorization_claims claims
+      where claims.attempt_id = attempt.id
+    ) then
     return false;
   end if;
 
   perform public.validate_public_cottage_search(attempt.requested_search);
+  select exists (
+    select 1
+    from public.account_contexts customer
+    join public.owner_application_cottage_profiles profiles on profiles.id = attempt.profile_id
+    join public.account_contexts owner_context on owner_context.user_id = profiles.owner_user_id
+    where customer.user_id = attempt.customer_user_id
+      and customer.customer_suspension_revision >= 0
+      and owner_context.owner_suspension_revision >= 0
+      and profiles.suspension_revision >= 0
+      and attempt.customer_suspension_revision >= 0
+      and attempt.owner_suspension_revision >= 0
+      and attempt.cottage_suspension_revision >= 0
+      and (
+        attempt.customer_suspension_revision <> customer.customer_suspension_revision
+        or attempt.owner_suspension_revision <> owner_context.owner_suspension_revision
+        or attempt.cottage_suspension_revision <> profiles.suspension_revision
+      )
+  ) into unusable;
   begin
     perform public.validate_public_cottage_discovery_admission(attempt.requested_search);
   exception when sqlstate '22023' then

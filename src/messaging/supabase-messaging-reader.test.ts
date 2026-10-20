@@ -102,18 +102,16 @@ describe("Supabase messaging reader", () => {
 
   it("refuses an optimistic booking continuation for a suspended customer", async () => {
     const client = {
-      rpc: vi
-        .fn()
-        .mockResolvedValue({
-          data: {
-            ...header,
-            sendRestriction: "customer-suspended",
-            canContinueBookingRequest: true,
-            messages: [],
-            nextMessageCursor: null,
-          },
-          error: null,
-        }),
+      rpc: vi.fn().mockResolvedValue({
+        data: {
+          ...header,
+          sendRestriction: "customer-suspended",
+          canContinueBookingRequest: true,
+          messages: [],
+          nextMessageCursor: null,
+        },
+        error: null,
+      }),
     };
     await expect(
       new SupabaseMessagingReader(client as never).getConversation({

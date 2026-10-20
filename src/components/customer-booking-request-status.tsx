@@ -56,11 +56,9 @@ const messages = {
         "Waiting for the Cottage Owner to accept or decline this request. The booking is not confirmed yet.",
       accepted:
         "The Cottage Owner accepted the request. The booking is not confirmed yet.",
-      declined:
-        "This request was declined. The booking is not confirmed.",
+      declined: "This request was declined. The booking is not confirmed.",
       withdrawn: "You withdrew this request. The booking is not confirmed.",
-      expired:
-        "The response deadline passed. The booking is not confirmed.",
+      expired: "The response deadline passed. The booking is not confirmed.",
     },
   },
   ar: {
@@ -75,7 +73,8 @@ const messages = {
     reason: "سبب الرفض",
     note: "ملاحظة مالك البيت",
     withdraw: "سحب الطلب قيد الانتظار",
-    processing: "لم يُحسم هذا الطلب. يبقى المبلغ والفترة محجوزين حتى تأكيد التحرير. لا ترسل طلباً آخر الآن.",
+    processing:
+      "لم يُحسم هذا الطلب. يبقى المبلغ والفترة محجوزين حتى تأكيد التحرير. لا ترسل طلباً آخر الآن.",
     failed: "تعذر تحديث الطلب بأمان. حاول مرة أخرى.",
     notification: "إشعار الحالة",
     paymentDeadline: "موعد الدفع",
@@ -110,11 +109,9 @@ const messages = {
         "چاوەڕێی خاوەنی کۆتێجین کە ئەم داواکارییە قبوڵ بکات یان ڕەتی بکاتەوە. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
       accepted:
         "خاوەنی کۆتێج داواکارییەکەی قبوڵ کرد. حجزەکە هێشتا پشتڕاست نەکراوەتەوە.",
-      declined:
-        "ئەم داواکارییە ڕەت کرایەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
+      declined: "ئەم داواکارییە ڕەت کرایەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
       withdrawn: "ئەم داواکارییەت کشاندەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
-      expired:
-        "کاتی کۆتایی وەڵام بەسەرچووە. حجزەکە پشتڕاست نەکراوەتەوە.",
+      expired: "کاتی کۆتایی وەڵام بەسەرچووە. حجزەکە پشتڕاست نەکراوەتەوە.",
     },
   },
 } as const;

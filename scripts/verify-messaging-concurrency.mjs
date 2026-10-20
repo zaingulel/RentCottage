@@ -622,6 +622,25 @@ try {
       "messaging_association_contender",
       associationContender,
     );
+    const associationActorProbe = harness.runDocker(
+      harness.psqlArguments(),
+      `\\set VERBOSITY verbose
+      begin;
+      select user_id from public.account_contexts
+      where user_id='${customer}' for no key update nowait;
+      rollback;
+`,
+    );
+    assert.notEqual(
+      associationActorProbe.status,
+      0,
+      "Message admission holds actor SHARE before its conversation wait",
+    );
+    assert.match(
+      associationActorProbe.stderr,
+      /55P03: could not obtain lock on row in relation "account_contexts"/,
+      "The waiting sender holds actor authority, not a timeout or fixture error",
+    );
     await harness.finishSession(associationHolder, { action: "commit" });
     await harness.finishSession(associationContender);
     assert.equal(
