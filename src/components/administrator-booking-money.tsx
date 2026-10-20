@@ -321,7 +321,7 @@ function BookingMoneyResults({
 }) {
   const records = administratorRecordsMessages[locale];
   const { totals, flagged } = summary;
-  const empty = summary.bookingCount === 0 && flagged.length === 0;
+  const empty = summary.bookingCount === 0;
   const continued = search.afterAt !== null;
 
   return (

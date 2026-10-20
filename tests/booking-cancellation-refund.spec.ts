@@ -914,15 +914,54 @@ test.describe("retained cancellation and refund controls", () => {
     await expect(
       page.getByRole("region", { name: payoutMessages.en.title, exact: true }),
     ).toBeVisible();
-    for (const locale of ["ar", "ckb"] as const) {
+    for (const [locale, viewport] of [
+      ["en", { width: 1440, height: 1000 }],
+      ["ar", { width: 390, height: 844 }],
+      ["ckb", { width: 320, height: 844 }],
+    ] as const) {
+      const copy = administratorTotalsMessages[locale];
+      const direction = locale === "en" ? "ltr" : "rtl";
+      await page.setViewportSize(viewport);
       await page.goto(`/${locale}/administrator/totals`);
-      await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+      await expect(page.locator("html")).toHaveAttribute("dir", direction);
       await expect(
-        page.getByRole("heading", {
-          name: administratorTotalsMessages[locale].title,
-          level: 1,
-        }),
+        page.getByRole("heading", { name: copy.title, level: 1 }),
       ).toBeVisible();
+      const count = page.getByText(`${copy.bookingCount}:`);
+      await expect(count).toBeVisible();
+      await expect(count.locator("strong")).toHaveText(/\S/);
+      const countText = await count.locator("strong").innerText();
+      await expect(count).toHaveText(`${copy.bookingCount}: ${countText}`);
+      const apply = page.getByRole("button", { name: copy.apply, exact: true });
+      await expect(apply).toBeVisible();
+      await page
+        .getByRole("link", {
+          name: administratorRecordsMessages[locale].reset,
+          exact: true,
+        })
+        .focus();
+      await page.keyboard.press("Shift+Tab");
+      await expect(apply).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(page).toHaveURL(
+        `/${locale}/administrator/totals?state=&from=&through=`,
+      );
+      await expect(count).toBeVisible();
+      await expect(count).toHaveText(`${copy.bookingCount}: ${countText}`);
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+      });
+      await expect
+        .poll(() =>
+          count.evaluate((paragraph) => {
+            const box = paragraph.getBoundingClientRect();
+            return {
+              noOverflow: document.documentElement.scrollWidth <= innerWidth,
+              contained: box.left >= 0 && box.right <= innerWidth,
+            };
+          }),
+        )
+        .toEqual({ noOverflow: true, contained: true });
     }
   });
   for (const locale of ["en", "ar", "ckb"] as const) {

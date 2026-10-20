@@ -192,7 +192,8 @@ export function bookingMoneySummary(selection: BookingMoneySelection): {
       });
   }
   flagged.sort(newerFirst);
-  const bookingCount = selection.bookings.length;
+  const bookingCount =
+    selection.bookings.length + selection.missingPaymentEvidence.length;
   if (flagged.length > 0)
     return { bookingCount, flagged, totals: { status: "unavailable" } };
   const figures = Object.fromEntries(
