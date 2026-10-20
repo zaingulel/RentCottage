@@ -65,7 +65,7 @@ describe("Playwright Next port isolation", () => {
     expect(config.use.baseURL).toBe("http://127.0.0.1:3107");
     expect(config.webServer.url).toBe("http://127.0.0.1:3107/ar");
     expect(config.webServer.command).toBe(
-      "npm run build && npm run start -- -p 3107",
+      "npm run build && npm run start -- -H 127.0.0.1 -p 3107",
     );
   });
 
@@ -89,7 +89,7 @@ describe("Playwright build freshness", () => {
     process.env.PLAYWRIGHT_SERVER = "next";
     const next = (await import("../playwright.config.ts")).default;
     expect(next.webServer.command).toBe(
-      "npm run build && npm run start -- -p 3000",
+      "npm run build && npm run start -- -H 127.0.0.1 -p 3000",
     );
     expect(next.webServer.reuseExistingServer).toBe(false);
   });
@@ -132,7 +132,7 @@ describe("Playwright build freshness", () => {
       ...standard,
       webServer: {
         ...standard.webServer,
-        command: "npm run start -- -p 3107",
+        command: "npm run start -- -H 127.0.0.1 -p 3107",
       },
     });
     expect(prebuilt.webServer.command).not.toContain("build");

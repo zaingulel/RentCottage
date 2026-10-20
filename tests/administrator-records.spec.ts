@@ -1486,6 +1486,77 @@ test("marketplace users and AAL1 administrators cannot discover administrator re
   page,
 }) => {
   const fixture = reviewFixture;
+  harness.guardDisposableLocalDatabase();
+  const auditCount = () =>
+    count("select count(*) from private.administrator_booking_money_exports;");
+  const beforeExports = auditCount();
+  await page.goto("/en/owner/access");
+  const refuseExport = async () => {
+    const origin = new URL(page.url()).origin;
+    const response = await page.request.post(
+      `${origin}/en/administrator/totals/export`,
+      {
+        form: {},
+        headers: { Origin: origin, "Sec-Fetch-Site": "same-origin" },
+        maxRedirects: 0,
+      },
+    );
+    expect(response.status()).toBe(303);
+    expect(response.headers()["content-disposition"]).toBeUndefined();
+    expect(response.headers()["content-type"] ?? "").not.toContain("text/csv");
+    expect(response.headers().location).toBe(
+      `${origin}/en/administrator/totals?exportError=access_required`,
+    );
+    expect(auditCount()).toBe(beforeExports);
+  };
+  await refuseExport();
+  const actualOrigin = new URL(page.url()).origin;
+  for (const [source, forwardedHost, forwardedProto, status] of [
+    [actualOrigin, "hostile.example", "http", 303],
+    // Next derives the scheme from forwarded protocol; Worker preserves the incoming target.
+    [
+      actualOrigin,
+      "hostile.example",
+      "https",
+      process.env.PLAYWRIGHT_SERVER === "worker" ? 303 : 403,
+    ],
+    ["https://hostile.example", "hostile.example", "https", 403],
+    [
+      actualOrigin.replace("127.0.0.1", "localhost"),
+      new URL(actualOrigin).host,
+      "http",
+      403,
+    ],
+  ] as const) {
+    const response = await page.request.post(
+      `${actualOrigin}/en/administrator/totals/export`,
+      {
+        form: {},
+        headers: {
+          Origin: source,
+          "Sec-Fetch-Site": "same-origin",
+          "X-Forwarded-Host": forwardedHost,
+          "X-Forwarded-Proto": forwardedProto,
+        },
+        maxRedirects: 0,
+      },
+    );
+    expect(response.status()).toBe(status);
+    expect(response.headers()["content-disposition"]).toBeUndefined();
+    expect(response.headers()["content-type"] ?? "").not.toContain("text/csv");
+    if (status === 303)
+      expect(response.headers().location).toBe(
+        `${actualOrigin}/en/administrator/totals?exportError=access_required`,
+      );
+    else expect(response.headers().location).toBeUndefined();
+    expect(auditCount()).toBe(beforeExports);
+  }
+  for (const method of ["GET", "HEAD"])
+    expect(
+      (
+        await page.request.fetch("/en/administrator/totals/export", { method })
+      ).status(),
+    ).toBe(405);
   await page.goto("/en/owner/access");
   await page.getByLabel("Iraqi phone number").fill(fixture.reviewOwnerPhone);
   await page.getByRole("button", { name: "Send verification code" }).click();
@@ -1516,6 +1587,15 @@ test("marketplace users and AAL1 administrators cannot discover administrator re
     after_id: null,
   });
   expect(denied.error?.code).toBe("42501");
+  await refuseExport();
+  expect(
+    (
+      await customer.rpc(
+        "record_administrator_booking_money_export",
+        totalsArgs,
+      )
+    ).error?.code,
+  ).toBe("42501");
   await expectQueuesDenied(page);
   expect(
     (await customer.rpc("search_administrator_booking_queue", queueArgs)).error
@@ -1546,6 +1626,12 @@ test("marketplace users and AAL1 administrators cannot discover administrator re
     target_id: "25000000-0000-4000-8000-000000000001",
   });
   expect(aal1Denied.error?.code).toBe("42501");
+  await refuseExport();
+  expect(
+    (await aal1.rpc("record_administrator_booking_money_export", totalsArgs))
+      .error?.code,
+  ).toBe("42501");
+  expect(auditCount()).toBe(beforeExports);
   await expectQueuesDenied(page);
   expect(
     (await aal1.rpc("search_administrator_booking_queue", queueArgs)).error

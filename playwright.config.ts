@@ -29,7 +29,7 @@ export const workerPreviewServer = {
 };
 
 export const nextServer = {
-  command: `npm run start -- -p ${nextPort}`,
+  command: `npm run start -- -H 127.0.0.1 -p ${nextPort}`,
   url: `${nextOrigin}/ar`,
   reuseExistingServer: false,
   timeout: 120_000,

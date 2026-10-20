@@ -92,3 +92,12 @@ export const administratorBookingMoneyExportMessages = {
     notApplicable: "پەیوەندیدار نییە",
   },
 } as const;
+
+export const bookingMoneyExportErrors = [
+  "invalid",
+  "access_required",
+  "empty",
+  "too_many",
+  "unavailable",
+] as const;
+export type BookingMoneyExportError = (typeof bookingMoneyExportErrors)[number];
