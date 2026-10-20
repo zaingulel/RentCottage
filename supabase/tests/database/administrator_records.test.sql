@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(95);
+select plan(96);
 
 -- BEGIN ADMINISTRATOR RECORDS FIXTURE
 -- Fictional reserved 250 namespace. The local transaction rolls every row back.
@@ -311,6 +311,34 @@ select throws_ok($$select public.list_administrator_booking_money(null,'2026-09-
 select is(public.list_administrator_booking_money(null,'1990-01-01','1990-01-01'),'{"status":"ready","bookings":[],"missingPaymentEvidence":[]}'::jsonb,'administrator AAL2 reads an empty booking money selection as ready');
 reset role;
 select is((select array[provolatile::text,prosecdef::text] from pg_proc where oid='public.list_administrator_booking_money(text,date,date)'::regprocedure),array['s','true'],'booking money reader is a stable privileged read');
+
+select lives_ok($test$
+do $body$
+declare caller record;
+declare audits_before bigint;
+begin
+  for caller in select * from (values
+    ('authenticated','25000000-0000-4000-8000-000000000001','aal2'),
+    ('authenticated','25000000-0000-4000-8000-000000000101','aal2'),
+    ('authenticated','25000000-0000-4000-8000-000000000201','aal1'),
+    ('authenticated','25000000-0000-4000-8000-000000000202','aal2'),
+    ('anon','25000000-0000-4000-8000-000000000201','aal2'),
+    ('service_role','25000000-0000-4000-8000-000000000201','aal2')
+  ) as denied(api_role,subject,aal) loop
+    perform set_config('request.jwt.claims',jsonb_build_object('sub',caller.subject,'role',caller.api_role,'aal',caller.aal)::text,true);
+    perform set_config('role',caller.api_role,true);
+    begin
+      perform public.record_administrator_booking_money_export(null,null,null);
+      raise exception 'Unauthorized export succeeded for % / %',caller.api_role,caller.subject;
+    exception when insufficient_privilege then null;
+    end;
+    perform set_config('role','none',true);
+  end loop;
+  select count(*) into audits_before from private.administrator_booking_money_exports;
+  if audits_before<>0 then raise exception 'Denied exports created % audit rows',audits_before; end if;
+end;
+$body$;
+$test$,'recorded money export refuses non-administrators without creating an audit');
 
 select lives_ok($test$
 do $body$

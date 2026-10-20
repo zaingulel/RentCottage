@@ -254,6 +254,7 @@ delete from auth.users where id in (${users});
 export const confirmedBookingCleanup = ({
   stem = "100",
   administrator: selectedAdministrator = administrator,
+  exportAdministrator = null,
   completion = false,
   settlement = false,
   terminalRequest = false,
@@ -264,6 +265,7 @@ export const confirmedBookingCleanup = ({
   const users = `'${r.owner}','${r.customer}','${r.third}','${selectedAdministrator}'`;
   return `begin;
 ${suspensionCleanupPreflight(users, `'${r.profile}'`, terminalRequest ? `'${r.request}'` : "")}set local session_replication_role=replica;
+delete from private.administrator_booking_money_exports where administrator_user_id in ('${selectedAdministrator}'${exportAdministrator === null ? "" : `,'${exportAdministrator}'`});
 ${reset(r, { completion, terminalRequest })}${settlement ? settlementDeletes(r) : ""}${confirmedBookingDeletes(r, { workIdentity, listedCottage: true, users })}set local session_replication_role=origin;
 commit;`;
 };

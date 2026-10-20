@@ -72,3 +72,17 @@ CREATE TABLE IF NOT EXISTS private.marketplace_suspension_actions (
     CONSTRAINT marketplace_suspension_action_revision CHECK (expected_revision>=0 AND resulting_revision=expected_revision+1)
 );
 ALTER TABLE private.marketplace_suspension_actions OWNER TO postgres;
+
+CREATE TABLE IF NOT EXISTS private.administrator_booking_money_exports (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    administrator_user_id uuid NOT NULL,
+    recorded_at timestamptz NOT NULL,
+    filter_state text,
+    filter_from date,
+    filter_through date,
+    booking_request_ids uuid[] NOT NULL,
+    CONSTRAINT administrator_booking_money_exports_state CHECK (filter_state IN ('confirmed','incident_pending','completed','no_show','cancelled')),
+    CONSTRAINT administrator_booking_money_exports_dates CHECK (filter_from IS NULL OR filter_through IS NULL OR filter_from<=filter_through),
+    CONSTRAINT administrator_booking_money_exports_ids CHECK (array_ndims(booking_request_ids)=1 AND cardinality(booking_request_ids)>=1 AND cardinality(booking_request_ids)<=500 AND array_position(booking_request_ids,NULL::uuid) IS NULL)
+);
+ALTER TABLE private.administrator_booking_money_exports OWNER TO postgres;

@@ -171,7 +171,7 @@ create function pg_temp.source_history() returns jsonb language sql as $$
  'observations',(select jsonb_agg(to_jsonb(o) order by id) from public.payment_provider_observations o),
  'paymentHistory',(select jsonb_agg(to_jsonb(h) order by id) from public.booking_request_payment_history h));
 $$;
-select plan(63);
+select plan(69);
 select pg_temp.seed_completion_booking((clock_timestamp() at time zone 'Asia/Baghdad')::date-3);
 create temp table settlement_values(key text primary key,value jsonb);
 grant all on settlement_values to authenticated,service_role;
@@ -312,6 +312,196 @@ select is(pg_temp.money_row(null,'2026-09-12'),null::jsonb,'booking money reader
 select ok(public.list_administrator_booking_money(null,'2026-09-13','2026-09-13')::text !~ 'PRIVATE ADDRESS|PRIVATE DIRECTIONS|\+9647[0-9]{10}|@|"(exactAddress|privateDirections|email|phone|objectPath|storagePath|signedUrl|documentId)"|Private address|Fictional Customer|\+9647500001|Later compensation|Settlement review|"(reason|actorUserId)"',
   'booking money reader exposes no private contact, address or document field');
 reset role;
+select lives_ok($test$
+do $body$
+declare expected_selection jsonb;
+declare exported jsonb;
+declare audit private.administrator_booking_money_exports;
+declare selected_state text;
+begin
+  perform set_config('role','authenticated',true);
+  selected_state:=pg_temp.money_row(null,'2026-09-13')->>'state';
+  expected_selection:=public.list_administrator_booking_money(selected_state,'2026-09-13','2026-09-13');
+  exported:=public.record_administrator_booking_money_export(selected_state,'2026-09-13','2026-09-13');
+  perform set_config('role','none',true);
+  if exported->>'status' is distinct from 'recorded' or exported->'selection' is distinct from expected_selection
+    or exported-array['status','exportId','recordedAt','selection']<>'{}'::jsonb then
+    raise exception 'Export did not return exactly the recorded selection: %',exported;
+  end if;
+  select * into strict audit from private.administrator_booking_money_exports where id=(exported->>'exportId')::uuid;
+  if audit.administrator_user_id<>'10000000-0000-4000-8000-000000003801'::uuid
+    or audit.filter_state is distinct from selected_state
+    or audit.filter_from is distinct from '2026-09-13'::date or audit.filter_through is distinct from '2026-09-13'::date
+    or audit.booking_request_ids<>array['60000000-0000-4000-8000-000000001001']::uuid[]
+    or audit.recorded_at is distinct from statement_timestamp()
+    or exported->>'recordedAt' is distinct from to_char(audit.recorded_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"+00:00"') then
+    raise exception 'Export attribution, filters, selected IDs or database time disagree';
+  end if;
+  if exported#>'{selection,bookings,0,earnings,captured,bookingPriceFils}'<>'100000000'::jsonb
+    or exported#>'{selection,bookings,0,earnings,refunded,bookingPriceFils}'<>'10000000'::jsonb
+    or exported#>'{selection,bookings,0,earnings,recovery,recoveryBalanceFils}'<>'9000000'::jsonb then
+    raise exception 'Captured financial selection does not match the known settlement/refund fixture';
+  end if;
+  insert into settlement_values values('export',exported);
+end;
+$body$;
+$test$,'recorded money export returns exactly its captured selection and attributed filters');
+select lives_ok($test$
+do $body$
+declare api_role text;
+declare privilege text;
+declare command text;
+declare audit_id uuid:=(pg_temp.settlement_value('export')->>'exportId')::uuid;
+begin
+  if not (select relrowsecurity and relowner='postgres'::regrole from pg_class where oid='private.administrator_booking_money_exports'::regclass)
+    or exists(select 1 from pg_policy where polrelid='private.administrator_booking_money_exports'::regclass) then
+    raise exception 'Export audit is not private with policy-free Row Level Security';
+  end if;
+  foreach api_role in array array['anon','authenticated','service_role'] loop
+    foreach privilege in array array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'] loop
+      if has_table_privilege(api_role,'private.administrator_booking_money_exports',privilege) then
+        raise exception '% has audit privilege %',api_role,privilege;
+      end if;
+    end loop;
+    if has_function_privilege(api_role,'private.reject_administrator_booking_money_export_change()','EXECUTE') then
+      raise exception '% can execute the audit guard',api_role;
+    end if;
+    perform set_config('role',api_role,true);
+    begin
+      perform 1 from private.administrator_booking_money_exports;
+      raise exception '% read private audit rows',api_role;
+    exception when insufficient_privilege then null;
+    end;
+    perform set_config('role','none',true);
+  end loop;
+  foreach command in array array[
+    format('update private.administrator_booking_money_exports set recorded_at=recorded_at where id=%L',audit_id),
+    format('delete from private.administrator_booking_money_exports where id=%L',audit_id),
+    'truncate private.administrator_booking_money_exports'
+  ] loop
+    begin
+      execute command;
+      raise exception 'Immutable audit accepted %',command;
+    exception when sqlstate 'RC409' then null;
+    end;
+  end loop;
+  if (select count(*) from private.administrator_booking_money_exports)<>1 then
+    raise exception 'Immutable record cardinality changed';
+  end if;
+  if not has_function_privilege('authenticated','public.record_administrator_booking_money_export(text,date,date)','EXECUTE')
+    or has_function_privilege('anon','public.record_administrator_booking_money_export(text,date,date)','EXECUTE')
+    or has_function_privilege('service_role','public.record_administrator_booking_money_export(text,date,date)','EXECUTE')
+    or (select array[provolatile::text,prosecdef::text] from pg_proc where oid='public.record_administrator_booking_money_export(text,date,date)'::regprocedure)<>array['v','true'] then
+    raise exception 'Recorded export API privileges or volatility disagree';
+  end if;
+end;
+$body$;
+$test$,'recorded money export audit is private and immutable');
+
+savepoint audit_insert_failure;
+alter table private.administrator_booking_money_exports add constraint export_test_insert_failure check(false) not valid;
+select lives_ok($test$
+do $body$
+declare audits_before bigint;
+begin
+  select count(*) into audits_before from private.administrator_booking_money_exports;
+  perform set_config('role','authenticated',true);
+  begin
+    perform public.record_administrator_booking_money_export(null,'2026-09-13','2026-09-13');
+    raise exception 'Audit insertion failure returned an export';
+  exception when check_violation then null;
+  end;
+  perform set_config('role','none',true);
+  if (select count(*) from private.administrator_booking_money_exports)<>audits_before then
+    raise exception 'Audit insertion failure changed audit cardinality';
+  end if;
+end;
+$body$;
+$test$,'recorded money export fails when audit insertion fails');
+rollback to audit_insert_failure;
+
+savepoint export_selection_cap;
+select lives_ok($test$
+do $body$
+declare request_row public.booking_requests;
+declare confirmation_row public.booking_confirmations;
+declare exported jsonb;
+declare selection jsonb;
+declare audits_before bigint;
+declare expected_ids uuid[];
+declare n integer;
+begin
+  select count(*) into audits_before from private.administrator_booking_money_exports;
+  perform set_config('role','authenticated',true);
+  if public.record_administrator_booking_money_export(null,'1990-01-01','1990-01-01')<>'{"status":"empty"}'::jsonb
+    or public.record_administrator_booking_money_export('no_show','2026-09-13','2026-09-13')<>'{"status":"empty"}'::jsonb then
+    raise exception 'Empty or excluded selections were admitted';
+  end if;
+  begin
+    perform public.record_administrator_booking_money_export('succeeded',null,null);
+    raise exception 'Invalid state was admitted';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.record_administrator_booking_money_export(null,'2026-09-14','2026-09-13');
+    raise exception 'Reverse dates were admitted';
+  exception when invalid_parameter_value then null;
+  end;
+  perform set_config('role','none',true);
+  if (select count(*) from private.administrator_booking_money_exports)<>audits_before then
+    raise exception 'Refused selections created an audit';
+  end if;
+  -- Deliberately missing-payment confirmations test real admission without fabricating valid payment lifecycles.
+  select * into strict request_row from public.booking_requests where id='60000000-0000-4000-8000-000000001001';
+  select * into strict confirmation_row from public.booking_confirmations where booking_request_id=request_row.id;
+  for n in 1..500 loop
+    request_row.id:=md5('718-request-'||n)::uuid;
+    request_row.booking_request_reference:='RC-REQ-'||lpad(n::text,16,'0');
+    request_row.booking_snapshot_id:=md5('718-snapshot-'||n)::uuid;
+    request_row.booking_period_commitment_id:=md5('718-commitment-'||n)::uuid;
+    request_row.payment_lifecycle_id:=md5('718-payment-'||n)::uuid;
+    confirmation_row.id:=md5('718-confirmation-'||n)::uuid;
+    confirmation_row.booking_request_id:=request_row.id;
+    confirmation_row.booking_snapshot_id:=request_row.booking_snapshot_id;
+    confirmation_row.booking_period_commitment_id:=request_row.booking_period_commitment_id;
+    confirmation_row.capture_operation_id:=md5('718-capture-'||n)::uuid;
+    execute 'set local session_replication_role=replica';
+    insert into public.booking_requests select request_row.*;
+    insert into public.booking_confirmations select confirmation_row.*;
+    execute 'set local session_replication_role=origin';
+    if n=499 then
+      perform set_config('role','authenticated',true);
+      selection:=public.list_administrator_booking_money(null,'2026-09-13','2026-09-13');
+      exported:=public.record_administrator_booking_money_export(null,'2026-09-13','2026-09-13');
+      perform set_config('role','none',true);
+      select array_agg(id order by id) into expected_ids from (
+        select md5('718-request-'||i)::uuid id from generate_series(1,499) i
+        union all select '60000000-0000-4000-8000-000000001001'::uuid
+      ) selected;
+      if jsonb_array_length(selection->'bookings')<>1 or jsonb_array_length(selection->'missingPaymentEvidence')<>499
+        or exported->>'status' is distinct from 'recorded' or exported->'selection' is distinct from selection
+        or (select booking_request_ids from private.administrator_booking_money_exports where id=(exported->>'exportId')::uuid) is distinct from expected_ids then
+        raise exception 'Exactly 500 selected entries or their full sorted ID union were not recorded';
+      end if;
+      if (select count(*) from private.administrator_booking_money_exports)<>audits_before+1 then
+        raise exception 'Admitted selection did not create exactly one audit';
+      end if;
+    end if;
+  end loop;
+  perform set_config('role','authenticated',true);
+  if public.list_administrator_booking_money(null,'2026-09-13','2026-09-13')<>'{"status":"too_many","limit":500}'::jsonb
+    or public.record_administrator_booking_money_export(null,'2026-09-13','2026-09-13')<>'{"status":"too_many","limit":500}'::jsonb then
+    raise exception '501 selected entries did not refuse with the unchanged 500 cap';
+  end if;
+  perform set_config('role','none',true);
+  if (select count(*) from private.administrator_booking_money_exports)<>audits_before+1 then
+    raise exception 'Oversized selection created an audit';
+  end if;
+end;
+$body$;
+$test$,'recorded money export refuses empty and oversized selections without an audit');
+rollback to export_selection_cap;
+
 select is(public.administrator_booking_money_facts(null,'2026-09-13','2026-09-13',0),'{"status":"too_many","limit":0}'::jsonb,'booking money reader refuses a selection above its limit');
 savepoint equal_recording_times;
 set local session_replication_role=replica;
@@ -328,6 +518,8 @@ set local session_replication_role=origin;
 set local role authenticated;
 select is((select jsonb_build_array(money->'missingPaymentEvidence',pg_temp.money_row(null,'2026-09-13')) from public.list_administrator_booking_money(null,'2026-09-13','2026-09-13') money),
   '[[{"bookingRequestId":"60000000-0000-4000-8000-000000001001","reference":"RC-REQ-0000000000001001","confirmedAt":"2026-09-12T21:30:00.000000+00:00"}],null]'::jsonb,'booking money reader names a confirmation whose payment prerequisites are missing');
+select is(public.record_administrator_booking_money_export(null,'2026-09-13','2026-09-13')#>'{selection,missingPaymentEvidence}',
+  '[{"bookingRequestId":"60000000-0000-4000-8000-000000001001","reference":"RC-REQ-0000000000001001","confirmedAt":"2026-09-12T21:30:00.000000+00:00"}]'::jsonb,'recorded money export includes missing-capture evidence in its saved selection');
 reset role;
 rollback to missing_payment_prerequisites;
 savepoint unconfirmed_payment;
@@ -350,6 +542,8 @@ reset role;
 set local role authenticated;
 select is((select jsonb_build_array(money->'earnings',money#>'{refundRecords,0,id}',money->'settlementIntentId') from pg_temp.money_row(null,'2026-09-13') money),
   jsonb_build_array('{"status":"unavailable"}'::jsonb,pg_temp.settlement_value('refundIntent')->'intentId',pg_temp.settlement_value('intent')->'intentId'),'booking money reader keeps a booking with missing evidence and marks it unavailable');
+select is(public.record_administrator_booking_money_export(null,'2026-09-13','2026-09-13')#>'{selection,bookings,0,earnings}',
+  '{"status":"unavailable"}'::jsonb,'recorded money export includes missing settlement receipt evidence in its saved selection');
 reset role;
 insert into settlement_values select 'savedSuccess',result from public.payment_provider_observations where operation_id=(pg_temp.settlement_value('admission')->>'operationId')::uuid;
 set local role service_role;

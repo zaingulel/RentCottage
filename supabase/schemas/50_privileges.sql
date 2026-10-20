@@ -1577,3 +1577,8 @@ REVOKE ALL ON FUNCTION private.prepare_owner_application_renewal(uuid,uuid,publi
 
 REVOKE ALL ON FUNCTION public.get_marketplace_suspension(text,uuid,timestamptz,uuid,integer) FROM PUBLIC,anon,service_role;
 GRANT EXECUTE ON FUNCTION public.get_marketplace_suspension(text,uuid,timestamptz,uuid,integer) TO authenticated;
+
+REVOKE ALL ON TABLE private.administrator_booking_money_exports FROM PUBLIC,anon,authenticated,service_role;
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE private.administrator_booking_money_exports FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION private.reject_administrator_booking_money_export_change(),public.record_administrator_booking_money_export(text,date,date) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.record_administrator_booking_money_export(text,date,date) TO authenticated;

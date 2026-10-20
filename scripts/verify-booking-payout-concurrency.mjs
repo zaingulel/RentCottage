@@ -186,7 +186,7 @@ try {
       `begin;${queueRefund("90000000-0000-4000-8000-000000004190", '{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}')}commit;`,
     );
     const queueReader = harness.startSession(
-      `begin;${administrator}${queues};select 'QUEUE_READ';`,
+      `begin;${administrator}${queues};select public.record_administrator_booking_money_export(null,null,null);select 'QUEUE_READ';`,
     );
     sessions.push(queueReader);
     await harness.waitForMarker(queueReader, "QUEUE_READ");
@@ -206,7 +206,23 @@ try {
     );
     sessions.push(concurrentQueues);
     await harness.finishSession(concurrentQueues);
+    const concurrentExport = harness.startSession(
+      `begin;set local statement_timeout='10s';${administrator}select public.record_administrator_booking_money_export(null,null,null);commit;`,
+      true,
+    );
+    sessions.push(concurrentExport);
+    await harness.finishSession(concurrentExport);
     const beforeRefund = JSON.parse(queueReader.stdout.split("\n")[0]);
+    assert.deepEqual(
+      JSON.parse(queueReader.stdout.split("\n")[1]).selection,
+      beforeRefund[4],
+      "the open export retains the same captured financial selection without writer locks",
+    );
+    assert.deepEqual(
+      JSON.parse(concurrentExport.stdout).selection,
+      beforeRefund[4],
+      "export reads committed facts while the real refund writer remains open",
+    );
     assert.equal(beforeRefund[2].total, 1);
     assert.equal(beforeRefund[2].rows.length, 1);
     assert.deepEqual(
@@ -321,6 +337,46 @@ try {
       expectedUnpaidPayoutFils: 90000000,
       paidPayoutFils: 90000000,
     });
+    assert.deepEqual(
+      JSON.parse(
+        harness.runSql(
+          `select jsonb_agg(jsonb_build_array(proname,provolatile::text) order by proname) from pg_proc where oid in ('public.administrator_booking_money_facts(text,date,date,integer)'::regprocedure,'public.list_administrator_booking_money(text,date,date)'::regprocedure)`,
+        ),
+      ),
+      [
+        ["administrator_booking_money_facts", "s"],
+        ["list_administrator_booking_money", "s"],
+      ],
+      "the existing facts and authorized reader remain stable",
+    );
+    const beforeExport = JSON.parse(
+      harness.runSql(
+        `begin;${administrator}select public.list_administrator_booking_money(null,null,null);commit;`,
+      ),
+    );
+    assert.equal(beforeExport.bookings.length, 2);
+    const exportBarrier = harness.startSession(
+      `begin;lock table private.administrator_booking_money_exports in access exclusive mode;select 'EXPORT_AUDIT_BARRIER_HELD';`,
+    );
+    sessions.push(exportBarrier);
+    await harness.waitForMarker(exportBarrier, "EXPORT_AUDIT_BARRIER_HELD");
+    const exportSnapshotReader = harness.startSession(
+      `begin;set local statement_timeout='15s';set local application_name='administrator_export_snapshot';${administrator}
+      select public.record_administrator_booking_money_export(null,null,null);commit;`,
+      true,
+    );
+    sessions.push(exportSnapshotReader);
+    await harness.waitForLock(
+      "administrator_export_snapshot",
+      exportSnapshotReader,
+    );
+    assert.equal(
+      harness.runSql(
+        `select count(*) from pg_locks locks join pg_stat_activity activity using(pid) where activity.application_name='administrator_export_snapshot' and locks.relation='private.administrator_booking_money_exports'::regclass and locks.mode='RowExclusiveLock' and not locks.granted`,
+      ),
+      "1",
+      "the export captured its selection and is waiting at the audit insert relation lock",
+    );
     const barrier = harness.startSession(
       `begin;select pg_advisory_xact_lock(41,238);select 'HISTORY_BARRIER_HELD';`,
     );
@@ -352,6 +408,38 @@ try {
     }
     // A single writer commits both complete refunds while the reader's statement is paused.
     await harness.runSqlAfterSetup(refundSetup, `${refundBoth}commit;`);
+    await harness.finishSession(exportBarrier, { action: "commit" });
+    await harness.finishSession(exportSnapshotReader);
+    const capturedExport = JSON.parse(exportSnapshotReader.stdout);
+    assert.equal(capturedExport.status, "recorded");
+    assert.deepEqual(
+      capturedExport.selection,
+      beforeExport,
+      "recording returns its captured selection even after both real refunds commit before insertion",
+    );
+    const exportAudit = JSON.parse(
+      harness.runSql(
+        `select jsonb_build_object('id',id,'actor',administrator_user_id,'bookingRequestIds',booking_request_ids) from private.administrator_booking_money_exports where id='${capturedExport.exportId}'`,
+      ),
+    );
+    assert.deepEqual(exportAudit, {
+      id: capturedExport.exportId,
+      actor: "10000000-0000-4000-8000-000000003801",
+      bookingRequestIds: [request, secondRequest].sort(),
+    });
+    const freshExportSelection = JSON.parse(
+      harness.runSql(
+        `begin;${administrator}select public.list_administrator_booking_money(null,null,null);commit;`,
+      ),
+    );
+    assert.equal(freshExportSelection.bookings.length, 2);
+    for (const booking of freshExportSelection.bookings) {
+      assert.equal(booking.earnings.refunded.bookingPriceFils, 20000000);
+    }
+    assert.notDeepEqual(freshExportSelection, capturedExport.selection);
+    console.log(
+      "Recorded export preserves both pre-refund rows across the audit-insert barrier; its private committed audit contains both captured IDs, while a fresh read sees both 20m refunds.",
+    );
     await harness.finishSession(barrier, { action: "commit" });
     await harness.finishSession(snapshotReader);
     const heldSnapshot = JSON.parse(snapshotReader.stdout);
