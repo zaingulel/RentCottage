@@ -1328,6 +1328,9 @@ REVOKE ALL ON FUNCTION public.guard_payment_evidence() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.pending_booking_request_authorization_observations() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.pending_booking_request_authorization_observations() TO service_role;
 
+REVOKE ALL ON FUNCTION public.due_booking_request_submission_recoveries(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.due_booking_request_submission_recoveries(jsonb) TO service_role;
+
 REVOKE ALL ON FUNCTION public.get_booking_request_payment_facts(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_booking_request_payment_facts(uuid) TO service_role;
 

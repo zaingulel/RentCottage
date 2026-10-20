@@ -9,6 +9,7 @@ import {
   BookingRequestPreAuthorizationRejected,
   type BookingRequestSubmissionRepository,
   type SubmissionAttempt,
+  type RecoverableSubmissionAttempt,
   type SubmissionInput,
 } from "./booking-request-submission";
 import { bookingRequestAcceptanceEvidence } from "./booking-request-policy";
@@ -102,6 +103,190 @@ function repositoryWithFinalizationFailure(
 }
 
 describe("BookingRequestSubmission", () => {
+  it.each(["unknown", "pending"] as const)(
+    "recovery never releases when authoritative lookup is %s",
+    async (status) => {
+      const original = repositoryReturning();
+      const originalProvider = new PaymentSimulator({
+        now: () => "2099-08-21T17:00:00.000Z",
+        outcomes: ["succeeded"],
+      });
+      await createBookingRequestSubmission(
+        withRecordedProviderResults({
+          repository: original,
+          paymentProvider: originalProvider,
+        }),
+      ).submit(input);
+      const lookup =
+        status === "pending"
+          ? {
+              status: "pending" as const,
+              bookingRequestReference: "RC-REQ-20990821-0001",
+              responseDeadline: "2099-08-21T21:00:00.000Z",
+            }
+          : { status: "unknown" as const };
+      const repository = repositoryWithFinalizationFailure(async () => lookup);
+      const provider = new PaymentSimulator({
+        now: () => "2099-08-21T17:05:00.000Z",
+      });
+      const result = await createBookingRequestSubmission(
+        withRecordedProviderResults({ repository, paymentProvider: provider }),
+      ).recoverAuthorized({
+        ...readyAttempt(),
+        bookingPriceFils: 100_003_000,
+        bookingServiceFeeFils: 5_000_000,
+        paymentSnapshot: original.savedSnapshots.at(-1) as NonNullable<
+          SubmissionAttempt["paymentSnapshot"]
+        >,
+        paymentProviderIdentity: originalProvider.identity,
+      });
+      expect(result).toEqual(
+        status === "pending" ? lookup : { status: "reconciliation-required" },
+      );
+      expect(provider.requests).toHaveLength(0);
+      expect(provider.queries).toHaveLength(0);
+    },
+  );
+
+  it.each(["pending", "failed", "unresolved"] as const)(
+    "recovery preserves a stored %s release without automatically retrying",
+    async (status) => {
+      const original = repositoryWithFinalizationFailure(async () => ({
+        status: "absent",
+      }));
+      const originalProvider = new PaymentSimulator({
+        now: () => "2099-08-21T17:00:00.000Z",
+        outcomes: [
+          "succeeded",
+          status === "failed" ? "failed" : "indeterminate",
+        ],
+      });
+      await createBookingRequestSubmission(
+        withRecordedProviderResults({
+          repository: original,
+          paymentProvider: originalProvider,
+        }),
+      ).submit(input);
+      const snapshot = original.savedSnapshots.at(
+        status === "pending" ? -2 : -1,
+      ) as NonNullable<SubmissionAttempt["paymentSnapshot"]>;
+      const repository = {
+        ...repositoryReturning(),
+        finalize: vi.fn(),
+        markReconciliationRequired: vi.fn(),
+      };
+      const provider = new PaymentSimulator({
+        now: () => "2099-08-21T17:05:00.000Z",
+        reconciliationOutcomes: [
+          status === "pending" ? "succeeded" : "indeterminate",
+        ],
+      });
+      const result = await createBookingRequestSubmission(
+        withRecordedProviderResults({ repository, paymentProvider: provider }),
+      ).recoverAuthorized({
+        ...readyAttempt(),
+        bookingPriceFils: 100_003_000,
+        bookingServiceFeeFils: 5_000_000,
+        paymentSnapshot: snapshot,
+        paymentProviderIdentity: originalProvider.identity,
+      });
+      expect(result).toEqual({
+        status:
+          status === "pending" ? "unavailable" : "reconciliation-required",
+      });
+      expect(provider.requests).toHaveLength(0);
+      expect(provider.queries).toHaveLength(status === "failed" ? 0 : 1);
+      expect(repository.finalize).not.toHaveBeenCalled();
+      expect(repository.markReconciliationRequired).toHaveBeenCalledTimes(
+        status === "pending" ? 0 : 1,
+      );
+    },
+  );
+
+  it("refuses a foreign recovery identity before any provider effect", async () => {
+    const original = repositoryReturning();
+    const originalProvider = new PaymentSimulator({
+      now: () => "2099-08-21T17:00:00.000Z",
+      outcomes: ["succeeded"],
+    });
+    await createBookingRequestSubmission(
+      withRecordedProviderResults({
+        repository: original,
+        paymentProvider: originalProvider,
+      }),
+    ).submit(input);
+    const repository = {
+      ...repositoryReturning(),
+      finalize: vi.fn(),
+      markReconciliationRequired: vi.fn(),
+    };
+    const provider = new PaymentSimulator({
+      identity: { merchantId: "foreign" },
+    });
+    await expect(
+      createBookingRequestSubmission(
+        withRecordedProviderResults({ repository, paymentProvider: provider }),
+      ).recoverAuthorized({
+        ...readyAttempt(),
+        bookingPriceFils: 100_003_000,
+        bookingServiceFeeFils: 5_000_000,
+        paymentSnapshot: original.savedSnapshots.at(-1) as NonNullable<
+          SubmissionAttempt["paymentSnapshot"]
+        >,
+        paymentProviderIdentity: originalProvider.identity,
+      }),
+    ).resolves.toEqual({ status: "reconciliation-required" });
+    expect(repository.finalize).not.toHaveBeenCalled();
+    expect(provider.requests).toHaveLength(0);
+    expect(provider.queries).toHaveLength(0);
+    expect(repository.markReconciliationRequired).toHaveBeenCalledOnce();
+  });
+
+  it("recovers a refused due authorization through authoritative absence and exact persisted-total release without authorizing again", async () => {
+    const originalRepository = repositoryReturning();
+    const originalProvider = new PaymentSimulator({
+      now: () => "2099-08-21T17:00:00.000Z",
+      outcomes: ["succeeded"],
+    });
+    await createBookingRequestSubmission(
+      withRecordedProviderResults({
+        repository: originalRepository,
+        paymentProvider: originalProvider,
+      }),
+    ).submit(input);
+    const attempt: RecoverableSubmissionAttempt = {
+      ...readyAttempt(),
+      bookingPriceFils: 100_003_000,
+      bookingServiceFeeFils: 5_000_000,
+      paymentSnapshot: originalRepository.savedSnapshots.at(-1) as NonNullable<
+        SubmissionAttempt["paymentSnapshot"]
+      >,
+      paymentProviderIdentity: originalProvider.identity,
+    };
+    const repository = {
+      ...repositoryWithFinalizationFailure(async () => ({ status: "absent" })),
+      prepare: vi.fn(),
+    };
+    const provider = new PaymentSimulator({
+      now: () => "2099-08-21T17:05:00.000Z",
+      outcomes: ["succeeded"],
+    });
+    const submission = createBookingRequestSubmission(
+      withRecordedProviderResults({
+        repository,
+        paymentProvider: provider,
+      }),
+    );
+    await expect(submission.recoverAuthorized(attempt)).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(repository.prepare).not.toHaveBeenCalled();
+    expect(provider.requests).toEqual([
+      expect.objectContaining({ kind: "release", amountFils: 105_003_000 }),
+    ]);
+    expect(provider.queries).toHaveLength(0);
+  });
+
   it("retries the same intent safely after a rolled-back claim response loss", async () => {
     const baseline = repositoryReturning();
     const savePaymentSnapshot = vi

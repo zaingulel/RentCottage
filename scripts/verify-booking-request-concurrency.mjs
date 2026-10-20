@@ -901,9 +901,37 @@ try {
         `Cut-off release did not dequeue its boundary claim: ${matchedWork}`,
       );
     }
-    await runSql(`
+    const cutoffLookup = await runSql(`
     set role service_role;
     select public.expire_booking_request_authorization_claims();
+    select public.lookup_booking_request_submission(fixture.attempt_id) ->> 'status'
+    from public.test_booking_request_time_boundary_fixture fixture
+    where fixture.label = '${label}';
+    reset role;
+  `);
+    if (cutoffLookup.split("\n").at(-1) !== "absent") {
+      throw new Error(
+        `Cut-off cleanup requires authoritative absence: ${cutoffLookup}`,
+      );
+    }
+    await runSql(`
+    set role service_role;
+    select public.begin_booking_request_submission_cleanup_release(
+      fixture.attempt_id,
+      fixture.payment_snapshot || jsonb_build_object('release', jsonb_build_object(
+        'paymentLifecycleId', fixture.payment_snapshot ->> 'paymentLifecycleId',
+        'kind', 'release',
+        'logicalOperationId', (fixture.payment_snapshot ->> 'paymentLifecycleId') || ':release',
+        'attemptId', (fixture.payment_snapshot ->> 'paymentLifecycleId') || ':release:attempt-1',
+        'status', 'pending',
+        'amountFils', fixture.payment_snapshot -> 'customerTotalFils',
+        'providerRequestId', null, 'providerReference', null, 'movementReference', null,
+        'reconciliationRequired', false, 'retrySafe', false
+      )),
+      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+    )
+    from public.test_booking_request_time_boundary_fixture fixture
+    where fixture.label = '${label}';
     reset role;
   `);
     const releaseState = await runSql(`
@@ -927,7 +955,7 @@ try {
   `);
     if (releaseState !== "releasing|releasing|t|pending|pending|t|0|0") {
       throw new Error(
-        `Cut-off expiry did not preserve inventory around a recoverable release: ${releaseState}`,
+        `Cut-off cleanup did not preserve inventory around a recoverable release: ${releaseState}`,
       );
     }
     if (
@@ -1291,20 +1319,23 @@ commit;`;
         "prepare_booking_request_submission(uuid,uuid,jsonb)",
         "policy_evaluated_at := clock_timestamp();",
         "policy_evaluated_at := public.test_booking_request_race_now();",
+        1,
       ],
       [
         "finalize_booking_request_submission(uuid,jsonb)",
         "submission_created_at := clock_timestamp();",
         "submission_created_at := public.test_booking_request_race_now();",
+        1,
       ],
       [
         "expire_booking_request_authorization_claims()",
-        "clock_timestamp()",
-        "public.test_booking_request_race_now()",
+        "claims.reconciliation_expires_at <= statement_timestamp()",
+        "claims.reconciliation_expires_at <= public.test_booking_request_race_now()",
+        2,
       ],
     ];
     const replacements = [];
-    for (const [signature, target, replacement] of substitutions) {
+    for (const [signature, target, replacement, occurrences] of substitutions) {
       const original = JSON.parse(
         await runSql(`
       select case when to_regprocedure('public.${signature}') is null
@@ -1315,28 +1346,14 @@ commit;`;
       );
       if (
         typeof original !== "string" ||
-        original.split(target).length - 1 !== 1
+        original.split(target).length - 1 !== occurrences
       ) {
         throw new Error(
           `Unexpected ${signature} definition; inspect before race clock substitution.`,
         );
       }
       raceClockDefinitions.set(signature, original);
-      let definition = original.replaceAll(target, replacement);
-      if (signature === "expire_booking_request_authorization_claims()") {
-        const duePredicate =
-          "claims.reconciliation_expires_at <= statement_timestamp()";
-        if (original.split(duePredicate).length - 1 !== 2) {
-          throw new Error(
-            `Unexpected ${signature} due predicates; inspect before race clock substitution.`,
-          );
-        }
-        definition = definition.replaceAll(
-          duePredicate,
-          "claims.reconciliation_expires_at <= public.test_booking_request_race_now()",
-        );
-      }
-      replacements.push(definition);
+      replacements.push(original.replaceAll(target, replacement));
     }
     // Track the attempt so teardown also covers a lost post-commit subprocess result.
     raceClockInstalled = true;
@@ -2613,6 +2630,8 @@ commit;`;
     begin;
     set local role service_role;
     select public.expire_booking_request_authorization_claims();
+    select public.finalize_booking_request_submission(attempt_id, payment_snapshot)
+    from public.test_booking_request_concurrency_fixture;
     select '${finalizationMarker}';
   `);
     await waitForMarker(first, finalizationMarker);
@@ -2671,7 +2690,7 @@ commit;`;
     }
     if (!expiryStaleCompletion.stdout.includes("conflict")) {
       throw new Error(
-        `Stale recovery completion overwrote expiry finalization: ${expiryStaleCompletion.stdout}`,
+        `Stale recovery completion overwrote finalization after expiry: ${expiryStaleCompletion.stdout}`,
       );
     }
     if (!contender.stdout.includes("pending")) {
@@ -2706,7 +2725,7 @@ commit;`;
       );
     }
     console.log(
-      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=ledger-finalized-stale-lease-conflict; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending; retirement-claim-first=attempt-lock-wait-then-claim-retained; retirement-first=late-claim-blocked-then-invalid-without-payment; retirement-cross-attempt=customer-lock-wait-then-independent-claim-and-replacement-ready; key-collision=profile-lock-wait-then-invalid-without-late-attempt-lock-and-claim-ready; retirement-message=actor-lock-wait-message-admitted-then-rollback-and-payment-free-replacement-ready.",
+      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=authorization-retained-then-explicit-finalization-stale-lease-conflict; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-absent-then-cleanup-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending; retirement-claim-first=attempt-lock-wait-then-claim-retained; retirement-first=late-claim-blocked-then-invalid-without-payment; retirement-cross-attempt=customer-lock-wait-then-independent-claim-and-replacement-ready; key-collision=profile-lock-wait-then-invalid-without-late-attempt-lock-and-claim-ready; retirement-message=actor-lock-wait-message-admitted-then-rollback-and-payment-free-replacement-ready.",
     );
   }
 

@@ -63,6 +63,123 @@ interface MutablePaymentSnapshot {
 }
 
 describe("Supabase Booking Request submission repository", () => {
+  it("reads exact-provider due recoveries with persisted fractional-Iraqi-dinar amounts and a validated authorization snapshot", async () => {
+    const provider = new PaymentSimulator({
+      now: () => "2099-08-21T17:00:00.000Z",
+      outcomes: ["succeeded"],
+    });
+    const payment = createPaymentLifecycle(
+      {
+        paymentLifecycleId: "33333333-3333-4333-8333-333333333333",
+        bookingPriceFils: 100_003_000,
+        bookingServiceFeeFils: 5_000_000,
+      },
+      provider,
+    );
+    await payment.authorize();
+    const attempt = {
+      id: "22222222-2222-4222-8222-222222222222",
+      paymentLifecycleId: "33333333-3333-4333-8333-333333333333",
+      bookingPriceFils: 100_003_000,
+      bookingServiceFeeFils: 5_000_000,
+      paymentSnapshot: payment.snapshot(),
+      paymentProviderIdentity: provider.identity,
+    };
+    const client = clientWith({ data: [attempt], error: null });
+    const repository = new SupabaseBookingRequestSubmissionRepository(client);
+    await expect(
+      repository.dueAuthorizedRecoveries(provider.identity),
+    ).resolves.toEqual([attempt]);
+    expect(client.rpc).toHaveBeenCalledExactlyOnceWith(
+      "due_booking_request_submission_recoveries",
+      { target_provider_identity: provider.identity },
+    );
+    expect(provider.requests).toHaveLength(1);
+  });
+
+  it("rejects a malformed, foreign, duplicate or excess due recovery batch before any recovery or provider effect", async () => {
+    const provider = new PaymentSimulator({
+      now: () => "2099-08-21T17:00:00.000Z",
+      outcomes: ["succeeded"],
+    });
+    const payment = createPaymentLifecycle(
+      {
+        paymentLifecycleId: "33333333-3333-4333-8333-333333333333",
+        bookingPriceFils: 100_003_000,
+        bookingServiceFeeFils: 5_000_000,
+      },
+      provider,
+    );
+    await payment.authorize();
+    const attempt = {
+      id: "22222222-2222-4222-8222-222222222222",
+      paymentLifecycleId: "33333333-3333-4333-8333-333333333333",
+      bookingPriceFils: 100_003_000,
+      bookingServiceFeeFils: 5_000_000,
+      paymentSnapshot: payment.snapshot(),
+      paymentProviderIdentity: provider.identity,
+    };
+    const unresolved = structuredClone(payment.snapshot()) as unknown as {
+      authorization: Record<string, unknown>;
+    };
+    unresolved.authorization.reconciliationRequired = true;
+    const hostile = "SYNTHETIC_SECRET_810 contact-810@example.invalid";
+    for (const data of [
+      null,
+      { ...attempt },
+      [{ ...attempt, extra: true }],
+      [{ ...attempt, id: "not-a-uuid" }],
+      [
+        {
+          ...attempt,
+          paymentProviderIdentity: {
+            ...provider.identity,
+            environment: "production",
+          },
+        },
+      ],
+      [{ ...attempt, bookingPriceFils: 100_003_000.5 }],
+      [{ ...attempt, bookingServiceFeeFils: 0 }],
+      [{ ...attempt, bookingPriceFils: Number.MAX_SAFE_INTEGER }],
+      [{ ...attempt, bookingPriceFils: 100_000_000 }],
+      [
+        {
+          ...attempt,
+          paymentLifecycleId: "55555555-5555-4555-8555-555555555555",
+        },
+      ],
+      [{ ...attempt, paymentSnapshot: unresolved }],
+      [attempt, attempt],
+      Array.from({ length: 51 }, () => attempt),
+    ]) {
+      const client = clientWith({ data, error: null });
+      await expect(
+        new SupabaseBookingRequestSubmissionRepository(
+          client,
+        ).dueAuthorizedRecoveries(provider.identity),
+      ).rejects.toThrow("Invalid Booking Request recovery batch");
+    }
+    const failing = clientWith({
+      data: null,
+      error: { code: "RC500", message: hostile, details: hostile },
+    });
+    await expect(
+      new SupabaseBookingRequestSubmissionRepository(
+        failing,
+      ).dueAuthorizedRecoveries(provider.identity),
+    ).rejects.toThrow(
+      new Error("Booking Request recovery selection is unavailable"),
+    );
+    const unqueried = clientWith({ data: [], error: null });
+    await expect(
+      new SupabaseBookingRequestSubmissionRepository(
+        unqueried,
+      ).dueAuthorizedRecoveries({ ...provider.identity, terminalId: "" }),
+    ).rejects.toThrow("Invalid recovery provider identity");
+    expect(unqueried.rpc).not.toHaveBeenCalled();
+    expect(provider.requests).toHaveLength(1);
+  });
+
   it("atomically begins authorization and returns the durable provider permit", async () => {
     let pendingSnapshot: PaymentLifecycleSnapshot | undefined;
     const provider = new PaymentSimulator({

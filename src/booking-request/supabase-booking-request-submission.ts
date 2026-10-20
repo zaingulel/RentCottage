@@ -12,6 +12,7 @@ import {
   BookingRequestAuthorizationClaimNotPersisted,
   BookingRequestPreAuthorizationRejected,
   type BookingRequestSubmissionRepository,
+  type RecoverableSubmissionAttempt,
   type SubmissionFailureStatus,
   type PrepareSubmissionResult,
   type SubmissionInput,
@@ -276,6 +277,79 @@ function submissionPayload(input: SubmissionInput) {
 
 export class SupabaseBookingRequestSubmissionRepository implements BookingRequestSubmissionRepository {
   constructor(private readonly client: SupabaseClient) {}
+
+  async dueAuthorizedRecoveries(
+    identity: PaymentProviderIdentity,
+  ): Promise<readonly RecoverableSubmissionAttempt[]> {
+    if (!providerIdentityFrom(identity))
+      throw new Error("Invalid recovery provider identity");
+    const { data, error } = await this.client.rpc(
+      "due_booking_request_submission_recoveries",
+      {
+        target_provider_identity: identity,
+      },
+    );
+    if (error)
+      throw new Error("Booking Request recovery selection is unavailable");
+    if (!Array.isArray(data) || data.length > 50)
+      throw new Error("Invalid Booking Request recovery batch");
+    const ids = new Set<string>();
+    const lifecycles = new Set<string>();
+    return data.map((value: unknown) => {
+      const row = rowObject(value);
+      const provider = providerIdentityFrom(row?.paymentProviderIdentity);
+      if (
+        !row ||
+        !hasExactKeys(row, [
+          "id",
+          "paymentLifecycleId",
+          "bookingPriceFils",
+          "bookingServiceFeeFils",
+          "paymentSnapshot",
+          "paymentProviderIdentity",
+        ]) ||
+        typeof row.id !== "string" ||
+        !uuid.test(row.id) ||
+        typeof row.paymentLifecycleId !== "string" ||
+        !uuid.test(row.paymentLifecycleId) ||
+        typeof row.bookingPriceFils !== "number" ||
+        !Number.isSafeInteger(row.bookingPriceFils) ||
+        row.bookingPriceFils <= 0 ||
+        typeof row.bookingServiceFeeFils !== "number" ||
+        !Number.isSafeInteger(row.bookingServiceFeeFils) ||
+        row.bookingServiceFeeFils <= 0 ||
+        !Number.isSafeInteger(
+          row.bookingPriceFils + row.bookingServiceFeeFils,
+        ) ||
+        !provider ||
+        provider.provider !== identity.provider ||
+        provider.environment !== identity.environment ||
+        provider.merchantId !== identity.merchantId ||
+        provider.terminalId !== identity.terminalId ||
+        ids.has(row.id) ||
+        lifecycles.has(row.paymentLifecycleId) ||
+        !isAuthorizationPhasePaymentSnapshot(row.paymentSnapshot, {
+          paymentLifecycleId: row.paymentLifecycleId,
+          bookingPriceFils: row.bookingPriceFils,
+          bookingServiceFeeFils: row.bookingServiceFeeFils,
+        }) ||
+        row.paymentSnapshot.authorization?.status !== "succeeded" ||
+        row.paymentSnapshot.authorization.reconciliationRequired
+      ) {
+        throw new Error("Invalid Booking Request recovery batch");
+      }
+      ids.add(row.id);
+      lifecycles.add(row.paymentLifecycleId);
+      return {
+        id: row.id,
+        paymentLifecycleId: row.paymentLifecycleId,
+        bookingPriceFils: row.bookingPriceFils,
+        bookingServiceFeeFils: row.bookingServiceFeeFils,
+        paymentSnapshot: row.paymentSnapshot,
+        paymentProviderIdentity: provider,
+      };
+    });
+  }
 
   async prepare(input: SubmissionInput): Promise<PrepareSubmissionResult> {
     const { data, error } = await this.client.rpc(

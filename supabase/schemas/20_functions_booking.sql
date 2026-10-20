@@ -3060,34 +3060,6 @@ begin
     end if;
 
     if release_snapshot is null then
-      if (public.booking_request_policy_at(
-        (attempt.quote_payload -> 'items' -> 0 ->> 'startsAt')::timestamptz,
-        clock_timestamp()
-      ) ->> 'insideCutoff')::boolean then
-        reconciled_snapshot := attempt.payment_snapshot || jsonb_build_object(
-          'release', jsonb_build_object(
-            'paymentLifecycleId', claim.payment_lifecycle_id,
-            'kind', 'release',
-            'logicalOperationId', claim.payment_lifecycle_id::text || ':release',
-            'attemptId', claim.payment_lifecycle_id::text || ':release:attempt-1',
-            'status', 'pending',
-            'amountFils', claim.amount_fils,
-            'providerRequestId', null,
-            'providerReference', null,
-            'movementReference', null,
-            'reconciliationRequired', false,
-            'retrySafe', false
-          )
-        );
-        perform public.save_booking_request_payment_snapshot(
-          claim.attempt_id, reconciled_snapshot, provider_identity
-        );
-        continue;
-      end if;
-      perform public.finalize_booking_request_submission(
-        claim.attempt_id, attempt.payment_snapshot
-      );
-      expired_count := expired_count + 1;
       continue;
     end if;
 
@@ -8082,6 +8054,51 @@ begin
 end;
 $$;
 ALTER FUNCTION public.pending_booking_request_authorization_observations() OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.due_booking_request_submission_recoveries(target_provider_identity jsonb) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+begin
+  if current_setting('role',true)<>'service_role' then raise exception 'Booking Request recovery unavailable' using errcode='42501'; end if;
+  if jsonb_typeof(target_provider_identity) is distinct from 'object' then
+    raise exception 'Invalid payment provider identity' using errcode='22023';
+  end if;
+  if (select count(*) from jsonb_object_keys(target_provider_identity))<>4
+    or not target_provider_identity ?& array['provider','environment','merchantId','terminalId']
+    or exists(select 1 from jsonb_each(target_provider_identity) entry
+      where jsonb_typeof(entry.value)<>'string' or entry.value='""'::jsonb) then
+    raise exception 'Invalid payment provider identity' using errcode='22023';
+  end if;
+  return (select coalesce(jsonb_agg(jsonb_build_object(
+      'id',due.id,'paymentLifecycleId',due.payment_lifecycle_id,
+      'bookingPriceFils',due.booking_price_fils,'bookingServiceFeeFils',due.booking_service_fee_fils,
+      'paymentSnapshot',due.payment_snapshot,
+      'paymentProviderIdentity',jsonb_build_object('provider',due.provider,'environment',due.environment,
+        'merchantId',due.merchant_id,'terminalId',due.terminal_id)
+    ) order by due.updated_at,due.id),'[]'::jsonb)
+    from (select attempts.id,attempts.payment_lifecycle_id,attempts.payment_snapshot,attempts.updated_at,
+        (attempts.quote_payload->>'bookingPriceIqd')::bigint*1000 as booking_price_fils,
+        (attempts.quote_payload->>'serviceFeeIqd')::bigint*1000 as booking_service_fee_fils,
+        claims.provider,claims.environment,claims.merchant_id,claims.terminal_id
+      from public.booking_request_submission_attempts attempts
+      join public.booking_request_authorization_claims claims
+        on claims.attempt_id=attempts.id and claims.payment_lifecycle_id=attempts.payment_lifecycle_id
+      where claims.state in ('authorized','releasing')
+        and claims.reconciliation_expires_at<=statement_timestamp()
+        and attempts.booking_request_id is null
+        and attempts.payment_snapshot->'authorization'->>'status'='succeeded'
+        and attempts.payment_snapshot->'authorization'->'reconciliationRequired'='false'::jsonb
+        and claims.provider=target_provider_identity->>'provider'
+        and claims.environment=target_provider_identity->>'environment'
+        and claims.merchant_id=target_provider_identity->>'merchantId'
+        and claims.terminal_id=target_provider_identity->>'terminalId'
+        and attempts.authorization_provider=claims.provider
+        and attempts.authorization_environment=claims.environment
+        and attempts.authorization_merchant_id=claims.merchant_id
+        and attempts.authorization_terminal_id=claims.terminal_id
+      order by attempts.updated_at,attempts.id limit 50) due);
+end;
+$$;
+ALTER FUNCTION public.due_booking_request_submission_recoveries(jsonb) OWNER TO postgres;
 
 CREATE OR REPLACE FUNCTION public.get_booking_request_payment_facts(target_booking_request_id uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
