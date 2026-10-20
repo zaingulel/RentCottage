@@ -17,16 +17,21 @@ import {
 } from "./lib/access-browser-fixtures.mjs";
 
 const USAGE =
-  "Usage: node scripts/prepare-access-test.mjs <create|validate> <mobile|desktop|worker> [...] or <create|validate> <demo|concurrency-inventory>";
+  "Usage: node scripts/prepare-access-test.mjs <create|validate> <mobile|desktop|worker> [...] or <create|validate> <demo|concurrency-inventory|concurrency-booking>";
 const [mode, ...selection] = process.argv.slice(2);
 const isDemo = selection.length === 1 && selection[0] === "demo";
-const isConcurrencyInventory =
-  selection.length === 1 && selection[0] === "concurrency-inventory";
+const concurrencyPurpose =
+  selection.length === 1 &&
+  ["concurrency-inventory", "concurrency-booking"].includes(selection[0])
+    ? selection[0]
+    : null;
 const requestedProjects = isDemo
   ? ["desktop"]
-  : isConcurrencyInventory
+  : concurrencyPurpose === "concurrency-inventory"
     ? ["mobile"]
-    : selection;
+    : concurrencyPurpose === "concurrency-booking"
+      ? ["mobile", "worker"]
+      : selection;
 const projectsAreValid =
   (mode === "create" || mode === "validate") &&
   requestedProjects.length > 0 &&
@@ -81,7 +86,7 @@ if (demoEnvironmentError) {
   const password = "Local-test-password-2026";
   const users = await listAllAccessFixtureUsers(client.auth.admin);
   const cottageOwnerFixtures =
-    isDemo || isConcurrencyInventory
+    isDemo || concurrencyPurpose
       ? []
       : [
           { profile: "mobile", phone: "+9647510000000" },
@@ -102,10 +107,10 @@ if (demoEnvironmentError) {
         ]
       : []),
   ].filter(
-    ({ profile }) => !isConcurrencyInventory && requestedProjects.includes(profile),
+    ({ profile }) => !concurrencyPurpose && requestedProjects.includes(profile),
   );
-  const browserOwners = isConcurrencyInventory
-    ? ["concurrency-inventory"]
+  const browserOwners = concurrencyPurpose
+    ? [concurrencyPurpose]
     : ["access", "booking-request", "messaging", "scheduled-expiry"];
   const projectsForOwner = (owner) =>
     owner === "scheduled-expiry"
@@ -361,7 +366,7 @@ if (demoEnvironmentError) {
   const pdfBytes = new TextEncoder().encode("%PDF-1.7\nfixture\n%%EOF");
   const pdfDigest = createHash("sha256").update(pdfBytes).digest("hex");
   let concurrentRegistrationChecked = false;
-  if (!isDemo && !isConcurrencyInventory) {
+  if (!isDemo && !concurrencyPurpose) {
     const ownerClient = createClient(url, publishableKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });

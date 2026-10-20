@@ -846,7 +846,9 @@ describe("access verification command", () => {
       ...databasePreflightCommands,
       statusCommand,
       ...databaseCheckCommands.filter(
-        ([, [script]]) => !script.startsWith("scripts/verify-booking-"),
+        ([, args]) =>
+          !args[0].startsWith("scripts/verify-booking-") &&
+          !args.includes("concurrency-booking"),
       ),
       ownershipCommand,
       stopCommand,
@@ -1200,9 +1202,15 @@ describe("access verification command", () => {
       ]).env,
     ).toMatchObject(localEnvironment);
     for (const action of ["create", "validate"]) {
-      expect(
-        optionsFor("node", ["scripts/prepare-access-test.mjs", action, "concurrency-inventory"]).env,
-      ).toMatchObject(localEnvironment);
+      for (const purpose of ["concurrency-inventory", "concurrency-booking"]) {
+        expect(
+          optionsFor("node", [
+            "scripts/prepare-access-test.mjs",
+            action,
+            purpose,
+          ]).env,
+        ).toMatchObject(localEnvironment);
+      }
     }
     for (const [command, args] of browserCommands) {
       if (args[0] === "scripts/prepare-access-test.mjs") {
@@ -1697,7 +1705,9 @@ describe("access verification command", () => {
         checks: inGroup(
           "database",
           databaseCheckCommands.filter(
-            ([, [script]]) => !script.startsWith("scripts/verify-booking-"),
+            ([, args]) =>
+              !args[0].startsWith("scripts/verify-booking-") &&
+              !args.includes("concurrency-booking"),
           ),
         ),
       },

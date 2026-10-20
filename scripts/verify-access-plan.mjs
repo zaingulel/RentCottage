@@ -187,16 +187,17 @@ function databaseChecks(mode, partition) {
       )
         continue;
     }
-    if (script === "scripts/verify-cottage-inventory-concurrency.mjs") {
+    const concurrencyPurpose = {
+      "scripts/verify-cottage-inventory-concurrency.mjs":
+        "concurrency-inventory",
+      "scripts/verify-booking-request-concurrency.mjs": "concurrency-booking",
+    }[script];
+    if (concurrencyPurpose) {
       for (const action of ["create", "validate"]) {
         steps.push({
           group: "database",
           command: "node",
-          args: [
-            "scripts/prepare-access-test.mjs",
-            action,
-            "concurrency-inventory",
-          ],
+          args: ["scripts/prepare-access-test.mjs", action, concurrencyPurpose],
           environment: "access",
         });
       }

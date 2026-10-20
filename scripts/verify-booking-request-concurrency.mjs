@@ -10,6 +10,8 @@ const {
   markTimingPhase,
   guardDisposableLocalDatabase,
   runSqlAfterSetup: rawRunSql,
+  runDocker,
+  psqlArguments,
   startSessionAfterSetup: openSession,
   waitForLock,
   waitForMarker,
@@ -2775,6 +2777,119 @@ commit;`;
     assert.ok(administratorId, "A current prepared administrator is required.");
     const admin = (sql) =>
       `begin; ${claims(administratorId, "aal2")} ${sql} commit;`;
+    const uuid = (value) => {
+      assert.match(
+        value,
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+      return value;
+    };
+    const browserPhone = accessBrowserFixture(
+      "mobile",
+      "booking-request",
+    ).bookingOwnerPhone.replace(/^\+/, "");
+    const browserInventory = async () => {
+      const rows =
+        await readJson(`select coalesce(jsonb_agg(to_jsonb(fixture)), '[]') from (
+        select p.id as profile_id, p.owner_user_id, p.current_shift_schedule_id as schedule_revision_id,
+          s.full_day_bundle_id,
+          (select jsonb_agg(jsonb_build_object('id', sh.id, 'position', sh.position) order by sh.position)
+            from public.cottage_shifts sh where sh.schedule_revision_id=s.id) as shifts
+        from auth.users u join public.owner_application_cottage_profiles p on p.owner_user_id=u.id
+        join public.cottage_shift_schedule_revisions s on s.id=p.current_shift_schedule_id
+        where ltrim(u.phone, '+')=${literal(browserPhone)} and p.current_publication_id is not null
+      ) fixture;`);
+      assert.ok(Array.isArray(rows));
+      assert.equal(
+        rows.length,
+        1,
+        "Browser booking requires exactly one published profile and schedule.",
+      );
+      const row = rows[0];
+      for (const key of [
+        "profile_id",
+        "owner_user_id",
+        "schedule_revision_id",
+        "full_day_bundle_id",
+      ])
+        uuid(row[key]);
+      assert.ok(Array.isArray(row.shifts));
+      assert.deepEqual(
+        row.shifts.map((shift) => shift.position),
+        [1, 2],
+      );
+      for (const shift of row.shifts) uuid(shift.id);
+      return row;
+    };
+    const browserClaimItems = async (browser) => {
+      const rows =
+        await readJson(`select coalesce(jsonb_agg(to_jsonb(item) order by item.claim_id, item.service_day, item.unit_id), '[]') from (
+        select c.id as claim_id, c.attempt_id, c.profile_id, c.schedule_revision_id,
+          i.unit_id, i.unit_kind::text, i.service_day, i.price_iqd
+        from public.booking_request_authorization_claims c
+        join public.booking_request_authorization_claim_items i on i.claim_id=c.id
+        where public.booking_request_claim_state_is_active(c.state) and c.profile_id=${literal(browser.profile_id)}
+      ) item;`);
+      assert.ok(Array.isArray(rows));
+      for (const row of rows) {
+        for (const key of [
+          "claim_id",
+          "attempt_id",
+          "profile_id",
+          "schedule_revision_id",
+          "unit_id",
+        ])
+          uuid(row[key]);
+        assert.equal(row.profile_id, browser.profile_id);
+        assert.equal(row.schedule_revision_id, browser.schedule_revision_id);
+        assert.ok(
+          row.unit_kind === "shift"
+            ? browser.shifts.some((shift) => shift.id === row.unit_id)
+            : row.unit_kind === "full_day_bundle" &&
+                row.unit_id === browser.full_day_bundle_id,
+        );
+        assert.match(row.service_day, /^\d{4}-\d{2}-\d{2}$/);
+        assert.ok(Number.isSafeInteger(row.price_iqd) && row.price_iqd > 0);
+      }
+      return rows;
+    };
+    const browserPricing = (browser) => {
+      const prices = {
+        units: [
+          ...browser.shifts.map((shift) => ({
+            unitId: shift.id,
+            unitKind: "shift",
+            standardPriceIqd: 170000 + shift.position * 10000,
+          })),
+          {
+            unitId: browser.full_day_bundle_id,
+            unitKind: "full_day_bundle",
+            standardPriceIqd: 250000,
+          },
+        ],
+      };
+      const result = runDocker(
+        psqlArguments(),
+        `\\set VERBOSITY verbose
+        begin; ${claims(browser.owner_user_id)}
+        select public.save_cottage_inventory_pricing(target_profile_id => ${literal(browser.profile_id)},
+          target_schedule_revision_id => ${literal(browser.schedule_revision_id)}, requested_prices => ${json(prices)});
+        rollback;`,
+      );
+      assert.equal(result.signal, null, "Browser pricing probe must complete.");
+      assert.ok(Number.isInteger(result.status));
+      return {
+        status: result.status,
+        sqlstate: result.stderr.match(/ERROR:\s+([A-Z0-9]{5}):/)?.[1] ?? null,
+      };
+    };
+    const initialBrowser = await browserInventory();
+    const initialBrowserItems = await browserClaimItems(initialBrowser);
+    assert.deepEqual(
+      browserPricing(initialBrowser),
+      { status: 0, sqlstate: null },
+      "Baseline browser pricing must succeed.",
+    );
     const fixtures = [];
     const attempts = [];
     const settings = [];
@@ -2782,7 +2897,7 @@ commit;`;
     for (const project of ["mobile", "worker"]) {
       const phone = accessBrowserFixture(
         project,
-        "booking-request",
+        "concurrency-booking",
       ).bookingOwnerPhone.replace(/^\+/, "");
       const rows =
         await readJson(`select coalesce(jsonb_agg(to_jsonb(candidate)), '[]') from (
@@ -3570,6 +3685,43 @@ commit;`;
         'notifications',coalesce((select jsonb_agg(to_jsonb(n)) from public.owner_request_notifications n join public.booking_request_submission_attempts a on a.booking_request_id=n.booking_request_id where a.id=${literal(attempt.id)}),'[]'));`),
         );
     }
+    const finalBrowser = await browserInventory();
+    assert.deepEqual(
+      finalBrowser,
+      initialBrowser,
+      "Supplemental booking concurrency must preserve browser profile and unit ownership.",
+    );
+    const finalBrowserItems = await browserClaimItems(finalBrowser);
+    const addedBrowserItems = finalBrowserItems.filter(
+      (item) =>
+        !initialBrowserItems.some(
+          (prior) =>
+            prior.claim_id === item.claim_id &&
+            prior.unit_id === item.unit_id &&
+            prior.service_day === item.service_day,
+        ),
+    );
+    const pricing = browserPricing(finalBrowser);
+    console.log(
+      "Browser booking inventory isolation:",
+      JSON.stringify({
+        addedActiveClaimItems: addedBrowserItems.length,
+        pricing,
+      }),
+    );
+    assert.equal(
+      addedBrowserItems.length,
+      0,
+      "Supplemental booking concurrency added active claim items to browser inventory.",
+    );
+    assert.deepEqual(
+      pricing,
+      { status: 0, sqlstate: null },
+      "Browser journey production pricing must still succeed.",
+    );
+    console.log(
+      "PASS supplemental_booking_preserves_browser_inventory: unchanged browser ownership, no added active claim items, production pricing succeeds.",
+    );
   }
   await verifySuspensionSerialization();
   timingOutcome = "passed";
