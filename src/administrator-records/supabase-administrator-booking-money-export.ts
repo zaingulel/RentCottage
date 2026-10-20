@@ -11,6 +11,7 @@ import {
 } from "@/booking-request/booking-request-row";
 import type { Locale } from "@/i18n/routing";
 import {
+  exactObject,
   bookingMoneySummary,
   parseBookingMoneyResult,
   parseBookingMoneySearch,
@@ -29,20 +30,6 @@ export type BookingMoneyExportOutcome =
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const recordedAt = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+00:00$/;
-
-function exactObject(
-  value: unknown,
-  keys: readonly string[],
-): Record<string, unknown> {
-  const raw = rowObject(value);
-  if (
-    !raw ||
-    Object.keys(raw).length !== keys.length ||
-    keys.some((key) => !Object.hasOwn(raw, key))
-  )
-    throw new Error("Invalid recorded money export reply");
-  return raw;
-}
 
 // The existing parsers validate values; their returned shape also bounds every nested field.
 function exactSelectionShape(value: unknown, parsed: unknown): void {

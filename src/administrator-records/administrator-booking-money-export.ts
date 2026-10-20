@@ -6,6 +6,7 @@ import { bookingPayoutMessages } from "@/i18n/administrator-payment-history-mess
 import type { Locale } from "@/i18n/routing";
 import {
   bookingMoneyFigures,
+  newerFirst,
   type BookingMoneySelection,
 } from "./administrator-booking-money";
 
@@ -79,12 +80,7 @@ export function administratorBookingMoneyCsv(
       row,
       details: null,
     })),
-  ].sort((a, b) => {
-    if (a.row.confirmedAt !== b.row.confirmedAt)
-      return a.row.confirmedAt < b.row.confirmedAt ? 1 : -1;
-    if (a.row.bookingRequestId === b.row.bookingRequestId) return 0;
-    return a.row.bookingRequestId < b.row.bookingRequestId ? 1 : -1;
-  });
+  ].sort((a, b) => newerFirst(a.row, b.row));
   for (const { row: booking, details } of bookings) {
     const derived = details
       ? bookingMoneyFigures(details)
