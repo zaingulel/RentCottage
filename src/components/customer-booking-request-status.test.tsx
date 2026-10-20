@@ -257,7 +257,7 @@ describe("Customer Booking Request status", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Processing");
     expect(screen.getByRole("status")).toHaveClass("status-banner");
     expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
-    expect(screen.getByRole("status")).toHaveTextContent("being released");
+    expect(screen.getByRole("status")).toHaveTextContent("Money and inventory remain reserved until release is confirmed.");
     finish({
       status: "withdrawn",
       bookingRequestReference: request.bookingRequestReference,
@@ -268,7 +268,7 @@ describe("Customer Booking Request status", () => {
       ).toBeInTheDocument(),
     );
     expect(screen.getByRole("status")).toHaveTextContent("Withdrawn");
-    expect(screen.getByRole("status")).not.toHaveTextContent("being released");
+    expect(screen.getByRole("status")).not.toHaveTextContent("Money and inventory remain reserved until release is confirmed.");
     expect(
       screen.queryByText("pending", { exact: true }),
     ).not.toBeInTheDocument();
@@ -345,7 +345,7 @@ describe("Customer Booking Request status", () => {
       "en",
       "declined",
       "Declined",
-      "The Cottage Owner declined this request. The booking is not confirmed.",
+      "This request was declined. The booking is not confirmed.",
     ],
     [
       "en",
@@ -357,7 +357,7 @@ describe("Customer Booking Request status", () => {
       "en",
       "expired",
       "Expired",
-      "The Cottage Owner did not respond before the response deadline. The booking is not confirmed.",
+      "The response deadline passed. The booking is not confirmed.",
     ],
     [
       "ar",
@@ -371,13 +371,13 @@ describe("Customer Booking Request status", () => {
       "مقبول",
       "وافق مالك البيت على الطلب. الحجز غير مؤكد بعد.",
     ],
-    ["ar", "declined", "مرفوض", "رفض مالك البيت هذا الطلب. الحجز غير مؤكد."],
+    ["ar", "declined", "مرفوض", "رُفض هذا الطلب. الحجز غير مؤكد."],
     ["ar", "withdrawn", "مسحوب", "سحبت هذا الطلب. الحجز غير مؤكد."],
     [
       "ar",
       "expired",
       "منتهٍ",
-      "لم يرد مالك البيت قبل موعد الرد. الحجز غير مؤكد.",
+      "انتهى موعد الرد. الحجز غير مؤكد.",
     ],
     [
       "ckb",
@@ -395,7 +395,7 @@ describe("Customer Booking Request status", () => {
       "ckb",
       "declined",
       "ڕەتکراوە",
-      "خاوەنی کۆتێج ئەم داواکارییەی ڕەت کردەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
+      "ئەم داواکارییە ڕەت کرایەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
     ],
     [
       "ckb",
@@ -407,7 +407,7 @@ describe("Customer Booking Request status", () => {
       "ckb",
       "expired",
       "بەسەرچووە",
-      "خاوەنی کۆتێج پێش کاتی کۆتایی وەڵام وەڵامی نەدایەوە. حجزەکە پشتڕاست نەکراوەتەوە.",
+      "کاتی کۆتایی وەڵام بەسەرچووە. حجزەکە پشتڕاست نەکراوەتەوە.",
     ],
   ] as const)(
     "states in %s what %s means in one sentence beside its label",
@@ -433,9 +433,9 @@ describe("Customer Booking Request status", () => {
     for (const sentence of [
       "Waiting for the Cottage Owner to accept or decline this request. The booking is not confirmed yet.",
       "The Cottage Owner accepted the request. The booking is not confirmed yet.",
-      "The Cottage Owner declined this request. The booking is not confirmed.",
+      "This request was declined. The booking is not confirmed.",
       "You withdrew this request. The booking is not confirmed.",
-      "The Cottage Owner did not respond before the response deadline. The booking is not confirmed.",
+      "The response deadline passed. The booking is not confirmed.",
     ]) {
       expect(screen.getByRole("status")).not.toHaveTextContent(sentence);
     }
