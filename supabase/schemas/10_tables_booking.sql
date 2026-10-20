@@ -222,6 +222,7 @@ CREATE TABLE IF NOT EXISTS "public"."booking_request_release_work" (
     "completed_at" timestamp with time zone,
     "quarantined_at" timestamp with time zone,
     "quarantine_reason" "text",
+    "suspension_action_id" "uuid",
     CONSTRAINT "booking_request_release_work_check" CHECK ((("outcome" = 'declined'::"text") = ("decline_reason" IS NOT NULL))),
     CONSTRAINT "booking_request_release_work_check1" CHECK ((("state" = 'complete'::"text") = ("completed_at" IS NOT NULL))),
     CONSTRAINT "booking_request_release_work_check2" CHECK ((("lease_token" IS NULL) = ("lease_expires_at" IS NULL))),

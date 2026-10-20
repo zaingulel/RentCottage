@@ -1,5 +1,5 @@
 begin;
-select plan(113);
+select plan(114);
 
 select has_table(
   'public', 'cottage_marketplace_listings',
@@ -734,6 +734,77 @@ select ok(
   'no API role can execute the discovery admission validator'
 );
 rollback to savepoint inventory_unit_rows;
+
+savepoint cottage_suspension_restoration;
+-- Actual approval supplies the current, content-bound evidence required by restoration.
+insert into public.account_contexts(user_id,role)
+values('00000000-0000-0000-0000-000000002802','platform_administrator');
+insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+values('20000000-0000-4000-8000-000000002801','00000000-0000-0000-0000-000000002801','individual','Fictional Discovery Owner','submitted',now(),now(),now()+interval '72 hours');
+insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+values('42000000-0000-4000-8000-000000002801','20000000-0000-4000-8000-000000002801','identity','fictional/discovery/identity.pdf','identity.pdf','application/pdf',128);
+update public.owner_verification_documents set content_digest=repeat('d',64),digest_source='sha256'
+where id='42000000-0000-4000-8000-000000002801';
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000002802","role":"authenticated","aal":"aal2"}',true);
+select public.review_owner_application('20000000-0000-4000-8000-000000002801',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+insert into public.cottage_profile_source_revisions(id,profile_id,owner_user_id,source_language,description,house_rules,revision)
+values('31000000-0000-4000-8000-000000002802','30000000-0000-4000-8000-000000002802','00000000-0000-0000-0000-000000002801','en','Fictional unpublished description','Fictional rules',1);
+insert into public.cottage_profile_review_cycles(id,profile_id,owner_user_id,source_revision_id,name,governorate,approximate_location,capacity,bedrooms,bathrooms,amenities,cycle_number,state)
+values('32000000-0000-4000-8000-000000002809','30000000-0000-4000-8000-000000002802','00000000-0000-0000-0000-000000002801','31000000-0000-4000-8000-000000002802','Fictional unpublished cottage','Baghdad','Karkh',4,2,1,array['wifi'],1,'in_review');
+select lives_ok($test$
+do $body$
+declare result jsonb;
+declare publication_before jsonb;
+declare photos_before jsonb;
+declare profile_before jsonb;
+begin
+  select jsonb_agg(to_jsonb(snapshots) order by id) into publication_before from public.cottage_publication_snapshots snapshots;
+  select jsonb_agg(to_jsonb(photos) order by id) into photos_before from public.cottage_profile_photos photos;
+  result:=public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000002801','suspend',0,'Fictional cottage restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' or result#>>'{target,restorationState}' is distinct from 'published'
+    or not exists(select 1 from public.owner_application_cottage_profiles where id='30000000-0000-4000-8000-000000002801' and business_suspended and suspension_revision=1 and listing_state_before_suspension='published')
+    or not exists(select 1 from public.cottage_marketplace_listings where profile_id='30000000-0000-4000-8000-000000002801' and state='suspended')
+  then raise exception 'Published restriction did not preserve its source'; end if;
+  if public.is_cottage_publicly_discoverable('30000000-0000-4000-8000-000000002801') then raise exception 'Restricted cottage remains discoverable'; end if;
+  -- The profile restriction is independently authoritative if a listing mirror is inconsistent.
+  update public.cottage_marketplace_listings set state='published' where profile_id='30000000-0000-4000-8000-000000002801';
+  if public.is_cottage_publicly_discoverable('30000000-0000-4000-8000-000000002801') then raise exception 'Discoverability ignored the profile restriction'; end if;
+  update public.cottage_marketplace_listings set state='suspended' where profile_id='30000000-0000-4000-8000-000000002801';
+  result:=public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000002801','reactivate',1,'Current publication and verification remain valid',gen_random_uuid());
+  if result#>>'{target,state}' is distinct from 'published' or not exists(select 1 from public.cottage_marketplace_listings where profile_id='30000000-0000-4000-8000-000000002801' and state='published') then raise exception 'Eligible published cottage failed restoration'; end if;
+  update public.cottage_marketplace_listings set state='paused' where profile_id='30000000-0000-4000-8000-000000002801';
+  result:=public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000002801','suspend',2,'Preserve paused decision',gen_random_uuid());
+  if result#>>'{target,restorationRestriction}' is distinct from 'previously-paused' then raise exception 'Paused source was lost'; end if;
+  result:=public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000002801','reactivate',3,'Keep paused decision',gen_random_uuid());
+  if result#>>'{target,state}' is distinct from 'paused' then raise exception 'Paused cottage became published'; end if;
+  update public.cottage_marketplace_listings set state='published' where profile_id='30000000-0000-4000-8000-000000002801';
+  result:=public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000002801','suspend',4,'Fictional current-owner eligibility case',gen_random_uuid());
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000002801','suspend',2,'Fictional owner restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Owner restriction unavailable'; end if;
+  result:=public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000002801','reactivate',5,'Owner is currently ineligible',gen_random_uuid());
+  if result#>>'{target,state}' is distinct from 'paused' then raise exception 'Ineligible owner restored published listing'; end if;
+  result:=public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000002801','suspend',6,'Separate cottage restriction survives owner restoration',gen_random_uuid());
+  select to_jsonb(profiles) into profile_before from public.owner_application_cottage_profiles profiles where id='30000000-0000-4000-8000-000000002801';
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000002801','reactivate',3,'Restore verified owner only',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' or (select to_jsonb(profiles) from public.owner_application_cottage_profiles profiles where id='30000000-0000-4000-8000-000000002801') is distinct from profile_before
+    or not exists(select 1 from public.cottage_marketplace_listings where profile_id='30000000-0000-4000-8000-000000002801' and state='suspended') then raise exception 'Owner restoration rewrote separate cottage restriction'; end if;
+  result:=public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000002802','suspend',0,'Unpublished restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Unpublished restriction unavailable'; end if;
+  begin
+    perform public.approve_cottage_profile_publication('32000000-0000-4000-8000-000000002809','Suspension must prohibit first publication');
+    raise exception 'Restricted draft was allowed publication';
+  exception when sqlstate 'RC204' then null;
+  end;
+  result:=public.set_marketplace_suspension('cottage','30000000-0000-4000-8000-000000002802','reactivate',1,'Keep unpublished draft',gen_random_uuid());
+  if result#>>'{target,state}' is distinct from 'unpublished' or exists(select 1 from public.cottage_marketplace_listings where profile_id='30000000-0000-4000-8000-000000002802') then raise exception 'Unpublished restoration created a listing'; end if;
+  if (select jsonb_agg(to_jsonb(snapshots) order by id) from public.cottage_publication_snapshots snapshots) is distinct from publication_before
+    or (select jsonb_agg(to_jsonb(photos) order by id) from public.cottage_profile_photos photos) is distinct from photos_before
+    or not exists(select 1 from public.account_contexts where user_id='00000000-0000-0000-0000-000000002801' and not customer_suspended and customer_suspension_revision=0)
+  then raise exception 'Restriction/restoration rewrote immutable content or other capability'; end if;
+end;
+$body$;
+$test$,'cottage_reactivation_restores_only_eligible_prior_state');
+rollback to savepoint cottage_suspension_restoration;
 
 update public.cottage_marketplace_listings set state = 'paused'
 where profile_id = '30000000-0000-4000-8000-000000002801';

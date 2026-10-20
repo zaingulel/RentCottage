@@ -31,6 +31,11 @@ try {
   const workers = new Set();
   const databaseSessions = new Set();
   const fixtureIds = Object.freeze({
+    // Fixed account identities remain available to this programme's existing scratch-table recovery.
+    customerUser: "97000000-0000-4000-8000-000000000902",
+    administratorUser: "97000000-0000-4000-8000-000000000903",
+    suspensionCommand: randomUUID(),
+    restorationCommand: randomUUID(),
     bookingRequest: randomUUID(),
     bookingSnapshot: randomUUID(),
     commitment: randomUUID(),
@@ -54,6 +59,11 @@ try {
   function seedSource() {
     harness.runSql(`
     begin;
+    insert into auth.users(id,aud,role,email,email_confirmed_at) values
+      ('${fixtureIds.customerUser}','authenticated','authenticated','${fixtureIds.customerUser}@example.invalid',now()),
+      ('${fixtureIds.administratorUser}','authenticated','authenticated','${fixtureIds.administratorUser}@example.invalid',now());
+    insert into public.account_contexts(user_id,role) values
+      ('${fixtureIds.customerUser}','customer'),('${fixtureIds.administratorUser}','platform_administrator');
     insert into public.test_booking_request_lifecycle_fences (
       label, booking_request_id, booking_snapshot_id, commitment_id,
       attempt_id, claim_id, payment_lifecycle_id, customer_user_id,
@@ -73,7 +83,7 @@ try {
       and owners.owner_approval_state = 'approved'
     cross join lateral (
       select contexts.user_id from public.account_contexts contexts
-      where contexts.role = 'customer' order by contexts.user_id limit 1
+      where contexts.user_id = '${fixtureIds.customerUser}'
     ) customers
     order by profiles.created_at, profiles.id
     limit 1;
@@ -304,6 +314,7 @@ try {
     join public.booking_request_authorization_claims claims
       on claims.attempt_id = attempts.id
     where requests.status = 'pending'
+      and requests.customer_user_id = '${fixtureIds.customerUser}'
       and attempts.payment_snapshot -> 'authorization' ->> 'status' = 'succeeded'
       and attempts.payment_snapshot -> 'capture' = 'null'::jsonb
       and nullif(attempts.payment_snapshot -> 'release', 'null'::jsonb) is null
@@ -1067,6 +1078,16 @@ try {
   }
 
   const cleanup = `begin;
+  do $suspension_cleanup$
+  begin
+    perform 1 from public.account_contexts where user_id in ('${fixtureIds.customerUser}','${fixtureIds.administratorUser}') order by user_id for update;
+    perform 1 from private.marketplace_suspension_actions where account_user_id='${fixtureIds.customerUser}' order by id for update;
+    if exists(select 1 from public.booking_request_release_work work join private.marketplace_suspension_actions actions on actions.id=work.suspension_action_id
+      where actions.account_user_id='${fixtureIds.customerUser}' and not exists(select 1 from public.test_booking_request_lifecycle_fences fixture where fixture.booking_request_id=work.booking_request_id)) then
+      raise exception 'Lifecycle suspension action has an outside release-work reference' using errcode='RC409';
+    end if;
+  end;
+  $suspension_cleanup$;
   alter table public.booking_notification_events disable trigger reject_booking_notification_events_change;
   delete from public.booking_notification_events events
   using public.test_booking_request_lifecycle_fences fixture
@@ -1098,6 +1119,7 @@ try {
   delete from public.booking_request_release_work work
   using public.test_booking_request_lifecycle_fences fixture
   where work.booking_request_id = fixture.booking_request_id;
+  delete from private.marketplace_suspension_actions where account_user_id='${fixtureIds.customerUser}';
   delete from public.booking_request_authorization_reconciliation_outbox outbox
   using public.test_booking_request_lifecycle_fences fixture
   where outbox.claim_id = fixture.claim_id;
@@ -1132,6 +1154,8 @@ try {
   delete from public.cottage_booking_period_commitments commitments
   using public.test_booking_request_lifecycle_fences fixture
   where commitments.id = fixture.commitment_id;
+  delete from public.account_contexts where user_id in ('${fixtureIds.customerUser}','${fixtureIds.administratorUser}');
+  delete from auth.users where id in ('${fixtureIds.customerUser}','${fixtureIds.administratorUser}');
   drop table if exists public.test_booking_request_lifecycle_fences;
   alter table public.cottage_shifts disable trigger reject_cottage_shift_delete;
   delete from public.cottage_shifts
@@ -1147,6 +1171,95 @@ try {
   alter table public.cottage_shift_schedule_revisions
     enable trigger reject_cottage_shift_schedule_revision_delete;
 commit;`;
+
+  async function verifySuspensionRelease() {
+    const authorization = `set local role authenticated;
+      select set_config('request.jwt.claims','{"sub":"${fixtureIds.administratorUser}","role":"authenticated","aal":"aal2"}',true);`;
+    const summary = () => JSON.parse(harness.runSql(`begin; ${authorization}
+      select public.get_marketplace_suspension('customer','${fixtureIds.customerUser}'); commit;
+    `).split("\n").at(-1));
+    const snapshot = () => JSON.parse(harness.runSql(`select jsonb_build_object(
+      'request',to_jsonb(requests),'hold',to_jsonb(commitments),'snapshot',to_jsonb(snapshots),
+      'authorization',attempts.payment_snapshot->'authorization',
+      'work',(select to_jsonb(work) from public.booking_request_release_work work where booking_request_id=requests.id),
+      'occupancies',(select jsonb_agg(to_jsonb(occupancies) order by to_jsonb(occupancies)::text) from public.cottage_booking_period_occupancies occupancies where booking_period_commitment_id=commitments.id),
+      'customerReceipts',(select coalesce(jsonb_agg(to_jsonb(notices) order by id),'[]') from public.booking_request_status_notifications notices where booking_request_id=requests.id and recipient_user_id='${fixtureIds.customerUser}'),
+      'customerEvents',(select coalesce(jsonb_agg(to_jsonb(events) order by id),'[]') from public.booking_notification_events events where booking_request_id=requests.id and recipient_user_id='${fixtureIds.customerUser}' and request_status_notification_id is not null)
+    ) from public.test_booking_request_lifecycle_fences fixture
+    join public.booking_requests requests on requests.id=fixture.booking_request_id
+    join public.cottage_booking_period_commitments commitments on commitments.id=fixture.commitment_id
+    join public.booking_snapshots snapshots on snapshots.id=fixture.booking_snapshot_id
+    join public.booking_request_submission_attempts attempts on attempts.id=fixture.attempt_id
+    where fixture.label='source';`));
+    const quarantinedFacts = () => harness.runSql(`select jsonb_build_object(
+      'request',to_jsonb(requests),'work',to_jsonb(work),'hold',to_jsonb(commitments),
+      'attempt',to_jsonb(attempts)
+    ) from public.test_booking_request_lifecycle_fences fixture
+    join public.booking_requests requests on requests.id=fixture.booking_request_id
+    join public.booking_request_release_work work on work.booking_request_id=requests.id
+    join public.cottage_booking_period_commitments commitments on commitments.id=fixture.commitment_id
+    join public.booking_request_submission_attempts attempts on attempts.id=fixture.attempt_id
+    where fixture.label='refusal-before-record';`);
+    const quarantinedBefore = quarantinedFacts();
+    const before = snapshot();
+    assert.equal(before.request.status, "pending");
+    assert.equal(harness.runSql(`select count(*) from public.booking_requests where customer_user_id='${fixtureIds.customerUser}' and status='pending';`), "1",
+      "Suspension fixture must own exactly its one remaining pending request");
+    const restricted = JSON.parse(harness.runSql(`begin; ${authorization}
+      select public.set_marketplace_suspension('customer','${fixtureIds.customerUser}','suspend',0,'Fictional worker composition case','${fixtureIds.suspensionCommand}'); commit;
+    `).split("\n").at(-1));
+    assert.equal(restricted.status, "completed");
+    assert.deepEqual(restricted.target.releaseSummary, { affected: 1, resolved: 0, processing: 1, quarantined: 0 });
+    const prepared = snapshot();
+    assert.equal(prepared.work.lease_generation, 0);
+    assert.equal(prepared.work.suspension_action_id, restricted.actionId);
+    assert.deepEqual(prepared.hold, before.hold);
+    assert.deepEqual(prepared.snapshot, before.snapshot);
+    assert.deepEqual(prepared.customerReceipts, []);
+    const worker = startWorker("source", "before-record");
+    await waitForStage(worker, "unrecorded");
+    const unrecorded = snapshot();
+    assert.equal(unrecorded.request.status, "processing");
+    assert.equal(unrecorded.work.state, "processing");
+    assert.deepEqual(unrecorded.hold, before.hold);
+    assert.deepEqual(unrecorded.occupancies, before.occupancies);
+    assert.deepEqual(unrecorded.customerReceipts, []);
+    assert.deepEqual(unrecorded.customerEvents, []);
+    assert.deepEqual(summary().releaseSummary, { affected: 1, resolved: 0, processing: 1, quarantined: 0 });
+    assert.equal(harness.runSql(`select count(*) from public.simulated_payment_effects effects join public.payment_provider_operations operations on operations.id=effects.operation_id where operations.payment_lifecycle_id='${fixtureIds.paymentLifecycle}' and operations.operation_kind='release' and effects.state='executed' and operations.current_outcome is distinct from 'succeeded';`), "1",
+      "A provider effect before authoritative recording cannot settle the request");
+    const restored = JSON.parse(harness.runSql(`begin; ${authorization}
+      select public.set_marketplace_suspension('customer','${fixtureIds.customerUser}','reactivate',1,'Prospective restoration while release finishes','${fixtureIds.restorationCommand}'); commit;
+    `).split("\n").at(-1));
+    assert.equal(restored.status, "completed");
+    assert.equal(restored.target.state, "active");
+    assert.equal(snapshot().work.id, prepared.work.id);
+    worker.child.send("continue");
+    assert.equal((await finishWorker(worker)).result.status, "declined");
+    const completed = snapshot();
+    assert.equal(completed.request.status, "declined");
+    assert.equal(completed.request.outcome_actor_user_id, fixtureIds.administratorUser);
+    assert.equal(completed.request.decline_reason, "other");
+    assert.equal(completed.request.decline_note, null);
+    assert.equal(completed.request.response_deadline, before.request.response_deadline);
+    assert.equal(completed.work.id, prepared.work.id);
+    assert.equal(completed.work.state, "complete");
+    assert.equal(completed.work.suspension_action_id, restricted.actionId);
+    assert.equal(completed.hold.id, before.hold.id);
+    assert.equal(completed.hold.status, "released_hold");
+    assert.ok(completed.occupancies.every((occupancy) => !occupancy.active));
+    assert.deepEqual(completed.snapshot, before.snapshot);
+    assert.deepEqual(completed.authorization, before.authorization);
+    assert.deepEqual(summary().releaseSummary, { affected: 1, resolved: 1, processing: 0, quarantined: 0 });
+    assert.equal(completed.customerReceipts.length, 1);
+    assert.equal(completed.customerReceipts[0].status, "declined");
+    assert.equal(completed.customerEvents.length, 1);
+    assert.equal(completed.customerEvents[0].request_status_notification_id, completed.customerReceipts[0].id);
+    assert.equal((await finishWorker(startWorker("source"))).result.status, "declined");
+    assert.deepEqual(snapshot(), completed, "Replay must preserve the same authoritative work, money and durable customer notification receipt");
+    assert.equal(quarantinedFacts(), quarantinedBefore, "Restriction/reactivation cannot resume or rewrite prior definitive-refusal quarantine");
+    console.log("Suspension release composition proved unleased preparation, retained hold/counts/receipts after an unrecorded provider effect, prospective reactivation, authoritative worker completion and one immutable customer status receipt/source.");
+  }
 
   let failure;
   try {
@@ -1350,6 +1463,8 @@ commit;`;
       "withdrawn",
     );
     verify("effect-deadline", 2);
+
+    await verifySuspensionRelease();
 
     console.log(
       "Booking Request release concurrency passed: separate Node workers with separate Supabase clients used the production repository and DurablePaymentSimulator; an effect before lease loss reconciled once; a refused effect before recording survived takeover and stale recording in one terminal quarantine with no new effect; an intent without shared admission was reconstructed and closed after takeover, then retried only after recorded absence; the original caller could not execute afterward. Fresh-process closure could not authorize retry before explicit recording; both opposing effect/absence insert orders waited and retained one winner; an already admitted executor blocked on the effect key across its deadline produced durable zero-execution closure.",

@@ -949,15 +949,15 @@ test("browser booking fixtures own disjoint graphs and cleanup", () => {
     ],
     [
       confirmedBookingCleanup(),
-      "e2643de8056a19c7d54cf39c244422a0d51a68d4784fce687bc4392543f86fde",
+      "7301a0f71ebd99999049c3501c600349fb2c739103226d470166e3c3da5d9114",
     ],
     [
       confirmedBookingAccessCleanup(),
-      "878d9c3c39488d018b85f7cb7bb1dec8023cfe1cdbb5f65d2577fb9775b7f100",
+      "d4930c3ad9970f8bd20c0805de09067c84a311973fd2e5cef11826c868c3fc46",
     ],
     [
       captureCleanup(),
-      "35a867d45d2121ae02242e3c81032d858d41c9e4a0557b28fdb62bac94232ab4",
+      "3b0f473044c366067bcb1697c085559d11b569d7b1b2fee7b09f4fb801766757",
     ],
   ];
   for (const [sql, hash] of defaultHashes)

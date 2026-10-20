@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(82);
+select plan(87);
 
 select has_table('public', 'owner_application_transitions', 'application transitions are durable');
 select has_table('public', 'owner_application_information_requests', 'scoped information requests are durable');
@@ -968,6 +968,148 @@ select throws_ok(
   )$$,
   'RC204', null, 'Suspended denies new document grants'
 );
+
+reset role;
+savepoint owner_suspension_restoration;
+select lives_ok($test$
+do $body$
+declare result jsonb;
+declare record_before jsonb;
+declare transition_count bigint;
+declare notice_count bigint;
+declare renewal_id uuid;
+declare malformed jsonb;
+declare application_before jsonb;
+declare context_before jsonb;
+declare actions_before jsonb;
+begin
+  if (select count(*) from private.marketplace_suspension_actions where target_kind='owner' and account_user_id='00000000-0000-0000-0000-000000000301' and action='suspend' and expected_revision=8 and resulting_revision=9 and actor_user_id='00000000-0000-0000-0000-000000000304')<>1 then raise exception 'Legacy suspension did not delegate to attributed core'; end if;
+  select to_jsonb(records) into record_before from public.owner_application_verification_records records join public.owner_applications applications on applications.current_verification_record_id=records.id where applications.id='20000000-0000-4000-8000-000000000301';
+  select count(*) into transition_count from public.owner_application_transitions where application_id='20000000-0000-4000-8000-000000000301';
+  select count(*) into notice_count from public.owner_application_notices where application_id='20000000-0000-4000-8000-000000000301' and kind='suspended';
+  if notice_count<>1 then raise exception 'Legacy suspension notice duplicated'; end if;
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000000301','reactivate',9,'Verified evidence remains current','20000000-0000-4000-8000-000000000391');
+  if result->>'status' is distinct from 'completed' then raise exception 'Valid verification was not restored: %',result; end if;
+  if not exists(select 1 from public.owner_applications applications join public.account_contexts contexts on contexts.user_id=applications.owner_user_id where applications.id='20000000-0000-4000-8000-000000000301' and applications.status='approved' and applications.version=10 and contexts.owner_approval_state='approved' and contexts.owner_suspension_revision=2 and not contexts.customer_suspended and contexts.customer_suspension_revision=0) then raise exception 'Reactivation rewrote capability or failed approved restoration'; end if;
+  if (select to_jsonb(records) from public.owner_application_verification_records records join public.owner_applications applications on applications.current_verification_record_id=records.id where applications.id='20000000-0000-4000-8000-000000000301') is distinct from record_before then raise exception 'Reactivation rewrote verification evidence'; end if;
+  if (select count(*) from public.owner_application_transitions where application_id='20000000-0000-4000-8000-000000000301')<>transition_count+1 then raise exception 'Reactivation transition missing or duplicated'; end if;
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000000301','suspend',10,'Fictional evidence-age scenario','20000000-0000-4000-8000-000000000392');
+  if result->>'status'<>'completed' then raise exception 'Second owner restriction unavailable'; end if;
+end;
+$body$;
+$test$,'reactivation_restores_only_eligible_prior_state');
+
+-- Age the approved synthetic evidence using the suite's existing privileged fixture boundary.
+set local session_replication_role = replica;
+update public.owner_application_verification_records
+set relevant_expiry_dates=jsonb_build_object('licensing_or_exemption',(current_date-1)::text)
+where id=(select current_verification_record_id from public.owner_applications where id='20000000-0000-4000-8000-000000000301');
+set local session_replication_role = origin;
+
+select lives_ok($test$
+do $body$
+declare result jsonb;
+declare record_before jsonb;
+declare renewal_id uuid;
+declare notice_count bigint;
+begin
+  select to_jsonb(records) into record_before from public.owner_application_verification_records records join public.owner_applications applications on applications.current_verification_record_id=records.id where applications.id='20000000-0000-4000-8000-000000000301';
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000000301','reactivate',11,'Expired evidence requires renewal','20000000-0000-4000-8000-000000000393');
+  if result->>'status' is distinct from 'completed' or result#>>'{target,state}' is distinct from 'expired' or not exists(select 1 from public.account_contexts where user_id='00000000-0000-0000-0000-000000000301' and owner_approval_state='expired') then raise exception 'Expired evidence was incorrectly approved'; end if;
+  select id into strict renewal_id from public.owner_application_renewal_work where application_id='20000000-0000-4000-8000-000000000301' and status='open' and requested_document_kinds=array['licensing_or_exemption']::public.owner_verification_document_kind[];
+  select count(*) into notice_count from public.owner_application_notices where application_id='20000000-0000-4000-8000-000000000301' and kind='expired';
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000000301','suspend',12,'Separate owner restriction','20000000-0000-4000-8000-000000000394');
+  if result->>'status'<>'completed' then raise exception 'Expired owner restriction unavailable'; end if;
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000000301','reactivate',13,'Keep existing renewal work','20000000-0000-4000-8000-000000000395');
+  if result->>'status' is distinct from 'completed' or not exists(select 1 from public.owner_application_renewal_work where id=renewal_id and status='open') or (select count(*) from public.owner_application_notices where application_id='20000000-0000-4000-8000-000000000301' and kind='expired')<>notice_count then raise exception 'Restoration duplicated or replaced renewal work/notice'; end if;
+  if (select to_jsonb(records) from public.owner_application_verification_records records join public.owner_applications applications on applications.current_verification_record_id=records.id where applications.id='20000000-0000-4000-8000-000000000301') is distinct from record_before then raise exception 'Expiry restoration rewrote approved evidence'; end if;
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000000301','suspend',14,'Fictional malformed evidence scenario','20000000-0000-4000-8000-000000000396');
+  if result->>'status'<>'completed' then raise exception 'Malformed evidence arrangement unavailable'; end if;
+end;
+$body$;
+$test$,'expired_reactivation_preserves_renewal_work_and_evidence');
+
+set local session_replication_role = replica;
+update public.owner_application_verification_records set relevant_expiry_dates='{"unknown_kind":"2099-01-01"}'::jsonb
+where id=(select current_verification_record_id from public.owner_applications where id='20000000-0000-4000-8000-000000000301');
+set local session_replication_role = origin;
+select lives_ok($test$
+do $body$
+declare result jsonb;
+declare application_before jsonb;
+declare context_before jsonb;
+declare actions_before jsonb;
+declare evidence_before jsonb;
+begin
+  select to_jsonb(applications) into application_before from public.owner_applications applications where id='20000000-0000-4000-8000-000000000301';
+  select to_jsonb(contexts) into context_before from public.account_contexts contexts where user_id='00000000-0000-0000-0000-000000000301';
+  select jsonb_agg(to_jsonb(actions) order by id) into actions_before from private.marketplace_suspension_actions actions;
+  select to_jsonb(records) into evidence_before from public.owner_application_verification_records records join public.owner_applications applications on applications.current_verification_record_id=records.id where applications.id='20000000-0000-4000-8000-000000000301';
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000000301','reactivate',15,'Never approve malformed evidence',gen_random_uuid());
+  if result->>'status' is distinct from 'unavailable'
+    or (select to_jsonb(applications) from public.owner_applications applications where id='20000000-0000-4000-8000-000000000301') is distinct from application_before
+    or (select to_jsonb(contexts) from public.account_contexts contexts where user_id='00000000-0000-0000-0000-000000000301') is distinct from context_before
+    or (select jsonb_agg(to_jsonb(actions) order by id) from private.marketplace_suspension_actions actions) is distinct from actions_before
+    or (select to_jsonb(records) from public.owner_application_verification_records records join public.owner_applications applications on applications.current_verification_record_id=records.id where applications.id='20000000-0000-4000-8000-000000000301') is distinct from evidence_before
+  then raise exception 'Malformed restoration changed authoritative facts'; end if;
+end;
+$body$;
+$test$,'reactivation_refuses_unknown_kind_without_mutation');
+
+set local session_replication_role = replica;
+update public.owner_application_verification_records set relevant_expiry_dates='{"licensing_or_exemption":"not-a-date"}'::jsonb
+where id=(select current_verification_record_id from public.owner_applications where id='20000000-0000-4000-8000-000000000301');
+set local session_replication_role = origin;
+select lives_ok($test$
+do $body$
+declare result jsonb;
+declare application_before jsonb;
+declare context_before jsonb;
+declare actions_before jsonb;
+declare evidence_before jsonb;
+begin
+  select to_jsonb(applications) into application_before from public.owner_applications applications where id='20000000-0000-4000-8000-000000000301';
+  select to_jsonb(contexts) into context_before from public.account_contexts contexts where user_id='00000000-0000-0000-0000-000000000301';
+  select jsonb_agg(to_jsonb(actions) order by id) into actions_before from private.marketplace_suspension_actions actions;
+  select to_jsonb(records) into evidence_before from public.owner_application_verification_records records join public.owner_applications applications on applications.current_verification_record_id=records.id where applications.id='20000000-0000-4000-8000-000000000301';
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000000301','reactivate',15,'Never approve malformed evidence',gen_random_uuid());
+  if result->>'status' is distinct from 'unavailable'
+    or (select to_jsonb(applications) from public.owner_applications applications where id='20000000-0000-4000-8000-000000000301') is distinct from application_before
+    or (select to_jsonb(contexts) from public.account_contexts contexts where user_id='00000000-0000-0000-0000-000000000301') is distinct from context_before
+    or (select jsonb_agg(to_jsonb(actions) order by id) from private.marketplace_suspension_actions actions) is distinct from actions_before
+    or (select to_jsonb(records) from public.owner_application_verification_records records join public.owner_applications applications on applications.current_verification_record_id=records.id where applications.id='20000000-0000-4000-8000-000000000301') is distinct from evidence_before
+  then raise exception 'Malformed restoration changed authoritative facts'; end if;
+end;
+$body$;
+$test$,'reactivation_refuses_invalid_date_without_mutation');
+
+set local session_replication_role = replica;
+update public.owner_application_verification_records set relevant_expiry_dates='[]'::jsonb
+where id=(select current_verification_record_id from public.owner_applications where id='20000000-0000-4000-8000-000000000301');
+set local session_replication_role = origin;
+select lives_ok($test$
+do $body$
+declare result jsonb;
+declare application_before jsonb;
+declare context_before jsonb;
+declare actions_before jsonb;
+declare evidence_before jsonb;
+begin
+  select to_jsonb(applications) into application_before from public.owner_applications applications where id='20000000-0000-4000-8000-000000000301';
+  select to_jsonb(contexts) into context_before from public.account_contexts contexts where user_id='00000000-0000-0000-0000-000000000301';
+  select jsonb_agg(to_jsonb(actions) order by id) into actions_before from private.marketplace_suspension_actions actions;
+  select to_jsonb(records) into evidence_before from public.owner_application_verification_records records join public.owner_applications applications on applications.current_verification_record_id=records.id where applications.id='20000000-0000-4000-8000-000000000301';
+  result:=public.set_marketplace_suspension('owner','00000000-0000-0000-0000-000000000301','reactivate',15,'Never approve malformed evidence',gen_random_uuid());
+  if result->>'status' is distinct from 'unavailable'
+    or (select to_jsonb(applications) from public.owner_applications applications where id='20000000-0000-4000-8000-000000000301') is distinct from application_before
+    or (select to_jsonb(contexts) from public.account_contexts contexts where user_id='00000000-0000-0000-0000-000000000301') is distinct from context_before
+    or (select jsonb_agg(to_jsonb(actions) order by id) from private.marketplace_suspension_actions actions) is distinct from actions_before
+    or (select to_jsonb(records) from public.owner_application_verification_records records join public.owner_applications applications on applications.current_verification_record_id=records.id where applications.id='20000000-0000-4000-8000-000000000301') is distinct from evidence_before
+  then raise exception 'Malformed restoration changed authoritative facts'; end if;
+end;
+$body$;
+$test$,'reactivation_refuses_non_object_without_mutation');
+rollback to savepoint owner_suspension_restoration;
 
 reset role;
 update public.owner_applications set status = 'rejected'

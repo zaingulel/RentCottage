@@ -63,7 +63,7 @@ end;
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 
-select plan(425);
+select plan(430);
 
 set local role anon;
 select throws_ok(
@@ -3682,6 +3682,139 @@ select id, owner_user_id, customer_user_id, booking_request_reference
 from public.booking_requests limit 1;
 grant select on booking_request_lifecycle_target to service_role, authenticated;
 
+savepoint suspension_pending_preparation;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select lives_ok($test$
+do $body$
+declare request_before public.booking_requests;
+declare hold_before jsonb;
+declare snapshot_before jsonb;
+declare provider_before jsonb;
+declare result jsonb;
+declare action_id uuid;
+declare lease jsonb;
+declare work_id uuid;
+declare work_before jsonb;
+declare history_before jsonb;
+declare occupancies_before jsonb;
+declare prior_role text:=current_setting('role');
+begin
+  select * into request_before from public.booking_requests where id=(select id from booking_request_lifecycle_target);
+  select to_jsonb(holds) into hold_before from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id;
+  select to_jsonb(snapshots) into snapshot_before from public.booking_snapshots snapshots where id=request_before.booking_snapshot_id;
+  select coalesce(jsonb_agg(to_jsonb(operations) order by operations.id),'[]') into provider_before from public.payment_provider_operations operations;
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result:=public.set_marketplace_suspension('customer',request_before.customer_user_id,'suspend',0,'Private platform reason','00000000-0000-4000-8000-000000003291');
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension did not complete: %',result; end if;
+  action_id:=(result->>'actionId')::uuid;
+  if result#>'{target,releaseSummary}' is distinct from '{"affected":1,"resolved":0,"processing":1,"quarantined":0}'::jsonb
+    or not exists(select 1 from jsonb_array_elements(result#>'{target,actions}') action where (action->>'id')::uuid=action_id and action->'affected'='1'::jsonb and action->'resolved'='0'::jsonb and action->'processing'='1'::jsonb and action->'quarantined'='0'::jsonb)
+  then raise exception 'Reader release counts do not match the one persisted processing case'; end if;
+  if not exists(select 1 from public.booking_requests where id=request_before.id and status='processing' and outcome_actor_user_id='00000000-0000-4000-8000-000000003290' and decline_reason='other' and decline_note is null) then raise exception 'Pending request did not enter actor-neutral release processing'; end if;
+  if not exists(select 1 from public.booking_request_release_work where booking_request_id=request_before.id and suspension_action_id=action_id and state='processing' and lease_generation=0 and lease_token is null and outcome='declined' and decline_note is null) then raise exception 'Suspension did not prepare exactly unleased work'; end if;
+  if (select count(*) from public.booking_request_release_operations)<>0 or (select count(*) from public.booking_request_status_notifications where booking_request_id=request_before.id)<>0 then raise exception 'Preparation leased work or notified recipient under authority locks'; end if;
+  if (select to_jsonb(holds) from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id) is distinct from hold_before or (select to_jsonb(snapshots) from public.booking_snapshots snapshots where id=request_before.booking_snapshot_id) is distinct from snapshot_before or (select coalesce(jsonb_agg(to_jsonb(operations) order by operations.id),'[]') from public.payment_provider_operations operations) is distinct from provider_before then raise exception 'Preparation changed authoritative payment, hold or snapshot facts'; end if;
+  select jsonb_agg(to_jsonb(occupancies) order by to_jsonb(occupancies)::text) into occupancies_before from public.cottage_booking_period_occupancies occupancies where booking_period_commitment_id=request_before.booking_period_commitment_id;
+  select id into work_id from public.booking_request_release_work where booking_request_id=request_before.id;
+  lease:=public.lease_booking_request_release_work(work_id);
+  select to_jsonb(work) into work_before from public.booking_request_release_work work where booking_request_id=request_before.id;
+  select jsonb_agg(to_jsonb(history) order by id) into history_before from public.booking_request_payment_history history;
+  if lease->>'status' is distinct from 'release-required' then raise exception 'Prepared suspension work could not be leased'; end if;
+  perform set_config('role','service_role',true);
+  result:=public.finalize_booking_request_release((lease->>'workId')::uuid,(lease->>'leaseGeneration')::bigint,(lease->>'leaseToken')::uuid);
+  perform set_config('role',prior_role,true);
+  if result->>'status' is distinct from 'processing'
+    or not exists(select 1 from public.booking_requests where id=request_before.id and status='processing')
+    or (select to_jsonb(work) from public.booking_request_release_work work where booking_request_id=request_before.id) is distinct from work_before
+    or (select to_jsonb(holds) from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id) is distinct from hold_before
+    or (select jsonb_agg(to_jsonb(occupancies) order by to_jsonb(occupancies)::text) from public.cottage_booking_period_occupancies occupancies where booking_period_commitment_id=request_before.booking_period_commitment_id) is distinct from occupancies_before
+    or (select to_jsonb(snapshots) from public.booking_snapshots snapshots where id=request_before.booking_snapshot_id) is distinct from snapshot_before
+    or (select coalesce(jsonb_agg(to_jsonb(operations) order by operations.id),'[]') from public.payment_provider_operations operations) is distinct from provider_before
+    or (select jsonb_agg(to_jsonb(history) order by id) from public.booking_request_payment_history history) is distinct from history_before
+    or exists(select 1 from public.booking_request_status_notifications where booking_request_id=request_before.id)
+  then raise exception 'Suspension finalized without authoritative successful release or changed retained facts: result %, work %, hold %, snapshot %, provider %, history %, occupancies %',
+    result,
+    (select to_jsonb(work) from public.booking_request_release_work work where booking_request_id=request_before.id) is not distinct from work_before,
+    (select to_jsonb(holds) from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id) is not distinct from hold_before,
+    (select to_jsonb(snapshots) from public.booking_snapshots snapshots where id=request_before.booking_snapshot_id) is not distinct from snapshot_before,
+    (select coalesce(jsonb_agg(to_jsonb(operations) order by operations.id),'[]') from public.payment_provider_operations operations) is not distinct from provider_before,
+    (select jsonb_agg(to_jsonb(history) order by id) from public.booking_request_payment_history history) is not distinct from history_before,
+    (select jsonb_agg(to_jsonb(occupancies) order by to_jsonb(occupancies)::text) from public.cottage_booking_period_occupancies occupancies where booking_period_commitment_id=request_before.booking_period_commitment_id) is not distinct from occupancies_before;
+  end if;
+end;
+$body$;
+$test$,'suspension_release_never_precedes_provider_truth');
+rollback to savepoint suspension_pending_preparation;
+
+savepoint legacy_owner_suspension_pending;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+select '20000000-0000-4000-8000-000000003290',owner_user_id,'individual','Fictional Pending Owner','submitted',now(),now(),now()+interval '72 hours' from booking_request_lifecycle_target;
+insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+values('42000000-0000-4000-8000-000000003290','20000000-0000-4000-8000-000000003290','identity','fictional/pending/identity.pdf','identity.pdf','application/pdf',128);
+update public.owner_verification_documents set content_digest=repeat('e',64),digest_source='sha256' where id='42000000-0000-4000-8000-000000003290';
+select public.review_owner_application('20000000-0000-4000-8000-000000003290',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+select lives_ok($test$
+do $body$
+declare request_before public.booking_requests;
+declare result jsonb;
+declare action private.marketplace_suspension_actions;
+declare replay jsonb;
+declare hold_before jsonb;
+declare snapshot_before jsonb;
+begin
+  select * into request_before from public.booking_requests where id=(select id from booking_request_lifecycle_target);
+  select to_jsonb(holds) into hold_before from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id;
+  select to_jsonb(snapshots) into snapshot_before from public.booking_snapshots snapshots where id=request_before.booking_snapshot_id;
+  result:=public.review_owner_application('20000000-0000-4000-8000-000000003290',2,'suspend','Fictional legacy restriction','{}','{}',null,null,null,'{}'::jsonb);
+  select * into strict action from private.marketplace_suspension_actions where target_kind='owner' and account_user_id=request_before.owner_user_id;
+  if result->>'status'<>'suspended' or (result->>'version')::integer<>3 or action.actor_user_id<>'00000000-0000-4000-8000-000000003290'
+    or not exists(select 1 from public.booking_requests where id=request_before.id and status='processing' and decline_reason='other' and decline_note is null)
+    or not exists(select 1 from public.booking_request_release_work where booking_request_id=request_before.id and suspension_action_id=action.id and lease_generation=0 and lease_token is null and outcome='declined')
+  then raise exception 'Legacy owner suspension did not use the pending case'; end if;
+  replay:=public.set_marketplace_suspension('owner',request_before.owner_user_id,'suspend',2,'Fictional legacy restriction',action.command_id);
+  if replay->>'status' is distinct from 'completed' or (replay->>'actionId')::uuid<>action.id
+    or (select count(*) from private.marketplace_suspension_actions where target_kind='owner' and account_user_id=request_before.owner_user_id)<>1
+    or (select count(*) from public.owner_application_transitions where application_id=(result->>'application_id')::uuid and to_status='suspended')<>1
+    or (select count(*) from public.owner_application_notices where application_id=(result->>'application_id')::uuid and kind='suspended')<>1
+    or (select count(*) from public.booking_request_release_work where booking_request_id=request_before.id)<>1
+  then raise exception 'Legacy replay duplicated attributed state'; end if;
+  if (select to_jsonb(holds) from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id) is distinct from hold_before
+    or (select to_jsonb(snapshots) from public.booking_snapshots snapshots where id=request_before.booking_snapshot_id) is distinct from snapshot_before
+    or exists(select 1 from public.booking_request_status_notifications where booking_request_id=request_before.id)
+  then raise exception 'Legacy preparation changed retained facts or notified before release'; end if;
+end;
+$body$;
+$test$,'legacy_owner_suspend_uses_pending_case');
+rollback to savepoint legacy_owner_suspension_pending;
+
+savepoint cottage_suspension_deadline;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+update public.booking_requests set created_at=due.deadline-interval '4 hours',response_deadline=due.deadline
+from (select clock_timestamp()-interval '1 second' as deadline) due
+where id=(select id from booking_request_lifecycle_target);
+select lives_ok($test$
+do $body$
+declare result jsonb;
+declare request_before public.booking_requests;
+begin
+  select * into request_before from public.booking_requests where id=(select id from booking_request_lifecycle_target);
+  result:=public.set_marketplace_suspension('cottage',request_before.profile_id,'suspend',0,'Fictional deadline case',gen_random_uuid());
+  if result->>'status' is distinct from 'completed'
+    or not exists(select 1 from public.booking_request_release_work where booking_request_id=request_before.id and suspension_action_id=(result->>'actionId')::uuid and outcome='expired' and actor_user_id is null and decline_reason is null and decline_note is null and lease_generation=0)
+    or not exists(select 1 from public.booking_requests where id=request_before.id and status='processing' and outcome_actor_user_id is null and response_deadline=request_before.response_deadline and created_at=request_before.created_at)
+  then raise exception 'Cottage suspension reinterpreted the expired deadline'; end if;
+end;
+$body$;
+$test$,'suspension_preserves_authoritative_expired_deadline');
+rollback to savepoint cottage_suspension_deadline;
+
+
 savepoint booking_request_null_withdraw_actor;
 set local role service_role;
 select is(
@@ -4012,6 +4145,52 @@ select is(
   'the owning Customer reads exactly one scoped acceptance notification receipt'
 );
 reset role;
+
+savepoint suspension_preserves_acceptance;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at)
+select '20000000-0000-4000-8000-000000003290',owner_user_id,'individual','Fictional Pending Owner','submitted',now(),now(),now()+interval '72 hours' from booking_request_lifecycle_target;
+insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes)
+values('42000000-0000-4000-8000-000000003290','20000000-0000-4000-8000-000000003290','identity','fictional/pending/identity.pdf','identity.pdf','application/pdf',128);
+update public.owner_verification_documents set content_digest=repeat('e',64),digest_source='sha256' where id='42000000-0000-4000-8000-000000003290';
+select public.review_owner_application('20000000-0000-4000-8000-000000003290',1,'approve','Fictional content-bound evidence accepted','{}','{}','Baghdad','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+select lives_ok($test$
+do $body$
+declare request_before public.booking_requests;
+declare attempt_before jsonb;
+declare capture_before jsonb;
+declare hold_before jsonb;
+declare provider_before jsonb;
+declare notices_before jsonb;
+declare kind text;
+declare result jsonb;
+begin
+  select * into request_before from public.booking_requests where id=(select id from booking_request_lifecycle_target);
+  if request_before.status<>'accepted' then raise exception 'Accepted fixture is missing'; end if;
+  select to_jsonb(attempts) into attempt_before from public.booking_request_submission_attempts attempts where booking_request_id=request_before.id;
+  select to_jsonb(work) into capture_before from public.booking_request_capture_work work where booking_request_id=request_before.id;
+  select to_jsonb(holds) into hold_before from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id;
+  select jsonb_agg(to_jsonb(operations) order by id) into provider_before from public.payment_provider_operations operations;
+  select jsonb_agg(to_jsonb(notices) order by id) into notices_before from public.booking_request_status_notifications notices;
+  foreach kind in array array['customer','owner','cottage'] loop
+    result:=public.set_marketplace_suspension(kind,case kind when 'customer' then request_before.customer_user_id when 'owner' then request_before.owner_user_id else request_before.profile_id end,'suspend',case when kind='owner' then 2 else 0 end,'Accepted obligations remain authoritative',gen_random_uuid());
+    if result->>'status' is distinct from 'completed' then raise exception 'Restriction failed for %: %',kind,result; end if;
+  end loop;
+  if (select to_jsonb(requests) from public.booking_requests requests where id=request_before.id) is distinct from to_jsonb(request_before)
+    or (select to_jsonb(attempts) from public.booking_request_submission_attempts attempts where booking_request_id=request_before.id) is distinct from attempt_before
+    or (select to_jsonb(work) from public.booking_request_capture_work work where booking_request_id=request_before.id) is distinct from capture_before
+    or (select to_jsonb(holds) from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id) is distinct from hold_before
+    or (select jsonb_agg(to_jsonb(operations) order by id) from public.payment_provider_operations operations) is distinct from provider_before
+    or (select jsonb_agg(to_jsonb(notices) order by id) from public.booking_request_status_notifications notices) is distinct from notices_before
+    or exists(select 1 from public.booking_request_release_work where booking_request_id=request_before.id)
+  then raise exception 'Suspension rewrote the accepted obligation or started a release'; end if;
+end;
+$body$;
+$test$,'suspension_preserves_accepted_payment_obligation');
+rollback to savepoint suspension_preserves_acceptance;
+
 rollback to savepoint booking_request_owner_acceptance;
 
 savepoint booking_request_malformed_decline_reason;
@@ -5676,6 +5855,46 @@ from public.booking_request_release_work work
 join public.booking_requests requests on requests.id=work.booking_request_id
 where work.id=(select work_id from quarantine_snapshots);
 grant select on quarantine_history_expected to authenticated;
+savepoint suspension_preserves_quarantine;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000006220","role":"authenticated","aal":"aal2"}',true);
+select lives_ok($test$
+do $body$
+declare request_before public.booking_requests;
+declare work_before jsonb;
+declare attempt_before jsonb;
+declare hold_before jsonb;
+declare history_before jsonb;
+declare notices_before jsonb;
+declare kind text;
+declare target_id uuid;
+declare result jsonb;
+begin
+  select * into request_before from public.booking_requests where id=(select id from booking_request_lifecycle_target);
+  select to_jsonb(work) into work_before from public.booking_request_release_work work where booking_request_id=request_before.id;
+  if work_before->>'state'<>'quarantined' then raise exception 'Definitively refused release fixture is missing'; end if;
+  select to_jsonb(attempts) into attempt_before from public.booking_request_submission_attempts attempts where booking_request_id=request_before.id;
+  select to_jsonb(holds) into hold_before from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id;
+  select jsonb_agg(to_jsonb(history) order by id) into history_before from public.booking_request_payment_history history;
+  select jsonb_agg(to_jsonb(notices) order by id) into notices_before from public.booking_request_status_notifications notices;
+  foreach kind in array array['customer','cottage'] loop
+    target_id:=case kind when 'customer' then request_before.customer_user_id else request_before.profile_id end;
+    result:=public.set_marketplace_suspension(kind,target_id,'suspend',0,'Fictional quarantined request restriction',gen_random_uuid());
+    if result->>'status' is distinct from 'completed' then raise exception 'Quarantine restriction unavailable: %',result; end if;
+    result:=public.set_marketplace_suspension(kind,target_id,'reactivate',1,'Prospective restoration cannot resume quarantine',gen_random_uuid());
+    if result->>'status' is distinct from 'completed' then raise exception 'Prospective restoration unavailable: %',result; end if;
+  end loop;
+  if (select to_jsonb(requests) from public.booking_requests requests where id=request_before.id) is distinct from to_jsonb(request_before)
+    or (select to_jsonb(work) from public.booking_request_release_work work where booking_request_id=request_before.id) is distinct from work_before
+    or (select to_jsonb(attempts) from public.booking_request_submission_attempts attempts where booking_request_id=request_before.id) is distinct from attempt_before
+    or (select to_jsonb(holds) from public.cottage_booking_period_commitments holds where id=request_before.booking_period_commitment_id) is distinct from hold_before
+    or (select jsonb_agg(to_jsonb(history) order by id) from public.booking_request_payment_history history) is distinct from history_before
+    or (select jsonb_agg(to_jsonb(notices) order by id) from public.booking_request_status_notifications notices) is distinct from notices_before
+  then raise exception 'Restriction/restoration changed quarantined facts or invented completion'; end if;
+end;
+$body$;
+$test$,'suspension_and_reactivation_never_resume_quarantined_release');
+rollback to savepoint suspension_preserves_quarantine;
+
 select ok((select created_at<>quarantined_at from quarantine_history_expected),
   'ordinary release quarantine history fixture distinguishes creation from quarantine');
 select set_config('request.jwt.claims',
@@ -6362,9 +6581,11 @@ update public.booking_requests
 set created_at = timed.deadline - interval '4 hours',
   response_deadline = timed.deadline
 from (select clock_timestamp() as deadline) timed;
--- Two clock reads never agree on purpose, so this observer alone makes the action's one
--- clock read return the stored Response Deadline; the rollback restores the real clock.
+-- Pin both the action decision and extracted preparation clock at the Response Deadline;
+-- the savepoint rollback restores the real clocks.
 do $$begin execute replace(pg_get_functiondef('public.claim_booking_request_action(uuid,uuid,text,text,text)'::regprocedure),
+  'clock_timestamp()','target_request.response_deadline');end$$;
+do $$begin execute replace(pg_get_functiondef('private.prepare_booking_request_release(uuid,uuid,text,text,text,uuid)'::regprocedure),
   'clock_timestamp()','target_request.response_deadline');end$$;
 set local role service_role;
 select is(

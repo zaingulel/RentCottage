@@ -1565,3 +1565,15 @@ GRANT EXECUTE ON FUNCTION public.set_administrator_cottage_description_hidden(uu
 
 REVOKE ALL ON FUNCTION public.set_administrator_cottage_photo_hidden(uuid, uuid, uuid, boolean, text) FROM PUBLIC, anon, service_role;
 GRANT EXECUTE ON FUNCTION public.set_administrator_cottage_photo_hidden(uuid, uuid, uuid, boolean, text) TO authenticated;
+
+REVOKE ALL ON TABLE private.marketplace_suspension_actions FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION private.set_marketplace_suspension_core(text,uuid,text,bigint,text,uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.set_marketplace_suspension(text,uuid,text,bigint,text,uuid) FROM PUBLIC,anon,service_role;
+GRANT EXECUTE ON FUNCTION public.set_marketplace_suspension(text,uuid,text,bigint,text,uuid) TO authenticated;
+
+REVOKE ALL ON FUNCTION private.prepare_booking_request_release(uuid,uuid,text,text,text,uuid) FROM PUBLIC,anon,authenticated,service_role;
+
+REVOKE ALL ON FUNCTION private.prepare_owner_application_renewal(uuid,uuid,public.owner_verification_document_kind[]) FROM PUBLIC,anon,authenticated,service_role;
+
+REVOKE ALL ON FUNCTION public.get_marketplace_suspension(text,uuid,timestamptz,uuid,integer) FROM PUBLIC,anon,service_role;
+GRANT EXECUTE ON FUNCTION public.get_marketplace_suspension(text,uuid,timestamptz,uuid,integer) TO authenticated;

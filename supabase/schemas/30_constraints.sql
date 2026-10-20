@@ -1141,3 +1141,14 @@ ALTER TABLE ONLY public.customer_review_reply_hides ADD CONSTRAINT customer_revi
 ALTER TABLE ONLY public.customer_review_translations ADD CONSTRAINT customer_review_translations_review_id_fkey FOREIGN KEY (review_id) REFERENCES public.customer_reviews(id) ON DELETE RESTRICT;
 ALTER TABLE ONLY public.customer_review_translation_reports ADD CONSTRAINT customer_review_translation_reports_translation_id_fkey FOREIGN KEY (translation_id) REFERENCES public.customer_review_translations(id) ON DELETE RESTRICT;
 ALTER TABLE ONLY public.customer_review_translation_reports ADD CONSTRAINT customer_review_translation_reports_reporter_user_id_fkey FOREIGN KEY (reporter_user_id) REFERENCES auth.users(id) ON DELETE RESTRICT;
+
+ALTER TABLE public.account_contexts ADD CONSTRAINT account_suspension_revisions_nonnegative CHECK (customer_suspension_revision>=0 AND owner_suspension_revision>=0);
+ALTER TABLE private.marketplace_suspension_actions ADD CONSTRAINT marketplace_suspension_actions_pkey PRIMARY KEY(id);
+ALTER TABLE private.marketplace_suspension_actions ADD CONSTRAINT marketplace_suspension_actions_command_key UNIQUE(command_id);
+ALTER TABLE private.marketplace_suspension_actions ADD CONSTRAINT marketplace_suspension_actions_account_fkey FOREIGN KEY(account_user_id) REFERENCES public.account_contexts(user_id) ON DELETE RESTRICT;
+ALTER TABLE private.marketplace_suspension_actions ADD CONSTRAINT marketplace_suspension_actions_profile_fkey FOREIGN KEY(profile_id) REFERENCES public.owner_application_cottage_profiles(id) ON DELETE RESTRICT;
+
+ALTER TABLE public.booking_request_release_work ADD CONSTRAINT booking_request_release_work_suspension_action_fkey FOREIGN KEY(suspension_action_id) REFERENCES private.marketplace_suspension_actions(id) ON DELETE RESTRICT;
+
+ALTER TABLE public.owner_application_cottage_profiles ADD CONSTRAINT cottage_suspension_revision_nonnegative CHECK(suspension_revision>=0);
+ALTER TABLE public.owner_application_cottage_profiles ADD CONSTRAINT cottage_suspension_prior_listing_state CHECK(listing_state_before_suspension IS NULL OR listing_state_before_suspension IN ('published','paused'));

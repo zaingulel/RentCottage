@@ -64,3 +64,22 @@ and does not resolve quarantine. The existing authenticator-verified Platform Ad
 reason and actual quarantine time through its support-safe projection, without private provider payloads or
 customer details. There is no administrator resolution control or automatic resolution path. Fictional-provider
 tests establish this local contract, not live Licensed Payment Provider acceptance.
+
+## Marketplace activity suspension
+
+Follow the [approved suspension policy](https://github.com/zaingulel/RentCottage/issues/44#issuecomment-6279305845).
+Customer capability and Cottage Owner capability are independent. Restrict only the named capability or Cottage;
+do not turn customer suspension into a sign-in or history gate, or owner suspension into a customer gate.
+Existing confirmed participants retain their current access and cancellation rights. A separate Cottage
+restriction survives owner reactivation, and abandoned Cottage Profiles remain read-only under their separate
+restoration lifecycle.
+
+Only Booking Requests still pending an owner decision enter the existing authorization-release path when a
+restriction wins. An accepted request keeps its capture, Payment Required, recovery and expiry obligations;
+suspension does not reinterpret it as a decline, refund or cancellation. Reactivation is prospective and never
+reopens a resolved request or resumes quarantined release work.
+
+A completed restriction does not mean its affected money and inventory have been released. Processing and
+quarantined requests retain their Pending Hold until authoritative successful release permits finalization.
+Use persisted release counts and durable notification receipts, never provider acceptance or a command's
+success response, as proof of completion. Keep private administrator reasons out of customer status copy.

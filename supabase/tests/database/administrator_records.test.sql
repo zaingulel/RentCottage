@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(92);
+select plan(95);
 
 -- BEGIN ADMINISTRATOR RECORDS FIXTURE
 -- Fictional reserved 250 namespace. The local transaction rolls every row back.
@@ -311,5 +311,141 @@ select throws_ok($$select public.list_administrator_booking_money(null,'2026-09-
 select is(public.list_administrator_booking_money(null,'1990-01-01','1990-01-01'),'{"status":"ready","bookings":[],"missingPaymentEvidence":[]}'::jsonb,'administrator AAL2 reads an empty booking money selection as ready');
 reset role;
 select is((select array[provolatile::text,prosecdef::text] from pg_proc where oid='public.list_administrator_booking_money(text,date,date)'::regprocedure),array['s','true'],'booking money reader is a stable privileged read');
+
+select lives_ok($test$
+do $body$
+declare result jsonb;
+declare first_action uuid;
+begin
+  perform set_config('request.jwt.claims','{"sub":"25000000-0000-4000-8000-000000000201","role":"authenticated","aal":"aal1"}',true);
+  result := public.set_marketplace_suspension('customer','25000000-0000-4000-8000-000000000001','suspend',0,'Safety review','25000000-0000-4000-8000-000000000901');
+  if result->>'status' is distinct from 'access-required' then raise exception 'AAL1 reached suspension'; end if;
+  perform set_config('request.jwt.claims','{"sub":"25000000-0000-4000-8000-000000000201","role":"authenticated","aal":"aal2"}',true);
+  result := public.set_marketplace_suspension('customer','25000000-0000-4000-8000-000000000001','suspend',0,'  ','25000000-0000-4000-8000-000000000901');
+  if result->>'status' is distinct from 'invalid' then raise exception 'Blank reason reached suspension'; end if;
+  result := public.set_marketplace_suspension('customer','25000000-0000-4000-8000-000000000001','suspend',0,'  Safety review  ','25000000-0000-4000-8000-000000000901');
+  if result->>'status' is distinct from 'completed' then raise exception 'Authorized suspension did not complete: %',result; end if;
+  first_action := (result->>'actionId')::uuid;
+  if not exists(select 1 from public.account_contexts where user_id='25000000-0000-4000-8000-000000000001' and customer_suspended and customer_suspension_revision=1 and owner_suspension_revision=0) then raise exception 'Restriction/revision was not persisted'; end if;
+  if not exists(select 1 from private.marketplace_suspension_actions where id=first_action and command_id='25000000-0000-4000-8000-000000000901' and actor_user_id='25000000-0000-4000-8000-000000000201' and reason='Safety review' and expected_revision=0 and resulting_revision=1) then raise exception 'Attributed audit was not persisted'; end if;
+  result := public.set_marketplace_suspension('customer','25000000-0000-4000-8000-000000000001','suspend',0,'Safety review','25000000-0000-4000-8000-000000000901');
+  if result->>'status' is distinct from 'completed' or (result->>'actionId')::uuid is distinct from first_action or (select count(*) from private.marketplace_suspension_actions where command_id='25000000-0000-4000-8000-000000000901')<>1 then raise exception 'Replay duplicated suspension'; end if;
+  result := public.set_marketplace_suspension('customer','25000000-0000-4000-8000-000000000001','suspend',0,'Changed intent','25000000-0000-4000-8000-000000000901');
+  if result->>'status' is distinct from 'conflict' then raise exception 'Changed replay was accepted'; end if;
+  result := public.set_marketplace_suspension('customer','25000000-0000-4000-8000-000000000001','reactivate',1,'Review complete','25000000-0000-4000-8000-000000000902');
+  if result->>'status' is distinct from 'completed' or not exists(select 1 from public.account_contexts where user_id='25000000-0000-4000-8000-000000000001' and not customer_suspended and customer_suspension_revision=2) then raise exception 'Reactivation did not preserve revision fencing'; end if;
+end;
+$body$;
+$test$,'suspension_is_one_attributed_transition');
+
+select lives_ok($test$
+do $body$
+declare claims text;
+declare invalid_reason text;
+declare result jsonb;
+declare before_target jsonb;
+declare before_actions jsonb;
+declare page jsonb;
+declare cursor jsonb;
+declare api_role text;
+begin
+  select to_jsonb(contexts) into before_target from public.account_contexts contexts where user_id='25000000-0000-4000-8000-000000000002';
+  select coalesce(jsonb_agg(to_jsonb(actions) order by id),'[]') into before_actions from private.marketplace_suspension_actions actions;
+  for claims in select unnest(array[
+    '{}',
+    '{"sub":"25000000-0000-4000-8000-000000000201","aal":"aal1"}',
+    '{"sub":"25000000-0000-4000-8000-000000000202","aal":"aal2"}',
+    '{"sub":"25000000-0000-4000-8000-000000000001","aal":"aal2"}',
+    '{"sub":"25000000-0000-4000-8000-000000000101","aal":"aal2"}'
+  ]) loop
+    perform set_config('request.jwt.claims',claims,true);
+    result:=public.set_marketplace_suspension('customer','25000000-0000-4000-8000-000000000002','suspend',0,'Required reason',gen_random_uuid());
+    if result->>'status' is distinct from 'access-required' or public.get_marketplace_suspension('customer','25000000-0000-4000-8000-000000000002')->>'status' is distinct from 'access-required' then raise exception 'Non-current AAL2 administrator reached suspension'; end if;
+  end loop;
+  perform set_config('request.jwt.claims','{"sub":"25000000-0000-4000-8000-000000000201","aal":"aal2"}',true);
+  for invalid_reason in select unnest(array[null::text,'','   ',E'\t\r\n',repeat('س',1001)]) loop
+    result:=public.set_marketplace_suspension('customer','25000000-0000-4000-8000-000000000002','suspend',0,invalid_reason,gen_random_uuid());
+    if result->>'status' is distinct from 'invalid' then raise exception 'Blank/overlong reason was accepted'; end if;
+  end loop;
+  if public.set_marketplace_suspension('staff','25000000-0000-4000-8000-000000000002','suspend',0,'Reason',gen_random_uuid())->>'status' is distinct from 'invalid'
+    or public.set_marketplace_suspension('customer','25000000-0000-4000-8000-000000000002','delete',0,'Reason',gen_random_uuid())->>'status' is distinct from 'invalid'
+    or public.set_marketplace_suspension('customer','25000000-0000-4000-8000-000000000002','suspend',-1,'Reason',gen_random_uuid())->>'status' is distinct from 'invalid'
+    or public.set_marketplace_suspension('customer','25000000-0000-4000-8000-000000000201','suspend',0,'Reason',gen_random_uuid())->>'status' is distinct from 'not-found'
+    or public.set_marketplace_suspension('customer','25000000-0000-4000-8000-000000000001','suspend',0,'Stale revision',gen_random_uuid())->>'status' is distinct from 'conflict' then raise exception 'Invalid target/action/revision boundary failed'; end if;
+  begin
+    perform public.set_marketplace_suspension('customer','not-a-uuid'::uuid,'suspend',0,'Reason',gen_random_uuid());
+    raise exception 'Malformed UUID accepted';
+  exception when invalid_text_representation then null;
+  end;
+  if public.get_marketplace_suspension('customer','25000000-0000-4000-8000-000000000001',clock_timestamp(),null,20)->>'status' is distinct from 'invalid'
+    or public.get_marketplace_suspension('customer','25000000-0000-4000-8000-000000000001',null,null,0)->>'status' is distinct from 'invalid'
+    or public.get_marketplace_suspension('customer','25000000-0000-4000-8000-000000000001',null,null,51)->>'status' is distinct from 'invalid' then raise exception 'Invalid cursor/limit accepted'; end if;
+  page:=public.get_marketplace_suspension('customer','25000000-0000-4000-8000-000000000001',null,null,1);
+  cursor:=page->'nextCursor';
+  if page->>'state' is distinct from 'active' or page->>'revision' is distinct from '2' or page->'releaseSummary' is distinct from '{"affected":0,"resolved":0,"processing":0,"quarantined":0}'::jsonb or jsonb_array_length(page->'actions')<>1 or page#>>'{actions,0,action}' is distinct from 'reactivate' or cursor='null'::jsonb then raise exception 'Current target/first history page incorrect: %',page; end if;
+  page:=public.get_marketplace_suspension('customer','25000000-0000-4000-8000-000000000001',(cursor->>'createdAt')::timestamptz,(cursor->>'id')::uuid,1);
+  if jsonb_array_length(page->'actions')<>1 or page#>>'{actions,0,action}' is distinct from 'suspend' or page->'nextCursor' is distinct from 'null'::jsonb then raise exception 'History cursor skipped/repeated immutable action'; end if;
+  foreach api_role in array array['anon','authenticated','service_role'] loop
+    if has_table_privilege(api_role,'private.marketplace_suspension_actions','SELECT,INSERT,UPDATE,DELETE') or has_function_privilege(api_role,'private.set_marketplace_suspension_core(text,uuid,text,bigint,text,uuid)','EXECUTE') or has_function_privilege(api_role,'private.prepare_booking_request_release(uuid,uuid,text,text,text,uuid)','EXECUTE') then raise exception 'API role has private audit/helper privilege'; end if;
+  end loop;
+  if (select to_jsonb(contexts) from public.account_contexts contexts where user_id='25000000-0000-4000-8000-000000000002') is distinct from before_target or (select coalesce(jsonb_agg(to_jsonb(actions) order by id),'[]') from private.marketplace_suspension_actions actions) is distinct from before_actions then raise exception 'Refused command changed persisted facts'; end if;
+end;
+$body$;
+$test$,'suspension_requires_current_aal2_and_reason');
+
+-- Fictional submitted evidence follows the owner-review fixture, then actual approval owns the state.
+insert into auth.users(id,aud,role,phone,phone_confirmed_at) values('25000000-0000-4000-8000-000000000109','authenticated','authenticated','+9647510000109',now());
+insert into public.account_contexts(user_id,role,owner_approval_state) values('25000000-0000-4000-8000-000000000109','cottage_owner','prospective');
+insert into public.owner_applications(id,owner_user_id,applicant_kind,legal_name,status,submitted_at,review_started_at,review_due_at) values('25000000-0000-4000-8000-000000000309','25000000-0000-4000-8000-000000000109','individual','Fictional Suspension Owner','submitted',now(),now(),now()+interval '72 hours');
+insert into public.owner_verification_documents(id,application_id,kind,object_path,original_filename,media_type,size_bytes) values('25000000-0000-4000-8000-000000000419','25000000-0000-4000-8000-000000000309','identity','fictional/suspension/identity.pdf','identity.pdf','application/pdf',128);
+update public.owner_verification_documents set content_digest=repeat('c',64),digest_source='sha256' where id='25000000-0000-4000-8000-000000000419';
+select set_config('request.jwt.claims','{"sub":"25000000-0000-4000-8000-000000000201","role":"authenticated","aal":"aal2"}',true);
+select public.review_owner_application('25000000-0000-4000-8000-000000000309',1,'approve','Fictional content-bound evidence accepted','{}','{}','Erbil','licence','Fictional licence',jsonb_build_object('identity',(current_date+365)::text));
+select set_config('request.jwt.claims','{"sub":"25000000-0000-4000-8000-000000000109","role":"authenticated","aal":"aal1"}',true);
+create temporary table abandoned_suspension_targets as
+select (public.create_owner_cottage_profile_draft()).id as id, false as was_suspended
+union all select (public.create_owner_cottage_profile_draft()).id,true;
+select set_config('request.jwt.claims','{"sub":"25000000-0000-4000-8000-000000000201","role":"authenticated","aal":"aal2"}',true);
+select public.set_marketplace_suspension('cottage',id,'suspend',0,'Fictional safety restriction','25000000-0000-4000-8000-000000000919') from abandoned_suspension_targets where was_suspended;
+select public.abandon_administrator_cottage_profile_draft(targets.id,profiles.version,'Fictional abandoned target') from abandoned_suspension_targets targets join public.owner_application_cottage_profiles profiles on profiles.id=targets.id;
+create temporary table abandoned_suspension_before as select profiles.id,to_jsonb(profiles) as row from public.owner_application_cottage_profiles profiles join abandoned_suspension_targets targets on targets.id=profiles.id;
+select lives_ok($test$
+do $body$
+declare candidate record;
+declare result jsonb;
+declare summary jsonb;
+declare action_count bigint;
+declare release_count bigint;
+declare notice_count bigint;
+begin
+  select count(*) into action_count from private.marketplace_suspension_actions;
+  select count(*) into release_count from public.booking_request_release_work;
+  select count(*) into notice_count from public.booking_request_status_notifications;
+  for candidate in select * from abandoned_suspension_targets loop
+    result:=public.set_marketplace_suspension('cottage',candidate.id,'suspend',case when candidate.was_suspended then 1 else 0 end,'No abandoned mutation',gen_random_uuid());
+    if result is distinct from '{"status":"conflict","reason":"abandoned-profile"}'::jsonb then raise exception 'Abandoned suspend returned %',result; end if;
+    result:=public.set_marketplace_suspension('cottage',candidate.id,'reactivate',case when candidate.was_suspended then 1 else 0 end,'No abandoned restoration',gen_random_uuid());
+    if result is distinct from '{"status":"conflict","reason":"abandoned-profile"}'::jsonb then raise exception 'Abandoned reactivate returned %',result; end if;
+    summary:=public.get_marketplace_suspension('cottage',candidate.id);
+    if summary->>'status' is distinct from 'ready' or summary->>'restrictionReason' is distinct from 'abandoned-profile' or summary->'canSuspend' is distinct from 'false'::jsonb or summary->'canReactivate' is distinct from 'false'::jsonb or (summary->>'revision')::integer<>(case when candidate.was_suspended then 1 else 0 end) or jsonb_array_length(summary->'actions')<>(case when candidate.was_suspended then 1 else 0 end) then raise exception 'Abandoned reader lost restriction/history or enabled action: %',summary; end if;
+    if candidate.was_suspended then
+      result:=public.set_marketplace_suspension('cottage',candidate.id,'suspend',0,'Fictional safety restriction','25000000-0000-4000-8000-000000000919');
+      if result->>'status' is distinct from 'completed' or result#>>'{target,restrictionReason}' is distinct from 'abandoned-profile' then raise exception 'Completed replay did not retain fresh ineligibility'; end if;
+    end if;
+    begin
+      update public.owner_application_cottage_profiles set business_suspended=not business_suspended where id=candidate.id;
+      raise exception 'Abandoned trigger permitted direct restriction mutation';
+    exception when sqlstate 'RC202' then null;
+    end;
+  end loop;
+  if (select count(*) from private.marketplace_suspension_actions)<>action_count or (select count(*) from public.booking_request_release_work)<>release_count or (select count(*) from public.booking_request_status_notifications)<>notice_count then raise exception 'Abandoned command created new action/work/notice'; end if;
+  result:=public.set_marketplace_suspension('owner','25000000-0000-4000-8000-000000000109','suspend',2,'Fictional owner restriction','25000000-0000-4000-8000-000000000929');
+  if result->>'status' is distinct from 'completed' then raise exception 'Owner-wide suspension unavailable'; end if;
+  result:=public.set_marketplace_suspension('owner','25000000-0000-4000-8000-000000000109','reactivate',3,'Fictional owner restoration','25000000-0000-4000-8000-000000000930');
+  if result->>'status' is distinct from 'completed' then raise exception 'Verified owner-wide restoration unavailable'; end if;
+  if exists(select 1 from abandoned_suspension_before saved join public.owner_application_cottage_profiles profiles on profiles.id=saved.id where to_jsonb(profiles) is distinct from saved.row) or exists(select 1 from public.cottage_marketplace_listings listings join abandoned_suspension_targets targets on targets.id=listings.profile_id) then raise exception 'Abandoned target facts changed'; end if;
+end;
+$body$;
+$test$,'abandoned_cottage_suspension_is_ineligible');
 select * from finish();
 rollback;

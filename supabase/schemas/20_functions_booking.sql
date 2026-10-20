@@ -1467,7 +1467,6 @@ declare target_attempt public.booking_request_submission_attempts;
 declare work public.booking_request_release_work;
 declare authorization_claim public.booking_request_authorization_claims;
 declare effective_action text;
-declare outcome text;
 declare evaluated_at timestamptz;
 declare normalized_note text := nullif(btrim(target_decline_note), '');
 declare fingerprint text;
@@ -1477,7 +1476,8 @@ begin
   end if;
   select * into target_request from public.booking_requests requests
   where requests.id = target_booking_request_id for update;
-  if not found then return jsonb_build_object('status', 'access-required'); end if;
+  if not found then
+    return jsonb_build_object('status', 'access-required'); end if;
 
   if target_action not in ('accept', 'decline', 'withdraw') then
     return jsonb_build_object('status', 'access-required');
@@ -1536,7 +1536,8 @@ begin
     target_decline_reason is null
     or char_length(coalesce(normalized_note, '')) > 500
     or not public.booking_request_content_is_safe(coalesce(normalized_note, ''))
-  ) then return jsonb_build_object('status', 'invalid'); end if;
+  ) then
+    return jsonb_build_object('status', 'invalid'); end if;
 
   if effective_action = 'accept' then
     update public.booking_requests set status = 'accepted',
@@ -1588,35 +1589,7 @@ begin
     );
   end if;
 
-  outcome := case effective_action
-    when 'decline' then 'declined'
-    when 'withdraw' then 'withdrawn'
-    else 'expired'
-  end;
-  select * into target_attempt from public.booking_request_submission_attempts attempts
-  where attempts.booking_request_id = target_request.id for update;
-  fingerprint := encode(extensions.digest(convert_to(jsonb_build_object(
-    'bookingRequestId', target_request.id,
-    'outcome', outcome,
-    'actorUserId', case when effective_action = 'expire' then null else target_actor_user_id end,
-    'declineReason', case when outcome = 'declined' then target_decline_reason else null end,
-    'declineNote', case when outcome = 'declined' then normalized_note else null end
-  )::text, 'UTF8'), 'sha256'), 'hex');
-  insert into public.booking_request_release_work (
-    booking_request_id, attempt_id, outcome, actor_user_id,
-    decline_reason, decline_note, outcome_fingerprint, created_at
-  ) values (
-    target_request.id, target_attempt.id, outcome,
-    case when effective_action = 'expire' then null else target_actor_user_id end,
-    case when outcome = 'declined' then target_decline_reason end,
-    case when outcome = 'declined' then normalized_note end,
-    fingerprint, evaluated_at
-  ) returning * into work;
-  update public.booking_requests set status = 'processing',
-    outcome_actor_user_id = work.actor_user_id,
-    decline_reason = work.decline_reason, decline_note = work.decline_note,
-    outcome_fingerprint = work.outcome_fingerprint
-  where id = target_request.id;
+  work := private.prepare_booking_request_release(target_request.id,target_actor_user_id,effective_action,target_decline_reason,normalized_note,null);
   return public.lease_booking_request_release_work(work.id);
 end;
 $$;
@@ -1628,16 +1601,15 @@ CREATE OR REPLACE FUNCTION "public"."claim_booking_request_expiry"("target_booki
     SET "search_path" TO ''
     AS $$
 declare target_request public.booking_requests;
-declare target_attempt public.booking_request_submission_attempts;
 declare work public.booking_request_release_work;
 declare evaluated_at timestamptz;
-declare fingerprint text;
 begin
   select * into target_request
   from public.booking_requests requests
   where requests.id = target_booking_request_id
   for update;
-  if not found then return jsonb_build_object('status', 'access-required'); end if;
+  if not found then
+    return jsonb_build_object('status', 'access-required'); end if;
   if target_request.status = 'processing' then
     select * into work from public.booking_request_release_work release_work
     where release_work.booking_request_id = target_request.id;
@@ -1654,27 +1626,7 @@ begin
       or evaluated_at < target_request.response_deadline then
     return jsonb_build_object('status', 'not-due');
   end if;
-  select * into target_attempt from public.booking_request_submission_attempts attempts
-  where attempts.booking_request_id = target_request.id for update;
-  fingerprint := encode(extensions.digest(convert_to(jsonb_build_object(
-    'bookingRequestId', target_request.id,
-    'outcome', 'expired',
-    'actorUserId', null,
-    'declineReason', null,
-    'declineNote', null
-  )::text, 'UTF8'), 'sha256'), 'hex');
-  insert into public.booking_request_release_work (
-    booking_request_id, attempt_id, outcome, actor_user_id,
-    decline_reason, decline_note, outcome_fingerprint, created_at
-  ) values (
-    target_request.id, target_attempt.id, 'expired', null,
-    null, null, fingerprint, evaluated_at
-  ) returning * into work;
-  update public.booking_requests set status = 'processing',
-    outcome_actor_user_id = null,
-    decline_reason = null, decline_note = null,
-    outcome_fingerprint = work.outcome_fingerprint
-  where id = target_request.id;
+  work := private.prepare_booking_request_release(target_request.id,null,'expire',null,null,null);
   return public.lease_booking_request_release_work(work.id);
 end;
 $$;
@@ -8315,3 +8267,92 @@ $$;
 
 ALTER FUNCTION public.quarantine_booking_request_release_work(uuid) OWNER TO postgres;
 ALTER FUNCTION public.record_booking_request_release_observation(uuid,jsonb,boolean) OWNER TO postgres;
+CREATE OR REPLACE FUNCTION private.prepare_booking_request_release(
+  target_request_id uuid,
+  target_actor_id uuid,
+  requested_action text,
+  target_decline_reason text,
+  target_decline_note text,
+  target_suspension_action_id uuid
+) RETURNS public.booking_request_release_work
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+declare target_request public.booking_requests;
+declare target_attempt public.booking_request_submission_attempts;
+declare action private.marketplace_suspension_actions;
+declare work public.booking_request_release_work;
+declare evaluated_at timestamptz;
+declare effective_action text;
+declare outcome text;
+declare normalized_note text:=nullif(btrim(target_decline_note),'');
+declare fingerprint_payload jsonb;
+begin
+  select * into target_request from public.booking_requests
+  where id=target_request_id for update;
+  if not found or target_request.status<>'pending' then
+    raise exception 'Pending Booking Request is unavailable' using errcode='RC409';
+  end if;
+  select * into target_attempt from public.booking_request_submission_attempts
+  where booking_request_id=target_request.id for update;
+  if not found
+    or target_attempt.customer_user_id<>target_request.customer_user_id
+    or target_attempt.profile_id<>target_request.profile_id then
+    raise exception 'Booking Request release binding is unavailable' using errcode='RC409';
+  end if;
+  if target_suspension_action_id is not null then
+    select * into action from private.marketplace_suspension_actions
+    where id=target_suspension_action_id;
+    if not found
+      or requested_action is distinct from 'suspend'
+      or action.action<>'suspend'
+      or action.actor_user_id is distinct from target_actor_id
+      or target_actor_id is distinct from (select auth.uid())
+      or public.is_platform_administrator('aal2') is not true
+      or not (
+        (action.target_kind='customer' and action.account_user_id=target_request.customer_user_id)
+        or (action.target_kind='owner' and action.account_user_id=target_request.owner_user_id)
+        or (action.target_kind='cottage' and action.profile_id=target_request.profile_id)
+      ) then
+      raise exception 'Suspension release scope is invalid' using errcode='42501';
+    end if;
+  elsif requested_action is null or requested_action not in ('decline','withdraw','expire') then
+    raise exception 'Booking Request release action is invalid' using errcode='22023';
+  end if;
+  evaluated_at:=clock_timestamp();
+  effective_action:=case
+    when target_suspension_action_id is not null and evaluated_at>=target_request.response_deadline
+      then 'expire'
+    when requested_action='suspend' then 'decline'
+    else requested_action end;
+  outcome:=case effective_action when 'decline' then 'declined' when 'withdraw' then 'withdrawn' else 'expired' end;
+  if target_suspension_action_id is not null then
+    target_decline_reason:='other';
+    normalized_note:=null;
+  end if;
+  fingerprint_payload:=jsonb_build_object(
+    'bookingRequestId', target_request.id, 'outcome', outcome,
+    'actorUserId', case when effective_action='expire' then null else target_actor_id end,
+    'declineReason', case when outcome='declined' then target_decline_reason end,
+    'declineNote', case when outcome='declined' then normalized_note end
+  );
+  if target_suspension_action_id is not null then
+    fingerprint_payload:=fingerprint_payload||jsonb_build_object('suspensionActionId', target_suspension_action_id);
+  end if;
+  insert into public.booking_request_release_work(
+    booking_request_id, attempt_id, outcome, actor_user_id, decline_reason,
+    decline_note, outcome_fingerprint, created_at, suspension_action_id
+  ) values(
+    target_request.id, target_attempt.id, outcome,
+    case when effective_action='expire' then null else target_actor_id end,
+    case when outcome='declined' then target_decline_reason end,
+    case when outcome='declined' then normalized_note end,
+    encode(extensions.digest(convert_to(fingerprint_payload::text,'UTF8'),'sha256'),'hex'),
+    evaluated_at, target_suspension_action_id
+  ) returning * into work;
+  update public.booking_requests set status='processing',
+    outcome_actor_user_id=work.actor_user_id, decline_reason=work.decline_reason,
+    decline_note=work.decline_note, outcome_fingerprint=work.outcome_fingerprint
+  where id=target_request.id;
+  return work;
+end;
+$$;
+ALTER FUNCTION private.prepare_booking_request_release(uuid, uuid, text, text, text, uuid) OWNER TO postgres;
