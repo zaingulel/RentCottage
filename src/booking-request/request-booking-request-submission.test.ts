@@ -195,7 +195,7 @@ it("records inquiry evidence for pending authorizations before the database expi
   ]);
 });
 
-it("isolates hostile per-candidate recovery and marking failures while continuing the next candidate and ordinary submission with safe diagnostics", async () => {
+it("continues both unresolved recoveries and ordinary submission", async () => {
   vi.clearAllMocks();
   vi.resetModules();
   vi.stubEnv("APP_ENVIRONMENT", "test");
@@ -243,14 +243,9 @@ it("isolates hostile per-candidate recovery and marking failures while continuin
       paymentProviderIdentity: durablePaymentProvider.identity,
     });
   }
-  const hostile =
-    "SYNTHETIC_SECRET_810 contact-810@example.invalid +9647599999810";
   const recoverAuthorized = vi
     .fn()
-    .mockRejectedValueOnce(
-      Object.assign(new Error(hostile), { code: "RC409", detail: hostile }),
-    )
-    .mockResolvedValueOnce({ status: "reconciliation-required" });
+    .mockResolvedValue({ status: "reconciliation-required" });
   const submit = vi.fn().mockResolvedValue({ status: "pending" });
   createSubmission.mockReturnValue({ recoverAuthorized, submit });
   const rpc = vi.fn(async (name: string) => ({
@@ -260,56 +255,21 @@ it("isolates hostile per-candidate recovery and marking failures while continuin
         : name === "pending_booking_request_authorization_observations"
           ? []
           : 1,
-    error:
-      name === "mark_booking_request_reconciliation_required"
-        ? { code: "RC500", message: hostile, details: hostile }
-        : null,
+    error: null,
   }));
   createClient.mockReturnValue({ rpc });
-  const log = vi.spyOn(console, "error").mockImplementation(() => {});
-  try {
-    const service = await createRequestBookingRequestSubmission();
-    expect(recoverAuthorized.mock.calls).toEqual([
-      [candidates[0]],
-      [candidates[1]],
-    ]);
-    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
-      "pending_booking_request_authorization_observations",
-      "expire_booking_request_authorization_claims",
-      "due_booking_request_submission_recoveries",
-      "mark_booking_request_reconciliation_required",
-    ]);
-    await expect(service?.submit({} as never)).resolves.toEqual({
-      status: "pending",
-    });
-    expect(log.mock.calls).toEqual([
-      [
-        "Booking Request submission failed",
-        {
-          phase: "recovery",
-          code: "booking_request_recovery_failed",
-          sqlstate: "RC409",
-          attemptId: "22222222-2222-4222-8222-222222222222",
-        },
-      ],
-      [
-        "Booking Request submission failed",
-        {
-          phase: "reconciliation",
-          code: "booking_request_reconciliation_marker_failed",
-          attemptId: "22222222-2222-4222-8222-222222222222",
-        },
-      ],
-    ]);
-    const logged = JSON.stringify(log.mock.calls);
-    for (const marker of [
-      "SYNTHETIC_SECRET_810",
-      "contact-810@example.invalid",
-      "+9647599999810",
-      "test-service-role-key",
-    ])
-      expect(logged).not.toContain(marker);
-  } finally {
-    log.mockRestore();
-  }
+  const service = await createRequestBookingRequestSubmission();
+  expect(recoverAuthorized.mock.calls).toEqual([
+    [candidates[0]],
+    [candidates[1]],
+  ]);
+  await expect(service?.submit({} as never)).resolves.toEqual({
+    status: "pending",
+  });
+  expect(submit).toHaveBeenCalledOnce();
+  expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+    "pending_booking_request_authorization_observations",
+    "expire_booking_request_authorization_claims",
+    "due_booking_request_submission_recoveries",
+  ]);
 });

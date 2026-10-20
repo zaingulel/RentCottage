@@ -117,20 +117,38 @@ describe("BookingRequestSubmission", () => {
           paymentProvider: originalProvider,
         }),
       ).submit(input);
-      const lookup =
+      const lookup = {
+        status: "pending" as const,
+        bookingRequestReference: "RC-REQ-20990821-0001",
+        responseDeadline: "2099-08-21T21:00:00.000Z",
+      };
+      const hostile =
+        "SYNTHETIC_SECRET_810 contact-810@example.invalid +9647599999810";
+      const reject = async () => {
+        throw Object.assign(new Error(hostile), {
+          code: "RC409",
+          detail: hostile,
+        });
+      };
+      const repository =
         status === "pending"
-          ? {
-              status: "pending" as const,
-              bookingRequestReference: "RC-REQ-20990821-0001",
-              responseDeadline: "2099-08-21T21:00:00.000Z",
-            }
-          : { status: "unknown" as const };
-      const repository = repositoryWithFinalizationFailure(async () => lookup);
+          ? repositoryWithFinalizationFailure(async () => lookup)
+          : {
+              ...repositoryReturning(),
+              finalize: reject,
+              lookup: reject,
+              markReconciliationRequired: reject,
+            };
       const provider = new PaymentSimulator({
         now: () => "2099-08-21T17:05:00.000Z",
       });
+      const record = vi.fn();
       const result = await createBookingRequestSubmission(
-        withRecordedProviderResults({ repository, paymentProvider: provider }),
+        withRecordedProviderResults({
+          repository,
+          paymentProvider: provider,
+          diagnostics: { record },
+        }),
       ).recoverAuthorized({
         ...readyAttempt(),
         bookingPriceFils: 100_003_000,
@@ -145,6 +163,27 @@ describe("BookingRequestSubmission", () => {
       );
       expect(provider.requests).toHaveLength(0);
       expect(provider.queries).toHaveLength(0);
+      expect(record.mock.calls).toEqual(
+        (status === "pending"
+          ? ["booking_request_finalization_failed"]
+          : [
+              "booking_request_finalization_failed",
+              "booking_request_lookup_failed",
+              "booking_request_lookup_unknown",
+              "booking_request_reconciliation_marker_failed",
+            ]
+        ).map((code) => [
+          { code, attemptId: "22222222-2222-4222-8222-222222222222" },
+        ]),
+      );
+      const recorded = JSON.stringify(record.mock.calls);
+      for (const marker of [
+        "SYNTHETIC_SECRET_810",
+        "contact-810@example.invalid",
+        "+9647599999810",
+        "RC409",
+      ])
+        expect(recorded).not.toContain(marker);
     },
   );
 
