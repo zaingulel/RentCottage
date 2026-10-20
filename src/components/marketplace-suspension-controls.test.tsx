@@ -445,8 +445,6 @@ describe("marketplace suspension controls", () => {
           state: restoredState,
           canSuspend: true,
           canReactivate: false,
-          restorationState: null,
-          restorationRestriction: null,
         },
       });
       render(
@@ -475,6 +473,23 @@ describe("marketplace suspension controls", () => {
       expect(
         screen.getByText(label, { selector: ".status-badge" }),
       ).toBeVisible();
+      expect(
+        screen.queryByText(/^Eligible restoration:/),
+      ).not.toBeInTheDocument();
+      if (restoredState === "expired") {
+        expect(
+          screen.getByText(
+            "Verification has expired. Existing renewal review is required before new owner business.",
+          ),
+        ).toBeVisible();
+      }
+      if (restoredState === "paused") {
+        expect(
+          screen.getByText(
+            "The listing was paused before suspension and will remain paused.",
+          ),
+        ).toBeVisible();
+      }
       expect(setMarketplaceSuspension).toHaveBeenCalledWith(
         expect.objectContaining({
           action: "reactivate",
@@ -944,5 +959,91 @@ describe("marketplace suspension controls", () => {
         "Last loaded restriction and history are shown; current information is unavailable.",
       ),
     ).toBeVisible();
+  });
+  it.each([
+    ["en", "Published", "Eligible restoration:"],
+    ["ar", "منشور", "الاستعادة المؤهلة:"],
+    ["ckb", "بڵاوکراوە", "گەڕاندنەوەی شایستە:"],
+  ] as const)(
+    "does not forecast restoration for an untouched published cottage in %s",
+    (locale, currentLabel, forecastLabel) => {
+      render(
+        <MarketplaceSuspensionControls
+          locale={locale}
+          target={{ ...target, kind: "cottage" }}
+          initial={{
+            ...initial,
+            targetKind: "cottage",
+            state: "published",
+            restorationState: "unpublished",
+          }}
+        />,
+      );
+      expect(
+        screen.getByText(currentLabel, { selector: ".status-badge" }),
+      ).toBeVisible();
+      expect(
+        screen.queryByText((text) => text.startsWith(forecastLabel)),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it("keeps restoration guidance visible for a suspended cottage whose reactivation is blocked", () => {
+    render(
+      <MarketplaceSuspensionControls
+        locale="en"
+        target={{ ...target, kind: "cottage" }}
+        initial={{
+          ...suspended,
+          targetKind: "cottage",
+          canSuspend: false,
+          canReactivate: false,
+          restrictionReason: "abandoned-profile",
+          restorationState: "paused",
+          restorationRestriction: "previously-paused",
+          actions: [],
+        }}
+      />,
+    );
+    expect(
+      screen.getByText("Suspended", { selector: ".status-badge" }),
+    ).toBeVisible();
+    expect(screen.getByText("Eligible restoration: Paused")).toBeVisible();
+    expect(
+      screen.getByText(
+        "The listing was paused before suspension and will remain paused.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Reactivate eligible activity" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("suppresses a stored restoration limitation on a currently published cottage", () => {
+    render(
+      <MarketplaceSuspensionControls
+        locale="en"
+        target={{ ...target, kind: "cottage" }}
+        initial={{
+          ...initial,
+          targetKind: "cottage",
+          state: "published",
+          revision: 2,
+          restorationState: "paused",
+          restorationRestriction: "publication-or-owner-ineligible",
+        }}
+      />,
+    );
+    expect(
+      screen.getByText("Published", { selector: ".status-badge" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(
+        "Publication, schedule or owner eligibility does not permit a published listing.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/^Eligible restoration:/),
+    ).not.toBeInTheDocument();
   });
 });

@@ -209,12 +209,17 @@ export function MarketplaceSuspensionControls({
               {copy.reviewApplication}
             </ActionLink>
           ) : null}
-          {snapshot.restorationState ? (
+          {snapshot.state === "suspended" && snapshot.restorationState ? (
             <p>
               {copy.restoration}: {copy.states[snapshot.restorationState]}
             </p>
           ) : null}
-          {snapshot.restorationRestriction ? (
+          {snapshot.restorationRestriction &&
+          (snapshot.state === "suspended" ||
+            (snapshot.state === "paused" &&
+              snapshot.restorationState === "paused") ||
+            (snapshot.state === "expired" &&
+              snapshot.restorationState === "expired")) ? (
             <p>
               {copy.restorationRestrictions[snapshot.restorationRestriction]}
             </p>
