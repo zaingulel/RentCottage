@@ -44,7 +44,7 @@ import { PhoneAccessForm } from "./phone-access-form";
 describe("access forms", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("restores owned focus to the next local access step without reclaiming departed focus", async () => {
+  it("restores owned phone-request focus to the code step without reclaiming departed focus", async () => {
     let resolveRequest!: (value: {
       status: "code_sent" | "invalid_phone";
     }) => void;
@@ -88,7 +88,12 @@ describe("access forms", () => {
     expect(screen.getByLabelText("Verification code")).not.toHaveFocus();
     expect(document.body).toHaveFocus();
     departedView.unmount();
+    expect(replace).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
 
+  it("restores owned focus after authenticated phone verification ends unavailable without reclaiming departed focus", async () => {
+    const user = userEvent.setup();
     requestPhone.mockResolvedValue({ status: "code_sent" });
     let resolveVerification!: (value: { status: "authenticated" }) => void;
     let resolveCompletion!: (value: { status: "unavailable" }) => void;
@@ -136,7 +141,12 @@ describe("access forms", () => {
       }
       completionView.unmount();
     }
+    expect(replace).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
 
+  it("restores owned administrator focus after an expired challenge and after authentication", async () => {
+    const user = userEvent.setup();
     let resolveSignIn!: (value: {
       status: "challenge_required";
       factorId: string;
