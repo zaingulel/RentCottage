@@ -247,6 +247,33 @@ select ok(not (select messages.contact_protected
   join public.messaging_send_attempts attempts on attempts.id=messages.send_attempt_id
   where attempts.command_id='36000000-0000-4000-8000-000000001002'),
   'a paid message permanently records that contact protection was lifted at admission');
+insert into public.cottage_shift_schedule_revisions(id,profile_id,revision,full_day_bundle_id) values('30000000-0000-4000-8000-000000003801','20000000-0000-4000-8000-000000001001',2,'31000000-0000-4000-8000-000000003801');
+select set_config('rentcottage.shift_schedule_write_revision_id','30000000-0000-4000-8000-000000003801',true);
+insert into public.cottage_shifts(id,schedule_revision_id,position,name,start_time,end_time) values
+('32000000-0000-4000-8000-000000003801','30000000-0000-4000-8000-000000003801',1,'Changed Morning','09:00','13:00'),
+('32000000-0000-4000-8000-000000003802','30000000-0000-4000-8000-000000003801',2,'Changed Evening','15:00','19:00');
+select set_config('rentcottage.shift_schedule_write_revision_id','',true);
+update public.owner_application_cottage_profiles set current_shift_schedule_id='30000000-0000-4000-8000-000000003801' where id='20000000-0000-4000-8000-000000001001';
+insert into public.cottage_profile_source_revisions(id,profile_id,owner_user_id,source_language,description,house_rules,revision)
+select '26000000-0000-4000-8000-000000001001',id,owner_user_id,source_language,description,house_rules,1
+from public.owner_application_cottage_profiles where id='20000000-0000-4000-8000-000000001001';
+insert into public.cottage_profile_review_cycles(id,profile_id,owner_user_id,source_revision_id,name,governorate,approximate_location,capacity,bedrooms,bathrooms,amenities,cycle_number,state,decided_at)
+select '27000000-0000-4000-8000-000000001001',id,owner_user_id,'26000000-0000-4000-8000-000000001001',name,governorate,approximate_location,capacity,bedrooms,bathrooms,amenities,1,'approved',clock_timestamp()
+from public.owner_application_cottage_profiles where id='20000000-0000-4000-8000-000000001001';
+insert into public.cottage_publication_snapshots(id,profile_id,review_cycle_id,publication_number,name,governorate,approximate_location,capacity,bedrooms,bathrooms,amenities)
+select '28000000-0000-4000-8000-000000001001',id,'27000000-0000-4000-8000-000000001001',1,name,governorate,approximate_location,capacity,bedrooms,bathrooms,amenities
+from public.owner_application_cottage_profiles where id='20000000-0000-4000-8000-000000001001';
+do $$
+begin
+  update public.owner_application_cottage_profiles
+  set current_publication_id='28000000-0000-4000-8000-000000001001'
+  where id='20000000-0000-4000-8000-000000001001'
+    and current_publication_id is null and current_shift_schedule_id='30000000-0000-4000-8000-000000003801';
+  if not found or not public.is_cottage_publicly_discoverable('20000000-0000-4000-8000-000000001001') then
+    raise exception 'Independent inquiry fixture is not publicly discoverable';
+  end if;
+end;
+$$;
 set local role service_role;
 create temp table messaging_independent_conversation as
 select public.create_messaging_conversation(
@@ -262,13 +289,6 @@ select is(public.admit_messaging_message(
 )->>'status','blocked','one journey cannot borrow another journey paid contact permission');
 reset role;
 
-insert into public.cottage_shift_schedule_revisions(id,profile_id,revision,full_day_bundle_id) values('30000000-0000-4000-8000-000000003801','20000000-0000-4000-8000-000000001001',2,'31000000-0000-4000-8000-000000003801');
-select set_config('rentcottage.shift_schedule_write_revision_id','30000000-0000-4000-8000-000000003801',true);
-insert into public.cottage_shifts(id,schedule_revision_id,position,name,start_time,end_time) values
-('32000000-0000-4000-8000-000000003801','30000000-0000-4000-8000-000000003801',1,'Changed Morning','09:00','13:00'),
-('32000000-0000-4000-8000-000000003802','30000000-0000-4000-8000-000000003801',2,'Changed Evening','15:00','19:00');
-select set_config('rentcottage.shift_schedule_write_revision_id','',true);
-update public.owner_application_cottage_profiles set current_shift_schedule_id='30000000-0000-4000-8000-000000003801' where id='20000000-0000-4000-8000-000000001001';
 
 select ok((select bool_and(relrowsecurity) from pg_class where oid in ('public.booking_cancellations'::regclass,'public.booking_cancellation_incidents'::regclass,'public.booking_cancellation_administrator_audit'::regclass,'public.booking_notification_events'::regclass)),'all new facts have Row Level Security');
 select ok(not has_table_privilege('service_role','public.booking_cancellations','SELECT') and not has_table_privilege('authenticated','public.booking_notification_events','SELECT'),'API roles cannot directly read restricted cancellation facts');
