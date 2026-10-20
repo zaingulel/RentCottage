@@ -190,7 +190,7 @@ for (const [action, expected] of [
           outcome: "declined",
         });
         expect(evidence.work.suspension_action_id).toMatch(/^[0-9a-f-]{36}$/);
-        expect(evidence.hold.state).toBe("released");
+        expect(evidence.hold.state).toBe("released_hold");
         expect(
           evidence.occupancies.every((row: { active: boolean }) => !row.active),
         ).toBe(true);

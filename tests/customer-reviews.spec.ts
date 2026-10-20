@@ -1182,7 +1182,7 @@ test("connected completed stay from messaging to review", async ({
           );
           await page.reload();
           await expect(page.getByRole("main").getByRole("alert")).toHaveText(
-            messaging.customerSuspended,
+            `! ${messaging.customerSuspended}`,
           );
           await expect(
             page.getByLabel(messaging.messageLabel, { exact: true }),

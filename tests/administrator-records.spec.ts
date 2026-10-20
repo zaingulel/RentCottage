@@ -989,7 +989,7 @@ test("suspension controls preserve independent capabilities and immutable histor
       actions: [restriction, restoration],
     };
     const capture = testInfo.outputPath("administrator-ckb-mobile.png");
-    await page.screenshot({ path: capture, fullPage: true });
+    await soraniCottage.screenshot({ path: capture });
     await testInfo.attach("administrator-ckb-mobile", {
       path: capture,
       contentType: "image/png",

@@ -2326,10 +2326,10 @@ test("a verified Customer double-submit creates one Pending request and one mini
           exact: true,
         });
         for (const [label, value] of [
-          ["المتأثرة", "١"],
-          ["المحسومة", "٠"],
-          ["قيد المعالجة", "١"],
-          ["يحتاج إلى متابعة", "٠"],
+          ["المتأثرة", "1"],
+          ["المحسومة", "0"],
+          ["قيد المعالجة", "1"],
+          ["يحتاج إلى متابعة", "0"],
         ]) {
           await expect(
             progress
@@ -2409,7 +2409,7 @@ test("a verified Customer double-submit creates one Pending request and one mini
       });
       expect(resolved.hold).toMatchObject({
         id: before.hold.id,
-        status: "released",
+        status: "released_hold",
       });
       expect(
         resolved.occupancies.every((row: { active: boolean }) => !row.active),
