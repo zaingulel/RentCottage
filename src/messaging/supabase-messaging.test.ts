@@ -92,6 +92,45 @@ describe("Supabase messaging repository", () => {
     ).rejects.toThrow(/invalid messaging result/i);
   });
 
+  it("decodes the finite suspended outcome without accepting extra data", async () => {
+    for (const status of ["suspended", "unknown"]) {
+      for (const extra of [false, true]) {
+        const repository = new SupabaseMessagingRepository(
+          clientWith({ status, ...(extra ? { active: true } : {}) }) as never,
+        );
+        const calls = [
+          () =>
+            repository.createConversation({
+              actorUserId,
+              profileId,
+              commandId,
+            }),
+          () =>
+            repository.openBookingConversation({
+              actorUserId,
+              bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+              commandId,
+            }),
+          () =>
+            repository.send({
+              actorUserId,
+              conversationId,
+              commandId,
+              originalLanguage: "en",
+              originalBody: "A safe message",
+            }),
+        ];
+        for (const call of calls) {
+          const result = call();
+          if (status === "suspended" && !extra)
+            await expect(result).resolves.toEqual({ status: "suspended" });
+          else
+            await expect(result).rejects.toThrow(/invalid messaging result/i);
+        }
+      }
+    }
+  });
+
   it("uses exact-provenance translation and report boundaries", async () => {
     const translationId = "66666666-6666-4666-8666-666666666666";
     const reportId = "77777777-7777-4777-8777-777777777777";

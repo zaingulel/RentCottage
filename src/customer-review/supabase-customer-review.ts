@@ -234,7 +234,7 @@ type CommittedSubmitResult<Committed extends "submitted" | "replied"> =
       submittedAt: string;
       affectedPublicSlug: string;
     }>
-  | Exclude<SubmitCustomerReviewResult, { status: "submitted" }>;
+  | Exclude<SubmitCustomerReviewReplyResult, { status: "replied" }>;
 
 function parseSubmitResult<Committed extends "submitted" | "replied">(
   value: unknown,
@@ -334,7 +334,9 @@ function parseOwnReviewResult(value: unknown): OwnCustomerReviewResult {
     return { status: "eligible", reviewExpiresAt: value.reviewExpiresAt };
   }
   if (
-    (value.status === "ineligible" || value.status === "unavailable") &&
+    (value.status === "ineligible" ||
+      value.status === "unavailable" ||
+      value.status === "suspended") &&
     hasExactKeys(value, ["status"])
   ) {
     return { status: value.status };
@@ -811,6 +813,13 @@ export class SupabaseCustomerReviewRepository {
     }
     if (error !== null) {
       return { status: "unavailable" };
+    }
+    if (
+      isRecord(data) &&
+      data.status === "suspended" &&
+      hasExactKeys(data, ["status"])
+    ) {
+      return { status: "suspended" };
     }
     return parseSubmitResult(data, "submitted");
   }

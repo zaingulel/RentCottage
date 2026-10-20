@@ -264,7 +264,7 @@ export const confirmedBookingCleanup = ({
   const users = `'${r.owner}','${r.customer}','${r.third}','${selectedAdministrator}'`;
   return `begin;
 ${suspensionCleanupPreflight(users, `'${r.profile}'`, terminalRequest ? `'${r.request}'` : "")}set local session_replication_role=replica;
-${reset(r, { completion, terminalRequest })}${settlement ? settlementDeletes(r) : ""}${confirmedBookingDeletes(r, { workIdentity, listedCottage: false, users })}set local session_replication_role=origin;
+${reset(r, { completion, terminalRequest })}${settlement ? settlementDeletes(r) : ""}${confirmedBookingDeletes(r, { workIdentity, listedCottage: true, users })}set local session_replication_role=origin;
 commit;`;
 };
 

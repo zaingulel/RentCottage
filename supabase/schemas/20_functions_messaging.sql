@@ -43,6 +43,10 @@ begin
     or target_command_id is null then
     return jsonb_build_object('status', 'invalid');
   end if;
+  perform 1 from public.account_contexts contexts
+  where contexts.user_id = target_actor_user_id
+  for share of contexts;
+
   if not exists (
     select 1
     from public.account_contexts contexts
@@ -51,20 +55,6 @@ begin
       and contexts.role in ('customer'::public.account_role, 'cottage_owner'::public.account_role)
       and users.phone_confirmed_at is not null
   ) then
-    return jsonb_build_object('status', 'access-required');
-  end if;
-  select profiles.owner_user_id into target_owner_user_id
-  from public.owner_application_cottage_profiles profiles
-  join public.cottage_marketplace_listings listings
-    on listings.profile_id = profiles.id
-  join public.account_contexts owner_context
-    on owner_context.user_id = profiles.owner_user_id
-  where profiles.id = target_profile_id
-    and listings.state = 'published'::public.cottage_marketplace_state
-    and owner_context.role = 'cottage_owner'::public.account_role
-    and owner_context.owner_approval_state = 'approved'::public.owner_approval_state;
-  if target_owner_user_id is null
-    or target_owner_user_id = target_actor_user_id then
     return jsonb_build_object('status', 'access-required');
   end if;
   select * into created_conversation
@@ -78,6 +68,21 @@ begin
     return jsonb_build_object(
       'status', 'created', 'conversationId', created_conversation.id
     );
+  end if;
+  select profiles.owner_user_id into target_owner_user_id
+  from public.owner_application_cottage_profiles profiles
+  where profiles.id = target_profile_id
+  for update of profiles;
+  if exists (
+    select 1 from public.account_contexts contexts
+    where contexts.user_id = target_actor_user_id and contexts.customer_suspended
+  ) then
+    return jsonb_build_object('status', 'suspended');
+  end if;
+  if target_owner_user_id is null
+    or target_owner_user_id = target_actor_user_id
+    or not public.is_cottage_publicly_discoverable(target_profile_id) then
+    return jsonb_build_object('status', 'access-required');
   end if;
   insert into public.messaging_conversations (
     customer_user_id, profile_id, owner_user_id, creation_command_id
@@ -118,8 +123,7 @@ begin
   end if;
   select listings.profile_id into target_profile_id
   from public.cottage_marketplace_listings listings
-  where listings.public_slug = target_public_slug
-    and listings.state = 'published';
+  where listings.public_slug = target_public_slug;
   if target_profile_id is null then
     return jsonb_build_object('status', 'access-required');
   end if;
@@ -185,6 +189,21 @@ begin
   from public.booking_requests requests
   where requests.id = target_request.id
   for update of requests;
+
+  select attempts.* into target_attempt
+  from public.booking_request_submission_attempts attempts
+  where attempts.booking_request_id = target_request.id
+  for update of attempts;
+  if target_attempt.id is null
+    or target_attempt.customer_user_id <> target_request.customer_user_id
+    or target_attempt.profile_id <> target_request.profile_id
+    or target_attempt.booking_request_id <> target_request.id then
+    return jsonb_build_object('status', 'unavailable');
+  end if;
+
+  perform 1 from public.account_contexts contexts
+  where contexts.user_id = target_actor_user_id
+  for share of contexts;
   if not exists (
     select 1
     from public.account_contexts contexts
@@ -203,17 +222,6 @@ begin
       )
   ) then
     return jsonb_build_object('status', 'access-required');
-  end if;
-
-  select attempts.* into target_attempt
-  from public.booking_request_submission_attempts attempts
-  where attempts.booking_request_id = target_request.id
-  for update of attempts;
-  if target_attempt.id is null
-    or target_attempt.customer_user_id <> target_request.customer_user_id
-    or target_attempt.profile_id <> target_request.profile_id
-    or target_attempt.booking_request_id <> target_request.id then
-    return jsonb_build_object('status', 'unavailable');
   end if;
 
   if target_attempt.conversation_id is not null then
@@ -235,6 +243,13 @@ begin
     return jsonb_build_object(
       'status', 'created', 'conversationId', target_conversation.id
     );
+  end if;
+
+  if target_actor_user_id = target_request.customer_user_id and exists (
+    select 1 from public.account_contexts contexts
+    where contexts.user_id = target_actor_user_id and contexts.customer_suspended
+  ) then
+    return jsonb_build_object('status', 'suspended');
   end if;
 
   if exists (
@@ -391,6 +406,10 @@ begin
     return jsonb_build_object('status', 'retry');
   end if;
 
+  perform 1 from public.account_contexts contexts
+  where contexts.user_id = target_actor_user_id
+  for share of contexts;
+
   evaluated_at := clock_timestamp();
   if not exists (
     select 1
@@ -433,6 +452,13 @@ begin
     return jsonb_build_object(
       'status', 'sent', 'messageId', created_message.id
     );
+  end if;
+
+  if target_actor_user_id = target_conversation.customer_user_id and exists (
+    select 1 from public.account_contexts contexts
+    where contexts.user_id = target_actor_user_id and contexts.customer_suspended
+  ) then
+    return jsonb_build_object('status', 'suspended');
   end if;
 
   if current_request_id is not null then
@@ -768,8 +794,13 @@ CREATE OR REPLACE FUNCTION "public"."messaging_conversation_header"(
       when conversations.owner_user_id = auth.uid() then 'cottage_owner'
       else 'platform_administrator'
     end,
+    'sendRestriction', case
+      when conversations.customer_user_id = auth.uid() and actor_context.customer_suspended
+        then 'customer-suspended' else null end,
     'createdAt', conversations.created_at,
-    'canContinueBookingRequest', not exists (
+    'canContinueBookingRequest', public.is_cottage_publicly_discoverable(conversations.profile_id)
+      and not coalesce(actor_context.customer_suspended
+        and conversations.customer_user_id = auth.uid(), false) and not exists (
       select 1
       from public.messaging_conversation_booking_requests binding_links
       join public.booking_confirmations binding_confirmations
@@ -848,6 +879,8 @@ CREATE OR REPLACE FUNCTION "public"."messaging_conversation_header"(
   from public.messaging_conversations conversations
   join public.owner_application_cottage_profiles profiles
     on profiles.id = conversations.profile_id
+  left join public.account_contexts actor_context
+    on actor_context.user_id = auth.uid()
   left join public.cottage_marketplace_listings listings
     on listings.profile_id = conversations.profile_id
   left join lateral (

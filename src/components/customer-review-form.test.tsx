@@ -22,6 +22,57 @@ const bookingRequestReference = "RC-REQ-AAAAAAAAAAAAAAAA";
 describe("CustomerReviewForm", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it.each([
+    [
+      "en",
+      "Your Customer account is suspended. You cannot publish a new review. Your existing reviews remain available.",
+    ],
+    [
+      "ar",
+      "حساب العميل معلّق. لا يمكنك نشر تقييم جديد. تبقى تقييماتك السابقة متاحة.",
+    ],
+    [
+      "ckb",
+      "هەژماری کڕیارت ڕاگیراوە. ناتوانیت هەڵسەنگاندنێکی نوێ بڵاو بکەیتەوە. هەڵسەنگاندنە پێشووترەکانت بەردەستن.",
+    ],
+  ] as const)(
+    "shows a distinct read-only suspension status after publishing in %s",
+    async (locale, explanation) => {
+      const copy = customerReviewMessages[locale];
+      submitReview.mockResolvedValue({ status: "suspended" });
+      const view = render(
+        <CustomerReviewForm
+          locale={locale}
+          bookingRequestReference={bookingRequestReference}
+          initialResult={{
+            status: "eligible",
+            reviewExpiresAt: "2026-10-05T10:00:00.000Z",
+          }}
+        />,
+      );
+      fireEvent.click(screen.getAllByRole("radio")[4]);
+      fireEvent.click(screen.getByRole("button", { name: copy.submit }));
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveTextContent(explanation),
+      );
+      expect(
+        screen.queryByRole("button", { name: copy.submit }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+      expect(screen.queryByText(copy.accessRequired)).not.toBeInTheDocument();
+      view.unmount();
+      render(
+        <CustomerReviewForm
+          locale={locale}
+          bookingRequestReference={bookingRequestReference}
+          initialResult={{ status: "suspended" }}
+        />,
+      );
+      expect(screen.getByRole("status")).toHaveTextContent(explanation);
+      expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    },
+  );
+
   it("requires a rating and sends only mutation facts", async () => {
     submitReview.mockResolvedValue({
       status: "submitted",

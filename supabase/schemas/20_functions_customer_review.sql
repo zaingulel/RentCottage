@@ -28,9 +28,19 @@ declare
   admitted_body text;
   affected_public_slug text;
 begin
+  select * into request
+  from public.booking_requests requests
+  where requests.booking_request_reference=target_reference
+  for update;
+
+  if request.id is null or request.customer_user_id is distinct from actor then
+    raise exception 'Customer review access is unavailable' using errcode='42501';
+  end if;
+
   select * into actor_context
   from public.account_contexts
-  where user_id=actor;
+  where user_id=actor
+  for share;
 
   if actor is null
     or (actor_context.role in ('customer','cottage_owner')) is not true
@@ -42,15 +52,6 @@ begin
     raise exception 'Customer review access is unavailable' using errcode='42501';
   end if;
 
-  select * into request
-  from public.booking_requests requests
-  where requests.booking_request_reference=target_reference
-  for update;
-
-  if request.id is null or request.customer_user_id is distinct from actor then
-    raise exception 'Customer review access is unavailable' using errcode='42501';
-  end if;
-
   select * into existing
   from public.customer_reviews reviews
   where reviews.booking_request_id=request.id;
@@ -58,6 +59,10 @@ begin
     return jsonb_build_object(
       'status','duplicate','reviewId',existing.id,'submittedAt',existing.submitted_at
     );
+  end if;
+
+  if actor_context.customer_suspended then
+    return jsonb_build_object('status','suspended');
   end if;
 
   if target_rating is null
@@ -178,6 +183,10 @@ begin
         else 'unhidden'
       end
     );
+  end if;
+
+  if actor_context.customer_suspended then
+    return jsonb_build_object('status','suspended');
   end if;
 
   if public.booking_request_payment_status(request) is distinct from 'paid-confirmed' then
@@ -314,20 +323,6 @@ declare
   replied public.customer_review_replies;
   affected_public_slug text;
 begin
-  select * into actor_context
-  from public.account_contexts
-  where user_id=actor;
-  if actor is null
-    or actor_context.role is distinct from 'cottage_owner'
-    or actor_context.owner_approval_state is distinct from 'approved'
-    or not exists(
-      select 1 from auth.users users
-      where users.id=actor and users.phone_confirmed_at is not null
-    )
-  then
-    raise exception 'Customer review reply access is unavailable' using errcode='42501';
-  end if;
-
   select requests.* into request
   from public.booking_requests requests
   join public.owner_application_cottage_profiles profiles
@@ -343,6 +338,21 @@ begin
   from public.customer_reviews reviews
   where reviews.booking_request_id=request.id
   for share;
+  select * into actor_context
+  from public.account_contexts
+  where user_id=actor
+  for share;
+  if actor is null
+    or actor_context.role is distinct from 'cottage_owner'
+    or actor_context.owner_approval_state is distinct from 'approved'
+    or not exists(
+      select 1 from auth.users users
+      where users.id=actor and users.phone_confirmed_at is not null
+    )
+  then
+    raise exception 'Customer review reply access is unavailable' using errcode='42501';
+  end if;
+
   if review.id is null then
     return jsonb_build_object('status','ineligible');
   end if;

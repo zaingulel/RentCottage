@@ -43,6 +43,7 @@ export interface MessagingConversationHeader {
     readonly publicSlug: string | null;
   };
   readonly actorRole: ActorRole;
+  readonly sendRestriction: "customer-suspended" | null;
   readonly createdAt: string;
   readonly canContinueBookingRequest: boolean;
   readonly booking: MessagingBookingSummary | null;
@@ -178,8 +179,15 @@ function headerFrom(value: unknown): MessagingConversationHeader | undefined {
     !["customer", "cottage_owner", "platform_administrator"].includes(
       String(row.actorRole),
     ) ||
+    !(
+      row.sendRestriction === null ||
+      (row.sendRestriction === "customer-suspended" &&
+        row.actorRole === "customer")
+    ) ||
     !isTimestamp(row.createdAt) ||
     typeof row.canContinueBookingRequest !== "boolean" ||
+    (row.sendRestriction === "customer-suspended" &&
+      row.canContinueBookingRequest) ||
     booking === undefined ||
     !Array.isArray(row.bookingHistory) ||
     bookingHistory.some((item) => item === undefined) ||
@@ -192,6 +200,7 @@ function headerFrom(value: unknown): MessagingConversationHeader | undefined {
     conversationId: row.conversationId,
     cottage: cottage as MessagingConversationHeader["cottage"],
     actorRole: row.actorRole as ActorRole,
+    sendRestriction: row.sendRestriction,
     createdAt: row.createdAt,
     canContinueBookingRequest: row.canContinueBookingRequest,
     booking,

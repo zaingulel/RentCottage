@@ -14,6 +14,8 @@ export const customerReviewMessages = {
     invalid: "Check the review fields and try again.",
     accessRequired: "Sign in with the Customer account for this booking.",
     ineligible: "A review is not available for this booking.",
+    suspended:
+      "Your Customer account is suspended. You cannot publish a new review. Your existing reviews remain available.",
     prohibited:
       "Remove contact details, links, or social handles before publishing.",
     unavailable: "Reviews are unavailable. Refresh and try again.",
@@ -112,6 +114,8 @@ export const customerReviewMessages = {
     invalid: "تحقق من حقول التقييم ثم حاول مرة أخرى.",
     accessRequired: "سجّل الدخول بحساب العميل المرتبط بهذا الحجز.",
     ineligible: "التقييم غير متاح لهذا الحجز.",
+    suspended:
+      "حساب العميل معلّق. لا يمكنك نشر تقييم جديد. تبقى تقييماتك السابقة متاحة.",
     prohibited: "احذف معلومات الاتصال أو الروابط أو معرفات التواصل قبل النشر.",
     unavailable: "التقييمات غير متاحة. حدّث الصفحة وحاول مرة أخرى.",
     published: "تم نشر تقييمك.",
@@ -205,6 +209,8 @@ export const customerReviewMessages = {
     invalid: "خانەکانی هەڵسەنگاندن بپشکنە و دووبارە هەوڵ بدەوە.",
     accessRequired: "بە هەژماری کڕیاری ئەم حجزە بچۆ ژوورەوە.",
     ineligible: "هەڵسەنگاندن بۆ ئەم حجزە بەردەست نییە.",
+    suspended:
+      "هەژماری کڕیارت ڕاگیراوە. ناتوانیت هەڵسەنگاندنێکی نوێ بڵاو بکەیتەوە. هەڵسەنگاندنە پێشووترەکانت بەردەستن.",
     prohibited:
       "پێش بڵاوکردنەوە زانیاری پەیوەندی، بەستەر یان ناسنامەی تۆڕە کۆمەڵایەتییەکان بسڕەوە.",
     unavailable:

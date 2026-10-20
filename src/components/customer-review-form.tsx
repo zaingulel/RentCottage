@@ -26,6 +26,8 @@ export function CustomerReviewForm({
 }) {
   const copy = customerReviewMessages[locale];
   const [notice, setNotice] = useState<FormNotice>();
+  const [submissionSuspended, setSubmissionSuspended] = useState(false);
+  const suspended = submissionSuspended || initialResult.status === "suspended";
   const [pending, startTransition] = useTransition();
   const noticeRef = useRef<HTMLParagraphElement>(null);
 
@@ -60,7 +62,7 @@ export function CustomerReviewForm({
       </section>
     );
 
-  if (initialResult.status !== "eligible")
+  if (suspended || initialResult.status !== "eligible")
     return (
       <section
         className={styles.section}
@@ -69,12 +71,24 @@ export function CustomerReviewForm({
         <h2 id="customer-review-heading" className="section-title">
           {copy.title}
         </h2>
-        <p role={initialResult.status === "unavailable" ? "alert" : undefined}>
-          {initialResult.status === "unavailable"
-            ? copy.unavailable
-            : initialResult.status === "access-required"
-              ? copy.accessRequired
-              : copy.ineligible}
+        <p
+          ref={noticeRef}
+          tabIndex={suspended ? -1 : undefined}
+          role={
+            suspended
+              ? "status"
+              : initialResult.status === "unavailable"
+                ? "alert"
+                : undefined
+          }
+        >
+          {suspended
+            ? copy.suspended
+            : initialResult.status === "unavailable"
+              ? copy.unavailable
+              : initialResult.status === "access-required"
+                ? copy.accessRequired
+                : copy.ineligible}
         </p>
       </section>
     );
@@ -104,6 +118,11 @@ export function CustomerReviewForm({
         originalLanguage: language,
         originalBody: bodyValue.trim().length === 0 ? null : bodyValue,
       });
+      if (result.status === "suspended") {
+        setSubmissionSuspended(true);
+        setNotice({ kind: "error", text: copy.suspended });
+        return;
+      }
       const text =
         result.status === "submitted"
           ? copy.published

@@ -68,6 +68,74 @@ set local request.jwt.claims='{"sub":"${userId}","role":"authenticated","aal":"$
 set public_slug='${duplicatePublicSlug}',state='paused'
 where profile_id='${duplicateFixture.ids.profileId}';`);
     harness.markTimingPhase("execution");
+    const customerRestriction = (
+      action,
+      revision,
+      command,
+    ) => `${actor(duplicateFixture.ids.administratorUserId, "aal2")}
+select public.set_marketplace_suspension('customer','${duplicateFixture.ids.customerUserId}','${action}',${revision},'Fictional review safety restriction','44000000-0000-4000-8000-${String(command).padStart(12, "0")}');`;
+    const restrictionHolder = harness.startSession(`begin;
+set application_name='customer_review_restriction_holder';
+select id from public.booking_requests where id='${duplicateFixture.ids.requestId}' for update;
+select 'REVIEW_RESTRICTION_HELD';`);
+    sessions.push(restrictionHolder);
+    await harness.waitForMarker(restrictionHolder, "REVIEW_RESTRICTION_HELD");
+    const restrictedWriter = harness.startSession(
+      `begin;
+set application_name='customer_review_restricted_writer';
+${actor(duplicateFixture.ids.customerUserId)}
+select public.submit_customer_review('${duplicateFixture.ids.bookingReference}',5,'en','A blocked review');
+commit;`,
+      true,
+    );
+    sessions.push(restrictedWriter);
+    await harness.waitForLock(
+      "customer_review_restricted_writer",
+      restrictedWriter,
+    );
+    check(
+      harness.runSql(`select count(*)::integer from pg_catalog.pg_stat_activity waiter
+where waiter.application_name='customer_review_restricted_writer'
+and exists(select 1 from pg_catalog.pg_stat_activity holder where holder.application_name='customer_review_restriction_holder' and holder.pid=any(pg_catalog.pg_blocking_pids(waiter.pid)));`),
+      "1",
+      "review waiter is blocked by the held request",
+    );
+    restrictionHolder.child.stdin
+      .write(`${customerRestriction("suspend", 0, 310)}
+select 'REVIEW_RESTRICTION_APPLIED';
+`);
+    await harness.waitForMarker(
+      restrictionHolder,
+      "REVIEW_RESTRICTION_APPLIED",
+    );
+    check(
+      jsonResults(restrictionHolder)[0]?.status,
+      "completed",
+      "actual customer restriction wins before waiting review",
+    );
+    await harness.finishSession(restrictionHolder, { action: "commit" });
+    await harness.finishSession(restrictedWriter);
+    check(
+      jsonResults(restrictedWriter)[0],
+      { status: "suspended" },
+      "review rechecks current customer restriction after request wait",
+    );
+    check(
+      harness.runSql(
+        `select count(*)::integer from public.customer_reviews where booking_request_id='${duplicateFixture.ids.requestId}';`,
+      ),
+      "0",
+      "restricted waiter creates no review",
+    );
+    check(
+      JSON.parse(
+        harness.runSql(
+          `begin; ${customerRestriction("reactivate", 1, 311)} commit;`,
+        ),
+      ).status,
+      "completed",
+      "reactivation permits the next independent review",
+    );
     const duplicateHolder = harness.startSession(`
 begin;
 set application_name='customer_review_duplicate_holder';
@@ -75,6 +143,8 @@ ${actor(duplicateFixture.ids.customerUserId)}
 select public.submit_customer_review(
   '${duplicateFixture.ids.bookingReference}',5,'en','First committed review'
 );
+reset role;
+select to_jsonb(reviews) from public.customer_reviews reviews where booking_request_id='${duplicateFixture.ids.requestId}';
 select 'CUSTOMER_REVIEW_DUPLICATE_HELD';
 `);
     sessions.push(duplicateHolder);
@@ -98,7 +168,26 @@ commit;`,
       duplicateContender,
     );
     assertions += 1;
+    const restrictionAfterWrite = harness.startSession(
+      `begin;
+set application_name='customer_review_restriction_after_write';
+${customerRestriction("suspend", 2, 312)} commit;`,
+      true,
+    );
+    sessions.push(restrictionAfterWrite);
+    await harness.waitForLock(
+      "customer_review_restriction_after_write",
+      restrictionAfterWrite,
+    );
+    check(
+      harness.runSql(
+        `select count(*)::integer from pg_catalog.pg_stat_activity waiter where waiter.application_name='customer_review_restriction_after_write' and exists(select 1 from pg_catalog.pg_stat_activity holder where holder.application_name='customer_review_duplicate_holder' and holder.pid=any(pg_catalog.pg_blocking_pids(waiter.pid)));`,
+      ),
+      "1",
+      "new review holds customer authority until its write commits",
+    );
     await harness.finishSession(duplicateHolder, { action: "commit" });
+    await harness.finishSession(restrictionAfterWrite);
     await harness.finishSession(duplicateContender);
     const submitted = jsonResults(duplicateHolder)[0];
     check(submitted?.status, "submitted", "first submit wins");
@@ -131,6 +220,98 @@ commit;`,
       "concurrent submission stores one review",
     );
 
+    const committedReview = jsonResults(duplicateHolder)[1];
+    check(
+      jsonResults(restrictionAfterWrite)[0]?.status,
+      "completed",
+      "restriction after review commit completes",
+    );
+    check(
+      JSON.parse(
+        harness.runSql(
+          `select to_jsonb(reviews) from public.customer_reviews reviews where booking_request_id='${duplicateFixture.ids.requestId}';`,
+        ),
+      ),
+      committedReview,
+      "review committed before restriction retains every byte and ID",
+    );
+    const retained = JSON.parse(
+      harness.runSql(
+        `begin; ${actor(duplicateFixture.ids.customerUserId)} select public.get_customer_review('${duplicateFixture.ids.bookingReference}'); commit;`,
+      ),
+    );
+    check(
+      retained.reviewId,
+      submitted.reviewId,
+      "suspended customer reads the same submitted review",
+    );
+    check(
+      retained.originalBody,
+      "First committed review",
+      "suspended customer reads exact original review bytes",
+    );
+    check(
+      JSON.parse(
+        harness.runSql(
+          `begin; ${actor(duplicateFixture.ids.customerUserId)} select public.submit_customer_review('${duplicateFixture.ids.bookingReference}',1,'en','Replacement'); commit;`,
+        ),
+      ),
+      {
+        status: "duplicate",
+        reviewId: submitted.reviewId,
+        submittedAt: submitted.submittedAt,
+      },
+      "suspended customer duplicate returns original identity and timestamp",
+    );
+    const replyApprovalHolder = harness.startSession(`begin;
+set application_name='customer_review_reply_approval_holder';
+select id from public.customer_reviews where id='${submitted.reviewId}' for update;
+select 'REPLY_APPROVAL_HELD';`);
+    sessions.push(replyApprovalHolder);
+    await harness.waitForMarker(replyApprovalHolder, "REPLY_APPROVAL_HELD");
+    const staleReply = harness.startSession(
+      `begin;
+set application_name='customer_review_stale_reply';
+${actor(duplicateFixture.ids.ownerUserId)}
+select public.submit_customer_review_reply('${duplicateFixture.ids.bookingReference}','en','Revoked owner reply'); commit;`,
+      true,
+    );
+    sessions.push(staleReply);
+    await harness.waitForLock("customer_review_stale_reply", staleReply);
+    check(
+      harness.runSql(
+        `select count(*)::integer from pg_catalog.pg_stat_activity waiter where waiter.application_name='customer_review_stale_reply' and exists(select 1 from pg_catalog.pg_stat_activity holder where holder.application_name='customer_review_reply_approval_holder' and holder.pid=any(pg_catalog.pg_blocking_pids(waiter.pid)));`,
+      ),
+      "1",
+      "reply waits on the held review before approval changes",
+    );
+    replyApprovalHolder.child.stdin
+      .write(`update public.account_contexts set owner_approval_state='suspended' where user_id='${duplicateFixture.ids.ownerUserId}';
+select 'REPLY_APPROVAL_REVOKED';
+`);
+    await harness.waitForMarker(replyApprovalHolder, "REPLY_APPROVAL_REVOKED");
+    await harness.finishSession(replyApprovalHolder, { action: "commit" });
+    await harness.finishSession(staleReply, { expectedState: "42501" });
+    assertions += 1;
+    check(
+      harness.runSql(
+        `select count(*)::integer from public.customer_review_replies where review_id='${submitted.reviewId}';`,
+      ),
+      "0",
+      "current owner approval denies new reply after wait",
+    );
+    harness.runSql(
+      `update public.account_contexts set owner_approval_state='approved' where user_id='${duplicateFixture.ids.ownerUserId}';`,
+    );
+    check(
+      JSON.parse(
+        harness.runSql(`begin;
+${actor(duplicateFixture.ids.administratorUserId, "aal2")}
+select public.set_marketplace_suspension('customer','${duplicateFixture.ids.ownerUserId}','suspend',0,'Independent customer capability','44000000-0000-4000-8000-000000000313'); commit;`),
+      ).status,
+      "completed",
+      "approved owner customer capability is independently restricted",
+    );
     const replyHolder = harness.startSession(`
 begin;
 set application_name='customer_review_reply_holder';
@@ -158,8 +339,30 @@ commit;`,
       replyContender,
     );
     assertions += 1;
+    const approvalAfterReply = harness.startSession(
+      `begin;
+set application_name='customer_review_approval_after_reply';
+update public.account_contexts set owner_approval_state='suspended' where user_id='${duplicateFixture.ids.ownerUserId}'; commit;`,
+      true,
+    );
+    sessions.push(approvalAfterReply);
+    await harness.waitForLock(
+      "customer_review_approval_after_reply",
+      approvalAfterReply,
+    );
+    check(
+      harness.runSql(
+        `select count(*)::integer from pg_catalog.pg_stat_activity waiter where waiter.application_name='customer_review_approval_after_reply' and exists(select 1 from pg_catalog.pg_stat_activity holder where holder.application_name='customer_review_reply_holder' and holder.pid=any(pg_catalog.pg_blocking_pids(waiter.pid)));`,
+      ),
+      "1",
+      "new reply holds current owner authority until its write commits",
+    );
     await harness.finishSession(replyHolder, { action: "commit" });
     await harness.finishSession(replyContender);
+    await harness.finishSession(approvalAfterReply);
+    harness.runSql(
+      `update public.account_contexts set owner_approval_state='approved' where user_id='${duplicateFixture.ids.ownerUserId}';`,
+    );
     const replied = jsonResults(replyHolder)[0];
     check(
       {

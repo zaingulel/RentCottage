@@ -12,6 +12,7 @@ const item: MessagingInboxItem = {
     publicSlug: "cottage-22222222222242228222222222222222",
   },
   actorRole: "customer",
+  sendRestriction: null,
   createdAt: "2099-08-20T12:00:00Z",
   activityAt: "2099-08-20T12:01:00Z",
   canContinueBookingRequest: false,

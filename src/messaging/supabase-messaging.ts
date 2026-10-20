@@ -33,10 +33,12 @@ function createResult(value: unknown): CreateConversationResult {
     return { status: "created", conversationId: row.conversationId };
   }
   if (
-    ["invalid", "access-required"].includes(String(row.status)) &&
+    ["invalid", "access-required", "suspended"].includes(String(row.status)) &&
     exactKeys(row, ["status"])
   ) {
-    return { status: row.status as "invalid" | "access-required" };
+    return {
+      status: row.status as "invalid" | "access-required" | "suspended",
+    };
   }
   throw new Error("Database returned an invalid messaging result");
 }
@@ -62,7 +64,7 @@ function sendResult(value: unknown): SendMessageResult {
     return { status: "blocked", reason: "contact-restricted" };
   }
   if (
-    ["invalid", "access-required", "read-only", "retry"].includes(
+    ["invalid", "access-required", "suspended", "read-only", "retry"].includes(
       String(row.status),
     ) &&
     exactKeys(row, ["status"])
@@ -71,6 +73,7 @@ function sendResult(value: unknown): SendMessageResult {
       status: row.status as
         | "invalid"
         | "access-required"
+        | "suspended"
         | "read-only"
         | "retry",
     };

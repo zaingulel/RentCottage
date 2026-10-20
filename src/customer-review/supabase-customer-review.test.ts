@@ -39,6 +39,46 @@ describe("Supabase Customer review repository", () => {
     vi.clearAllMocks();
     runtimeEnabled.mockReturnValue(true);
   });
+  it("decodes exact customer suspension for new reviews without admitting malformed or owner reply outcomes", async () => {
+    const input = {
+      bookingRequestReference: "RC-REQ-0123456789ABCDEF",
+      rating: 5,
+      originalLanguage: "en" as const,
+      originalBody: "A peaceful stay.",
+    };
+    const repository = new SupabaseCustomerReviewRepository(
+      clientWith({ status: "suspended" }) as never,
+    );
+    await expect(
+      repository.getOwn(input.bookingRequestReference),
+    ).resolves.toEqual({ status: "suspended" });
+    await expect(repository.submit(input)).resolves.toEqual({
+      status: "suspended",
+    });
+    await expect(
+      repository.submitReply({
+        bookingRequestReference: input.bookingRequestReference,
+        originalLanguage: "en",
+        originalBody: "Thank you.",
+      }),
+    ).resolves.toEqual({ status: "unavailable" });
+    for (const malformed of [
+      { status: "suspended", reviewId },
+      { status: "suspended", reason: "Private administrator reason" },
+      { status: "customer-suspended" },
+      { status: "suspended", reviewExpiresAt: "2026-10-05T10:00:00Z" },
+    ]) {
+      const invalid = new SupabaseCustomerReviewRepository(
+        clientWith(malformed) as never,
+      );
+      await expect(
+        invalid.getOwn(input.bookingRequestReference),
+      ).resolves.toEqual({ status: "unavailable" });
+      await expect(invalid.submit(input)).resolves.toEqual({
+        status: "unavailable",
+      });
+    }
+  });
   it("owner review list validates its exact bounded projection", async () => {
     const input = { beforeAt: null, beforeId: null, limit: 2 };
     const submittedAt = "2026-09-21T12:00:00.000Z";

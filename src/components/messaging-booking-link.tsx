@@ -23,7 +23,9 @@ export function MessagingBookingLink({
   const router = useRouter();
   const [commandId] = useState(() => crypto.randomUUID());
   const [pending, startTransition] = useTransition();
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<"suspended" | "unavailable" | null>(
+    null,
+  );
   return (
     <section className="request-follow-up" aria-label={copy.inbox}>
       <h2 className="section-title">{copy.inbox}</h2>
@@ -42,13 +44,23 @@ export function MessagingBookingLink({
             if (result.status === "created") {
               prepareActionFocusNavigation("messaging-open-conversation");
               router.push(`/${locale}/messages/${result.conversationId}`);
-            } else setFailed(true);
+            } else {
+              setFailure(
+                result.status === "suspended" ? "suspended" : "unavailable",
+              );
+            }
           })
         }
       >
         {copy.open}
       </ActionButton>
-      {failed ? <p role="status">{copy.unavailable}</p> : null}
+      {failure ? (
+        <p role="status">
+          {failure === "suspended"
+            ? copy.customerSuspended
+            : copy.openUnavailable}
+        </p>
+      ) : null}
     </section>
   );
 }

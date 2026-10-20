@@ -949,7 +949,7 @@ test("browser booking fixtures own disjoint graphs and cleanup", () => {
     ],
     [
       confirmedBookingCleanup(),
-      "7301a0f71ebd99999049c3501c600349fb2c739103226d470166e3c3da5d9114",
+      "3a771fa17e67c0be2cb89656489e581ec69f5586d24acc9c60e3185e57e1bea0",
     ],
     [
       confirmedBookingAccessCleanup(),
