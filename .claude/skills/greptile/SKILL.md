@@ -13,21 +13,26 @@ stands after a rebase, and the pool it is metered from. It runs as step 2 of tha
 ## Read the allowance
 
 Read the current allowance in the signed-in built-in browser at https://app.greptile.com/flowgauge/-/settings/billing.
-The page states the allowance for the plan in force as an amount used out of a limit, in whatever unit that plan meters:
-`2 of 50 free credits this period` on the free plan, a `$N of $M` usage limit on a paid one. Record that figure in the
-page's own words, the plan the page names, the period it names, the observation source and time in the pull request
-body. The allowance is exhausted only when the figure read from the page shows the amount used has reached its limit. A
-login or join redirect from any other address means the address is wrong, not that the owner is signed out or the
-allowance is exhausted; a command-line fetch is never signed in. If the signed-in built-in browser is unavailable, this
-exact page cannot be read, or it shows no allowance figure, ask the owner for the figure and its period; never infer
-sign-out or exhaustion from a failed read. Greptile is metered from one pool shared by every adopter. Confirmed
-exhaustion is the `UNAVAILABLE` evidence below and skips the request.
+The page states the allowance for the plan in force as an amount used out of a limit, in whatever unit that plan meters,
+such as credits used this period on the free plan or a usage limit on a paid one. The allowance is exhausted only when
+the figure read from the page shows the amount used has reached its limit. A login or join redirect from any other
+address means the address is wrong, not that the owner is signed out or the allowance is exhausted; a command-line fetch
+is never signed in. If the signed-in built-in browser is unavailable, this exact page cannot be read, or it shows no
+allowance figure, ask the owner for the figure and its period; never infer sign-out or exhaustion from a failed read,
+and never request a review on an allowance neither the page nor the owner has given. Greptile is metered from one pool
+shared by every adopter. Confirmed exhaustion is the `UNAVAILABLE` evidence below and skips the request.
+
+Greptile account figures are private: the amount used, the limit, the plan and any balance stay out of the pull request
+body, its comments, commit messages and every other published text. The pull request body records only the read's
+outcome, `available` or `exhausted`, its observation source, the billing page or the owner in chat, its time, and the
+head the request would cover, as one line:
+`Greptile allowance: available, read from the billing page at 2026-10-19T19:05Z, for head <sha>`.
 
 ## Request the review
 
 Then read the open draft's `headRefOid` and request the final review once for that commit:
-`gh pr comment <pr> --body "@greptileai review this draft"`. Record the request URL, time and exact head.
-`.greptile/config.json` disables automatic reviews; labels are metadata.
+`gh pr comment <pr> --body "@greptileai review this draft"`. Record the request URL, time and exact head in the
+pull request body. `.greptile/config.json` disables automatic reviews; labels are metadata.
 
 ## Read the result
 
@@ -49,11 +54,10 @@ its `Reviews (N)` footer; check the reviewed commit, not just the count or a new
 
 ## An unavailable attempt
 
-`UNAVAILABLE` requires, reported in the pull-request body, either the allowance observation above showing exhaustion,
-with the head it would have covered, or the explicit request URL, head, observation time and provider-failure evidence.
-This best-effort exception permits CI after all mandatory local evidence and finding dispositions pass. A filtered skip,
-missing response, or queued/running review is unresolved: retain draft and report it for owner direction rather than
-declaring unavailability.
+`UNAVAILABLE` requires, reported in the pull-request body, either the allowance line above reading `exhausted`, or the
+explicit request URL, head, observation time and provider-failure evidence. This best-effort exception permits CI after
+all mandatory local evidence and finding dispositions pass. A filtered skip, missing response, or queued/running review
+is unresolved: retain draft and report it for owner direction rather than declaring unavailability.
 
 ## After a rebase
 

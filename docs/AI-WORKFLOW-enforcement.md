@@ -21,7 +21,7 @@ sentence had failed to prevent it or because the bad state would be silent or ha
 | The installed copy matches its source | In the canonical repository, a test in its script suite, run by `.githooks/pre-push` and CI | A push or merge where a shared file's source and the manifest disagree |
 | Agent definitions parse and first-party charter bodies match | `.githooks/pre-commit` | A staged seat file the runtime would drop silently, a Claude seat file carrying an `initialPrompt` key, which never reaches a subagent, and Claude and Codex first-party charter bodies that differ beyond backticked `/name` versus `$name` skill invocations; runtime metadata is validated separately; reads staged blobs and matching staged validators for installed seats and canonical `src/` seats, with installed runtimes selected by staged settings and both required for source seats |
 | Lint and the script suite pass | `.githooks/pre-push`, which on a push to `main` first runs the product gate `scripts/gates/pre-push-main` as it stands on the remote's `main`, from a copy of that commit's tree, before lint and the script suite | A push with a red script suite, and a push to `main` when the gate on the remote's `main` is missing, not executable or exits non-zero, or when the remote's `main` cannot be read |
-| Shared workflow files match the manifest | `scripts/lib/workflow-contract.test.mjs`, run by `.githooks/pre-push` and CI | A push or merge where any file `.agents/factory-manifest.json` lists differs from its recorded hash, other than in a seat setting value the repository's own seat settings file names; the failure names the fix routes, `--write` in the canonical repository, a sync in an adopter and `--render` for a seat setting |
+| Shared workflow files match the manifest | `scripts/lib/workflow-contract.test.mjs`, run by `.githooks/pre-push` and CI | A push or merge where any file `.agents/factory-manifest.json` lists differs from its recorded hash, other than in a seat setting value the repository's own seat settings file names; the failure points to [canonical recording and recovery](../.agents/skills/shared-files/SKILL.md#canonical-recording), a release update in an adopter and `--render` for a seat setting |
 | Only green code merges | Two branch rulesets on `main`, one requiring the checks the repository's branch rules name, `test` everywhere and `sweep-scope` as well where the documentation routines are active and the settings file does not turn the documentation sweep off, and auto-merge; the required-check ruleset lets the administrator role bypass it, which the direct documentation route depends on | A merge before every required check is green; on a draft the `test` gate reports under a different name so it can never satisfy the rule |
 | Metered suites run on purpose | `.codex/rules/playwright.rules`, where the repository supplies that rule file | A browser run on Codex without a prompt |
 
@@ -32,9 +32,14 @@ sentence in `AGENTS.md` or a skill. The bar for executable machinery is named in
 "Publication and machinery" and stated in full as the machinery rule in the `resume` skill under "4. Plan", the one
 home for how machinery enters, grows and leaves.
 
+A canonical repository may supply a local commit gate that records staged shared-file fingerprints automatically;
+that gate does not travel to adopters. [Canonical recording](../.agents/skills/shared-files/SKILL.md#canonical-recording)
+owns the staging and commit order, alternate-index caveat and refusal recovery. The repository's local profile names
+whether it supplies that gate. Fingerprint checks still judge the recorded result.
+
 A charter mismatch reports the seat, both paths and differing lines. Repair both canonical source charters together
-and regenerate their installed copies before staging them; consumers receive the repair through the
-[sync route](../.agents/skills/sync-job/SKILL.md).
+and regenerate their installed copies before staging them; consumers receive the repair through a release update, as the
+[`shared-files` skill](../.agents/skills/shared-files/SKILL.md) says.
 
 ### Keeping it small
 
@@ -49,7 +54,7 @@ stale guidance rather than adding a second authority.
 ## Where the rules live
 
 - [The `resume` skill](../.agents/skills/resume/SKILL.md) under "4. Plan", as the machinery rule: the bar new
-  machinery must clear, and how machinery leaves.
+  machinery must clear, how machinery leaves, and the tooling-growth comparison run only on the owner's request.
 - The Surfaces table in [`AGENTS.md`](../AGENTS.md): the repository's own highest-consequence surfaces.
 - [The head of `scripts/lib/unsafe-git.mjs`](../scripts/lib/unsafe-git.mjs): every command form the git guard
   refuses, and what it does not model.
@@ -77,7 +82,10 @@ stale guidance rather than adding a second authority.
   starts does afterwards, so nothing in the repository establishes that every way of publishing meets that prompt.
   A push that runs unprompted would need a boundary on the server first.
 - **A guard refuses something legitimate.** A safeguard's refusal keeps its target and is reported with the
-  evidence, never forced ([`AGENTS.md`](../AGENTS.md) under "Owner gates"); every new guard names its
+  evidence. The two verified branch exceptions in [closeout step 5](../.agents/skills/closeout/SKILL.md)
+  cover the exact merged job head and a session-created pre-squash backup; that skill owns their proof and limits.
+  They are session instructions, not executable provenance enforcement or promptless runtime permission. Every
+  other refusal remains binding ([`AGENTS.md`](../AGENTS.md) under "Owner gates"); every new guard names its
   non-destructive recovery route in the change that adds it.
 
 ## Key files

@@ -337,7 +337,7 @@ test('the resume, cross-review and to-issues skills give only command shapes an 
 });
 
 test('ANTI-REGRESSION: the resume skill reads the plan approval setting with a command whose answer does not depend on the current folder', () => {
-  const reads = RESUME.match(/git ls-tree[^`\n]*factory-settings\.json/g) ?? [];
+  const reads = RESUME.match(/git ls-tree[^`\n]*/g) ?? [];
   assert.deepEqual(reads, ['git ls-tree --full-tree --name-only origin/main -- .agents/factory-settings.json']);
 });
 
@@ -522,13 +522,12 @@ test('ANTI-REGRESSION: every installed git guard hook refuses the hook check the
 });
 
 test('the review line has two specified forms, and the template and skills point at them', () => {
-  // Hand-written from the owner-approved forms and slot, never extracted from a repo file, so
+  // Hand-written from the owner-approved forms, never extracted from a repo file, so
   // a drift in the manual's examples or the template cannot silently redefine what the test accepts.
   const BASE_LINE =
     /^Review: tier=(document|code|sign-off) rounds=([1-9]\d*) raised=(0|[1-9]\d*) fixed=(0|[1-9]\d*) dismissed=(0|[1-9]\d*) deferred=(0|[1-9]\d*)\s*$/;
   const ADD_ON_LINE =
     /^Review: tier=(document|code|sign-off) rounds=([1-9]\d*) raised=(0|[1-9]\d*) fixed=(0|[1-9]\d*) dismissed=(0|[1-9]\d*) deferred=(0|[1-9]\d*) greptile_rounds=(0|[1-9]\d*) greptile_raised=(0|[1-9]\d*) greptile_true=(0|[1-9]\d*)\s*$/;
-  const REVIEW_SLOT = 'Review: tier= rounds= raised= fixed= dismissed= deferred=';
   const assertValidLine = (line, where) => {
     const m = BASE_LINE.exec(line ?? '') ?? ADD_ON_LINE.exec(line ?? '');
     assert.ok(m, `${where}: example review line ${JSON.stringify(line)} no longer matches either approved form`);
@@ -611,11 +610,6 @@ test('the review line has two specified forms, and the template and skills point
     [],
     'the pull request template has a line a parser would read as a real review line',
   );
-  assert.equal(
-    template.split('\n').filter((l) => l.trimEnd() === REVIEW_SLOT).length,
-    1,
-    `the pull request template's review line slot "${REVIEW_SLOT}" is missing, duplicated or reshaped`,
-  );
   assert.ok(
     template.includes('docs/AI-WORKFLOW.md'),
     'the pull request template no longer names docs/AI-WORKFLOW.md for the review line format',
@@ -629,41 +623,49 @@ test('the review line has two specified forms, and the template and skills point
   }
 });
 
-// The carried-receipt record: the resume skill's Receipt reuse rule and the pull request template must agree on the
-// three slots, and the rule must carry the two commands that settle a commit added on top. Hand-written from the
-// approved record, never extracted from either file. Recurring cost: one file read.
-test('the carried-receipt record has one slot per fact, and the resume skill names each slot and both commands', () => {
-  const SLOTS = ['Carried from:', 'Changed paths:', 'Carried receipts:'];
+// The carried-receipt record: the resume skill's Receipt reuse rule must name each slot the pull request template
+// carries, which the template's skeleton test below pins there, and the two commands that settle a commit added on
+// top. Hand-written from the approved record, never extracted from either file. Recurring cost: one scan of the
+// skill text already read.
+const CARRIED_SLOTS = ['Carried from:', 'Changed paths:', 'Carried receipts:'];
+
+test('the Receipt reuse rule in the resume skill names each carried-receipt slot and both commands', () => {
   const COMMANDS = [
     'git merge-base --is-ancestor <earlier-commit> HEAD',
     'git -c core.quotePath=false diff --name-only --no-renames --ignore-submodules=none <earlier-commit> HEAD',
   ];
-  const template = readFileSync(resolve(ROOT, '.github/pull_request_template.md'), 'utf8').split('\n');
-  for (const slot of SLOTS) {
-    assert.equal(
-      template.filter((line) => line.trimEnd() === slot).length,
-      1,
-      `the pull request template's carried-receipt slot "${slot}" is missing, duplicated or reshaped`,
-    );
-  }
   const spans = new Set(inlineSpans(splitMarkdown(RESUME).prose).map((span) => span.body.replace(/\s+/g, ' ')));
-  for (const literal of [...SLOTS, ...COMMANDS]) {
+  for (const literal of [...CARRIED_SLOTS, ...COMMANDS]) {
     assert.ok(spans.has(literal), `the resume skill's Receipt reuse rule must name \`${literal}\` as one code span`);
   }
 });
 
-// Recurring cost: one read of a small file.
-test('the pull request template carries its five sections, the closing line and each danger answer once', () => {
-  const SLOTS = ['Closes #', 'Undo:', 'Reach:'];
-  const skeleton = readFileSync(resolve(ROOT, '.github/pull_request_template.md'), 'utf8')
+// The owner decides on what a collapsed section leaves in view, so each slot is pinned to its section and to its
+// side of a collapse. Recurring cost: one read of a small file.
+test('the pull request template carries each section and slot once, in order, with the receipts and review findings collapsed', () => {
+  const RECEIPT_TABLE = '| Claim | Construction mode | Focused test | Discrimination proof | Result |';
+  const BEFORE = '- **Before:**';
+  const AFTER = '  **After:**';
+  const REVIEW_SLOT = 'Review: tier= rounds= raised= fixed= dismissed= deferred=';
+  const SLOTS = ['Closes #', 'Undo:', 'Reach:', BEFORE, AFTER, RECEIPT_TABLE, ...CARRIED_SLOTS, REVIEW_SLOT, '<details>', '</details>'];
+  const lines = readFileSync(resolve(ROOT, '.github/pull_request_template.md'), 'utf8')
     .split('\n')
-    .map((line) => line.trimEnd())
-    .filter((line) => line.startsWith('## ') || SLOTS.includes(line));
+    .map((line) => line.trimEnd());
   assert.deepEqual(
-    skeleton,
-    ['## Summary', 'Closes #', '## Evidence', '## Merge Danger', 'Undo:', 'Reach:', '## Review', '## Not done'],
-    'the pull request template must carry exactly these sections and slots, each once and in this order',
+    lines.filter((line) => line.startsWith('## ') || line.startsWith('<summary>') || SLOTS.includes(line)),
+    [
+      '## Summary', 'Closes #',
+      '## Not done',
+      '## Merge Danger', 'Undo:', 'Reach:',
+      '## Evidence', BEFORE, AFTER, '<details>', '<summary>Test receipts</summary>', RECEIPT_TABLE, ...CARRIED_SLOTS, '</details>',
+      '## Review', REVIEW_SLOT, '<details>', '<summary>Review findings</summary>', '</details>',
+    ],
+    'the pull request template must carry exactly these sections, slots and collapsed sections, in this order',
   );
+  // GitHub renders the Markdown inside a collapsed section only after a blank line follows its summary.
+  for (const [at, line] of lines.entries()) {
+    if (line.startsWith('<summary>')) assert.equal(lines[at + 1], '', `the template's ${line} line must be followed by a blank line`);
+  }
 });
 
 test('every manifest entry matches the file on disk', () => {
@@ -675,8 +677,8 @@ test('every manifest entry matches the file on disk', () => {
     [
       'These shared workflow files differ from .agents/factory-manifest.json:',
       ...mismatches.map(({ path, expected, actual }) => `  ${path}: recorded ${expected}, found ${actual}`),
-      `In an adopter repository, undo the local edit, make the change in the canonical repository (${canonical}), then re-sync with \`node scripts/factory-sync.mjs --from <canonical checkout>\`.`,
-      'In the canonical repository, record an intended change with `node scripts/factory-sync.mjs --write`.',
+      `In an adopter repository, undo the local edit, make the change in the canonical repository (${canonical}), then apply the release that carries it with a release update.`,
+      'In the canonical repository, follow .agents/skills/shared-files/SKILL.md#canonical-recording for source/copy staging, automatic commit recording where the local profile supplies it, and explicit recovery with `node scripts/factory-sync.mjs --write`.',
       'For a seat setting, run `node scripts/factory-sync.mjs --render` and commit the seat files with the manifest.',
     ].join('\n'),
   );

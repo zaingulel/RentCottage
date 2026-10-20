@@ -1,7 +1,8 @@
 // settings-policy.test.mjs — the agent-shell permission policy in .claude/settings.json.
 //
 // The allow list is a security policy: every entry runs without a prompt. It must stay the
-// three read-mostly board scripts, the read-only merge watch, and the two delivery commands,
+// three read-mostly board scripts, the read-only merge watch, the checked closeout cleanup,
+// and the two delivery commands,
 // `gh pr ready` and `gh pr merge --auto --squash --delete-branch`, whose prefixes the merge and
 // ready rules in scripts/lib/unsafe-git.mjs bound to the exact delivery forms, plus the bounded
 // job-start form that the worktree-add guard bounds. The hook set must stay exactly the guards
@@ -27,6 +28,7 @@ test('only the approved workflow commands and bounded job-start form are auto-ap
     'Bash(node scripts/board-move.mjs *)',
     'Bash(node scripts/board-add.mjs *)',
     'Bash(node scripts/merge-watch.mjs *)',
+    'Bash(node scripts/closeout-cleanup.mjs *)',
     'Bash(gh pr ready *)',
     'Bash(gh pr merge --auto --squash --delete-branch *)',
     'Bash(git worktree add .claude/worktrees/*)',
