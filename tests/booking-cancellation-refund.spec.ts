@@ -31,6 +31,7 @@ import { ownerBookingEarningsMessages as earningsMessages } from "../src/i18n/ow
 import { ownerBookingEarnings } from "../src/booking-request/owner-booking-earnings";
 import { messagingMessages } from "../src/i18n/messaging-messages";
 import { customerReviewMessages } from "../src/i18n/customer-review-messages";
+import { formatInteger } from "../src/i18n/format";
 import type { Locale } from "../src/i18n/routing";
 const { createLocalSupabaseConcurrencyHarness } = createRequire(
   import.meta.url,
@@ -993,6 +994,53 @@ test.describe("retained cancellation and refund controls", () => {
           `select jsonb_build_object('at',to_char(confirmed_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"+00:00"'),'day',(confirmed_at at time zone 'Asia/Baghdad')::date) from public.booking_confirmations where booking_request_id='${request}';`,
         ),
       ) as { at: string; day: string };
+      expect(confirmation.day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      const uuidPattern =
+        "[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
+      const canonicalUuid = new RegExp(`^${uuidPattern}$`);
+      const selection: unknown = JSON.parse(
+        harness.runSql(`
+          select coalesce(jsonb_agg(jsonb_build_object(
+            'id',requests.id,'reference',requests.booking_request_reference
+          ) order by requests.id),'[]'::jsonb)
+          from public.booking_requests requests
+          join public.booking_confirmations confirmations on confirmations.booking_request_id=requests.id
+          where (confirmations.confirmed_at at time zone 'Asia/Baghdad')::date='${confirmation.day}'::date
+            and not exists(select 1 from public.booking_request_confirmation_invalidations invalidation where invalidation.booking_request_id=requests.id)
+            and not exists(select 1 from public.booking_request_payment_required_expiry_work expiry where expiry.booking_request_id=requests.id and expiry.state='quarantined')
+            and (
+              (exists(select 1 from public.booking_lifecycle_outcomes outcome where outcome.booking_request_id=requests.id and outcome.outcome='completed')
+                and (public.booking_request_payment_status(requests)='paid-confirmed'
+                  or exists(select 1 from public.booking_cancellations cancellation where cancellation.booking_request_id=requests.id)))
+              or (not exists(select 1 from public.booking_cancellations cancellation where cancellation.booking_request_id=requests.id)
+                and public.booking_request_payment_status(requests) is distinct from 'paid-confirmed')
+            );
+        `),
+      );
+      if (!Array.isArray(selection))
+        throw new Error("Expected a complete booking selection array");
+      const expectedBookings = selection.map((row: unknown) => {
+        if (
+          typeof row !== "object" ||
+          row === null ||
+          !("id" in row) ||
+          typeof row.id !== "string" ||
+          !canonicalUuid.test(row.id) ||
+          !("reference" in row) ||
+          typeof row.reference !== "string" ||
+          !/^RC-REQ-[A-F0-9]{16}$/.test(row.reference)
+        )
+          throw new Error("Invalid booking selection identity");
+        return { id: row.id, reference: row.reference };
+      });
+      const expectedBookingIds = expectedBookings.map((booking) => booking.id);
+      expect(expectedBookings.length).toBeGreaterThan(0);
+      expect(expectedBookings.length).toBeLessThanOrEqual(500);
+      expect(new Set(expectedBookingIds).size).toBe(expectedBookings.length);
+      expect(
+        new Set(expectedBookings.map((booking) => booking.reference)).size,
+      ).toBe(expectedBookings.length);
+      expect(expectedBookings).toContainEqual({ id: request, reference });
       await page
         .locator('form[method="get"] select[name="state"]')
         .selectOption("completed");
@@ -1007,6 +1055,9 @@ test.describe("retained cancellation and refund controls", () => {
         new RegExp(
           `state=completed&from=${confirmation.day}&through=${confirmation.day}$`,
         ),
+      );
+      await expect(count.locator("strong")).toHaveText(
+        formatInteger(expectedBookingIds.length, locale),
       );
       const appliedUrl = page.url();
       await page
@@ -1029,8 +1080,6 @@ test.describe("retained cancellation and refund controls", () => {
         expect(csv).toContain(`"${copy.bookingPrice} - ${exporting.currency}"`);
         expect(csv).toContain(`"${reference}"`);
         expect(csv).toContain(`"${request}"`);
-        expect(csv).toContain('"110000","5000","115000","11000"');
-        expect(csv).toContain('"99000","0","0"');
         for (const privateValue of [
           owner,
           customer,
@@ -1054,13 +1103,67 @@ test.describe("retained cancellation and refund controls", () => {
           state: "completed",
           from: confirmation.day,
           through: confirmation.day,
-          ids: [request],
+          ids: expectedBookingIds,
           at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
         });
         expect(csv).toContain(`"${exportId}","${audit.at}"`);
+        const lines = csv.slice(1).split("\r\n");
+        expect(lines.pop()).toBe("");
+        const headerPrefix =
+          [
+            exporting.exportRecordId,
+            exporting.recordedAt,
+            exporting.recordType,
+            exporting.reference,
+            exporting.bookingRequestId,
+          ]
+            .map((label) => `"${label}"`)
+            .join(",") + ",";
+        expect(lines.shift()?.startsWith(headerPrefix)).toBe(true);
+        const metadataPrefix = new RegExp(
+          `^"(${uuidPattern})","(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}\\+00:00)","(${exporting.booking}|${exporting.refund})","(RC-REQ-[A-F0-9]{16})","(${uuidPattern})",`,
+        );
+        const records = lines.map((line) => {
+          const metadata = metadataPrefix.exec(line);
+          if (!metadata) throw new Error("Unrecognized export row identity");
+          expect(metadata[1]).toBe(exportId);
+          expect(metadata[2]).toBe(audit.at);
+          return {
+            line,
+            type: metadata[3],
+            reference: metadata[4],
+            id: metadata[5],
+          };
+        });
+        const csvBookingIds = [...new Set(records.map((row) => row.id))].sort();
+        expect(csvBookingIds).toEqual(expectedBookingIds);
+        expect(csvBookingIds).toEqual(audit.ids);
+        const bookingRecords = records.filter(
+          (row) => row.type === exporting.booking,
+        );
+        expect(bookingRecords).toHaveLength(expectedBookings.length);
+        for (const booking of expectedBookings)
+          expect(
+            bookingRecords.filter(
+              (row) =>
+                row.id === booking.id && row.reference === booking.reference,
+            ),
+          ).toHaveLength(1);
+        const targetBookingRecords = bookingRecords.filter(
+          (row) => row.id === request,
+        );
+        expect(targetBookingRecords).toHaveLength(1);
+        expect(targetBookingRecords[0].line).toContain(
+          '"110000","5000","115000","11000"',
+        );
+        expect(targetBookingRecords[0].line).toContain('"99000","0","0"');
         await writeFile(
           testInfo.outputPath(`export-audit-${locale}-${exportId}.json`),
-          JSON.stringify(audit, null, 2),
+          JSON.stringify(
+            { ...audit, expectedBookingIds, csvBookingIds },
+            null,
+            2,
+          ),
         );
         expect(
           Number(
@@ -1171,7 +1274,7 @@ test.describe("retained cancellation and refund controls", () => {
         page.getByRole("link", { name: reference, exact: true }),
       ).toHaveCount(0);
       await expect(count.locator("strong")).toHaveText(
-        locale === "ckb" ? "١" : "1",
+        formatInteger(expectedBookingIds.length, locale),
       );
       await downloadSelection();
       if (locale === "ar") {
