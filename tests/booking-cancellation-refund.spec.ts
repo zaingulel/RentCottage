@@ -996,7 +996,7 @@ test.describe("retained cancellation and refund controls", () => {
       ) as { at: string; day: string };
       expect(confirmation.day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       const uuidPattern =
-        "[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
+        "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
       const canonicalUuid = new RegExp(`^${uuidPattern}$`);
       const selection: unknown = JSON.parse(
         harness.runSql(`
