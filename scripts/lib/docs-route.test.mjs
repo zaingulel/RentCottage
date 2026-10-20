@@ -399,6 +399,10 @@ function withScratchRemote(fn) {
     git(repo, "remote", "add", "origin", remote);
     // Seeded before the hook is armed: creating main is never the gate's route.
     git(repo, "push", "-q", "origin", "HEAD:main");
+    writeFileSync(join(repo, ".git/info/exclude"), "node_modules/\n", {
+      flag: "a",
+    });
+    executable(join(repo, "node_modules/.bin/eslint"), "#!/bin/sh\nexit 0\n");
     git(repo, "config", "core.hooksPath", ".githooks");
     fn({
       commit: (paths) => {

@@ -2,7 +2,7 @@
 //
 // The shared workflow region is pinned by workflow-contract.test.mjs; the text after
 // <!-- factory-shared:end --> is product-owned, so its security, preview and sign-off contracts
-// are pinned here and a sync or edit cannot drop or weaken them silently. The visual verification
+// are pinned here and a release update or edit cannot drop or weaken them silently. The visual verification
 // contract lives in .agents/REPOSITORY.md and is pinned here too.
 
 import { test } from "node:test";
@@ -108,10 +108,10 @@ test("product region keeps the narrowed sign-off row", () => {
   );
 });
 
-test("product region keeps the shared-workflow sync security-review trigger", () => {
+test("product region keeps the shared-workflow install and release-update security-review trigger", () => {
   assertProductLine(
     "security review",
-    "| security review | Authentication, authorization, payment or personal-data access, credential custody, provider-webhook trust, Row Level Security, public/private data exposure, an injection boundary, or a shared-workflow sync that changes agent permissions, hook registrations or hook scripts; privacy: [docs/product/rentcottage-mvp-prd.md](docs/product/rentcottage-mvp-prd.md#6-privacy-safety-and-moderation) |",
+    "| security review | Authentication, authorization, payment or personal-data access, credential custody, provider-webhook trust, Row Level Security, public/private data exposure, an injection boundary, or a shared-workflow install or release update that changes agent permissions, hook registrations or hook scripts; privacy: [docs/product/rentcottage-mvp-prd.md](docs/product/rentcottage-mvp-prd.md#6-privacy-safety-and-moderation) |",
   );
 });
 
