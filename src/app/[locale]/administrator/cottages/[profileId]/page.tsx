@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 
+import { loadMarketplaceSuspension } from "@/administrator-records/supabase-marketplace-suspension";
+import { MarketplaceSuspensionControls } from "@/components/marketplace-suspension-controls";
 import { resolvePlatformAdministratorAccess } from "@/access/platform-administrator-gate";
 import { createRequestCottagePublication } from "@/cottage-publication/request-cottage-publication";
 import { createRequestCottageProfile } from "@/cottage-profile/request-cottage-profile";
@@ -78,6 +80,10 @@ export default async function AdministratorCottageProfilePage({
     );
   }
   if (!page.profile) notFound();
+  const suspension = await loadMarketplaceSuspension({
+    kind: "cottage",
+    id: page.profile.id,
+  });
   return (
     <main className="page results-page">
       <BackofficeNavigation
@@ -100,6 +106,12 @@ export default async function AdministratorCottageProfilePage({
       {page.visibility ? (
         <CottageContentVisibility locale={locale} result={page.visibility} />
       ) : null}
+      <MarketplaceSuspensionControls
+        key={page.profile.id}
+        locale={locale}
+        target={{ kind: "cottage", id: page.profile.id }}
+        initial={suspension}
+      />
       <CottageProfileLifecycleControls
         locale={locale}
         actor="administrator"

@@ -369,4 +369,42 @@ describe("Owner Application review detail", () => {
       expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
     }
   });
+  it.each([
+    [
+      "en",
+      "Suspend Owner Application",
+      "Waiting requests enter payment release processing. Unresolved releases remain visible in administrator payments; suspension does not confirm that money was released.",
+      "Manage restrictions in administrator records",
+    ],
+    [
+      "ar",
+      "علّق طلب المالك",
+      "تدخل الطلبات المنتظرة في معالجة تحرير الدفعات. تبقى عمليات التحرير غير المحسومة ظاهرة في دفعات الإدارة؛ التعليق لا يؤكد تحرير الأموال.",
+      "أدر القيود في سجلات الإدارة",
+    ],
+    [
+      "ckb",
+      "داواکاری خاوەن ڕابگرە",
+      "داواکارییە چاوەڕوانەکان دەچنە پرۆسەی ئازادکردنی پارەدان. ئازادکردنە چارەسەرنەکراوەکان لە پارەدانی بەڕێوەبەر دەردەکەون؛ ڕاگرتن پشتڕاستکردنەوەی ئازادکردنی پارە نییە.",
+      "سنووردارکردنەکان لە تۆمارەکانی بەڕێوەبەر بەڕێوە ببە",
+    ],
+  ] as const)(
+    "explains legacy suspension release processing and retains record navigation in %s",
+    (locale, suspendLabel, explanation, recordsLabel) => {
+      render(
+        <OwnerApplicationReviewDetailView
+          locale={locale}
+          detail={{ ...detail, status: "approved" }}
+        />,
+      );
+      const submit = screen.getByRole("button", { name: suspendLabel });
+      expect(submit).toBeVisible();
+      const form = submit.closest("form")!;
+      expect(within(form).getByText(explanation)).toBeVisible();
+      expect(
+        within(form).getByRole("link", { name: recordsLabel }),
+      ).toHaveAttribute("href", `/${locale}/administrator/records`);
+      expect(new FormData(form).get("action")).toBe("suspend");
+    },
+  );
 });

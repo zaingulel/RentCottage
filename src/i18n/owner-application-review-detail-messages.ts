@@ -17,6 +17,9 @@ const en = {
   approve: "Approve Owner Application",
   reject: "Reject Owner Application",
   suspend: "Suspend Owner Application",
+  suspensionRelease:
+    "Waiting requests enter payment release processing. Unresolved releases remain visible in administrator payments; suspension does not confirm that money was released.",
+  restrictionRecords: "Manage restrictions in administrator records",
   jurisdiction: "Jurisdiction",
   licensingBasis: "Licensing basis",
   licence: "Licence",
@@ -64,6 +67,9 @@ export const ownerApplicationReviewDetailMessages: Record<Locale, Copy> = {
     approve: "وافق على طلب المالك",
     reject: "ارفض طلب المالك",
     suspend: "علّق طلب المالك",
+    suspensionRelease:
+      "تدخل الطلبات المنتظرة في معالجة تحرير الدفعات. تبقى عمليات التحرير غير المحسومة ظاهرة في دفعات الإدارة؛ التعليق لا يؤكد تحرير الأموال.",
+    restrictionRecords: "أدر القيود في سجلات الإدارة",
     jurisdiction: "الولاية القضائية",
     licensingBasis: "أساس الترخيص",
     licence: "ترخيص",
@@ -104,6 +110,9 @@ export const ownerApplicationReviewDetailMessages: Record<Locale, Copy> = {
     approve: "داواکاری خاوەن پەسەند بکە",
     reject: "داواکاری خاوەن ڕەت بکەرەوە",
     suspend: "داواکاری خاوەن ڕابگرە",
+    suspensionRelease:
+      "داواکارییە چاوەڕوانەکان دەچنە پرۆسەی ئازادکردنی پارەدان. ئازادکردنە چارەسەرنەکراوەکان لە پارەدانی بەڕێوەبەر دەردەکەون؛ ڕاگرتن پشتڕاستکردنەوەی ئازادکردنی پارە نییە.",
+    restrictionRecords: "سنووردارکردنەکان لە تۆمارەکانی بەڕێوەبەر بەڕێوە ببە",
     jurisdiction: "دەسەڵاتی یاسایی",
     licensingBasis: "بنەمای مۆڵەت",
     licence: "مۆڵەت",

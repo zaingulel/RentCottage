@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import {
   ActionButton,
   ActionFeedback,
+  ActionLink,
   ChoiceControl,
   FormControl,
   OptionGroup,
@@ -329,6 +330,13 @@ export function OwnerApplicationReviewDetailView({
               action="suspend"
             />
             <h3 className="card-title">{copy.suspend}</h3>
+            <p>{copy.suspensionRelease}</p>
+            <ActionLink
+              kind="secondary"
+              href={`/${locale}/administrator/records`}
+            >
+              {copy.restrictionRecords}
+            </ActionLink>
             <label>
               <span>{copy.reason}</span>
               <FormControl
