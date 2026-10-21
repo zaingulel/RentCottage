@@ -548,3 +548,69 @@ it("preserves schedule operation outcomes across all repository reads", async ()
     }
   }
 });
+
+it("preserves schedule provider cause depth and first-code precedence", async () => {
+  const knownCodeAtDepth = (depth: number): unknown => {
+    let error: unknown = { code: "RC409" };
+    for (let level = 0; level < depth; level += 1) {
+      error = { cause: error };
+    }
+    return error;
+  };
+  const cases = [
+    {
+      name: "immediate nested known code",
+      error: { cause: { code: "RC409" } },
+      expected: { status: "conflict" },
+    },
+    {
+      name: "known code at raw depth six",
+      error: knownCodeAtDepth(6),
+      expected: { status: "conflict" },
+    },
+    {
+      name: "known code at raw depth seven",
+      error: knownCodeAtDepth(7),
+      expected: { status: "unavailable" },
+    },
+    {
+      name: "outer unknown string masks a known cause",
+      error: { code: "UNKNOWN", cause: { code: "RC409" } },
+      expected: { status: "unavailable" },
+    },
+    {
+      name: "outer numeric code permits a known cause",
+      error: { code: 409, cause: { code: "RC409" } },
+      expected: { status: "conflict" },
+    },
+    {
+      name: "constructor string is unknown",
+      error: { code: "constructor" },
+      expected: { status: "unavailable" },
+    },
+  ];
+  const shifts = [
+    { name: "Morning", startTime: "08:00", endTime: "12:00" },
+    { name: "Evening", startTime: "18:00", endTime: "02:00" },
+  ];
+  for (const example of cases) {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: example.error });
+    const service = createCottageShiftSchedule(
+      new SupabaseCottageShiftScheduleRepository({
+        rpc,
+      } as unknown as SupabaseClient),
+    );
+    await expect(
+      service.save(profileId, 1, { shifts }),
+      example.name,
+    ).resolves.toEqual(example.expected);
+    expect(rpc, example.name).toHaveBeenCalledExactlyOnceWith(
+      "replace_cottage_shift_schedule",
+      {
+        target_profile_id: profileId,
+        target_expected_revision: 1,
+        requested_shifts: shifts,
+      },
+    );
+  }
+});
