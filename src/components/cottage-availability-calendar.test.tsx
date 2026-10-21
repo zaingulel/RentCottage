@@ -312,19 +312,22 @@ function loadBatchCalendar(_previous: unknown, form: FormData) {
 }
 async function chooseBatch(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByLabelText("From date");
-  fireEvent.change(screen.getByLabelText("From date"), {
+  const panel = within(
+    screen.getByRole("region", { name: "Change availability" }),
+  );
+  fireEvent.change(panel.getByLabelText("From date"), {
     target: { value: first },
   });
-  fireEvent.change(screen.getByLabelText("To date"), {
+  fireEvent.change(panel.getByLabelText("To date"), {
     target: { value: second },
   });
   for (const unit of batchUnits)
-    await user.click(screen.getByRole("checkbox", { name: unit.label }));
-  await user.selectOptions(screen.getByLabelText("Availability state"), "open");
+    await user.click(panel.getByRole("checkbox", { name: unit.label }));
+  await user.selectOptions(panel.getByLabelText("Availability state"), "open");
   await user.click(
-    screen.getByRole("button", { name: "Review availability changes" }),
+    panel.getByRole("button", { name: "Review availability changes" }),
   );
-  await screen.findByRole("list", { name: "Included cells" });
+  await panel.findByRole("list", { name: "Included cells" });
 }
 
 describe("Cottage Availability Calendar", () => {
@@ -356,8 +359,8 @@ describe("Cottage Availability Calendar", () => {
       expect(days.map((day) => day.getAttribute("aria-label"))).toEqual(
         february,
       );
-      for (const day of days)
-        expect(within(day).getAllByRole("listitem")).toHaveLength(4);
+      const dayCells = days.map((day) => within(day).getAllByRole("listitem"));
+      for (const cells of dayCells) expect(cells).toHaveLength(4);
       for (const text of [
         copy.closed,
         copy.open,
@@ -375,13 +378,13 @@ describe("Cottage Availability Calendar", () => {
       expect(
         screen.getAllByText("BOOK-123", { selector: 'bdi[dir="auto"]' }).length,
       ).toBeGreaterThan(0);
-      for (const [day, expected] of [
+      for (const [cells, expected] of [
         [
-          days[0]!,
+          dayCells[0]!,
           [copy.closed, copy.open, copy.privateBlocked, copy.pendingHold],
         ],
         [
-          days[1]!,
+          dayCells[1]!,
           [
             copy.confirmedBooking,
             copy.componentUnavailable,
@@ -390,14 +393,13 @@ describe("Cottage Availability Calendar", () => {
           ],
         ],
       ] as const) {
-        const cells = within(day).getAllByRole("listitem");
         expected.forEach((label, index) =>
           expect(
             within(cells[index]!).getByText(label as string),
           ).toBeVisible(),
         );
       }
-      const temporary = within(days[1]!).getAllByRole("listitem")[2]!;
+      const temporary = dayCells[1]![2]!;
       expect(
         within(temporary).queryByText(copy.pendingHold as string),
       ).not.toBeInTheDocument();
@@ -417,13 +419,16 @@ describe("Cottage Availability Calendar", () => {
       expect(
         within(days[0]!).getAllByText("02:00", { selector: 'bdi[dir="ltr"]' }),
       ).toHaveLength(2);
+      const panel = within(
+        screen.getByRole("region", { name: copy.batchHeading as string }),
+      );
       expect(
-        screen.getByRole("heading", { name: copy.batchHeading as string }),
+        panel.getByRole("heading", { name: copy.batchHeading as string }),
       ).toBeVisible();
-      expect(screen.getByLabelText(copy.batchFrom as string)).toBeVisible();
-      expect(screen.getByLabelText(copy.batchTo as string)).toBeVisible();
+      expect(panel.getByLabelText(copy.batchFrom as string)).toBeVisible();
+      expect(panel.getByLabelText(copy.batchTo as string)).toBeVisible();
       expect(
-        screen.getByRole("group", { name: copy.batchUnits as string }),
+        panel.getByRole("group", { name: copy.batchUnits as string }),
       ).toBeVisible();
       expect(
         view.container.querySelector(".cottage-calendar-batch"),
@@ -449,16 +454,16 @@ describe("Cottage Availability Calendar", () => {
       single.days[0]!.units[0]!.ownerState = "private_blocked";
       single.days[0]!.units[0]!.calendarState = "private_blocked";
       loadSpan.mockResolvedValueOnce({ status: "loaded", calendar: single });
-      await user.click(screen.getByRole("checkbox", { name: units[0]!.label }));
+      await user.click(panel.getByRole("checkbox", { name: units[0]!.label }));
       await user.click(
-        screen.getByRole("button", { name: copy.batchReview as string }),
+        panel.getByRole("button", { name: copy.batchReview as string }),
       );
-      await screen.findByRole("list", { name: copy.batchIncluded as string });
-      expect(screen.getByText(copy.batchConsentHelp as string)).toBeVisible();
+      await panel.findByRole("list", { name: copy.batchIncluded as string });
+      expect(panel.getByText(copy.batchConsentHelp as string)).toBeVisible();
       const label = (copy.batchReplace as string)
         .replace("{date}", "2028-02-01")
         .replace("{unit}", units[0]!.label);
-      const privateConsent = screen.getByRole("checkbox", { name: label });
+      const privateConsent = panel.getByRole("checkbox", { name: label });
       expect(privateConsent).not.toBeChecked();
       await user.click(privateConsent);
       saveBatch.mockResolvedValueOnce({
@@ -497,7 +502,7 @@ describe("Cottage Availability Calendar", () => {
         calendar: single,
       });
       await user.click(
-        screen.getByRole("button", { name: copy.batchApply as string }),
+        panel.getByRole("button", { name: copy.batchApply as string }),
       );
       expect(await screen.findByText(copy.reasonStale as string)).toBeVisible();
       view.unmount();
@@ -522,13 +527,18 @@ describe("Cottage Availability Calendar", () => {
     }));
     const user = userEvent.setup();
     const view = render(<Calendar {...props} />);
+    let navigation = within(
+      view.container.querySelector<HTMLElement>(
+        ".cottage-calendar-navigation",
+      )!,
+    );
     await screen.findByText("2028-02-29", { selector: "time" });
     expect(
-      screen.getByRole("button", { name: "Previous month" }),
+      navigation.getByRole("button", { name: "Previous month" }),
     ).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Next month" }));
+    await user.click(navigation.getByRole("button", { name: "Next month" }));
     await screen.findByText("2028-03-31", { selector: "time" });
-    const previous = screen.getByRole("button", { name: "Previous month" });
+    const previous = navigation.getByRole("button", { name: "Previous month" });
     const heading = screen.getByRole("heading", {
       name: "Monthly availability",
     });
@@ -548,13 +558,15 @@ describe("Cottage Availability Calendar", () => {
     );
     await waitFor(() => expect(heading).toHaveFocus());
     expect(previous).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Show month containing date"), {
+    fireEvent.change(navigation.getByLabelText("Show month containing date"), {
       target: { value: "2028-12-17" },
     });
     await screen.findByText("2028-12-31", { selector: "time" });
-    await user.click(screen.getByRole("button", { name: "Next month" }));
+    await user.click(navigation.getByRole("button", { name: "Next month" }));
     await screen.findByText("2029-01-31", { selector: "time" });
-    await user.click(screen.getByRole("button", { name: "Previous month" }));
+    await user.click(
+      navigation.getByRole("button", { name: "Previous month" }),
+    );
     await screen.findByText("2028-12-31", { selector: "time" });
     view.unmount();
     loadSpan.mockReset();
@@ -569,15 +581,19 @@ describe("Cottage Availability Calendar", () => {
       ),
     }));
     const midnight = render(<Calendar {...props} />);
+    navigation = within(
+      midnight.container.querySelector<HTMLElement>(
+        ".cottage-calendar-navigation",
+      )!,
+    );
     await screen.findByText("2028-03-31", { selector: "time" });
     expect(
       screen.queryByText("2028-02-29", { selector: "time" }),
     ).not.toBeInTheDocument();
     expect(loadSpan).toHaveBeenCalledTimes(2);
-    expect(screen.getByLabelText("Show month containing date")).toHaveAttribute(
-      "min",
-      "2028-03-01",
-    );
+    expect(
+      navigation.getByLabelText("Show month containing date"),
+    ).toHaveAttribute("min", "2028-03-01");
     midnight.unmount();
     loadSpan.mockReset();
 
@@ -591,6 +607,11 @@ describe("Cottage Availability Calendar", () => {
       ),
     }));
     const ahead = render(<Calendar {...props} />);
+    navigation = within(
+      ahead.container.querySelector<HTMLElement>(
+        ".cottage-calendar-navigation",
+      )!,
+    );
     await screen.findByText("2028-02-29", { selector: "time" });
     expect(
       within(
@@ -607,12 +628,12 @@ describe("Cottage Availability Calendar", () => {
       within(today).queryByText("Past date · read-only"),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Previous month" }),
+      navigation.getByRole("button", { name: "Previous month" }),
     ).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Show month containing date"), {
+    fireEvent.change(navigation.getByLabelText("Show month containing date"), {
       target: { value: "2028-01-15" },
     });
-    expect(screen.getByLabelText("Show month containing date")).toHaveValue(
+    expect(navigation.getByLabelText("Show month containing date")).toHaveValue(
       "2028-02-01",
     );
     ahead.unmount();
@@ -634,18 +655,23 @@ describe("Cottage Availability Calendar", () => {
         ),
       }));
     const viewForLast = render(<Calendar {...props} />);
+    navigation = within(
+      viewForLast.container.querySelector<HTMLElement>(
+        ".cottage-calendar-navigation",
+      )!,
+    );
     await waitFor(() => expect(loadSpan).toHaveBeenCalledTimes(1));
-    await user.click(screen.getByRole("button", { name: "Next month" }));
+    await user.click(navigation.getByRole("button", { name: "Next month" }));
     await screen.findByText("2028-03-31", { selector: "time" });
     await act(async () =>
       first.resolve({ status: "loaded", calendar: calendar() }),
     );
     expect(screen.getByText("2028-03-31", { selector: "time" })).toBeVisible();
-    fireEvent.change(screen.getByLabelText("Show month containing date"), {
+    fireEvent.change(navigation.getByLabelText("Show month containing date"), {
       target: { value: "2028-05-16" },
     });
     await screen.findByText("2028-05-31", { selector: "time" });
-    expect(screen.getByLabelText("Show month containing date")).toHaveValue(
+    expect(navigation.getByLabelText("Show month containing date")).toHaveValue(
       "2028-05-16",
     );
     loadSpan.mockImplementation(async (_previous, form: FormData) => ({
@@ -656,14 +682,13 @@ describe("Cottage Availability Calendar", () => {
         "2028-03-31T21:00:00Z",
       ),
     }));
-    fireEvent.change(screen.getByLabelText("Show month containing date"), {
+    fireEvent.change(navigation.getByLabelText("Show month containing date"), {
       target: { value: "2028-03-15" },
     });
     await screen.findByText("2028-04-30", { selector: "time" });
-    expect(screen.getByLabelText("Show month containing date")).toHaveAttribute(
-      "min",
-      "2028-04-01",
-    );
+    expect(
+      navigation.getByLabelText("Show month containing date"),
+    ).toHaveAttribute("min", "2028-04-01");
     viewForLast.unmount();
     loadSpan.mockReset();
 
@@ -673,9 +698,14 @@ describe("Cottage Availability Calendar", () => {
       calendar: CottageInventoryOwnerCalendarSpan;
     }>();
     loadSpan.mockReturnValueOnce(hint.promise);
-    render(<Calendar {...props} />);
+    const hintView = render(<Calendar {...props} />);
+    navigation = within(
+      hintView.container.querySelector<HTMLElement>(
+        ".cottage-calendar-navigation",
+      )!,
+    );
     await waitFor(() => expect(loadSpan).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getByLabelText("Show month containing date"), {
+    fireEvent.change(navigation.getByLabelText("Show month containing date"), {
       target: { value: "2028-04-16" },
     });
     await act(async () =>
@@ -685,13 +715,12 @@ describe("Cottage Availability Calendar", () => {
       }),
     );
     await screen.findByText("2028-04-30", { selector: "time" });
-    expect(screen.getByLabelText("Show month containing date")).toHaveValue(
+    expect(navigation.getByLabelText("Show month containing date")).toHaveValue(
       "2028-04-16",
     );
-    expect(screen.getByLabelText("Show month containing date")).toHaveAttribute(
-      "min",
-      "2028-02-01",
-    );
+    expect(
+      navigation.getByLabelText("Show month containing date"),
+    ).toHaveAttribute("min", "2028-02-01");
   });
 
   it("ignores stale calendar responses and exposes load failures", async () => {
@@ -711,12 +740,17 @@ describe("Cottage Availability Calendar", () => {
       .mockReturnValueOnce(profile.promise)
       .mockReturnValueOnce(revision.promise);
     const view = render(<Calendar {...props} />);
+    let navigation = within(
+      view.container.querySelector<HTMLElement>(
+        ".cottage-calendar-navigation",
+      )!,
+    );
     await waitFor(() => expect(loadSpan).toHaveBeenCalledTimes(1));
     expect(screen.getByRole("status")).toHaveTextContent(
       "Loading month availability",
     );
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
-    await user.click(screen.getByRole("button", { name: "Next month" }));
+    await user.click(navigation.getByRole("button", { name: "Next month" }));
     await waitFor(() => expect(loadSpan).toHaveBeenCalledTimes(2));
     const newProfile = { ...props, profileId: "new-profile" };
     view.rerender(<Calendar {...newProfile} />);
@@ -756,10 +790,9 @@ describe("Cottage Availability Calendar", () => {
       });
     });
     expect(screen.getByText("2028-02-29", { selector: "time" })).toBeVisible();
-    expect(screen.getByLabelText("Show month containing date")).toHaveAttribute(
-      "min",
-      "2028-02-01",
-    );
+    expect(
+      navigation.getByLabelText("Show month containing date"),
+    ).toHaveAttribute("min", "2028-02-01");
     expect(loadSpan).toHaveBeenCalledTimes(4);
     const stalePrevious = deferred<Loaded>();
     const finalPrevious = deferred<Loaded>();
@@ -772,12 +805,12 @@ describe("Cottage Availability Calendar", () => {
         newRevision,
       ),
     });
-    await user.click(screen.getByRole("button", { name: "Next month" }));
+    await user.click(navigation.getByRole("button", { name: "Next month" }));
     await screen.findByText("2028-03-31", { selector: "time" });
     loadSpan
       .mockReturnValueOnce(stalePrevious.promise)
       .mockReturnValueOnce(finalPrevious.promise);
-    const previous = screen.getByRole("button", { name: "Previous month" });
+    const previous = navigation.getByRole("button", { name: "Previous month" });
     const heading = screen.getByRole("heading", {
       name: "Monthly availability",
     });
@@ -866,7 +899,12 @@ describe("Cottage Availability Calendar", () => {
       failed.unmount();
     }
     loadSpan.mockResolvedValueOnce({ status: "unavailable" });
-    render(<Calendar {...props} />);
+    const finalView = render(<Calendar {...props} />);
+    navigation = within(
+      finalView.container.querySelector<HTMLElement>(
+        ".cottage-calendar-navigation",
+      )!,
+    );
     let retry = await screen.findByRole("button", {
       name: "Retry month availability",
     });
@@ -880,12 +918,16 @@ describe("Cottage Availability Calendar", () => {
     retry = screen.getByRole("button", { name: "Retry month availability" });
     await user.keyboard("{Enter}");
     await user.tab();
-    expect(screen.getByLabelText("Show month containing date")).toHaveFocus();
+    expect(
+      navigation.getByLabelText("Show month containing date"),
+    ).toHaveFocus();
     await act(async () =>
       cancelled.resolve({ status: "loaded", calendar: calendar() }),
     );
     await screen.findByText("2028-02-29", { selector: "time" });
-    expect(screen.getByLabelText("Show month containing date")).toHaveFocus();
+    expect(
+      navigation.getByLabelText("Show month containing date"),
+    ).toHaveFocus();
   });
   it("reviews every included cell and requires fresh consent after a refusal", async () => {
     const Calendar = await component();
@@ -893,9 +935,17 @@ describe("Cottage Availability Calendar", () => {
     loadSpan.mockImplementation(loadBatchCalendar);
     const view = render(<Calendar {...batchProps} />);
     await screen.findByLabelText("From date");
+    let panel = within(
+      screen.getByRole("region", { name: "Change availability" }),
+    );
+    const navigation = within(
+      view.container.querySelector<HTMLElement>(
+        ".cottage-calendar-navigation",
+      )!,
+    );
     const initialReads = loadSpan.mock.calls.length;
     await user.click(
-      screen.getByRole("button", { name: "Review availability changes" }),
+      panel.getByRole("button", { name: "Review availability changes" }),
     );
     expect(loadSpan).toHaveBeenCalledTimes(initialReads);
     expect(
@@ -904,20 +954,16 @@ describe("Cottage Availability Calendar", () => {
       ),
     ).toBeVisible();
     await chooseBatch(user);
-    let panel = within(
-      view.container.querySelector<HTMLElement>(".cottage-calendar-batch")!,
-    );
     const included = panel.getByRole("list", { name: "Included cells" });
-    expect(within(included).getAllByRole("listitem")).toHaveLength(8);
+    const includedCells = within(included).getAllByRole("listitem");
+    expect(includedCells).toHaveLength(8);
     for (const day of [first, second])
       for (const unit of batchUnits) {
-        const row = within(included)
-          .getAllByRole("listitem")
-          .find(
-            (item) =>
-              item.textContent?.includes(day) &&
-              item.textContent.includes(unit.label),
-          );
+        const row = includedCells.find(
+          (item) =>
+            item.textContent?.includes(day) &&
+            item.textContent.includes(unit.label),
+        );
         expect(row).toBeDefined();
         expect(row).toHaveTextContent("Proposed state: Open");
       }
@@ -948,9 +994,11 @@ describe("Cottage Availability Calendar", () => {
       calendar: CottageInventoryOwnerCalendarSpan;
     }>();
     loadSpan.mockReturnValueOnce(oldMarchRead.promise);
-    await user.click(screen.getByRole("button", { name: "Next month" }));
+    await user.click(navigation.getByRole("button", { name: "Next month" }));
     loadSpan.mockReturnValueOnce(oldFebruaryRead.promise);
-    await user.click(screen.getByRole("button", { name: "Previous month" }));
+    await user.click(
+      navigation.getByRole("button", { name: "Previous month" }),
+    );
     const pendingWrite = deferred<CottageInventoryBatchActionState>();
     saveBatch.mockReturnValueOnce(pendingWrite.promise);
     apply.focus();
@@ -1213,7 +1261,7 @@ describe("Cottage Availability Calendar", () => {
       panel.getByRole("button", { name: "Review availability changes" }),
     );
     await panel.findByRole("list", { name: "Included cells" });
-    fireEvent.change(screen.getByLabelText("To date"), {
+    fireEvent.change(panel.getByLabelText("To date"), {
       target: { value: "2028-04-02" },
     });
     expect(
@@ -1229,7 +1277,7 @@ describe("Cottage Availability Calendar", () => {
         "Check the selected dates and units, then review again.",
       ),
     ).toBeVisible();
-    fireEvent.change(screen.getByLabelText("To date"), {
+    fireEvent.change(panel.getByLabelText("To date"), {
       target: { value: second },
     });
     const staleReview = deferred<{
@@ -1240,7 +1288,7 @@ describe("Cottage Availability Calendar", () => {
     await user.click(
       panel.getByRole("button", { name: "Review availability changes" }),
     );
-    await user.click(screen.getByLabelText("Show month containing date"));
+    await user.click(navigation.getByLabelText("Show month containing date"));
     loadSpan.mockResolvedValueOnce({
       status: "loaded",
       calendar: calendar(
@@ -1264,7 +1312,9 @@ describe("Cottage Availability Calendar", () => {
       "min",
       "2028-02-02",
     );
-    expect(screen.getByLabelText("Show month containing date")).toHaveFocus();
+    expect(
+      navigation.getByLabelText("Show month containing date"),
+    ).toHaveFocus();
     expect(
       panel.queryByRole("list", { name: "Included cells" }),
     ).not.toBeInTheDocument();
@@ -1320,9 +1370,7 @@ describe("Cottage Availability Calendar", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("From date")).toHaveValue("2028-02-01"),
     );
-    panel = within(
-      view.container.querySelector<HTMLElement>(".cottage-calendar-batch")!,
-    );
+    panel = within(screen.getByRole("region", { name: "Change availability" }));
     await act(async () =>
       lateRevisionReview.resolve({
         status: "loaded",
@@ -1344,9 +1392,7 @@ describe("Cottage Availability Calendar", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("From date")).toHaveValue("2028-02-01"),
     );
-    panel = within(
-      view.container.querySelector<HTMLElement>(".cottage-calendar-batch")!,
-    );
+    panel = within(screen.getByRole("region", { name: "Change availability" }));
     expect(
       panel.queryByRole("button", { name: "Apply reviewed changes" }),
     ).not.toBeInTheDocument();
@@ -1361,8 +1407,16 @@ describe("Cottage Availability Calendar", () => {
     loadSpan.mockImplementation(loadBatchCalendar);
     const view = render(<Calendar {...batchProps} />);
     await chooseBatch(user);
+    let panel = within(
+      screen.getByRole("region", { name: "Change availability" }),
+    );
+    const navigation = within(
+      view.container.querySelector<HTMLElement>(
+        ".cottage-calendar-navigation",
+      )!,
+    );
     await user.click(
-      screen.getByRole("checkbox", {
+      panel.getByRole("checkbox", {
         name: `Replace private block: ${first} · Shift 3: Late`,
       }),
     );
@@ -1371,10 +1425,10 @@ describe("Cottage Availability Calendar", () => {
       calendar: CottageInventoryOwnerCalendarSpan;
     }>();
     loadSpan.mockReturnValueOnce(oldMonth.promise);
-    await user.click(screen.getByRole("button", { name: "Next month" }));
+    await user.click(navigation.getByRole("button", { name: "Next month" }));
     const write = deferred<CottageInventoryBatchActionState>();
     saveBatch.mockReturnValueOnce(write.promise);
-    const apply = screen.getByRole("button", {
+    const apply = panel.getByRole("button", {
       name: "Apply reviewed changes",
     });
     apply.focus();
@@ -1420,7 +1474,7 @@ describe("Cottage Availability Calendar", () => {
     expect(screen.getByText("Refreshing month availability…")).toBeVisible();
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: "Change availability" }),
+        panel.getByRole("heading", { name: "Change availability" }),
       ).toHaveFocus(),
     );
     await act(async () => {
@@ -1483,7 +1537,7 @@ describe("Cottage Availability Calendar", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText("Availability changes saved.")).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: "Apply reviewed changes" }),
+      panel.queryByRole("button", { name: "Apply reviewed changes" }),
     ).not.toBeInTheDocument();
 
     const allOpen = rangeCalendar();
@@ -1497,9 +1551,9 @@ describe("Cottage Availability Calendar", () => {
       }
     loadSpan.mockResolvedValueOnce({ status: "loaded", calendar: allOpen });
     await user.click(
-      screen.getByRole("button", { name: "Review availability changes" }),
+      panel.getByRole("button", { name: "Review availability changes" }),
     );
-    await screen.findByRole("list", { name: "Included cells" });
+    await panel.findByRole("list", { name: "Included cells" });
     saveBatch.mockImplementationOnce(async (_previous, form: FormData) => ({
       status: "saved",
       receipt: {
@@ -1513,16 +1567,16 @@ describe("Cottage Availability Calendar", () => {
       refresh: { status: "required" },
     }));
     await user.click(
-      screen.getByRole("button", { name: "Apply reviewed changes" }),
+      panel.getByRole("button", { name: "Apply reviewed changes" }),
     );
     expect(await screen.findByText("Changed: 0")).toBeVisible();
     expect(screen.getByText("Unchanged: 8")).toBeVisible();
     expect(saveBatch).toHaveBeenCalledTimes(2);
     loadSpan.mockResolvedValueOnce({ status: "loaded", calendar: allOpen });
     await user.click(
-      screen.getByRole("button", { name: "Review availability changes" }),
+      panel.getByRole("button", { name: "Review availability changes" }),
     );
-    await screen.findByRole("list", { name: "Included cells" });
+    await panel.findByRole("list", { name: "Included cells" });
     saveBatch.mockRejectedValueOnce(new Error("write transport"));
     const unknownRefresh = deferred<{
       status: "loaded";
@@ -1531,7 +1585,7 @@ describe("Cottage Availability Calendar", () => {
     const readsBeforeUnknown = loadSpan.mock.calls.length;
     loadSpan.mockReturnValueOnce(unknownRefresh.promise);
     await user.click(
-      screen.getByRole("button", { name: "Apply reviewed changes" }),
+      panel.getByRole("button", { name: "Apply reviewed changes" }),
     );
     expect(
       await screen.findByText(
@@ -1542,7 +1596,7 @@ describe("Cottage Availability Calendar", () => {
       screen.queryByText("No availability changes were saved."),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Apply reviewed changes" }),
+      panel.queryByRole("button", { name: "Apply reviewed changes" }),
     ).not.toBeInTheDocument();
     expect(saveBatch).toHaveBeenCalledTimes(3);
     await waitFor(() =>
@@ -1563,12 +1617,12 @@ describe("Cottage Availability Calendar", () => {
 
     loadSpan.mockResolvedValueOnce({ status: "loaded", calendar: allOpen });
     await user.click(
-      screen.getByRole("button", { name: "Review availability changes" }),
+      panel.getByRole("button", { name: "Review availability changes" }),
     );
-    await screen.findByRole("list", { name: "Included cells" });
+    await panel.findByRole("list", { name: "Included cells" });
     const late = deferred<CottageInventoryBatchActionState>();
     saveBatch.mockReturnValueOnce(late.promise);
-    const lateApply = screen.getByRole("button", {
+    const lateApply = panel.getByRole("button", {
       name: "Apply reviewed changes",
     });
     lateApply.focus();
@@ -1588,6 +1642,7 @@ describe("Cottage Availability Calendar", () => {
     });
     view.rerender(<Calendar {...replacement} />);
     await screen.findByLabelText("From date");
+    panel = within(screen.getByRole("region", { name: "Change availability" }));
     await act(async () =>
       late.resolve({
         status: "saved",
@@ -1606,7 +1661,7 @@ describe("Cottage Availability Calendar", () => {
       screen.queryByText("Availability changes saved."),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Change availability" }),
+      panel.getByRole("heading", { name: "Change availability" }),
     ).not.toHaveFocus();
     expect(screen.getByLabelText("From date")).toHaveValue("2028-02-01");
     view.rerender(<Calendar {...replacement} editable={false} />);
