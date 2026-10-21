@@ -1241,9 +1241,28 @@ describe("Cottage Availability Calendar", () => {
       panel.getByRole("button", { name: "Review availability changes" }),
     );
     await user.click(screen.getByLabelText("Show month containing date"));
+    loadSpan.mockResolvedValueOnce({
+      status: "loaded",
+      calendar: calendar(
+        "2028-02-01",
+        "2028-02-29",
+        "2028-02-02T00:00:00Z",
+        batchProps,
+      ),
+    });
     view.rerender(<Calendar {...batchProps} refreshKey={1} />);
+    await screen.findByText("2028-02-02 03:00:00", {
+      selector: 'bdi[dir="ltr"]',
+    });
     await act(async () =>
       staleReview.resolve({ status: "loaded", calendar: rangeCalendar() }),
+    );
+    expect(
+      screen.getByText("2028-02-02 03:00:00", { selector: 'bdi[dir="ltr"]' }),
+    ).toBeVisible();
+    expect(screen.getByLabelText("From date")).toHaveAttribute(
+      "min",
+      "2028-02-02",
     );
     expect(screen.getByLabelText("Show month containing date")).toHaveFocus();
     expect(
