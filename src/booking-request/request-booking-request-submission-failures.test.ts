@@ -26,6 +26,25 @@ vi.mock("@/payment/durable-payment-simulator-core", () => ({
   }),
 }));
 
+const admission: PaymentOperationAdmission = {
+  operationId: "11111111-1111-4111-8111-111111111111",
+  purpose: "booking-request-authorization",
+  providerIdentity: durablePaymentProvider.identity,
+  idempotencyKey: "original-authorization",
+  requestFingerprint: "a".repeat(64),
+  binding: {
+    kind: "authorization",
+    paymentLifecycleId: "lifecycle",
+    logicalOperationId: "authorization",
+    attemptId: "authorization:attempt-1",
+    amountFils: 1000,
+    currency: "IQD",
+  },
+  notBefore: null,
+  notAfter: "2099-01-01T00:00:00Z",
+  mode: "reconcile",
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.resetModules();
@@ -48,24 +67,6 @@ afterEach(() => {
 });
 
 it("preserves recovery preparation failures and stops before later phases", async () => {
-  const admission: PaymentOperationAdmission = {
-    operationId: "11111111-1111-4111-8111-111111111111",
-    purpose: "booking-request-authorization",
-    providerIdentity: durablePaymentProvider.identity,
-    idempotencyKey: "original-authorization",
-    requestFingerprint: "a".repeat(64),
-    binding: {
-      kind: "authorization",
-      paymentLifecycleId: "lifecycle",
-      logicalOperationId: "authorization",
-      attemptId: "authorization:attempt-1",
-      amountFils: 1000,
-      currency: "IQD",
-    },
-    notBefore: null,
-    notAfter: "2099-01-01T00:00:00Z",
-    mode: "reconcile",
-  };
   const privatePayload = {
     secret: "test-service-role-key",
     contact: "private-customer@example.test",
@@ -136,4 +137,51 @@ it("preserves recovery preparation failures and stops before later phases", asyn
     expect(durablePaymentProvider.execute, scenario.name).not.toHaveBeenCalled();
     expect(diagnostic.mock.calls, scenario.name).toEqual([[scenario.diagnostic]]);
   }
+});
+
+it("continues expiry after an unresolved pending inquiry result", async () => {
+  const calls: string[] = [];
+  const rpc = vi.fn(async (name: string) => {
+    calls.push(name);
+    return {
+      data:
+        name === "pending_booking_request_authorization_observations"
+          ? [admission]
+          : name === "reload_booking_request_payment_operation"
+            ? admission
+            : name === "due_booking_request_submission_recoveries"
+              ? []
+              : 1,
+      error: null,
+    };
+  });
+  createClient.mockReturnValue({ rpc });
+  durablePaymentProvider.query.mockImplementationOnce(async () => {
+    calls.push("provider inquiry");
+    throw new Error("Provider inquiry unavailable");
+  });
+  const { createRequestBookingRequestSubmission } = await import(
+    "./request-booking-request-submission"
+  );
+
+  const submission = await createRequestBookingRequestSubmission();
+
+  expect(durablePaymentProvider.query).toHaveBeenCalledExactlyOnceWith({
+    ...admission.binding,
+    providerRequestId: null,
+    providerReference: null,
+    admission,
+  });
+  expect(durablePaymentProvider.execute).not.toHaveBeenCalled();
+  expect(calls).toEqual([
+    "pending_booking_request_authorization_observations",
+    "reload_booking_request_payment_operation",
+    "provider inquiry",
+    "expire_booking_request_authorization_claims",
+    "due_booking_request_submission_recoveries",
+  ]);
+  expect(submission).toEqual({
+    submit: expect.any(Function),
+    recoverAuthorized: expect.any(Function),
+  });
 });
