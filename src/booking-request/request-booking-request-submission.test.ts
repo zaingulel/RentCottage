@@ -1,3 +1,4 @@
+import { setImmediate } from "node:timers/promises";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPaymentLifecycle } from "@/payment/payment-lifecycle";
 import { PaymentSimulator } from "@/payment/payment-simulator";
@@ -278,6 +279,7 @@ it("continues both unresolved recoveries and ordinary submission", async () => {
   });
   try {
     await started;
+    await setImmediate();
     expect(recoverAuthorized.mock.calls).toEqual([[candidates[0]]]);
     expect(completed).toBe(false);
   } finally {
