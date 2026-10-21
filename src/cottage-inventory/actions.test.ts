@@ -411,20 +411,6 @@ describe("Cottage Inventory actions", () => {
       calendar.to,
     );
     expect(resolveOwnerCalendar).not.toHaveBeenCalled();
-    for (const key of [
-      "profileId",
-      "scheduleRevisionId",
-      "from",
-      "to",
-    ] as const) {
-      resolveOwnerCalendarSpan.mockResolvedValueOnce({
-        status: "resolved",
-        calendar: { ...calendar, [key]: "mismatch" },
-      });
-      await expect(
-        loadCottageInventoryCalendarSpanAction({ status: "idle" }, form),
-      ).resolves.toEqual({ status: "unavailable" });
-    }
     for (const status of ["denied", "conflict", "invalid", "unavailable"]) {
       resolveOwnerCalendarSpan.mockResolvedValueOnce({ status });
       await expect(

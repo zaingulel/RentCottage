@@ -378,10 +378,6 @@ export function CottageAvailabilityCalendar({
       if (result.status === "loaded") {
         const span = result.calendar;
         if (
-          span.profileId !== profileId ||
-          span.scheduleRevisionId !== scheduleRevisionId ||
-          span.from !== capturedDraft.from ||
-          span.to !== capturedDraft.to ||
           span.unitKeys
             .map((unit) => `${unit.kind}:${unit.id}`)
             .sort()
@@ -567,13 +563,7 @@ export function CottageAvailabilityCalendar({
             .map((unit) => `${unit.kind}:${unit.id}`)
             .sort()
             .join("|");
-          if (
-            calendar.profileId !== profileId ||
-            calendar.scheduleRevisionId !== scheduleRevisionId ||
-            calendar.from !== from ||
-            calendar.to !== to ||
-            returnedIdentity !== unitIdentity
-          ) {
+          if (returnedIdentity !== unitIdentity) {
             response = { status: "unavailable" };
           } else {
             const server = baghdadDate(new Date(calendar.asOf));

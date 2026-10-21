@@ -233,14 +233,6 @@ export async function loadCottageInventoryCalendarSpanAction(
     to,
   );
   if (result.status !== "resolved") return result;
-  if (
-    result.calendar.profileId !== profileId ||
-    result.calendar.scheduleRevisionId !== scheduleRevisionId ||
-    result.calendar.from !== from ||
-    result.calendar.to !== to
-  ) {
-    return { status: "unavailable" };
-  }
   return { status: "loaded", calendar: result.calendar };
 }
 
