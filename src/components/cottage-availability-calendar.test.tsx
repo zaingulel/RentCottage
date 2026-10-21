@@ -18,6 +18,8 @@ import type {
 import type { CottageInventoryBatchActionState } from "@/cottage-inventory/actions";
 import { cottagePricingAvailabilityMessages } from "@/i18n/cottage-pricing-availability-messages";
 
+import { CottageAvailabilityCalendar as Calendar } from "./cottage-availability-calendar";
+
 const { loadSpan, saveBatch } = vi.hoisted(() => ({
   loadSpan: vi.fn(),
   saveBatch: vi.fn(),
@@ -170,13 +172,6 @@ function deferred<T>() {
     reject = no;
   });
   return { promise, resolve, reject };
-}
-async function component(): Promise<
-  (typeof import("./cottage-availability-calendar"))["CottageAvailabilityCalendar"]
-> {
-  const modulePath = "./cottage-availability-calendar";
-  return (await import(/* @vite-ignore */ modulePath))
-    .CottageAvailabilityCalendar;
 }
 
 const batchUnits = units.map((unit, index) => ({
@@ -342,7 +337,6 @@ describe("Cottage Availability Calendar", () => {
   it.each(["en", "ar", "ckb"] as const)(
     "renders every month state in each launch language without daily loading: %s",
     async (locale) => {
-      const Calendar = await component();
       loadSpan.mockResolvedValue({
         status: "loaded",
         calendar: calendar(
@@ -509,7 +503,6 @@ describe("Cottage Availability Calendar", () => {
     },
   );
   it("rejects a month snapshot with the wrong unit manifest", async () => {
-    const Calendar = await component();
     const wrong = calendar();
     wrong.unitKeys[0]!.id = "another-shift";
     loadSpan.mockResolvedValue({ status: "loaded", calendar: wrong });
@@ -522,7 +515,6 @@ describe("Cottage Availability Calendar", () => {
     ).not.toBeInTheDocument();
   });
   it("navigates complete Gregorian months using authoritative Baghdad dates", async () => {
-    const Calendar = await component();
     loadSpan.mockImplementation(async (_previous, form: FormData) => ({
       status: "loaded",
       calendar: calendar(String(form.get("from")), String(form.get("to"))),
@@ -726,7 +718,6 @@ describe("Cottage Availability Calendar", () => {
   });
 
   it("ignores stale calendar responses and exposes load failures", async () => {
-    const Calendar = await component();
     const user = userEvent.setup();
     type Loaded = {
       status: "loaded";
@@ -932,7 +923,6 @@ describe("Cottage Availability Calendar", () => {
     ).toHaveFocus();
   });
   it("reviews every included cell and requires fresh consent after a refusal", async () => {
-    const Calendar = await component();
     const user = userEvent.setup();
     loadSpan.mockImplementation(loadBatchCalendar);
     const view = render(<Calendar {...batchProps} />);
@@ -1231,7 +1221,6 @@ describe("Cottage Availability Calendar", () => {
     ).not.toBeInTheDocument();
   });
   it("clears reviewed changes after each submission failure", async () => {
-    const Calendar = await component();
     const user = userEvent.setup();
     loadSpan.mockImplementation(loadBatchCalendar);
     render(<Calendar {...batchProps} />);
@@ -1274,7 +1263,6 @@ describe("Cottage Availability Calendar", () => {
     }
   });
   it("invalidates reviewed changes after draft and scope changes", async () => {
-    const Calendar = await component();
     const user = userEvent.setup();
     loadSpan.mockImplementation(loadBatchCalendar);
     const view = render(<Calendar {...batchProps} />);
@@ -1432,7 +1420,6 @@ describe("Cottage Availability Calendar", () => {
     ).not.toBeInTheDocument();
   });
   it("keeps saved outcome when calendar refresh fails", async () => {
-    const Calendar = await component();
     const user = userEvent.setup();
     loadSpan.mockImplementation(loadBatchCalendar);
     const view = render(<Calendar {...batchProps} />);
