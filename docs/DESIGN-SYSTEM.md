@@ -587,6 +587,18 @@ its own; the block it sits in sets the space around it.
   stays connected and busy until settlement. The authoritative Baghdad snapshot labels past/started units
   read-only and bounds previous navigation; browser time only initializes the date field. The existing
   pricing/day forms stay below the month at every width.
+- Owner availability review: the month is followed by one full-width `cottage-calendar-batch` panel with a
+  connected focus-target heading. Its native From/To dates, full descriptor checkboxes in `OptionGroup` and
+  target-state select reuse `FormControl` and `ChoiceControl`. Draft fields form two equal columns above `wide`
+  and one column at/below it; the unit group and target span the width. Use `--space-4` section gaps,
+  `--space-3` field/review padding and `--space-2` row/consent gaps. Included, eligible, excluded and refusal
+  snapshot cells are semantic lists with full date, unit, access range and textual state/reason; rows use
+  `--line` separators and `--font-size-2`, with date/section labels at `--font-size-3`. No column hides,
+  abbreviates or clips a unit at a supported width. The original range stays visible during a smaller review.
+  Each replaced Private Block has its own named unchecked consent, and a smaller batch has a separate unchecked
+  confirmation. Review/Apply use regular shared actions, synchronous exclusive submission and the heading's
+  settled focus target. Pending actions keep their initiating control connected and disable competing panel
+  controls. Saved receipt counts remain separate from the visible month's loading/error feedback; Retry only reads.
 - Cottage card: a cottage list card has five rows held in a subgrid so cards in a row align: cover, title, detail,
   supporting content, actions. The card grid fills its row with empty columns, so a lone card keeps its column width.
   The cover runs edge to edge at `16 / 10`, cropped with `object-fit: cover`, on `--surface-placeholder` while

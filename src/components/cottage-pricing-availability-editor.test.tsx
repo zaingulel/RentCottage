@@ -21,6 +21,7 @@ vi.mock("@/cottage-inventory/actions", async (importOriginal) => ({
   loadCottageInventoryCalendarSpanAction: loadSpan,
   saveCottageInventoryPricingAction: savePricing,
   setCottageInventoryAvailabilityAction: saveAvailability,
+  setCottageInventoryAvailabilityBatchAction: vi.fn(),
 }));
 
 import { CottagePricingAvailabilityEditor } from "./cottage-pricing-availability-editor";

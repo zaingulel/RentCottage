@@ -1,6 +1,56 @@
 import type { Locale } from "./routing";
 
 const en = {
+  batchHeading: "Change availability",
+  batchFrom: "From date",
+  batchTo: "To date",
+  batchRangeHelp: "Choose up to 31 consecutive days, including both dates.",
+  batchUnits: "Inventory units",
+  batchState: "Availability state",
+  batchReview: "Review availability changes",
+  batchReviewing: "Reviewing availability…",
+  batchApply: "Apply reviewed changes",
+  batchApplying: "Applying reviewed changes…",
+  batchIncluded: "Included cells",
+  batchDates: "Included dates",
+  batchCurrent: "Current owner state",
+  batchExpected: "Reviewed owner state",
+  batchProposed: "Proposed state",
+  batchReplace: "Replace private block: {date} · {unit}",
+  batchConsentHelp: "This replaces only the named private blocks.",
+  batchRefused: "No availability changes were saved.",
+  batchRefusalCalendar: "Availability at refusal",
+  batchEligible: "Eligible cells",
+  batchExcluded: "Excluded cells",
+  batchReviewEligible: "Review eligible changes",
+  batchSmallerHelp: "Review the smaller batch before applying it.",
+  batchConfirm: "I reviewed this smaller batch",
+  batchNoEligible:
+    "No eligible changes remain. Choose a new range or review again.",
+  batchInvalid: "Check the selected dates and units, then review again.",
+  batchUnknown:
+    "The result could not be confirmed. Review availability again before submitting.",
+  batchSaved: "Availability changes saved.",
+  batchChanged: "Changed",
+  batchUnchanged: "Unchanged",
+  batchRefreshing: "Refreshing month availability…",
+  batchRefreshFailed:
+    "Changes were saved, but month availability could not be refreshed. Retry month availability.",
+  reasonTemporary:
+    "Temporarily unavailable. Review again after the current operation finishes.",
+  reasonPending: "Protected by a pending hold.",
+  reasonConfirmed: "Protected by a confirmed booking.",
+  reasonComponent: "Unavailable because a component Shift is committed.",
+  reasonStale:
+    "Availability changed after your review. Review this selection again.",
+  reasonConsent: "Explicit consent is required to replace this private block.",
+  reasonStarted: "This inventory period has already started.",
+  reasonPublication: "Publish this Cottage Profile before opening inventory.",
+  reasonComponents:
+    "Full-day components must be open and have positive prices.",
+  reasonOpenBundle:
+    "This change cannot leave the Full-day bundle open with unavailable components.",
+
   calendarHeading: "Monthly availability",
   calendarPrevious: "Previous month",
   calendarNext: "Next month",
@@ -78,6 +128,53 @@ const en = {
 type Copy = { [Key in keyof typeof en]: string | readonly string[] };
 
 const ar: Copy = {
+  batchHeading: "تغيير التوافر",
+  batchFrom: "من تاريخ",
+  batchTo: "إلى تاريخ",
+  batchRangeHelp:
+    "اختر حتى 31 يوماً متتالياً، بما في ذلك تاريخا البداية والنهاية.",
+  batchUnits: "وحدات المخزون",
+  batchState: "حالة التوافر",
+  batchReview: "مراجعة تغييرات التوافر",
+  batchReviewing: "جارٍ مراجعة التوافر…",
+  batchApply: "تطبيق التغييرات التي تمت مراجعتها",
+  batchApplying: "جارٍ تطبيق التغييرات التي تمت مراجعتها…",
+  batchIncluded: "الخلايا المشمولة",
+  batchDates: "التواريخ المشمولة",
+  batchCurrent: "حالة المالك الحالية",
+  batchExpected: "حالة المالك التي تمت مراجعتها",
+  batchProposed: "الحالة المقترحة",
+  batchReplace: "استبدال الحظر الخاص: {date} · {unit}",
+  batchConsentHelp: "يستبدل هذا الحظر الخاص المسمّى فقط.",
+  batchRefused: "لم يتم حفظ أي تغييرات في التوافر.",
+  batchRefusalCalendar: "التوافر وقت الرفض",
+  batchEligible: "الخلايا المؤهلة",
+  batchExcluded: "الخلايا المستبعدة",
+  batchReviewEligible: "مراجعة التغييرات المؤهلة",
+  batchSmallerHelp: "راجع المجموعة الأصغر قبل تطبيقها.",
+  batchConfirm: "راجعت هذه المجموعة الأصغر",
+  batchNoEligible:
+    "لا توجد تغييرات مؤهلة متبقية. اختر نطاقاً جديداً أو راجع مرة أخرى.",
+  batchInvalid: "تحقق من التواريخ والوحدات المحددة، ثم راجع مرة أخرى.",
+  batchUnknown: "تعذّر تأكيد النتيجة. راجع التوافر مرة أخرى قبل الإرسال.",
+  batchSaved: "تم حفظ تغييرات التوافر.",
+  batchChanged: "تم تغييرها",
+  batchUnchanged: "دون تغيير",
+  batchRefreshing: "جارٍ تحديث توافر الشهر…",
+  batchRefreshFailed:
+    "تم حفظ التغييرات، لكن تعذّر تحديث توافر الشهر. أعد تحميل توافر الشهر.",
+  reasonTemporary: "غير متاح مؤقتاً. راجع مرة أخرى بعد انتهاء العملية الحالية.",
+  reasonPending: "محمي بحجز معلّق.",
+  reasonConfirmed: "محمي بحجز مؤكد.",
+  reasonComponent: "غير متاح لأن إحدى المناوبات ملتزم بها.",
+  reasonStale: "تغيّر التوافر بعد مراجعتك. راجع هذا الاختيار مرة أخرى.",
+  reasonConsent: "يلزم الحصول على موافقة صريحة لاستبدال هذا الحظر الخاص.",
+  reasonStarted: "بدأت فترة المخزون هذه بالفعل.",
+  reasonPublication: "انشر ملف الكوخ هذا قبل فتح المخزون.",
+  reasonComponents: "يجب أن تكون مكونات اليوم الكامل مفتوحة وبأسعار موجبة.",
+  reasonOpenBundle:
+    "لا يمكن لهذا التغيير إبقاء حزمة اليوم الكامل مفتوحة مع مكونات غير متاحة.",
+
   calendarHeading: "التوافر الشهري",
   calendarPrevious: "الشهر السابق",
   calendarNext: "الشهر التالي",
@@ -147,6 +244,59 @@ const ar: Copy = {
 };
 
 const ckb: Copy = {
+  batchHeading: "گۆڕینی بەردەستبوون",
+  batchFrom: "لە بەرواری",
+  batchTo: "تا بەرواری",
+  batchRangeHelp:
+    "تا 31 ڕۆژی بەردەوام هەڵبژێرە، لەگەڵ هەردوو بەرواری سەرەتا و کۆتایی.",
+  batchUnits: "یەکەکانی بەردەستبوون",
+  batchState: "دۆخی بەردەستبوون",
+  batchReview: "پێداچوونەوەی گۆڕانکارییەکانی بەردەستبوون",
+  batchReviewing: "پێداچوونەوەی بەردەستبوون دەکرێت…",
+  batchApply: "جێبەجێکردنی گۆڕانکارییە پێداچوونەوەکراوەکان",
+  batchApplying: "گۆڕانکارییە پێداچوونەوەکراوەکان جێبەجێ دەکرێن…",
+  batchIncluded: "خانە هەڵبژێردراوەکان",
+  batchDates: "بەروارە هەڵبژێردراوەکان",
+  batchCurrent: "دۆخی ئێستای خاوەن",
+  batchExpected: "دۆخی پێداچوونەوەکراوی خاوەن",
+  batchProposed: "دۆخی پێشنیارکراو",
+  batchReplace: "جێگرتنەوەی بلۆکی تایبەت: {date} · {unit}",
+  batchConsentHelp: "ئەمە تەنها جێگای بلۆکە تایبەتە ناوبراوەکان دەگرێتەوە.",
+  batchRefused: "هیچ گۆڕانکارییەکی بەردەستبوون پاشەکەوت نەکرا.",
+  batchRefusalCalendar: "بەردەستبوون لە کاتی ڕەتکردنەوە",
+  batchEligible: "خانە شیاوەکان",
+  batchExcluded: "خانە لابراوەکان",
+  batchReviewEligible: "پێداچوونەوەی گۆڕانکارییە شیاوەکان",
+  batchSmallerHelp: "پێش جێبەجێکردن پێداچوونەوە بە کۆمەڵە بچووکترەکەدا بکە.",
+  batchConfirm: "پێداچوونەوەم بەم کۆمەڵە بچووکترەدا کردووە",
+  batchNoEligible:
+    "هیچ گۆڕانکارییەکی شیاو نەماوە. ماوەیەکی نوێ هەڵبژێرە یان دووبارە پێداچوونەوە بکە.",
+  batchInvalid:
+    "بەروار و یەکە هەڵبژێردراوەکان بپشکنە، پاشان دووبارە پێداچوونەوە بکە.",
+  batchUnknown:
+    "ئەنجامەکە پشتڕاست نەکرایەوە. پێش ناردن دووبارە پێداچوونەوە بە بەردەستبووندا بکە.",
+  batchSaved: "گۆڕانکارییەکانی بەردەستبوون پاشەکەوت کران.",
+  batchChanged: "گۆڕدراو",
+  batchUnchanged: "نەگۆڕاو",
+  batchRefreshing: "بەردەستبوونی مانگ نوێ دەکرێتەوە…",
+  batchRefreshFailed:
+    "گۆڕانکارییەکان پاشەکەوت کران، بەڵام بەردەستبوونی مانگ نوێ نەکرایەوە. دووبارە بەردەستبوونی مانگ بار بکەرەوە.",
+  reasonTemporary:
+    "کاتیاً بەردەست نییە. دوای تەواوبوونی کرداری ئێستا دووبارە پێداچوونەوە بکە.",
+  reasonPending: "بە گرتنێکی چاوەڕوان پارێزراوە.",
+  reasonConfirmed: "بە حجزێکی پشتڕاستکراو پارێزراوە.",
+  reasonComponent: "بەردەست نییە چونکە شیفتێکی پێکهێنەر پابەندکراوە.",
+  reasonStale:
+    "بەردەستبوون دوای پێداچوونەوەکەت گۆڕاوە. دووبارە پێداچوونەوە بەم هەڵبژاردنەدا بکە.",
+  reasonConsent: "بۆ جێگرتنەوەی ئەم بلۆکە تایبەتە ڕەزامەندییەکی ڕوون پێویستە.",
+  reasonStarted: "ئەم ماوەی بەردەستبوونە پێشتر دەستی پێکردووە.",
+  reasonPublication:
+    "پێش کردنەوەی بەردەستبوون ئەم پڕۆفایلی کۆتەجە بڵاو بکەرەوە.",
+  reasonComponents:
+    "پێکهێنەرەکانی تەواوی ڕۆژ دەبێت کراوە بن و نرخی ئەرێنییان هەبێت.",
+  reasonOpenBundle:
+    "ئەم گۆڕانکارییە ناتوانێت پاکێجی تەواوی ڕۆژ بە کراوەیی بهێڵێتەوە لەگەڵ پێکهێنەری نەبەردەست.",
+
   calendarHeading: "بەردەستبوونی مانگانە",
   calendarPrevious: "مانگی پێشوو",
   calendarNext: "مانگی داهاتوو",

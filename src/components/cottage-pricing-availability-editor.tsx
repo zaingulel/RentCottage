@@ -227,6 +227,8 @@ export function CottagePricingAvailabilityEditor({
             scheduleRevisionId={schedule.scheduleRevisionId}
             units={units}
             refreshKey={calendarRefreshKey}
+            editable={editable}
+            canOpen={canOpen}
           />
           <div className="cottage-pricing-availability-notice">
             <p>{scheduleCopy.iraqTimeZone}</p>
