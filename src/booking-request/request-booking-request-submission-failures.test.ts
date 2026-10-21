@@ -115,9 +115,8 @@ it("preserves recovery preparation failures and stops before later phases", asyn
     },
   ];
   const diagnostic = vi.spyOn(console, "error").mockImplementation(() => {});
-  const { createRequestBookingRequestSubmission } = await import(
-    "./request-booking-request-submission"
-  );
+  const { createRequestBookingRequestSubmission } =
+    await import("./request-booking-request-submission");
 
   for (const scenario of cases) {
     vi.clearAllMocks();
@@ -134,8 +133,13 @@ it("preserves recovery preparation failures and stops before later phases", asyn
     ).resolves.toBeUndefined();
     expect(rpc.mock.calls, scenario.name).toEqual(scenario.calls);
     expect(durablePaymentProvider.query, scenario.name).not.toHaveBeenCalled();
-    expect(durablePaymentProvider.execute, scenario.name).not.toHaveBeenCalled();
-    expect(diagnostic.mock.calls, scenario.name).toEqual([[scenario.diagnostic]]);
+    expect(
+      durablePaymentProvider.execute,
+      scenario.name,
+    ).not.toHaveBeenCalled();
+    expect(diagnostic.mock.calls, scenario.name).toEqual([
+      [scenario.diagnostic],
+    ]);
   }
 });
 
@@ -160,9 +164,8 @@ it("continues expiry after an unresolved pending inquiry result", async () => {
     calls.push("provider inquiry");
     throw new Error("Provider inquiry unavailable");
   });
-  const { createRequestBookingRequestSubmission } = await import(
-    "./request-booking-request-submission"
-  );
+  const { createRequestBookingRequestSubmission } =
+    await import("./request-booking-request-submission");
 
   const submission = await createRequestBookingRequestSubmission();
 
