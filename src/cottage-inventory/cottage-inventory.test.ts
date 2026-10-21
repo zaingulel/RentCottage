@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createCottageInventory,
+  CottageInventoryOperationError,
   type CottageInventoryRepository,
 } from "./cottage-inventory";
 
@@ -262,8 +263,8 @@ it("validates bounded owner calendar spans before persistence", async () => {
   }
   expect(resolveOwnerCalendarSpan).toHaveBeenCalledTimes(4);
   resolveOwnerCalendarSpan
-    .mockRejectedValueOnce({ code: "42501" })
-    .mockRejectedValueOnce({ code: "RC409" })
+    .mockRejectedValueOnce(new CottageInventoryOperationError("denied"))
+    .mockRejectedValueOnce(new CottageInventoryOperationError("conflict"))
     .mockRejectedValueOnce(new Error("offline"));
   for (const status of ["denied", "conflict", "unavailable"]) {
     await expect(
@@ -418,14 +419,14 @@ it("rejects invalid owner calendar batches before persistence", async () => {
     }),
   ).resolves.toEqual({ status: "invalid", fields: ["batch"] });
   expect(setAvailabilityBatch).toHaveBeenCalledTimes(callsBeforeOversized);
-  for (const [code, status] of [
-    ["22023", "invalid"],
-    ["RC409", "conflict"],
-    ["42501", "denied"],
-    ["RC202", "denied"],
-    ["offline", "unavailable"],
+  for (const [error, status] of [
+    [new CottageInventoryOperationError("invalid_batch"), "invalid"],
+    [new CottageInventoryOperationError("conflict"), "conflict"],
+    [new CottageInventoryOperationError("denied"), "denied"],
+    [new CottageInventoryOperationError("denied"), "denied"],
+    [new Error("offline"), "unavailable"],
   ]) {
-    setAvailabilityBatch.mockRejectedValueOnce({ cause: { code } });
+    setAvailabilityBatch.mockRejectedValueOnce(error);
     await expect(
       inventory.setAvailabilityBatch(profileId, revisionId, batch),
     ).resolves.toEqual(

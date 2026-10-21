@@ -1,7 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 
-import { createCottageInventory } from "./cottage-inventory";
+import {
+  createCottageInventory,
+  CottageInventoryOperationError,
+} from "./cottage-inventory";
 import { SupabaseCottageInventoryRepository } from "./supabase-cottage-inventory";
 
 const profileId = "70000000-0000-4000-8000-000000000001";
@@ -585,9 +588,12 @@ it("returns a complete scoped owner calendar span and rejects corrupt cells", as
     );
   }
   rpc.mockResolvedValueOnce({ data: null, error: { code: "42501" } });
-  await expect(repository.resolveOwnerCalendarSpan(input)).rejects.toThrow(
-    "Cottage Inventory provider is unavailable",
-  );
+  const denied = repository.resolveOwnerCalendarSpan(input);
+  await expect(denied).rejects.toBeInstanceOf(CottageInventoryOperationError);
+  await expect(denied).rejects.toMatchObject({
+    outcome: "denied",
+    cause: { code: "42501" },
+  });
 });
 
 it("rejects malformed batch receipts and preserves refusals", async () => {
