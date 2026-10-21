@@ -1814,3 +1814,95 @@ it("preserves profile operation outcomes through the real adapter", async () => 
     expect(storageFrom, context).not.toHaveBeenCalled();
   }
 });
+
+it("preserves profile provider cause depth and first-code precedence", async () => {
+  const profileId = "70000000-0000-4000-8000-000000000001";
+  const knownCodeAtDepth = (depth: number): unknown => {
+    let error: unknown = { code: "RC409" };
+    for (let level = 0; level < depth; level += 1) {
+      error = { cause: error };
+    }
+    return error;
+  };
+  const cases = [
+    {
+      name: "immediate nested known code",
+      error: { cause: { code: "RC409" } },
+      expected: { status: "conflict" },
+    },
+    {
+      name: "known code at raw depth seven",
+      error: knownCodeAtDepth(7),
+      expected: { status: "conflict" },
+    },
+    {
+      name: "known code at raw depth eight",
+      error: knownCodeAtDepth(8),
+      expected: { status: "unavailable" },
+    },
+    {
+      name: "outer unknown string masks a known cause",
+      error: { code: "UNKNOWN", cause: { code: "RC409" } },
+      expected: { status: "unavailable" },
+    },
+    {
+      name: "outer numeric code permits a known cause",
+      error: { code: 409, cause: { code: "RC409" } },
+      expected: { status: "conflict" },
+    },
+    {
+      name: "constructor string is unknown",
+      error: { code: "constructor" },
+      expected: { status: "unavailable" },
+    },
+  ];
+  const values = {
+    name: "Cottage",
+    governorate: "Erbil",
+    approximateLocation: "Shaqlawa",
+    exactAddress: "",
+    exactLatitude: null,
+    exactLongitude: null,
+    privateDirections: "",
+    capacity: 8,
+    bedrooms: 3,
+    bathrooms: 2,
+    amenities: ["garden"],
+    sourceLanguage: "en",
+    description: "Description",
+    houseRules: "Rules",
+  };
+  for (const example of cases) {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: example.error });
+    const client = { rpc } as unknown as SupabaseClient;
+    const service = createCottageProfile({
+      repository: new SupabaseCottageProfileRepository(client, client),
+      storage: new SupabaseCottageProfileStorage(client),
+    });
+    await expect(
+      service.saveOwnerDraft(profileId, 2, values),
+      example.name,
+    ).resolves.toEqual(example.expected);
+    expect(rpc, example.name).toHaveBeenCalledExactlyOnceWith(
+      "update_owner_cottage_profile_draft",
+      {
+        target_profile_id: profileId,
+        target_expected_version: 2,
+        requested_name: "Cottage",
+        requested_governorate: "Erbil",
+        requested_approximate_location: "Shaqlawa",
+        requested_exact_address: "",
+        requested_exact_latitude: null,
+        requested_exact_longitude: null,
+        requested_private_directions: "",
+        requested_capacity: 8,
+        requested_bedrooms: 3,
+        requested_bathrooms: 2,
+        requested_amenities: ["garden"],
+        requested_source_language: "en",
+        requested_description: "Description",
+        requested_house_rules: "Rules",
+      },
+    );
+  }
+});
