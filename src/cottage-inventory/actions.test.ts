@@ -12,6 +12,7 @@ vi.mock("./request-cottage-inventory", () => ({
 
 import {
   loadCottageInventoryAvailabilityAction,
+  loadCottageInventoryCalendarSpanAction,
   saveCottageInventoryPricingAction,
   setCottageInventoryAvailabilityAction,
 } from "./actions";
@@ -370,4 +371,65 @@ describe("Cottage Inventory actions", () => {
       expect(createRequestCottageInventory).not.toHaveBeenCalled();
     },
   );
+
+  it("loads one authenticated calendar span without per-day calls", async () => {
+    const calendar = {
+      profileId: "70000000-0000-4000-8000-000000000001",
+      scheduleRevisionId: "71000000-0000-4000-8000-000000000001",
+      from: "2099-08-01",
+      to: "2099-08-31",
+      asOf: "2099-08-01T00:00:00Z",
+      unitKeys: [],
+      days: [],
+    };
+    const resolveOwnerCalendarSpan = vi
+      .fn()
+      .mockResolvedValue({ status: "resolved", calendar });
+    const resolveOwnerCalendar = vi.fn();
+    createRequestCottageInventory.mockResolvedValue({
+      resolveOwnerCalendarSpan,
+      resolveOwnerCalendar,
+    });
+    const form = new FormData();
+    for (const key of [
+      "profileId",
+      "scheduleRevisionId",
+      "from",
+      "to",
+    ] as const)
+      form.set(key, calendar[key]);
+    form.set("ownerUserId", "hostile-client-identity");
+    await expect(
+      loadCottageInventoryCalendarSpanAction({ status: "idle" }, form),
+    ).resolves.toEqual({ status: "loaded", calendar });
+    expect(createRequestCottageInventory).toHaveBeenCalledTimes(1);
+    expect(resolveOwnerCalendarSpan).toHaveBeenCalledExactlyOnceWith(
+      calendar.profileId,
+      calendar.scheduleRevisionId,
+      calendar.from,
+      calendar.to,
+    );
+    expect(resolveOwnerCalendar).not.toHaveBeenCalled();
+    for (const key of [
+      "profileId",
+      "scheduleRevisionId",
+      "from",
+      "to",
+    ] as const) {
+      resolveOwnerCalendarSpan.mockResolvedValueOnce({
+        status: "resolved",
+        calendar: { ...calendar, [key]: "mismatch" },
+      });
+      await expect(
+        loadCottageInventoryCalendarSpanAction({ status: "idle" }, form),
+      ).resolves.toEqual({ status: "unavailable" });
+    }
+    for (const status of ["denied", "conflict", "invalid", "unavailable"]) {
+      resolveOwnerCalendarSpan.mockResolvedValueOnce({ status });
+      await expect(
+        loadCottageInventoryCalendarSpanAction({ status: "idle" }, form),
+      ).resolves.toEqual({ status });
+    }
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
 });

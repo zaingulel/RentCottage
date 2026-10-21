@@ -5,6 +5,9 @@ import type {
   CottageInventoryOwnerEditorState,
   CottageInventoryOwnerEditorUnit,
   CottageInventoryOwnerCalendar,
+  CottageInventoryOwnerCalendarSpan,
+  CottageInventoryOwnerCalendarSpanUnit,
+  CottageInventoryUnitKind,
   CottageInventoryOwnerCalendarUnit,
   CottageInventoryPublicAvailability,
   CottageInventoryPublicAvailabilityUnit,
@@ -228,6 +231,56 @@ function calendarState(
   return value as CottageInventoryOwnerCalendarUnit["calendarState"];
 }
 
+function parseOwnerCalendarUnit(
+  value: unknown,
+): CottageInventoryOwnerCalendarUnit {
+  const unit = record(value);
+  exactKeys(unit, [
+    "id",
+    "kind",
+    "priceIqd",
+    "available",
+    "calendarState",
+    "commitmentReference",
+    "editable",
+  ]);
+  if (
+    (unit.kind !== "shift" && unit.kind !== "full_day_bundle") ||
+    typeof unit.available !== "boolean" ||
+    typeof unit.editable !== "boolean" ||
+    (unit.commitmentReference !== null &&
+      typeof unit.commitmentReference !== "string")
+  ) {
+    throw new Error("Cottage Inventory provider data is invalid");
+  }
+  const state = calendarState(unit.calendarState);
+  const committed = state === "pending_hold" || state === "confirmed_booking";
+  const operational =
+    state === "open" || state === "closed" || state === "private_blocked";
+  const priceIqd = optionalPrice(unit.priceIqd);
+  if (
+    (committed &&
+      (typeof unit.commitmentReference !== "string" ||
+        unit.commitmentReference.trim() === "" ||
+        priceIqd === null)) ||
+    (!committed && unit.commitmentReference !== null) ||
+    unit.editable !== operational ||
+    (unit.available && state !== "open") ||
+    (state === "component_unavailable" && unit.kind !== "full_day_bundle")
+  ) {
+    throw new Error("Cottage Inventory provider data is invalid");
+  }
+  return {
+    id: requiredUuid(unit.id),
+    kind: unit.kind,
+    priceIqd,
+    available: unit.available,
+    calendarState: state,
+    commitmentReference: unit.commitmentReference,
+    editable: unit.editable,
+  };
+}
+
 function parseOwnerCalendar(
   value: unknown,
   expected: {
@@ -245,55 +298,144 @@ function parseOwnerCalendar(
   ]);
   return {
     ...expected,
-    units: (calendar.units as unknown[]).map((value) => {
-      const unit = record(value);
-      exactKeys(unit, [
-        "id",
-        "kind",
-        "priceIqd",
-        "available",
-        "calendarState",
-        "commitmentReference",
-        "editable",
-      ]);
-      if (
-        (unit.kind !== "shift" && unit.kind !== "full_day_bundle") ||
-        typeof unit.available !== "boolean" ||
-        typeof unit.editable !== "boolean" ||
-        (unit.commitmentReference !== null &&
-          typeof unit.commitmentReference !== "string")
-      ) {
-        throw new Error("Cottage Inventory provider data is invalid");
-      }
-      const state = calendarState(unit.calendarState);
-      const committed =
-        state === "pending_hold" || state === "confirmed_booking";
-      const operational =
-        state === "open" || state === "closed" || state === "private_blocked";
-      const priceIqd = optionalPrice(unit.priceIqd);
-      if (
-        (committed &&
-          (typeof unit.commitmentReference !== "string" ||
-            unit.commitmentReference.trim() === "" ||
-            priceIqd === null)) ||
-        (!committed && unit.commitmentReference !== null) ||
-        unit.editable !== operational ||
-        (unit.available && state !== "open") ||
-        (state === "component_unavailable" && unit.kind !== "full_day_bundle")
-      ) {
-        throw new Error("Cottage Inventory provider data is invalid");
-      }
-      return {
-        id: requiredUuid(unit.id),
-        kind: unit.kind,
-        priceIqd,
-        available: unit.available,
-        calendarState: state,
-        commitmentReference: unit.commitmentReference,
-        editable: unit.editable,
-      };
-    }),
+    units: (calendar.units as unknown[]).map(parseOwnerCalendarUnit),
   };
+}
+
+function parseOwnerCalendarSpan(
+  value: unknown,
+  expected: Parameters<
+    CottageInventoryRepository["resolveOwnerCalendarSpan"]
+  >[0],
+): CottageInventoryOwnerCalendarSpan {
+  const span = record(value);
+  exactKeys(span, [
+    "profileId",
+    "scheduleRevisionId",
+    "from",
+    "to",
+    "asOf",
+    "unitKeys",
+    "days",
+  ]);
+  if (
+    requiredUuid(span.profileId) !== expected.profileId ||
+    requiredUuid(span.scheduleRevisionId) !== expected.scheduleRevisionId ||
+    requiredServiceDay(span.from) !== expected.from ||
+    requiredServiceDay(span.to) !== expected.to ||
+    typeof span.asOf !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(
+      span.asOf,
+    ) ||
+    !Number.isFinite(Date.parse(span.asOf)) ||
+    !Array.isArray(span.unitKeys) ||
+    !Array.isArray(span.days)
+  )
+    throw new Error("Cottage Inventory provider data is invalid");
+  const unitKeys = span.unitKeys.map(
+    (value): { id: string; kind: CottageInventoryUnitKind } => {
+      const unit = record(value);
+      exactKeys(unit, ["id", "kind"]);
+      if (unit.kind !== "shift" && unit.kind !== "full_day_bundle") {
+        throw new Error("Cottage Inventory provider data is invalid");
+      }
+      return { id: requiredUuid(unit.id), kind: unit.kind };
+    },
+  );
+  const ids = new Set(unitKeys.map((unit) => unit.id));
+  if (
+    unitKeys.length < 3 ||
+    unitKeys.length > 4 ||
+    ids.size !== unitKeys.length ||
+    unitKeys.filter((unit) => unit.kind === "full_day_bundle").length !== 1
+  )
+    throw new Error("Cottage Inventory provider data is invalid");
+  const keys = new Set(unitKeys.map((unit) => `${unit.kind}:${unit.id}`));
+  const count =
+    (Date.parse(expected.to) - Date.parse(expected.from)) / 86_400_000 + 1;
+  if (count < 1 || count > 31 || span.days.length !== count) {
+    throw new Error("Cottage Inventory provider data is invalid");
+  }
+  const days = span.days.map((value, index) => {
+    const day = record(value);
+    exactKeys(day, ["serviceDay", "units"]);
+    const serviceDay = requiredServiceDay(day.serviceDay);
+    if (
+      serviceDay !==
+        new Date(Date.parse(expected.from) + index * 86_400_000)
+          .toISOString()
+          .slice(0, 10) ||
+      !Array.isArray(day.units) ||
+      day.units.length !== keys.size
+    )
+      throw new Error("Cottage Inventory provider data is invalid");
+    const seen = new Set<string>();
+    const units = day.units.map(
+      (value): CottageInventoryOwnerCalendarSpanUnit => {
+        const unit = record(value);
+        exactKeys(unit, [
+          "id",
+          "kind",
+          "priceIqd",
+          "available",
+          "calendarState",
+          "commitmentReference",
+          "editable",
+          "ownerState",
+          "temporarilyUnavailable",
+        ]);
+        const id = requiredUuid(unit.id);
+        const key = `${unit.kind}:${id}`;
+        if (
+          !keys.has(key) ||
+          seen.has(key) ||
+          typeof unit.temporarilyUnavailable !== "boolean" ||
+          (unit.priceIqd !== null && typeof unit.priceIqd !== "number") ||
+          (unit.available === true && unit.priceIqd === null)
+        )
+          throw new Error("Cottage Inventory provider data is invalid");
+        seen.add(key);
+        const rawState = ownerState(unit.ownerState);
+        const calendarUnit = { ...unit };
+        delete calendarUnit.ownerState;
+        delete calendarUnit.temporarilyUnavailable;
+        const temporarilyUnavailable = unit.temporarilyUnavailable;
+        if (temporarilyUnavailable) {
+          if (
+            unit.calendarState !== null ||
+            unit.commitmentReference !== null ||
+            unit.available !== false ||
+            unit.editable !== false ||
+            (unit.kind !== "shift" && unit.kind !== "full_day_bundle")
+          )
+            throw new Error("Cottage Inventory provider data is invalid");
+          return {
+            id,
+            kind: unit.kind,
+            ownerState: rawState,
+            temporarilyUnavailable,
+            priceIqd: optionalPrice(unit.priceIqd),
+            calendarState: null,
+            commitmentReference: null,
+            available: false,
+            editable: false,
+          };
+        }
+        const parsed = parseOwnerCalendarUnit(calendarUnit);
+        if (
+          ["open", "closed", "private_blocked"].includes(
+            parsed.calendarState,
+          ) &&
+          parsed.calendarState !== rawState
+        ) {
+          throw new Error("Cottage Inventory provider data is invalid");
+        }
+        return { ...parsed, ownerState: rawState, temporarilyUnavailable };
+      },
+    );
+    return { serviceDay, units };
+  });
+  return { ...expected, asOf: span.asOf, unitKeys, days };
 }
 
 function assertSuccess(error: unknown): void {
@@ -373,6 +515,24 @@ export class SupabaseCottageInventoryRepository implements CottageInventoryRepos
     );
     assertSuccess(error);
     return parsePublicAvailability(data, input);
+  }
+
+  async resolveOwnerCalendarSpan(
+    input: Parameters<
+      CottageInventoryRepository["resolveOwnerCalendarSpan"]
+    >[0],
+  ): Promise<CottageInventoryOwnerCalendarSpan> {
+    const { data, error } = await this.client.rpc(
+      "resolve_cottage_inventory_owner_calendar_span",
+      {
+        target_profile_id: input.profileId,
+        target_schedule_revision_id: input.scheduleRevisionId,
+        target_from: input.from,
+        target_to: input.to,
+      },
+    );
+    assertSuccess(error);
+    return parseOwnerCalendarSpan(data, input);
   }
 
   async resolveOwnerCalendar(

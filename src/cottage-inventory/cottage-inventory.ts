@@ -73,6 +73,33 @@ export interface CottageInventoryOwnerCalendar {
   units: CottageInventoryOwnerCalendarUnit[];
 }
 
+export type CottageInventoryOwnerCalendarSpanUnit = Omit<
+  CottageInventoryOwnerCalendarUnit,
+  "calendarState"
+> & {
+  ownerState: CottageInventoryAvailabilityState;
+  calendarState: CottageInventoryOwnerCalendarState | null;
+  temporarilyUnavailable: boolean;
+};
+
+export interface CottageInventoryOwnerCalendarSpan {
+  profileId: string;
+  scheduleRevisionId: string;
+  from: string;
+  to: string;
+  asOf: string;
+  unitKeys: Array<{ id: string; kind: CottageInventoryUnitKind }>;
+  days: Array<{
+    serviceDay: string;
+    units: CottageInventoryOwnerCalendarSpanUnit[];
+  }>;
+}
+
+export type CottageInventoryOwnerCalendarSpanResult =
+  | { status: "resolved"; calendar: CottageInventoryOwnerCalendarSpan }
+  | { status: "invalid"; fields: string[] }
+  | { status: "conflict" | "denied" | "unavailable" };
+
 export interface CottageInventoryOwnerEditorUnit {
   id: string;
   kind: CottageInventoryUnitKind;
@@ -111,6 +138,12 @@ export interface CottageInventoryRepository {
     scheduleRevisionId: string;
     serviceDay: string;
   }): Promise<CottageInventoryPublicAvailability>;
+  resolveOwnerCalendarSpan(input: {
+    profileId: string;
+    scheduleRevisionId: string;
+    from: string;
+    to: string;
+  }): Promise<CottageInventoryOwnerCalendarSpan>;
   resolveOwnerCalendar(input: {
     profileId: string;
     scheduleRevisionId: string;
@@ -420,6 +453,38 @@ export function createCottageInventory(repository: CottageInventoryRepository) {
             profileId,
             scheduleRevisionId,
             serviceDay,
+          }),
+        };
+      } catch (error) {
+        return { status: mapFailure(error) };
+      }
+    },
+
+    async resolveOwnerCalendarSpan(
+      profileId: string,
+      scheduleRevisionId: string,
+      from: string,
+      to: string,
+    ): Promise<CottageInventoryOwnerCalendarSpanResult> {
+      if (
+        !uuidPattern.test(profileId) ||
+        !uuidPattern.test(scheduleRevisionId) ||
+        !isValidServiceDay(from) ||
+        !isValidServiceDay(to) ||
+        from < "0001-01-01" ||
+        from > to ||
+        (Date.parse(to) - Date.parse(from)) / 86_400_000 >= 31
+      ) {
+        return { status: "invalid", fields: ["calendar"] };
+      }
+      try {
+        return {
+          status: "resolved",
+          calendar: await repository.resolveOwnerCalendarSpan({
+            profileId,
+            scheduleRevisionId,
+            from,
+            to,
           }),
         };
       } catch (error) {

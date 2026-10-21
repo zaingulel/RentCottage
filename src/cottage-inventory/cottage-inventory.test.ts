@@ -25,6 +25,12 @@ function repository(): CottageInventoryRepository {
       serviceDay: "2099-08-20",
       units: [],
     })),
+    resolveOwnerCalendarSpan: vi.fn(async (input) => ({
+      ...input,
+      asOf: "2099-01-01T00:00:00Z",
+      unitKeys: [],
+      days: [],
+    })),
     resolveOwnerCalendar: vi.fn(async () => ({
       profileId,
       scheduleRevisionId: revisionId,
@@ -148,6 +154,12 @@ describe("Cottage Inventory", () => {
           },
         ],
       })),
+      resolveOwnerCalendarSpan: vi.fn(async (input) => ({
+        ...input,
+        asOf: "2099-01-01T00:00:00Z",
+        unitKeys: [],
+        days: [],
+      })),
       resolveOwnerCalendar: vi.fn(async () => ({
         profileId,
         scheduleRevisionId: revisionId,
@@ -204,4 +216,59 @@ describe("Cottage Inventory", () => {
       },
     });
   });
+});
+
+it("validates bounded owner calendar spans before persistence", async () => {
+  const store = repository();
+  const resolveOwnerCalendarSpan = vi.fn<
+    CottageInventoryRepository["resolveOwnerCalendarSpan"]
+  >(async (input) => ({
+    ...input,
+    asOf: "2099-01-01T00:00:00Z",
+    unitKeys: [],
+    days: [],
+  }));
+  const inventory = createCottageInventory({
+    ...store,
+    resolveOwnerCalendarSpan,
+  });
+  for (const [profile, revision, from, to] of [
+    ["foreign", revisionId, "2099-01-01", "2099-01-01"],
+    [profileId, "bad", "2099-01-01", "2099-01-01"],
+    [profileId, revisionId, "2099-02-29", "2099-03-01"],
+    [profileId, revisionId, "2099-01-02", "2099-01-01"],
+    [profileId, revisionId, "2099-01-01", "2099-02-01"],
+    [profileId, revisionId, "infinity", "2099-01-01"],
+    [profileId, revisionId, "0000-01-01", "0000-01-01"],
+  ]) {
+    await expect(
+      inventory.resolveOwnerCalendarSpan(profile!, revision!, from!, to!),
+    ).resolves.toEqual({ status: "invalid", fields: ["calendar"] });
+  }
+  expect(resolveOwnerCalendarSpan).not.toHaveBeenCalled();
+  for (const [from, to] of [
+    ["2099-01-01", "2099-01-01"],
+    ["2099-01-20", "2099-02-19"],
+    ["2100-02-28", "2100-03-01"],
+    ["2096-02-29", "2096-03-01"],
+  ]) {
+    await expect(
+      inventory.resolveOwnerCalendarSpan(profileId, revisionId, from!, to!),
+    ).resolves.toMatchObject({ status: "resolved" });
+  }
+  expect(resolveOwnerCalendarSpan).toHaveBeenCalledTimes(4);
+  resolveOwnerCalendarSpan
+    .mockRejectedValueOnce({ code: "42501" })
+    .mockRejectedValueOnce({ code: "RC409" })
+    .mockRejectedValueOnce(new Error("offline"));
+  for (const status of ["denied", "conflict", "unavailable"]) {
+    await expect(
+      inventory.resolveOwnerCalendarSpan(
+        profileId,
+        revisionId,
+        "2099-01-01",
+        "2099-01-01",
+      ),
+    ).resolves.toEqual({ status });
+  }
 });

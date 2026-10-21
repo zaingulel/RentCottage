@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { isLocale, type Locale } from "@/i18n/routing";
 
+import type { CottageInventoryOwnerCalendarSpan } from "./cottage-inventory";
 import { createRequestCottageInventory } from "./request-cottage-inventory";
 
 export type CottageInventoryActionState = {
@@ -206,4 +207,35 @@ export async function setCottageInventoryAvailabilityAction(
     return { status: "saved" };
   }
   return result;
+}
+
+export type CottageInventoryCalendarSpanLoadActionState =
+  | { status: "idle" | "invalid" | "conflict" | "denied" | "unavailable" }
+  | { status: "loaded"; calendar: CottageInventoryOwnerCalendarSpan };
+
+export async function loadCottageInventoryCalendarSpanAction(
+  _previous: CottageInventoryCalendarSpanLoadActionState,
+  formData: FormData,
+): Promise<CottageInventoryCalendarSpanLoadActionState> {
+  const profileId = text(formData, "profileId");
+  const scheduleRevisionId = text(formData, "scheduleRevisionId");
+  const from = text(formData, "from");
+  const to = text(formData, "to");
+  const inventory = await createRequestCottageInventory();
+  const result = await inventory.resolveOwnerCalendarSpan(
+    profileId,
+    scheduleRevisionId,
+    from,
+    to,
+  );
+  if (result.status !== "resolved") return result;
+  if (
+    result.calendar.profileId !== profileId ||
+    result.calendar.scheduleRevisionId !== scheduleRevisionId ||
+    result.calendar.from !== from ||
+    result.calendar.to !== to
+  ) {
+    return { status: "unavailable" };
+  }
+  return { status: "loaded", calendar: result.calendar };
 }
