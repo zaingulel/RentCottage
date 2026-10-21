@@ -262,6 +262,12 @@ function isValidServiceDay(value: unknown): value is string {
   );
 }
 
+function ownerCalendarSpanLength(from: string, to: string): number {
+  if (from < "0001-01-01" || from > to) return 0;
+  const length = (Date.parse(to) - Date.parse(from)) / 86_400_000 + 1;
+  return length <= 31 ? length : 0;
+}
+
 function parsePricing(
   value: unknown,
 ):
@@ -463,10 +469,12 @@ function parseAvailabilityBatch(
       "reviewConfirmed",
     ]) ||
     !isValidServiceDay(input.from) ||
-    !isValidServiceDay(input.to) ||
-    input.from < "0001-01-01" ||
-    input.from > input.to ||
-    (Date.parse(input.to) - Date.parse(input.from)) / 86_400_000 >= 31 ||
+    !isValidServiceDay(input.to)
+  )
+    return;
+  const spanLength = ownerCalendarSpanLength(input.from, input.to);
+  if (
+    spanLength === 0 ||
     !state(input.state) ||
     (input.mode !== "range" && input.mode !== "reviewed") ||
     typeof input.reviewConfirmed !== "boolean" ||
@@ -525,9 +533,7 @@ function parseAvailabilityBatch(
     seen.add(key(parsed));
     cells.push(parsed);
   }
-  const fullCount =
-    ((Date.parse(input.to) - Date.parse(input.from)) / 86_400_000 + 1) *
-    unitKeys.length;
+  const fullCount = spanLength * unitKeys.length;
   if (
     input.mode === "range"
       ? cells.length !== fullCount
@@ -687,9 +693,7 @@ export function createCottageInventory(repository: CottageInventoryRepository) {
         !uuidPattern.test(scheduleRevisionId) ||
         !isValidServiceDay(from) ||
         !isValidServiceDay(to) ||
-        from < "0001-01-01" ||
-        from > to ||
-        (Date.parse(to) - Date.parse(from)) / 86_400_000 >= 31
+        ownerCalendarSpanLength(from, to) === 0
       ) {
         return { status: "invalid", fields: ["calendar"] };
       }
