@@ -246,6 +246,155 @@ try {
   `;
   }
 
+  async function verifyOwnerSpanSnapshot() {
+    runSql(`begin;
+      set local role authenticated;
+      select set_config('request.jwt.claims', '${ownerClaims}', true);
+      select public.set_cottage_inventory_availability(
+        '${profileId}', '${revisionId}', '2099-08-21',
+        '[{"unitId":"${firstShiftId}","unitKind":"shift","state":"open"}]');
+      commit;`);
+    const gateKey = `hashtextextended('rc_i27_owner_span_${randomUUID()}', 0)`;
+    const holder = startSession(`begin;
+      set application_name='rc_i27_span_snapshot_holder';
+      select pg_advisory_xact_lock(${gateKey});
+      select 'SPAN_SNAPSHOT_GATE_HELD';`);
+    let reader;
+    try {
+      await waitForMarker(holder, "SPAN_SNAPSHOT_GATE_HELD");
+      const readerName = "rc_i27_span_snapshot_reader";
+      reader = startSession(
+        `begin isolation level read committed;
+        set application_name='${readerName}';
+        set local role authenticated;
+        select set_config('request.jwt.claims', '${ownerClaims}', true);
+        with gate as materialized (
+          select pg_advisory_xact_lock(${gateKey}),
+            date '2099-08-20' as from_day, date '2099-08-21' as to_day
+        ), observation as materialized (
+          select public.resolve_cottage_inventory_owner_calendar_span(
+            '${profileId}', '${revisionId}', gate.from_day, gate.to_day) as calendar
+          from gate
+        ) select 'SPAN_SNAPSHOT=' || jsonb_build_object(
+          'calendar', calendar,
+          'matchesStatementTime', (calendar ->> 'asOf')::timestamptz = statement_timestamp()
+        )::text from observation;
+        commit;`,
+        true,
+      );
+      await waitForDatabaseLock(readerName, reader);
+      runSql(`${priceMutation("rc_i27_span_snapshot_writer", "SPAN_SNAPSHOT_PRICE_CHANGED")}
+        select public.set_cottage_inventory_availability(
+          '${profileId}', '${revisionId}', '2099-08-20',
+          '[{"unitId":"${firstShiftId}","unitKind":"shift","state":"private_blocked"}]');
+        select public.set_cottage_inventory_availability(
+          '${profileId}', '${revisionId}', '2099-08-21',
+          '[{"unitId":"${firstShiftId}","unitKind":"shift","state":"closed"}]');
+        commit;`);
+      await finishSession(holder, { action: "commit" });
+      await finishSession(reader);
+      const observed = JSON.parse(
+        reader.stdout
+          .split("\n")
+          .find((line) => line.startsWith("SPAN_SNAPSHOT="))
+          .slice("SPAN_SNAPSHOT=".length),
+      );
+      const fresh = JSON.parse(
+        runSql(`begin;
+        set local role authenticated;
+        select set_config('request.jwt.claims', '${ownerClaims}', true);
+        select public.resolve_cottage_inventory_owner_calendar_span(
+          '${profileId}', '${revisionId}', '2099-08-20', '2099-08-21');
+        rollback;`)
+          .split("\n")
+          .at(-1),
+      );
+      const firstShiftCells = (calendar) => {
+        assert.equal(calendar.profileId, profileId);
+        assert.equal(calendar.scheduleRevisionId, revisionId);
+        assert.equal(calendar.from, "2099-08-20");
+        assert.equal(calendar.to, "2099-08-21");
+        assert.deepEqual(calendar.unitKeys, [
+          { id: firstShiftId, kind: "shift" },
+          { id: secondShiftId, kind: "shift" },
+          { id: bundleId, kind: "full_day_bundle" },
+        ]);
+        assert.deepEqual(
+          calendar.days.map((day) => day.serviceDay),
+          ["2099-08-20", "2099-08-21"],
+        );
+        return calendar.days.map((day) => {
+          assert.equal(day.units.length, 3);
+          assert.deepEqual(
+            day.units.map(({ id, kind }) => ({ id, kind })),
+            calendar.unitKeys,
+          );
+          for (const unit of day.units) {
+            assert.equal(unit.commitmentReference, null);
+            assert.equal(unit.temporarilyUnavailable, false);
+          }
+          return day.units.find((unit) => unit.id === firstShiftId);
+        });
+      };
+      assert.equal(observed.matchesStatementTime, true);
+      assert.deepEqual(firstShiftCells(observed.calendar), [
+        {
+          id: firstShiftId,
+          kind: "shift",
+          ownerState: "open",
+          calendarState: "open",
+          priceIqd: 175000,
+          available: true,
+          editable: true,
+          temporarilyUnavailable: false,
+          commitmentReference: null,
+        },
+        {
+          id: firstShiftId,
+          kind: "shift",
+          ownerState: "open",
+          calendarState: "open",
+          priceIqd: 175000,
+          available: true,
+          editable: true,
+          temporarilyUnavailable: false,
+          commitmentReference: null,
+        },
+      ]);
+      assert.deepEqual(firstShiftCells(fresh), [
+        {
+          id: firstShiftId,
+          kind: "shift",
+          ownerState: "private_blocked",
+          calendarState: "private_blocked",
+          priceIqd: 185000,
+          available: false,
+          editable: true,
+          temporarilyUnavailable: false,
+          commitmentReference: null,
+        },
+        {
+          id: firstShiftId,
+          kind: "shift",
+          ownerState: "closed",
+          calendarState: "closed",
+          priceIqd: 175000,
+          available: false,
+          editable: true,
+          temporarilyUnavailable: false,
+          commitmentReference: null,
+        },
+      ]);
+      console.log(
+        "owner span keeps one statement snapshot across concurrent inventory changes: passed; gated read retained open/175000, fresh read observed private_blocked/185000 and closed/175000; exact cells and statement asOf.",
+      );
+    } catch (error) {
+      await cleanUpOwnedSession(holder, error);
+      if (reader) await cleanUpOwnedSession(reader, error);
+      throw error;
+    }
+  }
+
   async function verifyOwnerFirst() {
     const owner = startSession(
       ownerMutation("rc_i27_owner_first_owner", "OWNER_FIRST_LOCKED"),
@@ -682,6 +831,11 @@ try {
   const browserContinuationsBefore = browserContinuationIds("before");
   let failure;
   try {
+    markTimingPhase("setup");
+    runSql(cleanupSql);
+    runSql(setupSql);
+    markTimingPhase("execution");
+    await verifyOwnerSpanSnapshot();
     markTimingPhase("setup");
     runSql(cleanupSql);
     runSql(setupSql);

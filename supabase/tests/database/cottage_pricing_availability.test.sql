@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(121);
+select plan(124);
 
 select col_type_is(
   'public', 'cottage_booking_period_commitments', 'status',
@@ -2294,6 +2294,278 @@ select results_eq(
   $$values (180000::bigint, 180000::bigint, 260000::bigint, 130000::bigint)$$,
   'active Shift and bundle pricing history stay immutable while the unrelated price persists'
 );
+
+
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002601","role":"authenticated","aal":"aal1"}', true);
+select public.set_cottage_inventory_availability(
+  '30000000-0000-4000-8000-000000002601', current_setting('rentcottage.equality_revision_id')::uuid,
+  '2099-10-01', jsonb_build_array(
+    jsonb_build_object('unitId', current_setting('rentcottage.equality_shift_id'), 'unitKind', 'shift', 'state', 'open'),
+    jsonb_build_object('unitId', current_setting('rentcottage.equality_second_shift_id'), 'unitKind', 'shift', 'state', 'open'),
+    jsonb_build_object('unitId', current_setting('rentcottage.equality_bundle_id'), 'unitKind', 'full_day_bundle', 'state', 'open')
+  )
+);
+select public.set_cottage_inventory_availability(
+  '30000000-0000-4000-8000-000000002601', current_setting('rentcottage.equality_revision_id')::uuid,
+  '2099-10-02', jsonb_build_array(jsonb_build_object(
+    'unitId', current_setting('rentcottage.equality_shift_id'), 'unitKind', 'shift', 'state', 'private_blocked'
+  ))
+);
+select public.set_cottage_inventory_availability(
+  '30000000-0000-4000-8000-000000002601', current_setting('rentcottage.equality_revision_id')::uuid,
+  day, jsonb_build_array(jsonb_build_object(
+    'unitId', current_setting('rentcottage.equality_shift_id'), 'unitKind', 'shift', 'state', 'open'
+  ))
+) from (values (date '2099-10-03'), (date '2099-10-04')) days(day);
+reset role;
+select pg_temp.create_test_inventory_commitment(
+  current_setting('rentcottage.equality_revision_id')::uuid, 'shift', current_setting('rentcottage.equality_shift_id')::uuid,
+  '2099-10-03', 'RC-SPAN-HOLD', 100000, 'pending_hold'
+);
+select pg_temp.create_test_inventory_commitment(
+  current_setting('rentcottage.equality_revision_id')::uuid, 'shift', current_setting('rentcottage.equality_shift_id')::uuid,
+  '2099-10-04', 'RC-SPAN-CONFIRMED', 100000, 'confirmed_booking'
+);
+set local role authenticated;
+select results_eq(
+  $$select day ->> 'serviceDay', unit ->> 'id', unit ->> 'kind',
+      unit ->> 'ownerState', unit ->> 'calendarState', (unit ->> 'priceIqd')::bigint, (unit ->> 'temporarilyUnavailable')::boolean,
+      unit ->> 'commitmentReference', (unit ->> 'available')::boolean, (unit ->> 'editable')::boolean
+    from jsonb_array_elements(public.resolve_cottage_inventory_owner_calendar_span(
+      '30000000-0000-4000-8000-000000002601', current_setting('rentcottage.equality_revision_id')::uuid,
+      '2099-10-01', '2099-10-31'
+    ) -> 'days') day
+    cross join lateral jsonb_array_elements(day -> 'units') unit
+    order by day ->> 'serviceDay', unit ->> 'id'$$,
+  $$select to_char(date '2099-10-01' + offset_day, 'YYYY-MM-DD'), id, kind,
+      case when offset_day = 0 or (offset_day in (2, 3) and position = 1) then 'open'
+        when offset_day = 1 and position = 1 then 'private_blocked' else 'closed' end,
+      case when offset_day = 0 then 'open'
+        when offset_day = 1 and position = 1 then 'private_blocked'
+        when offset_day = 2 and position = 1 then 'pending_hold'
+        when offset_day = 3 and position = 1 then 'confirmed_booking'
+        when offset_day in (2, 3) and position = 3 then 'component_unavailable' else 'closed' end,
+      case when position = 1 or (position = 3 and offset_day in (2, 3)) then 100000::bigint
+        when position = 2 then 130000::bigint else 250000::bigint end,
+      false,
+      case when offset_day = 2 and position = 1 then 'RC-SPAN-HOLD'
+        when offset_day = 3 and position = 1 then 'RC-SPAN-CONFIRMED' else null end,
+      offset_day = 0, not (offset_day in (2, 3) and position in (1, 3))
+    from generate_series(0, 30) offset_day
+    cross join (values
+      (current_setting('rentcottage.equality_shift_id'), 'shift', 1),
+      (current_setting('rentcottage.equality_second_shift_id'), 'shift', 2),
+      (current_setting('rentcottage.equality_bundle_id'), 'full_day_bundle', 3)
+    ) units(id, kind, position)
+    order by 1, 2$$,
+  'owner span preserves every date and unit across all six states'
+);
+reset role;
+
+
+select lives_ok($test$
+do $body$
+declare localized_revision_id uuid := gen_random_uuid();
+declare acceptance_evidence jsonb := public.booking_request_acceptance_evidence('en', false);
+declare search jsonb := '{"from":"2099-10-05","to":"2099-10-05","guests":4,"selections":[{"serviceDay":"2099-10-05","kind":"shift","position":1}]}';
+declare quote jsonb;
+declare prepared jsonb;
+declare snapshot jsonb;
+declare claim jsonb;
+declare calendar jsonb;
+declare lifecycle text;
+declare booking_fils bigint;
+declare fee_fils bigint;
+declare total_fils bigint;
+declare commission_fils bigint;
+declare entitlement_fils bigint;
+begin
+  if not exists (select 1 from public.cottage_marketplace_listings
+    where profile_id = '30000000-0000-4000-8000-000000002601'
+      and public_slug = 'cottage-30000000000040008000000000002601' and state = 'published') then
+    raise exception 'The real published fixture listing is missing';
+  end if;
+  insert into public.cottage_profile_localized_revisions
+    (id, review_cycle_id, locale, revision, origin, description, house_rules)
+  values (localized_revision_id, '50000000-0000-4000-8000-000000002601', 'en', 1, 'owner_source', 'Description', 'Rules');
+  insert into public.cottage_publication_localizations
+    (publication_id, locale, localized_revision_id, description, house_rules)
+  values ('60000000-0000-4000-8000-000000002601', 'en', localized_revision_id, 'Description', 'Rules');
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002601","role":"authenticated","aal":"aal1"}', true);
+  perform set_config('role', 'authenticated', true);
+  perform public.set_cottage_inventory_availability(
+    '30000000-0000-4000-8000-000000002601', current_setting('rentcottage.equality_revision_id')::uuid,
+    '2099-10-05', jsonb_build_array(jsonb_build_object(
+      'unitId', current_setting('rentcottage.equality_shift_id'), 'unitKind', 'shift', 'state', 'open')));
+  perform set_config('role', 'none', true);
+  quote := public.get_public_booking_quote_with_fingerprint('en', 'cottage-30000000000040008000000000002601', search);
+  if quote ->> 'status' is distinct from 'quoted' then raise exception 'Real claim fixture quote failed: %', quote; end if;
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002699","role":"service_role","aal":"aal1"}', true);
+  perform set_config('role', 'service_role', true);
+  prepared := public.prepare_booking_request_submission(
+    '00000000-0000-0000-0000-000000002699', '30400000-0000-4000-8000-000000000001',
+    jsonb_build_object('locale', 'en', 'publicSlug', 'cottage-30000000000040008000000000002601',
+      'discoveryQuery', search, 'quoteFingerprint', quote -> 'quoteFingerprint',
+      'contentVersion', quote -> 'contentVersion', 'termsVersion', quote -> 'termsVersion',
+      'bookingPriceIqd', quote -> 'bookingPriceIqd', 'serviceFeeIqd', quote -> 'serviceFeeIqd',
+      'customerTotalIqd', quote -> 'customerTotalIqd', 'firstStartsAt', quote -> 'items' -> 0 -> 'startsAt',
+      'intent', jsonb_build_object('customerName', 'Calendar Customer', 'partySize', 4,
+        'acceptedHouseRules', true, 'acceptedCancellationPolicy', true, 'acceptedMarketplaceTerms', true,
+        'acceptedInside48HourNoRefund', false, 'cancellationPolicyVersion', 'rentcottage-mvp-2026-08-04',
+        'acceptanceEvidence', acceptance_evidence)));
+  if prepared ->> 'status' is distinct from 'ready' then raise exception 'Real claim preparation failed: %', prepared; end if;
+  lifecycle := prepared ->> 'paymentLifecycleId';
+  booking_fils := (quote ->> 'bookingPriceIqd')::bigint * 1000;
+  fee_fils := (quote ->> 'serviceFeeIqd')::bigint * 1000;
+  total_fils := (quote ->> 'customerTotalIqd')::bigint * 1000;
+  commission_fils := booking_fils / 10;
+  entitlement_fils := booking_fils - commission_fils;
+  snapshot := jsonb_build_object(
+    'paymentLifecycleId', lifecycle, 'currency', 'IQD',
+    'bookingPriceFils', booking_fils, 'bookingServiceFeeFils', fee_fils, 'customerTotalFils', total_fils,
+    'authorization', jsonb_build_object('paymentLifecycleId', lifecycle, 'kind', 'authorization',
+      'logicalOperationId', lifecycle || ':authorization', 'attemptId', lifecycle || ':authorization:attempt-1',
+      'status', 'pending', 'amountFils', total_fils, 'providerRequestId', null, 'providerReference', null,
+      'movementReference', null, 'reconciliationRequired', false, 'retrySafe', false),
+    'capture', null, 'release', null, 'refunds', '[]'::jsonb,
+    'financials', jsonb_build_object('refundedBookingPriceFils', 0, 'refundedBookingServiceFeeFils', 0,
+      'remainingBookingPriceFils', booking_fils, 'remainingBookingServiceFeeFils', fee_fils,
+      'marketplaceCommissionFils', commission_fils, 'ownerEntitlementFils', entitlement_fils),
+    'payout', jsonb_build_object('status', 'not_eligible', 'eligibleFils', entitlement_fils,
+      'paidFils', 0, 'providerFeeFils', 0, 'providerReserveFils', 0, 'recoveryExposureFils', 0,
+      'recoveryBalanceFils', 0, 'automaticOwnerDebitFils', 0, 'paidWhileBlocked', false, 'settlement', null),
+    'holds', jsonb_build_object('administrator', false, 'dispute', false),
+    'dispute', null, 'audits', '[]'::jsonb, 'movements', '[]'::jsonb);
+  claim := public.begin_booking_request_authorization_claim((prepared ->> 'attemptId')::uuid, snapshot,
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}');
+  perform set_config('role', 'none', true);
+  if claim ->> 'status' is distinct from 'ready' or not exists (
+    select 1 from public.booking_request_authorization_claims claims
+    join public.booking_request_authorization_claim_occupancies occupancy on occupancy.claim_id = claims.id
+    where claims.attempt_id = (prepared ->> 'attemptId')::uuid and occupancy.active
+      and occupancy.schedule_revision_id = current_setting('rentcottage.equality_revision_id')::uuid
+      and occupancy.shift_id = current_setting('rentcottage.equality_shift_id')::uuid
+      and occupancy.service_day = date '2099-10-05'
+  ) then raise exception 'Real authorization claim did not protect the selected shift: %', claim; end if;
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002601","role":"authenticated","aal":"aal1"}', true);
+  perform set_config('role', 'authenticated', true);
+  calendar := public.resolve_cottage_inventory_owner_calendar_span(
+    '30000000-0000-4000-8000-000000002601', current_setting('rentcottage.equality_revision_id')::uuid,
+    '2099-10-05', '2099-10-05');
+  if jsonb_array_length(calendar -> 'days') <> 1 or jsonb_array_length(calendar -> 'unitKeys') <> 3
+    or calendar -> 'days' -> 0 ->> 'serviceDay' <> '2099-10-05'
+    or calendar -> 'days' -> 0 -> 'units' <> jsonb_build_array(
+      jsonb_build_object('id', current_setting('rentcottage.equality_shift_id'), 'kind', 'shift',
+        'priceIqd', 100000, 'ownerState', 'open', 'calendarState', null, 'commitmentReference', null,
+        'available', false, 'editable', false, 'temporarilyUnavailable', true),
+      jsonb_build_object('id', current_setting('rentcottage.equality_second_shift_id'), 'kind', 'shift',
+        'priceIqd', 130000, 'ownerState', 'closed', 'calendarState', 'closed', 'commitmentReference', null,
+        'available', false, 'editable', true, 'temporarilyUnavailable', false),
+      jsonb_build_object('id', current_setting('rentcottage.equality_bundle_id'), 'kind', 'full_day_bundle',
+        'priceIqd', 250000, 'ownerState', 'closed', 'calendarState', null, 'commitmentReference', null,
+        'available', false, 'editable', false, 'temporarilyUnavailable', true)
+    ) then raise exception 'Owner span lost temporary claim protection: %', calendar; end if;
+  perform set_config('role', 'none', true);
+end;
+$body$;
+$test$, 'owner span preserves temporary claim protection without a booking reference');
+reset role;
+
+select lives_ok($test$
+do $body$
+declare denied_user text;
+declare caller_role text;
+declare approval text;
+declare result jsonb;
+declare invalid_range record;
+begin
+  foreach caller_role in array array['anon', 'service_role'] loop
+    perform set_config('role', caller_role, true);
+    begin
+      perform public.resolve_cottage_inventory_owner_calendar_span(
+        '30000000-0000-4000-8000-000000002601', current_setting('rentcottage.equality_revision_id')::uuid,
+        '2099-10-01', '2099-10-31');
+      raise exception 'Unauthorized database role received private calendar';
+    exception when insufficient_privilege then null;
+    end;
+    perform set_config('role', 'none', true);
+  end loop;
+  foreach denied_user in array array['00000000-0000-0000-0000-000000002699', '00000000-0000-0000-0000-000000002603', null] loop
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', denied_user, 'role', 'authenticated', 'aal', 'aal2')::text, true);
+    perform set_config('role', 'authenticated', true);
+    begin
+      perform public.resolve_cottage_inventory_owner_calendar_span(
+        '30000000-0000-4000-8000-000000002601', gen_random_uuid(), '2099-10-01', '2099-10-31');
+      raise exception 'Unauthorized actor received a private calendar or revision distinction';
+    exception when insufficient_privilege then null;
+    end;
+    perform set_config('role', 'none', true);
+  end loop;
+  update public.account_contexts set role = 'platform_administrator', owner_approval_state = null
+  where user_id = '00000000-0000-0000-0000-000000002699';
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002699","role":"authenticated","aal":"aal2"}', true);
+  perform set_config('role', 'authenticated', true);
+  begin
+    perform public.resolve_cottage_inventory_owner_calendar_span(
+      '30000000-0000-4000-8000-000000002601', current_setting('rentcottage.equality_revision_id')::uuid, '2099-10-01', '2099-10-31');
+    raise exception 'Administrator received an Owner Calendar';
+  exception when insufficient_privilege then null;
+  end;
+  perform set_config('role', 'none', true);
+  update public.account_contexts set role = 'customer' where user_id = '00000000-0000-0000-0000-000000002699';
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002601","role":"authenticated","aal":"aal1"}', true);
+  update public.account_contexts set owner_approval_state = 'prospective' where user_id = '00000000-0000-0000-0000-000000002601';
+  perform set_config('role', 'authenticated', true);
+  begin
+    perform public.resolve_cottage_inventory_owner_calendar_span(
+      '30000000-0000-4000-8000-000000002601', current_setting('rentcottage.equality_revision_id')::uuid, '2099-10-01', '2099-10-31');
+    raise exception 'Prospective owner received an Owner Calendar';
+  exception when insufficient_privilege then null;
+  end;
+  perform set_config('role', 'none', true);
+  foreach approval in array array['expired', 'suspended', 'approved'] loop
+    update public.account_contexts set owner_approval_state = approval::public.owner_approval_state where user_id = '00000000-0000-0000-0000-000000002601';
+    perform set_config('role', 'authenticated', true);
+    result := public.resolve_cottage_inventory_owner_calendar_span(
+      '30000000-0000-4000-8000-000000002601', current_setting('rentcottage.equality_revision_id')::uuid, '2099-10-01', '2099-10-31');
+    if result ->> 'profileId' <> '30000000-0000-4000-8000-000000002601'
+      or result ->> 'scheduleRevisionId' <> current_setting('rentcottage.equality_revision_id')
+      or result ->> 'from' <> '2099-10-01' or result ->> 'to' <> '2099-10-31'
+      or (result ->> 'asOf')::timestamptz <> statement_timestamp()
+      or jsonb_array_length(result -> 'unitKeys') <> 3
+      or jsonb_array_length(result -> 'days') <> 31 then
+      raise exception 'Owner read did not preserve complete scope and database observation time';
+    end if;
+    perform set_config('role', 'none', true);
+  end loop;
+  perform set_config('role', 'authenticated', true);
+  begin
+    perform public.resolve_cottage_inventory_owner_calendar_span(
+      '30000000-0000-4000-8000-000000002601', gen_random_uuid(), '2099-10-01', '2099-10-31');
+    raise exception 'Stale revision was accepted';
+  exception when sqlstate 'RC409' then null;
+  end;
+  for invalid_range in select * from (values
+    (null::date, date '2099-10-01'), (date '2099-10-01', null::date),
+    (date '-infinity', date '2099-10-01'), (date '2099-10-01', date 'infinity'),
+    (date '2099-10-02', date '2099-10-01'), (date '2099-10-01', date '2099-11-01'),
+    (date '0001-01-01 BC', date '0001-01-01'), (date '9999-12-31', date '10000-01-01')
+  ) ranges(first_day, last_day) loop
+    begin
+      perform public.resolve_cottage_inventory_owner_calendar_span(
+        '30000000-0000-4000-8000-000000002601', current_setting('rentcottage.equality_revision_id')::uuid,
+        invalid_range.first_day, invalid_range.last_day);
+      raise exception 'Invalid span was accepted';
+    exception when invalid_parameter_value then null;
+    end;
+  end loop;
+  perform set_config('role', 'none', true);
+end;
+$body$;
+$test$, 'owner span denies foreign and unauthorized roles');
+reset role;
 
 select * from finish();
 rollback;
