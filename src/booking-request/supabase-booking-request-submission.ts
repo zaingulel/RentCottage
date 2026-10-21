@@ -18,6 +18,7 @@ import {
   type SubmissionInput,
   type SubmissionLookupResult,
 } from "./booking-request-submission";
+import type { BookingRequestSubmissionRecoveryRepository } from "./booking-request-submission-recovery";
 import { isTimestamp, rowObject } from "./booking-request-row";
 import {
   isBookingRequestStatus,
@@ -275,8 +276,19 @@ function submissionPayload(input: SubmissionInput) {
   };
 }
 
-export class SupabaseBookingRequestSubmissionRepository implements BookingRequestSubmissionRepository {
+export class SupabaseBookingRequestSubmissionRepository
+  implements
+    BookingRequestSubmissionRepository,
+    BookingRequestSubmissionRecoveryRepository
+{
   constructor(private readonly client: SupabaseClient) {}
+
+  async expireAuthorizationClaims(): Promise<boolean> {
+    const { error } = await this.client.rpc(
+      "expire_booking_request_authorization_claims",
+    );
+    return !error;
+  }
 
   async dueAuthorizedRecoveries(
     identity: PaymentProviderIdentity,
