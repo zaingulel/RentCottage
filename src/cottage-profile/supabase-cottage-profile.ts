@@ -5,6 +5,8 @@ import { parseAccountContext } from "@/access/supabase-account-access";
 
 import {
   cottageProfileAmenities,
+  CottageProfileOperationError,
+  type CottageProfileOperationOutcome,
   cottageProfileDraftRequirements,
   cottageProfileMaximumLengths,
   cottageProfileMaximumPhotoBytes,
@@ -381,6 +383,88 @@ function rpcValues(values: CottageProfileDraftValues) {
   };
 }
 
+type OperationOutcomes = Readonly<
+  Record<string, CottageProfileOperationOutcome>
+>;
+
+const administratorLifecycleOutcomes: OperationOutcomes = {
+  RC420: "capacity_limit",
+  RC409: "conflict",
+  RC202: "denied",
+  "42501": "denied",
+};
+const contentVisibilityOutcomes: OperationOutcomes = {
+  "22023": "invalid_reason",
+  "42501": "denied",
+  RC409: "conflict",
+  RC203: "last_photo",
+};
+const ownerDraftOutcomes: OperationOutcomes = {
+  RC409: "conflict",
+  RC202: "denied",
+  "42501": "denied",
+};
+const administratorDraftOutcomes: OperationOutcomes = {
+  "22023": "invalid_reason",
+  RC203: "incomplete",
+  RC409: "conflict",
+  "42501": "denied",
+};
+const draftCreationOutcomes: OperationOutcomes = {
+  RC420: "capacity_limit",
+  RC429: "rate_limit",
+  "42501": "denied",
+};
+const submissionOutcomes: OperationOutcomes = {
+  RC203: "incomplete",
+  RC409: "conflict",
+  "42501": "denied",
+};
+const uploadPreparationOutcomes: OperationOutcomes = {
+  "22023": "invalid_reason",
+  "42501": "denied",
+};
+const previewPreparationOutcomes: OperationOutcomes = {
+  "42501": "denied",
+};
+const deletionPreparationOutcomes: OperationOutcomes = {
+  "22023": "invalid_reason",
+  RC203: "incomplete",
+  "42501": "denied",
+};
+
+function providerCode(error: unknown): string | undefined {
+  let candidate = error;
+  for (let depth = 0; depth <= 8; depth += 1) {
+    if (!candidate || typeof candidate !== "object") return undefined;
+    const providerError = candidate as { code?: unknown; cause?: unknown };
+    if (typeof providerError.code === "string") return providerError.code;
+    candidate = providerError.cause;
+  }
+  return undefined;
+}
+
+async function withOperationOutcomes<T>(
+  outcomes: OperationOutcomes,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    const code = providerCode(error);
+    const outcome =
+      code !== undefined && Object.hasOwn(outcomes, code)
+        ? outcomes[code]
+        : undefined;
+    if (outcome === undefined) throw error;
+    const cause =
+      error instanceof Error && Object.hasOwn(error, "cause")
+        ? error.cause
+        : error;
+    throw new CottageProfileOperationError(outcome, { cause });
+  }
+}
+
 export class SupabaseCottageProfileRepository implements CottageProfileRepository {
   constructor(
     private readonly client: SupabaseClient,
@@ -750,53 +834,57 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
   async setAdministratorDescriptionHidden(
     input: CottageContentVisibilityInput,
   ): Promise<CottageContentVisibility> {
-    const { data, error } = await this.client.rpc(
-      "set_administrator_cottage_description_hidden",
-      {
-        target_profile_id: input.profileId,
-        target_publication_id: input.publicationId,
-        requested_hidden: input.hidden,
-        requested_reason: input.reason,
-      },
-    );
-    assertProviderSuccess(error);
-    const visibility = parseContentVisibility(
-      data,
-      input.profileId,
-      input.publicationId,
-    );
-    if (visibility.descriptionHidden !== input.hidden)
-      throw new Error("Cottage description visibility result is invalid");
-    return visibility;
+    return withOperationOutcomes(contentVisibilityOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "set_administrator_cottage_description_hidden",
+        {
+          target_profile_id: input.profileId,
+          target_publication_id: input.publicationId,
+          requested_hidden: input.hidden,
+          requested_reason: input.reason,
+        },
+      );
+      assertProviderSuccess(error);
+      const visibility = parseContentVisibility(
+        data,
+        input.profileId,
+        input.publicationId,
+      );
+      if (visibility.descriptionHidden !== input.hidden)
+        throw new Error("Cottage description visibility result is invalid");
+      return visibility;
+    });
   }
 
   async setAdministratorPhotoHidden(
     input: CottageContentVisibilityInput & { photoId: string },
   ): Promise<CottageContentVisibility> {
-    const { data, error } = await this.client.rpc(
-      "set_administrator_cottage_photo_hidden",
-      {
-        target_profile_id: input.profileId,
-        target_publication_id: input.publicationId,
-        target_photo_id: input.photoId,
-        requested_hidden: input.hidden,
-        requested_reason: input.reason,
-      },
-    );
-    assertProviderSuccess(error);
-    const visibility = parseContentVisibility(
-      data,
-      input.profileId,
-      input.publicationId,
-    );
-    if (
-      !visibility.photos.some(
-        (photo) =>
-          photo.photoId === input.photoId && photo.hidden === input.hidden,
+    return withOperationOutcomes(contentVisibilityOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "set_administrator_cottage_photo_hidden",
+        {
+          target_profile_id: input.profileId,
+          target_publication_id: input.publicationId,
+          target_photo_id: input.photoId,
+          requested_hidden: input.hidden,
+          requested_reason: input.reason,
+        },
+      );
+      assertProviderSuccess(error);
+      const visibility = parseContentVisibility(
+        data,
+        input.profileId,
+        input.publicationId,
+      );
+      if (
+        !visibility.photos.some(
+          (photo) =>
+            photo.photoId === input.photoId && photo.hidden === input.hidden,
+        )
       )
-    )
-      throw new Error("Cottage photo visibility result is invalid");
-    return visibility;
+        throw new Error("Cottage photo visibility result is invalid");
+      return visibility;
+    });
   }
 
   async canAdministratorManageLifecycle(profileId: string): Promise<boolean> {
@@ -822,26 +910,30 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
   }
 
   async createDraft(): Promise<CottageProfile> {
-    const { data, error } = await this.client.rpc(
-      "create_owner_cottage_profile_draft",
-    );
-    assertProviderSuccess(error);
-    return this.hydrate(data);
+    return withOperationOutcomes(draftCreationOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "create_owner_cottage_profile_draft",
+      );
+      assertProviderSuccess(error);
+      return this.hydrate(data);
+    });
   }
 
   async abandonOwner(input: {
     profileId: string;
     expectedVersion: number;
   }): Promise<CottageProfile> {
-    const { data, error } = await this.client.rpc(
-      "abandon_owner_cottage_profile_draft",
-      {
-        target_profile_id: input.profileId,
-        target_expected_version: input.expectedVersion,
-      },
-    );
-    assertProviderSuccess(error);
-    return this.hydrate(data);
+    return withOperationOutcomes(ownerDraftOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "abandon_owner_cottage_profile_draft",
+        {
+          target_profile_id: input.profileId,
+          target_expected_version: input.expectedVersion,
+        },
+      );
+      assertProviderSuccess(error);
+      return this.hydrate(data);
+    });
   }
 
   async abandonAdministrator(input: {
@@ -849,16 +941,18 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
     expectedVersion: number;
     reason: string;
   }): Promise<CottageProfile> {
-    const { data, error } = await this.client.rpc(
-      "abandon_administrator_cottage_profile_draft",
-      {
-        target_profile_id: input.profileId,
-        target_expected_version: input.expectedVersion,
-        requested_reason: input.reason,
-      },
-    );
-    assertProviderSuccess(error);
-    return this.hydrate(data);
+    return withOperationOutcomes(administratorLifecycleOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "abandon_administrator_cottage_profile_draft",
+        {
+          target_profile_id: input.profileId,
+          target_expected_version: input.expectedVersion,
+          requested_reason: input.reason,
+        },
+      );
+      assertProviderSuccess(error);
+      return this.hydrate(data);
+    });
   }
 
   async restoreAdministrator(input: {
@@ -866,16 +960,18 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
     expectedVersion: number;
     reason: string;
   }): Promise<CottageProfile> {
-    const { data, error } = await this.client.rpc(
-      "restore_administrator_cottage_profile_draft",
-      {
-        target_profile_id: input.profileId,
-        target_expected_version: input.expectedVersion,
-        requested_reason: input.reason,
-      },
-    );
-    assertProviderSuccess(error);
-    return this.hydrate(data);
+    return withOperationOutcomes(administratorLifecycleOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "restore_administrator_cottage_profile_draft",
+        {
+          target_profile_id: input.profileId,
+          target_expected_version: input.expectedVersion,
+          requested_reason: input.reason,
+        },
+      );
+      assertProviderSuccess(error);
+      return this.hydrate(data);
+    });
   }
 
   async updateOwner(input: {
@@ -883,16 +979,18 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
     expectedVersion: number;
     values: CottageProfileDraftValues;
   }): Promise<CottageProfile> {
-    const { data, error } = await this.client.rpc(
-      "update_owner_cottage_profile_draft",
-      {
-        target_profile_id: input.profileId,
-        target_expected_version: input.expectedVersion,
-        ...rpcValues(input.values),
-      },
-    );
-    assertProviderSuccess(error);
-    return this.hydrate(data);
+    return withOperationOutcomes(ownerDraftOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "update_owner_cottage_profile_draft",
+        {
+          target_profile_id: input.profileId,
+          target_expected_version: input.expectedVersion,
+          ...rpcValues(input.values),
+        },
+      );
+      assertProviderSuccess(error);
+      return this.hydrate(data);
+    });
   }
 
   async updateAdministrator(input: {
@@ -901,32 +999,36 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
     expectedVersion: number;
     values: CottageProfileDraftValues;
   }): Promise<CottageProfile> {
-    const { data, error } = await this.client.rpc(
-      "update_administrator_cottage_profile",
-      {
-        target_profile_id: input.profileId,
-        target_expected_version: input.expectedVersion,
-        ...rpcValues(input.values),
-        requested_reason: input.reason,
-      },
-    );
-    assertProviderSuccess(error);
-    return this.hydrate(data);
+    return withOperationOutcomes(administratorDraftOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "update_administrator_cottage_profile",
+        {
+          target_profile_id: input.profileId,
+          target_expected_version: input.expectedVersion,
+          ...rpcValues(input.values),
+          requested_reason: input.reason,
+        },
+      );
+      assertProviderSuccess(error);
+      return this.hydrate(data);
+    });
   }
 
   async submit(
     profileId: string,
     expectedVersion: number,
   ): Promise<CottageProfile> {
-    const { data, error } = await this.client.rpc(
-      "submit_cottage_profile_for_content_approval",
-      {
-        target_profile_id: profileId,
-        target_expected_version: expectedVersion,
-      },
-    );
-    assertProviderSuccess(error);
-    return this.hydrate(data);
+    return withOperationOutcomes(submissionOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "submit_cottage_profile_for_content_approval",
+        {
+          target_profile_id: profileId,
+          target_expected_version: expectedVersion,
+        },
+      );
+      assertProviderSuccess(error);
+      return this.hydrate(data);
+    });
   }
 
   async preparePhotoUpload(input: {
@@ -936,28 +1038,30 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
     mediaType: string;
     sizeBytes: number;
   }) {
-    const { data, error } = await this.client.rpc(
-      "prepare_cottage_profile_photo_upload",
-      {
-        target_profile_id: input.profileId,
-        requested_original_filename: input.originalFilename,
-        requested_media_type: input.mediaType,
-        requested_size_bytes: input.sizeBytes,
-        ...(input.reason === undefined
-          ? {}
-          : { requested_reason: input.reason }),
-      },
-    );
-    assertProviderSuccess(error);
-    const photo = record(data);
-    const photoId = requiredString(photo.id);
-    if (!uuidPattern.test(photoId)) {
-      throw new Error("Cottage Profile photo identifier is invalid");
-    }
-    return {
-      photoId,
-      objectPath: requiredString(photo.object_path),
-    };
+    return withOperationOutcomes(uploadPreparationOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "prepare_cottage_profile_photo_upload",
+        {
+          target_profile_id: input.profileId,
+          requested_original_filename: input.originalFilename,
+          requested_media_type: input.mediaType,
+          requested_size_bytes: input.sizeBytes,
+          ...(input.reason === undefined
+            ? {}
+            : { requested_reason: input.reason }),
+        },
+      );
+      assertProviderSuccess(error);
+      const photo = record(data);
+      const photoId = requiredString(photo.id);
+      if (!uuidPattern.test(photoId)) {
+        throw new Error("Cottage Profile photo identifier is invalid");
+      }
+      return {
+        photoId,
+        objectPath: requiredString(photo.object_path),
+      };
+    });
   }
 
   async registerPhoto(photoId: string): Promise<void> {
@@ -969,42 +1073,46 @@ export class SupabaseCottageProfileRepository implements CottageProfileRepositor
   }
 
   async preparePhotoPreview(photoId: string): Promise<string> {
-    const { data, error } = await this.client.rpc(
-      "prepare_cottage_profile_photo_preview",
-      { target_photo_id: photoId },
-    );
-    assertProviderSuccess(error);
-    return requiredString(data);
+    return withOperationOutcomes(previewPreparationOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "prepare_cottage_profile_photo_preview",
+        { target_photo_id: photoId },
+      );
+      assertProviderSuccess(error);
+      return requiredString(data);
+    });
   }
 
   async preparePhotoDeletion(
     photoId: string,
     reason?: string,
   ): Promise<PreparedCottageProfilePhotoDeletion> {
-    const { data, error } = await this.client.rpc(
-      "prepare_cottage_profile_photo_deletion",
-      {
-        target_photo_id: photoId,
-        ...(reason === undefined ? {} : { requested_reason: reason }),
-      },
-    );
-    assertProviderSuccess(error);
-    const photo = record(data);
-    const state = photo.state;
-    const isActive = photo.is_active;
-    if (
-      typeof isActive !== "boolean" ||
-      !(
-        (state === "ready" && !isActive) ||
-        (state === "deletion_pending" && isActive)
-      )
-    ) {
-      throw new Error("Cottage Profile photo deletion data is invalid");
-    }
-    return {
-      objectPath: requiredString(photo.object_path),
-      disposition: state === "ready" ? "retain" : "delete",
-    };
+    return withOperationOutcomes(deletionPreparationOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "prepare_cottage_profile_photo_deletion",
+        {
+          target_photo_id: photoId,
+          ...(reason === undefined ? {} : { requested_reason: reason }),
+        },
+      );
+      assertProviderSuccess(error);
+      const photo = record(data);
+      const state = photo.state;
+      const isActive = photo.is_active;
+      if (
+        typeof isActive !== "boolean" ||
+        !(
+          (state === "ready" && !isActive) ||
+          (state === "deletion_pending" && isActive)
+        )
+      ) {
+        throw new Error("Cottage Profile photo deletion data is invalid");
+      }
+      return {
+        objectPath: requiredString(photo.object_path),
+        disposition: state === "ready" ? "retain" : "delete",
+      };
+    });
   }
 
   async completePhotoDeletion(photoId: string): Promise<void> {

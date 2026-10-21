@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createCottageProfile,
+  CottageProfileOperationError,
   type CottageProfile,
   type CottageProfileRepository,
   type CottageProfileStorage,
@@ -290,8 +291,12 @@ describe("Cottage Profile", () => {
       ["RC203", "last_photo"],
       ["RC204", "unavailable"],
       ["unexpected", "unavailable"],
-    ]) {
-      photo.mockRejectedValueOnce({ code });
+    ] as const) {
+      photo.mockRejectedValueOnce(
+        status === "unavailable"
+          ? { code }
+          : new CottageProfileOperationError(status),
+      );
       await expect(
         cottageProfile.setAdministratorPhotoHidden(
           profileId,
@@ -302,7 +307,9 @@ describe("Cottage Profile", () => {
         ),
       ).resolves.toEqual({ status });
     }
-    description.mockRejectedValueOnce({ code: "22023" });
+    description.mockRejectedValueOnce(
+      new CottageProfileOperationError("invalid_reason"),
+    );
     await expect(
       cottageProfile.setAdministratorDescriptionHidden(
         profileId,
@@ -363,8 +370,12 @@ describe("Cottage Profile", () => {
     );
     await cottageProfile.deletePhoto(photoId, " \tRecover deletion\n ");
     expect(deletion).toHaveBeenLastCalledWith(photoId, "Recover deletion");
-    upload.mockRejectedValueOnce({ code: "22023" });
-    deletion.mockRejectedValueOnce({ code: "22023" });
+    upload.mockRejectedValueOnce(
+      new CottageProfileOperationError("invalid_reason"),
+    );
+    deletion.mockRejectedValueOnce(
+      new CottageProfileOperationError("invalid_reason"),
+    );
     await expect(cottageProfile.uploadPhoto(profileId, file)).resolves.toEqual({
       status: "invalid",
       fields: ["reason"],
@@ -398,7 +409,9 @@ describe("Cottage Profile", () => {
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ reason: "Correct content" }),
     );
-    update.mockRejectedValueOnce({ code: "22023" });
+    update.mockRejectedValueOnce(
+      new CottageProfileOperationError("invalid_reason"),
+    );
     await expect(
       cottageProfile.saveAdministratorDraft(
         profileId,
@@ -435,9 +448,11 @@ describe("Cottage Profile", () => {
     ["RC429", "rate_limit"],
   ] as const)(
     "returns the stable %s draft-creation refusal as %s",
-    async (code, status) => {
+    async (_code, status) => {
       const { cottageProfile, repository } = setup();
-      vi.spyOn(repository, "createDraft").mockRejectedValue({ code });
+      vi.spyOn(repository, "createDraft").mockRejectedValue(
+        new CottageProfileOperationError(status),
+      );
 
       await expect(cottageProfile.createDraft()).resolves.toEqual({ status });
     },
@@ -907,9 +922,9 @@ describe("Cottage Profile", () => {
 
   it("reports when an administrator edit would make a submitted profile incomplete", async () => {
     const { cottageProfile, repository } = setup();
-    vi.spyOn(repository, "updateAdministrator").mockRejectedValue({
-      code: "RC203",
-    });
+    vi.spyOn(repository, "updateAdministrator").mockRejectedValue(
+      new CottageProfileOperationError("incomplete"),
+    );
 
     await expect(
       cottageProfile.saveAdministratorDraft(
@@ -938,9 +953,9 @@ describe("Cottage Profile", () => {
 
   it("does not start storage deletion when a submitted profile must retain its photo", async () => {
     const { cottageProfile, repository, removedObjects } = setup();
-    vi.spyOn(repository, "preparePhotoDeletion").mockRejectedValue({
-      code: "RC203",
-    });
+    vi.spyOn(repository, "preparePhotoDeletion").mockRejectedValue(
+      new CottageProfileOperationError("incomplete"),
+    );
 
     await expect(
       cottageProfile.deletePhoto("71000000-0000-4000-8000-000000000001"),
@@ -950,7 +965,9 @@ describe("Cottage Profile", () => {
 
   it("returns an owner-visible conflict when a draft version is stale", async () => {
     const { cottageProfile, repository } = setup();
-    vi.spyOn(repository, "updateOwner").mockRejectedValue({ code: "RC409" });
+    vi.spyOn(repository, "updateOwner").mockRejectedValue(
+      new CottageProfileOperationError("conflict"),
+    );
 
     await expect(
       cottageProfile.saveOwnerDraft(profileId, 1, {
