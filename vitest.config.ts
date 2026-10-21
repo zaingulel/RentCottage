@@ -187,6 +187,7 @@ const nodeTestScripts = ["scripts/lib/*.test.mjs"];
 export default defineConfig({
   resolve: { tsconfigPaths: true },
   test: {
+    maxWorkers: "25%",
     projects: [
       {
         extends: true,
