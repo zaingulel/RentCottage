@@ -91,7 +91,9 @@ const partitionPlans = [
     shard: undefined,
     preflight: [sqlTestsStep],
     checks: databaseCheckCommands.filter(
-      ([, args]) => ![...longPrograms.values()].flat().includes(args[0]),
+      ([, args]) =>
+        ![...longPrograms.values()].flat().includes(args[0]) &&
+        !args.includes("concurrency-booking"),
     ),
   },
   {
@@ -99,7 +101,18 @@ const partitionPlans = [
     partition: "booking-request",
     shard: undefined,
     preflight: [declaredSchemaDiffStep],
-    checks: [bookingRequestFixture, ...longProgramCommands("booking-request")],
+    checks: [
+      bookingRequestFixture,
+      [
+        "node",
+        ["scripts/prepare-access-test.mjs", "create", "concurrency-booking"],
+      ],
+      [
+        "node",
+        ["scripts/prepare-access-test.mjs", "validate", "concurrency-booking"],
+      ],
+      ...longProgramCommands("booking-request"),
+    ],
   },
   ...["booking-capture", "payment-required-expiry"].map((partition) => ({
     mode: "--database",
@@ -168,6 +181,64 @@ describe("access verification command", () => {
         }),
       ).toBe(0);
       const actual = commands(run);
+      const inventoryIndex = actual.findIndex(
+        ([, args]) =>
+          args[0] === "scripts/verify-cottage-inventory-concurrency.mjs",
+      );
+      if (partition === "database-core") {
+        expect(actual.slice(inventoryIndex - 2, inventoryIndex + 1)).toEqual([
+          [
+            "node",
+            [
+              "scripts/prepare-access-test.mjs",
+              "create",
+              "concurrency-inventory",
+            ],
+          ],
+          [
+            "node",
+            [
+              "scripts/prepare-access-test.mjs",
+              "validate",
+              "concurrency-inventory",
+            ],
+          ],
+          ["node", ["scripts/verify-cottage-inventory-concurrency.mjs"]],
+        ]);
+      } else {
+        expect(
+          actual.some(([, args]) => args.includes("concurrency-inventory")),
+        ).toBe(false);
+      }
+      const bookingIndex = actual.findIndex(
+        ([, args]) =>
+          args[0] === "scripts/verify-booking-request-concurrency.mjs",
+      );
+      if (partition === "booking-request") {
+        expect(actual.slice(bookingIndex - 2, bookingIndex + 1)).toEqual([
+          [
+            "node",
+            [
+              "scripts/prepare-access-test.mjs",
+              "create",
+              "concurrency-booking",
+            ],
+          ],
+          [
+            "node",
+            [
+              "scripts/prepare-access-test.mjs",
+              "validate",
+              "concurrency-booking",
+            ],
+          ],
+          ["node", ["scripts/verify-booking-request-concurrency.mjs"]],
+        ]);
+      } else {
+        expect(
+          actual.some(([, args]) => args.includes("concurrency-booking")),
+        ).toBe(false);
+      }
       const browserInvocations = actual.filter(
         ([, args]) => args[0] === "playwright",
       );

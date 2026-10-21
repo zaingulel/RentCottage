@@ -94,8 +94,24 @@ export const databaseCheckCommands = [
   ["node", ["scripts/prepare-access-test.mjs", "create", "mobile"]],
   ["node", ["scripts/verify-cottage-profile-draft-concurrency.mjs"]],
   ["node", ["scripts/verify-cottage-shift-schedule-concurrency.mjs"]],
+  [
+    "node",
+    ["scripts/prepare-access-test.mjs", "create", "concurrency-inventory"],
+  ],
+  [
+    "node",
+    ["scripts/prepare-access-test.mjs", "validate", "concurrency-inventory"],
+  ],
   ["node", ["scripts/verify-cottage-inventory-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-period-hold-concurrency.mjs"]],
+  [
+    "node",
+    ["scripts/prepare-access-test.mjs", "create", "concurrency-booking"],
+  ],
+  [
+    "node",
+    ["scripts/prepare-access-test.mjs", "validate", "concurrency-booking"],
+  ],
   ["node", ["scripts/verify-booking-request-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-request-lifecycle-concurrency.mjs"]],
   ["node", ["scripts/verify-booking-request-capture-concurrency.mjs"]],

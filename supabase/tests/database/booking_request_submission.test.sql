@@ -129,7 +129,7 @@ create or replace function pg_temp.booking_submission_graph() returns jsonb lang
 );
 $$;
 
-select plan(449);
+select plan(467);
 
 set local role anon;
 select throws_ok(
@@ -3170,6 +3170,236 @@ select is(jsonb_build_object(
   'provider started replacement refusal preserves the exact attempt, claim, provider, request, hold, link and payment history');
 rollback to savepoint provider_started_replacement_guard;
 
+savepoint stale_authorization_does_not_abort_expiry;
+insert into auth.users(id,aud,role,email,email_confirmed_at) values('00000000-0000-4000-8000-000000003290','authenticated','authenticated','suspension-3290@example.invalid',now());
+insert into public.account_contexts(user_id,role) values('00000000-0000-4000-8000-000000003290','platform_administrator');
+select lives_ok($test$
+do $body$
+declare result jsonb;
+declare stale_attempt uuid := (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+declare safe_attempt uuid;
+declare pending_snapshot jsonb := (select snapshot from pending_authorization_payment);
+declare safe_submission jsonb;
+declare quote jsonb;
+declare identity jsonb := '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}';
+begin
+  quote := public.get_public_booking_quote_with_fingerprint('en','cottage-30000000000040008000000000003201',
+    '{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":2}]}'::jsonb);
+  safe_submission := (select submission from valid_submission) || jsonb_build_object(
+    'discoveryQuery','{"from":"2099-08-22","to":"2099-08-22","guests":4,"selections":[{"serviceDay":"2099-08-22","kind":"shift","position":2}]}'::jsonb,
+    'quoteFingerprint',quote->>'quoteFingerprint','contentVersion',quote->'contentVersion','termsVersion',quote->'termsVersion',
+    'bookingPriceIqd',quote->'bookingPriceIqd','serviceFeeIqd',quote->'serviceFeeIqd','customerTotalIqd',quote->'customerTotalIqd','firstStartsAt',quote#>>'{items,0,startsAt}');
+  set local role service_role;
+  result := public.prepare_booking_request_submission('00000000-0000-0000-0000-000000003203',gen_random_uuid(),safe_submission);
+  if result->>'status' is distinct from 'ready' then raise exception 'Independent preparation failed: %',result; end if;
+  safe_attempt := (result->>'attemptId')::uuid;
+  pending_snapshot := jsonb_set(pending_snapshot,'{paymentLifecycleId}',result->'paymentLifecycleId');
+  pending_snapshot := jsonb_set(jsonb_set(jsonb_set(pending_snapshot,'{authorization,paymentLifecycleId}',result->'paymentLifecycleId'),
+    '{authorization,logicalOperationId}',to_jsonb((result->>'paymentLifecycleId')||':authorization')),
+    '{authorization,attemptId}',to_jsonb((result->>'paymentLifecycleId')||':authorization:attempt-1'));
+  result := public.begin_booking_request_authorization_claim(safe_attempt,pending_snapshot,identity);
+  if result->>'status' is distinct from 'ready' then raise exception 'Independent claim failed: %',result; end if;
+  reset role;
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000003290","role":"authenticated","aal":"aal2"}',true);
+  result := public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','suspend',0,'Fictional issued authorization restriction',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Suspension failed: %',result; end if;
+  result := public.set_marketplace_suspension('customer','00000000-0000-0000-0000-000000003202','reactivate',1,'Prospective restoration',gen_random_uuid());
+  if result->>'status' is distinct from 'completed' then raise exception 'Reactivation failed: %',result; end if;
+  update public.booking_request_authorization_claims set reconciliation_expires_at=statement_timestamp()-interval '1 second'
+    where attempt_id in (stale_attempt,safe_attempt);
+  set local role service_role;
+  if public.expire_booking_request_authorization_claims() <> 1 then raise exception 'Independent safe expiry did not complete'; end if;
+  reset role;
+  if not exists(select 1 from public.booking_request_authorization_claims claims
+    join public.booking_request_authorization_claim_occupancies occupancies on occupancies.claim_id=claims.id
+    join public.booking_request_submission_attempts attempts on attempts.id=claims.attempt_id
+    where attempts.id=stale_attempt and claims.state='authorized' and attempts.state='authorized'
+      and occupancies.active and attempts.booking_request_id is null and attempts.payment_snapshot->'release'='null'::jsonb)
+    or not exists(select 1 from public.booking_request_authorization_claims claims
+      join public.booking_request_authorization_claim_occupancies occupancies on occupancies.claim_id=claims.id
+      where claims.attempt_id=safe_attempt and claims.state='expired' and not occupancies.active)
+    or exists(select 1 from public.booking_requests)
+  then raise exception 'Expiry did not preserve stale authorization while freeing independent work'; end if;
+end;
+$body$;
+$test$,'due stale authorization preserves fences without aborting independent safe expiry');
+set local role anon;
+select throws_ok(
+  $$select public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb)$$,
+  '42501', 'permission denied for function due_booking_request_submission_recoveries',
+  'anon cannot read due Booking Request recoveries');
+reset role;
+set local role authenticated;
+select throws_ok(
+  $$select public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb)$$,
+  '42501', 'permission denied for function due_booking_request_submission_recoveries',
+  'authenticated cannot read due Booking Request recoveries');
+reset role;
+select throws_ok(
+  $$select public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb)$$,
+  '42501', 'Booking Request recovery unavailable',
+  'due Booking Request recoveries require the service role even for a privileged caller');
+create temporary table due_recovery_expected as
+select jsonb_build_array(jsonb_build_object(
+    'id',attempts.id,'paymentLifecycleId',attempts.payment_lifecycle_id,
+    'bookingPriceFils',110000000,'bookingServiceFeeFils',5000000,
+    'paymentSnapshot',attempts.payment_snapshot,
+    'paymentProviderIdentity','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb)) as expected
+from public.booking_request_submission_attempts attempts
+where attempts.id=(select (result->>'attemptId')::uuid from prepared_submission);
+grant select on due_recovery_expected to service_role;
+set local role service_role;
+select is(
+  public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb),
+  (select expected from due_recovery_expected),
+  'service role reads only the due stale successful authorization with persisted quote amounts and exact provider identity');
+select is(
+  public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"production","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb),
+  '[]'::jsonb,
+  'due Booking Request recoveries exclude another provider environment');
+select throws_ok(
+  $$select public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal","extra":"x"}'::jsonb)$$,
+  '22023', 'Invalid payment provider identity',
+  'due Booking Request recoveries refuse an identity with an extra field');
+select throws_ok(
+  $$select public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"local-test","merchantId":"","terminalId":"fictional-terminal"}'::jsonb)$$,
+  '22023', 'Invalid payment provider identity',
+  'due Booking Request recoveries refuse an empty identity field');
+select throws_ok(
+  $$select public.due_booking_request_submission_recoveries('["fictional-payments","local-test","fictional-merchant","fictional-terminal"]'::jsonb)$$,
+  '22023', 'Invalid payment provider identity',
+  'due Booking Request recoveries refuse a non-object identity');
+reset role;
+savepoint live_lease_preserves_worker_ownership;
+set local role service_role;
+do $body$
+begin
+  perform public.mark_booking_request_reconciliation_required(
+    (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission));
+end;
+$body$;
+select is(
+  public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb),
+  (select expected from due_recovery_expected),
+  'unleased marked authorized work remains due for recovery');
+reset role;
+select results_eq(
+  $$select attempts.state, claims.state::text, outbox.state, outbox.lease_token is null
+    from public.booking_request_submission_attempts attempts
+    join public.booking_request_authorization_claims claims on claims.attempt_id=attempts.id
+    join public.booking_request_authorization_reconciliation_outbox outbox
+      on outbox.claim_id=claims.id and outbox.claim_generation=claims.generation
+    where attempts.id=(select (result->>'attemptId')::uuid from prepared_submission)$$,
+  $$values ('reconciliation_required'::text,'authorized'::text,'pending'::text,true)$$,
+  'marking unleased authorized work keeps its claim authorized and its recovery pending without a lease');
+create temporary table live_lease_work as
+select public.dequeue_booking_request_authorization_reconciliation() as result;
+create temporary table live_lease_rows as
+select to_jsonb(attempts) as attempt, to_jsonb(claims) as claim, to_jsonb(outbox) as outbox
+from public.booking_request_submission_attempts attempts
+join public.booking_request_authorization_claims claims on claims.attempt_id=attempts.id
+join public.booking_request_authorization_reconciliation_outbox outbox
+  on outbox.claim_id=claims.id and outbox.claim_generation=claims.generation
+where attempts.id=(select (result->>'attemptId')::uuid from prepared_submission);
+select is(
+  (select jsonb_build_object('status',result->>'status','claimId',result->>'claimId',
+    'stateRevision',(result->>'stateRevision')::bigint,'leaseToken',result->>'leaseToken') from live_lease_work),
+  (select jsonb_build_object('status','work','claimId',claim->>'id',
+    'stateRevision',(claim->>'state_revision')::bigint,'leaseToken',outbox->>'lease_token') from live_lease_rows),
+  'a real dequeue leases the marked authorization to one worker');
+set local role service_role;
+select is(
+  public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb),
+  '[]'::jsonb,
+  'due Booking Request recoveries omit work under a live worker lease');
+do $body$
+begin
+  perform public.mark_booking_request_reconciliation_required(
+    (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission));
+end;
+$body$;
+reset role;
+select is(
+  (select jsonb_build_object('attempt',to_jsonb(attempts),'claim',to_jsonb(claims),'outbox',to_jsonb(outbox))
+    from public.booking_request_submission_attempts attempts
+    join public.booking_request_authorization_claims claims on claims.attempt_id=attempts.id
+    join public.booking_request_authorization_reconciliation_outbox outbox
+      on outbox.claim_id=claims.id and outbox.claim_generation=claims.generation
+    where attempts.id=(select (result->>'attemptId')::uuid from prepared_submission)),
+  (select jsonb_build_object('attempt',attempt,'claim',claim,'outbox',outbox) from live_lease_rows),
+  'redundant marking during a live worker lease preserves the exact attempt, claim and leased recovery');
+update public.booking_request_authorization_reconciliation_outbox outbox
+set lease_expires_at=clock_timestamp()-interval '1 second'
+from live_lease_rows rows
+where outbox.claim_id=(rows.claim->>'id')::uuid;
+set local role service_role;
+select is(
+  public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb),
+  (select expected from due_recovery_expected),
+  'an expired worker lease makes the authorization due for recovery again');
+do $body$
+begin
+  perform public.mark_booking_request_reconciliation_required(
+    (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission));
+end;
+$body$;
+reset role;
+select results_eq(
+  $$select attempts.state, claims.state::text, claims.state_revision, outbox.state,
+      outbox.lease_token is null, outbox.lease_expires_at is null
+    from public.booking_request_submission_attempts attempts
+    join public.booking_request_authorization_claims claims on claims.attempt_id=attempts.id
+    join public.booking_request_authorization_reconciliation_outbox outbox
+      on outbox.claim_id=claims.id and outbox.claim_generation=claims.generation
+    where attempts.id=(select (result->>'attemptId')::uuid from prepared_submission)$$,
+  $$select 'reconciliation_required'::text,'authorized'::text,(claim->>'state_revision')::bigint,'pending'::text,true,true
+    from live_lease_rows$$,
+  'marking after the worker lease expires clears it without changing the authorized claim');
+rollback to savepoint live_lease_preserves_worker_ownership;
+update public.booking_request_authorization_claims
+set reconciliation_expires_at=statement_timestamp()+interval '1 minute'
+where attempt_id=(select (result->>'attemptId')::uuid from prepared_submission);
+set local role service_role;
+select is(
+  public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb),
+  '[]'::jsonb,
+  'due Booking Request recoveries exclude an authorization before its database deadline');
+reset role;
+update public.booking_request_authorization_claims
+set reconciliation_expires_at=statement_timestamp()-interval '1 second'
+where attempt_id=(select (result->>'attemptId')::uuid from prepared_submission);
+create temporary table due_recovery_clones as
+select gen_random_uuid() as attempt_id, gen_random_uuid() as lifecycle_id, position
+from generate_series(1,50) position;
+insert into public.booking_request_submission_attempts
+select (jsonb_populate_record(null::public.booking_request_submission_attempts, to_jsonb(attempts) || jsonb_build_object(
+  'id',clones.attempt_id,'idempotency_key',gen_random_uuid(),'payment_lifecycle_id',clones.lifecycle_id,
+  'intent_dedupe_active',false,'authorization_provider_request_id',null,'authorization_provider_reference',null,
+  'authorization_movement_reference',null,'updated_at',attempts.updated_at-make_interval(mins=>51-clones.position)))).*
+from public.booking_request_submission_attempts attempts cross join due_recovery_clones clones
+where attempts.id=(select (result->>'attemptId')::uuid from prepared_submission);
+insert into public.booking_request_authorization_claims
+select (jsonb_populate_record(null::public.booking_request_authorization_claims, to_jsonb(claims) || jsonb_build_object(
+  'id',gen_random_uuid(),'attempt_id',clones.attempt_id,'payment_lifecycle_id',clones.lifecycle_id,
+  'provider_idempotency_key',gen_random_uuid()::text,
+  'access_ranges',tstzmultirange(tstzrange('2101-01-01T00:00:00Z'::timestamptz+make_interval(days=>clones.position),
+    '2101-01-01T01:00:00Z'::timestamptz+make_interval(days=>clones.position)))::text))).*
+from public.booking_request_authorization_claims claims cross join due_recovery_clones clones
+where claims.attempt_id=(select (result->>'attemptId')::uuid from prepared_submission);
+create temporary table due_recovery_batch(batch jsonb);
+grant insert on due_recovery_batch to service_role;
+set local role service_role;
+insert into due_recovery_batch
+select public.due_booking_request_submission_recoveries('{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) as batch;
+reset role;
+select is(
+  (select jsonb_build_object('count',jsonb_array_length(batch),
+    'ids',(select jsonb_agg(entry.value->'id' order by entry.position) from jsonb_array_elements(batch) with ordinality entry(value,position)))
+  from due_recovery_batch),
+  (select jsonb_build_object('count',50,'ids',jsonb_agg(to_jsonb(attempt_id) order by position)) from due_recovery_clones),
+  'due Booking Request recoveries return one oldest-first batch of at most fifty');
+rollback to savepoint stale_authorization_does_not_abort_expiry;
+
 savepoint authorized_after_cutoff_releases;
 update public.booking_request_submission_attempts
 set quote_payload = jsonb_set(
@@ -3197,6 +3427,23 @@ select lives_ok(
   $$select public.expire_booking_request_authorization_claims()$$,
   'expiry does not retry illegal finalization after the six-hour cut-off'
 );
+do $body$
+declare target_attempt uuid := (select (prepared_submission.result->>'attemptId')::uuid from prepared_submission);
+declare snapshot jsonb := (select authorized_payment.snapshot from authorized_payment);
+begin
+  if public.lookup_booking_request_submission(target_attempt)->>'status' is distinct from 'absent' then
+    raise exception 'Cut-off cleanup requires authoritative absence'; end if;
+  perform public.begin_booking_request_submission_cleanup_release(target_attempt,
+    snapshot || jsonb_build_object('release',jsonb_build_object(
+      'paymentLifecycleId',snapshot->>'paymentLifecycleId','kind','release',
+      'logicalOperationId',(snapshot->>'paymentLifecycleId')||':release',
+      'attemptId',(snapshot->>'paymentLifecycleId')||':release:attempt-1',
+      'status','pending','amountFils',snapshot->'customerTotalFils',
+      'providerRequestId',null,'providerReference',null,'movementReference',null,
+      'reconciliationRequired',false,'retrySafe',false)),
+    '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb);
+end;
+$body$;
 reset role;
 select results_eq(
   $$select attempts.state, claims.state::text, occupancies.active, outbox.state,
@@ -3213,7 +3460,7 @@ select results_eq(
       on outbox.claim_id = claims.id$$,
   $$values ('releasing'::text, 'releasing'::text, true, 'pending'::text,
     'pending'::text, true, 0::integer, 0::integer)$$,
-  'cut-off expiry durably prepares a release while retaining inventory and product absence'
+  'authoritative-absence cleanup durably prepares a cut-off release while retaining inventory and product absence'
 );
 create temporary table cutoff_release_work as
 select public.dequeue_booking_request_authorization_reconciliation() as result;
@@ -3257,8 +3504,12 @@ grant select on expiry_stale_lease to service_role;
 set local role service_role;
 select is(
   public.expire_booking_request_authorization_claims(),
-  1,
-  'the expiry boundary reconciles a succeeded durable authorization without the recovery runner'
+  0,
+  'expiry retains successful authorization for application finalization'
+);
+select public.finalize_booking_request_submission(
+  (select (result->>'attemptId')::uuid from prepared_submission),
+  (select snapshot from authorized_payment)
 );
 reset role;
 select is(
@@ -3323,7 +3574,7 @@ select results_eq(
       on outbox.claim_id = claims.id$$,
   $$values ('finalized'::text, 'converted'::text, false, 'complete'::text,
     true, true, 1::integer, 1::integer)$$,
-  'expiry finalizes exactly one authorized Request and Pending Hold while invalidating the stale lease'
+  'finalization after expiry creates exactly one authorized Request and Pending Hold while invalidating the stale lease'
 );
 set local role service_role;
 select is(
@@ -3336,7 +3587,7 @@ select is(
     '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
   ) ->> 'status',
   'conflict',
-  'a stale recovery lease cannot overwrite ledger-driven expiry finalization'
+  'a stale recovery lease cannot overwrite finalization after expiry'
 );
 reset role;
 rollback to savepoint expired_pre_finalization_availability;

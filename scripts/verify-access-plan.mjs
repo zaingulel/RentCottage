@@ -187,6 +187,21 @@ function databaseChecks(mode, partition) {
       )
         continue;
     }
+    const concurrencyPurpose = {
+      "scripts/verify-cottage-inventory-concurrency.mjs":
+        "concurrency-inventory",
+      "scripts/verify-booking-request-concurrency.mjs": "concurrency-booking",
+    }[script];
+    if (concurrencyPurpose) {
+      for (const action of ["create", "validate"]) {
+        steps.push({
+          group: "database",
+          command: "node",
+          args: ["scripts/prepare-access-test.mjs", action, concurrencyPurpose],
+          environment: "access",
+        });
+      }
+    }
     steps.push({
       group: "database",
       command: "node",

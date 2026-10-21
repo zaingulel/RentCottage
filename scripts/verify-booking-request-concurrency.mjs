@@ -10,6 +10,8 @@ const {
   markTimingPhase,
   guardDisposableLocalDatabase,
   runSqlAfterSetup: rawRunSql,
+  runDocker,
+  psqlArguments,
   startSessionAfterSetup: openSession,
   waitForLock,
   waitForMarker,
@@ -46,6 +48,9 @@ try {
     "rc-booking-request-durable-execution-contender";
   const expiryStaleCompletionName =
     "rc-booking-request-expiry-stale-completion";
+  const expiryLeaseMarker = "RC_BOOKING_REQUEST_EXPIRY_WORK_LEASED";
+  const expiryRedundantMarkerName =
+    "rc-booking-request-expiry-redundant-marker";
   const releaseRetryOwnerName = "rc-booking-request-release-retry-owner";
   const releaseRetryContenderName =
     "rc-booking-request-release-retry-contender";
@@ -899,9 +904,37 @@ try {
         `Cut-off release did not dequeue its boundary claim: ${matchedWork}`,
       );
     }
-    await runSql(`
+    const cutoffLookup = await runSql(`
     set role service_role;
     select public.expire_booking_request_authorization_claims();
+    select public.lookup_booking_request_submission(fixture.attempt_id) ->> 'status'
+    from public.test_booking_request_time_boundary_fixture fixture
+    where fixture.label = '${label}';
+    reset role;
+  `);
+    if (cutoffLookup.split("\n").at(-1) !== "absent") {
+      throw new Error(
+        `Cut-off cleanup requires authoritative absence: ${cutoffLookup}`,
+      );
+    }
+    await runSql(`
+    set role service_role;
+    select public.begin_booking_request_submission_cleanup_release(
+      fixture.attempt_id,
+      fixture.payment_snapshot || jsonb_build_object('release', jsonb_build_object(
+        'paymentLifecycleId', fixture.payment_snapshot ->> 'paymentLifecycleId',
+        'kind', 'release',
+        'logicalOperationId', (fixture.payment_snapshot ->> 'paymentLifecycleId') || ':release',
+        'attemptId', (fixture.payment_snapshot ->> 'paymentLifecycleId') || ':release:attempt-1',
+        'status', 'pending',
+        'amountFils', fixture.payment_snapshot -> 'customerTotalFils',
+        'providerRequestId', null, 'providerReference', null, 'movementReference', null,
+        'reconciliationRequired', false, 'retrySafe', false
+      )),
+      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+    )
+    from public.test_booking_request_time_boundary_fixture fixture
+    where fixture.label = '${label}';
     reset role;
   `);
     const releaseState = await runSql(`
@@ -925,7 +958,7 @@ try {
   `);
     if (releaseState !== "releasing|releasing|t|pending|pending|t|0|0") {
       throw new Error(
-        `Cut-off expiry did not preserve inventory around a recoverable release: ${releaseState}`,
+        `Cut-off cleanup did not preserve inventory around a recoverable release: ${releaseState}`,
       );
     }
     if (
@@ -1289,20 +1322,23 @@ commit;`;
         "prepare_booking_request_submission(uuid,uuid,jsonb)",
         "policy_evaluated_at := clock_timestamp();",
         "policy_evaluated_at := public.test_booking_request_race_now();",
+        1,
       ],
       [
         "finalize_booking_request_submission(uuid,jsonb)",
         "submission_created_at := clock_timestamp();",
         "submission_created_at := public.test_booking_request_race_now();",
+        1,
       ],
       [
         "expire_booking_request_authorization_claims()",
-        "clock_timestamp()",
-        "public.test_booking_request_race_now()",
+        "claims.reconciliation_expires_at <= statement_timestamp()",
+        "claims.reconciliation_expires_at <= public.test_booking_request_race_now()",
+        2,
       ],
     ];
     const replacements = [];
-    for (const [signature, target, replacement] of substitutions) {
+    for (const [signature, target, replacement, occurrences] of substitutions) {
       const original = JSON.parse(
         await runSql(`
       select case when to_regprocedure('public.${signature}') is null
@@ -1313,28 +1349,14 @@ commit;`;
       );
       if (
         typeof original !== "string" ||
-        original.split(target).length - 1 !== 1
+        original.split(target).length - 1 !== occurrences
       ) {
         throw new Error(
           `Unexpected ${signature} definition; inspect before race clock substitution.`,
         );
       }
       raceClockDefinitions.set(signature, original);
-      let definition = original.replaceAll(target, replacement);
-      if (signature === "expire_booking_request_authorization_claims()") {
-        const duePredicate =
-          "claims.reconciliation_expires_at <= statement_timestamp()";
-        if (original.split(duePredicate).length - 1 !== 2) {
-          throw new Error(
-            `Unexpected ${signature} due predicates; inspect before race clock substitution.`,
-          );
-        }
-        definition = definition.replaceAll(
-          duePredicate,
-          "claims.reconciliation_expires_at <= public.test_booking_request_race_now()",
-        );
-      }
-      replacements.push(definition);
+      replacements.push(original.replaceAll(target, replacement));
     }
     // Track the attempt so teardown also covers a lost post-commit subprocess result.
     raceClockInstalled = true;
@@ -2601,16 +2623,134 @@ commit;`;
     where claims.attempt_id = (
       select attempt_id from public.test_booking_request_concurrency_fixture
     );
-    create table public.test_booking_request_expiry_stale_work as
-    select public.dequeue_booking_request_authorization_reconciliation() as result;
-    grant select on public.test_booking_request_expiry_stale_work to service_role;
+    create table public.test_booking_request_expiry_stale_work (result jsonb);
+    grant select, insert on public.test_booking_request_expiry_stale_work to service_role;
   `);
+    const ownedClaim = await runSql(`
+    select claims.id || '|' || attempts.state || '|' || claims.state || '|' || claims.state_revision
+    from public.booking_request_authorization_claims claims
+    join public.booking_request_submission_attempts attempts
+      on attempts.id = claims.attempt_id
+    where claims.attempt_id = (
+      select attempt_id from public.test_booking_request_concurrency_fixture
+    );
+  `);
+    const [ownedClaimId, ...ownedState] = ownedClaim.split("|");
+    const selectedAttemptId = await runSql(`
+    begin;
+    set local role service_role;
+    select due.value ->> 'id'
+    from jsonb_array_elements(public.due_booking_request_submission_recoveries(
+      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+    )) due
+    where (due.value ->> 'id')::uuid = (
+      select attempt_id from public.test_booking_request_concurrency_fixture
+    );
+    commit;
+  `);
+    if (!selectedAttemptId) {
+      throw new Error(
+        "The unleased due authorization was not selected for recovery.",
+      );
+    }
     markTimingPhase("execution");
+    const leaseWorker = await startSession(`
+    set application_name = 'rc-booking-request-expiry-lease-worker';
+    begin;
+    set local role service_role;
+    insert into public.test_booking_request_expiry_stale_work
+    select public.dequeue_booking_request_authorization_reconciliation();
+    select result ->> 'claimId' from public.test_booking_request_expiry_stale_work;
+    select '${expiryLeaseMarker}';
+  `);
+    await waitForMarker(leaseWorker, expiryLeaseMarker);
+    if (!leaseWorker.stdout.includes(ownedClaimId)) {
+      throw new Error(
+        `The worker did not lease the selected authorization: ${leaseWorker.stdout}`,
+      );
+    }
+    const redundantMarker = await startSession(
+      `
+    set application_name = '${expiryRedundantMarkerName}';
+    begin;
+    set local role service_role;
+    select public.mark_booking_request_reconciliation_required('${selectedAttemptId}');
+    commit;
+  `,
+      true,
+    );
+    await waitForLock(expiryRedundantMarkerName, redundantMarker);
+    await finishSession(leaseWorker, { action: "commit" });
+    await finishSession(redundantMarker);
+    const ownership = await runSql(`
+    select attempts.state || '|' || claims.state || '|' || claims.state_revision || '|' ||
+      outbox.state || '|' ||
+      (outbox.lease_token is not distinct from (work.result ->> 'leaseToken')::uuid) || '|' ||
+      (to_char(outbox.lease_expires_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+        is not distinct from work.result ->> 'leaseExpiresAt') || '|' ||
+      (claims.state_revision = (work.result ->> 'stateRevision')::bigint)
+    from public.test_booking_request_expiry_stale_work work
+    join public.booking_request_authorization_claims claims
+      on claims.id = (work.result ->> 'claimId')::uuid
+    join public.booking_request_submission_attempts attempts
+      on attempts.id = claims.attempt_id
+    join public.booking_request_authorization_reconciliation_outbox outbox
+      on outbox.claim_id = claims.id and outbox.claim_generation = claims.generation;
+  `);
+    if (ownership !== `${ownedState.join("|")}|pending|true|true|true`) {
+      throw new Error(
+        `Redundant marking revoked the live worker lease: ${ownership}`,
+      );
+    }
+    const leasedDequeue = await startSession(
+      `
+    begin;
+    set local role service_role;
+    select coalesce(public.dequeue_booking_request_authorization_reconciliation() ->> 'claimId', 'empty');
+    rollback;
+  `,
+      true,
+    );
+    await finishSession(leasedDequeue);
+    if (
+      !leasedDequeue.stdout.trim() ||
+      leasedDequeue.stdout.includes(ownedClaimId)
+    ) {
+      throw new Error(
+        `A second worker leased the still-leased authorization: ${leasedDequeue.stdout}`,
+      );
+    }
+    const originalCompletion = await startSession(
+      `
+    begin;
+    set local role service_role;
+    select public.complete_booking_request_authorization_reconciliation(
+      (work.result ->> 'claimId')::uuid,
+      (work.result ->> 'generation')::integer,
+      (work.result ->> 'stateRevision')::bigint,
+      (work.result ->> 'leaseToken')::uuid,
+      fixture.payment_snapshot,
+      '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+    ) ->> 'status'
+    from public.test_booking_request_expiry_stale_work work
+    cross join public.test_booking_request_concurrency_fixture fixture;
+    rollback;
+  `,
+      true,
+    );
+    await finishSession(originalCompletion);
+    if (originalCompletion.stdout.trim() !== "applied") {
+      throw new Error(
+        `The original worker could not complete its preserved lease: ${originalCompletion.stdout}`,
+      );
+    }
     const first = await startSession(`
     set application_name = 'rc-booking-request-expiry-finalization';
     begin;
     set local role service_role;
     select public.expire_booking_request_authorization_claims();
+    select public.finalize_booking_request_submission(attempt_id, payment_snapshot)
+    from public.test_booking_request_concurrency_fixture;
     select '${finalizationMarker}';
   `);
     await waitForMarker(first, finalizationMarker);
@@ -2669,7 +2809,7 @@ commit;`;
     }
     if (!expiryStaleCompletion.stdout.includes("conflict")) {
       throw new Error(
-        `Stale recovery completion overwrote expiry finalization: ${expiryStaleCompletion.stdout}`,
+        `Stale recovery completion overwrote finalization after expiry: ${expiryStaleCompletion.stdout}`,
       );
     }
     if (!contender.stdout.includes("pending")) {
@@ -2704,7 +2844,7 @@ commit;`;
       );
     }
     console.log(
-      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=ledger-finalized-stale-lease-conflict; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending; retirement-claim-first=attempt-lock-wait-then-claim-retained; retirement-first=late-claim-blocked-then-invalid-without-payment; retirement-cross-attempt=customer-lock-wait-then-independent-claim-and-replacement-ready; key-collision=profile-lock-wait-then-invalid-without-late-attempt-lock-and-claim-ready; retirement-message=actor-lock-wait-message-admitted-then-rollback-and-payment-free-replacement-ready.",
+      "Booking Request concurrency passed: effects=1|1|1|1|1 (attempt|request|Pending Hold|owner notice|provider authorization); durable-ledger=two-fresh-executions-one-row-null-id-reconciled; release-retry-lease=one-owner-same-persisted-attempt-new-token-stale-worker-conflict; expiry-race=authorization-retained-then-explicit-finalization-stale-lease-conflict; live-lease=unleased-due-then-redundant-marker-waits-then-token-expiry-state-revision-preserved-not-re-leased-original-completion-applied-rolled-back; payment-CAS=stale-save-blocked-then-RC409; claim-protected-price=RC204; preauth-six-hour-lock=blocked-across-boundary-then-too-late-without-authorization; preauth-inside-48-hour-lock=blocked-across-boundary-then-invalid-without-authorization; postauth-six-hour-lock=blocked-across-boundary-then-RC409-absent-then-cleanup-release-prepared-stale-worker-conflict; postauth-inside-48-hour-lock=blocked-across-boundary-then-RC409-with-releasable-authorization; cross-cottage-overlap=blocked-on-customer-lock-then-RC409; authoritative lookup=waits-then-absent-on-rollback-and-pending-on-commit; same-intent contender=blocked-then-pending; retirement-claim-first=attempt-lock-wait-then-claim-retained; retirement-first=late-claim-blocked-then-invalid-without-payment; retirement-cross-attempt=customer-lock-wait-then-independent-claim-and-replacement-ready; key-collision=profile-lock-wait-then-invalid-without-late-attempt-lock-and-claim-ready; retirement-message=actor-lock-wait-message-admitted-then-rollback-and-payment-free-replacement-ready.",
     );
   }
 
@@ -2775,6 +2915,119 @@ commit;`;
     assert.ok(administratorId, "A current prepared administrator is required.");
     const admin = (sql) =>
       `begin; ${claims(administratorId, "aal2")} ${sql} commit;`;
+    const uuid = (value) => {
+      assert.match(
+        value,
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+      return value;
+    };
+    const browserPhone = accessBrowserFixture(
+      "mobile",
+      "booking-request",
+    ).bookingOwnerPhone.replace(/^\+/, "");
+    const browserInventory = async () => {
+      const rows =
+        await readJson(`select coalesce(jsonb_agg(to_jsonb(fixture)), '[]') from (
+        select p.id as profile_id, p.owner_user_id, p.current_shift_schedule_id as schedule_revision_id,
+          s.full_day_bundle_id,
+          (select jsonb_agg(jsonb_build_object('id', sh.id, 'position', sh.position) order by sh.position)
+            from public.cottage_shifts sh where sh.schedule_revision_id=s.id) as shifts
+        from auth.users u join public.owner_application_cottage_profiles p on p.owner_user_id=u.id
+        join public.cottage_shift_schedule_revisions s on s.id=p.current_shift_schedule_id
+        where ltrim(u.phone, '+')=${literal(browserPhone)} and p.current_publication_id is not null
+      ) fixture;`);
+      assert.ok(Array.isArray(rows));
+      assert.equal(
+        rows.length,
+        1,
+        "Browser booking requires exactly one published profile and schedule.",
+      );
+      const row = rows[0];
+      for (const key of [
+        "profile_id",
+        "owner_user_id",
+        "schedule_revision_id",
+        "full_day_bundle_id",
+      ])
+        uuid(row[key]);
+      assert.ok(Array.isArray(row.shifts));
+      assert.deepEqual(
+        row.shifts.map((shift) => shift.position),
+        [1, 2],
+      );
+      for (const shift of row.shifts) uuid(shift.id);
+      return row;
+    };
+    const browserClaimItems = async (browser) => {
+      const rows =
+        await readJson(`select coalesce(jsonb_agg(to_jsonb(item) order by item.claim_id, item.service_day, item.unit_id), '[]') from (
+        select c.id as claim_id, c.attempt_id, c.profile_id, c.schedule_revision_id,
+          i.unit_id, i.unit_kind::text, i.service_day, i.price_iqd
+        from public.booking_request_authorization_claims c
+        join public.booking_request_authorization_claim_items i on i.claim_id=c.id
+        where public.booking_request_claim_state_is_active(c.state) and c.profile_id=${literal(browser.profile_id)}
+      ) item;`);
+      assert.ok(Array.isArray(rows));
+      for (const row of rows) {
+        for (const key of [
+          "claim_id",
+          "attempt_id",
+          "profile_id",
+          "schedule_revision_id",
+          "unit_id",
+        ])
+          uuid(row[key]);
+        assert.equal(row.profile_id, browser.profile_id);
+        assert.equal(row.schedule_revision_id, browser.schedule_revision_id);
+        assert.ok(
+          row.unit_kind === "shift"
+            ? browser.shifts.some((shift) => shift.id === row.unit_id)
+            : row.unit_kind === "full_day_bundle" &&
+                row.unit_id === browser.full_day_bundle_id,
+        );
+        assert.match(row.service_day, /^\d{4}-\d{2}-\d{2}$/);
+        assert.ok(Number.isSafeInteger(row.price_iqd) && row.price_iqd > 0);
+      }
+      return rows;
+    };
+    const browserPricing = (browser) => {
+      const prices = {
+        units: [
+          ...browser.shifts.map((shift) => ({
+            unitId: shift.id,
+            unitKind: "shift",
+            standardPriceIqd: 170000 + shift.position * 10000,
+          })),
+          {
+            unitId: browser.full_day_bundle_id,
+            unitKind: "full_day_bundle",
+            standardPriceIqd: 250000,
+          },
+        ],
+      };
+      const result = runDocker(
+        psqlArguments(),
+        `\\set VERBOSITY verbose
+        begin; ${claims(browser.owner_user_id)}
+        select public.save_cottage_inventory_pricing(target_profile_id => ${literal(browser.profile_id)},
+          target_schedule_revision_id => ${literal(browser.schedule_revision_id)}, requested_prices => ${json(prices)});
+        rollback;`,
+      );
+      assert.equal(result.signal, null, "Browser pricing probe must complete.");
+      assert.ok(Number.isInteger(result.status));
+      return {
+        status: result.status,
+        sqlstate: result.stderr.match(/ERROR:\s+([A-Z0-9]{5}):/)?.[1] ?? null,
+      };
+    };
+    const initialBrowser = await browserInventory();
+    const initialBrowserItems = await browserClaimItems(initialBrowser);
+    assert.deepEqual(
+      browserPricing(initialBrowser),
+      { status: 0, sqlstate: null },
+      "Baseline browser pricing must succeed.",
+    );
     const fixtures = [];
     const attempts = [];
     const settings = [];
@@ -2782,7 +3035,7 @@ commit;`;
     for (const project of ["mobile", "worker"]) {
       const phone = accessBrowserFixture(
         project,
-        "booking-request",
+        "concurrency-booking",
       ).bookingOwnerPhone.replace(/^\+/, "");
       const rows =
         await readJson(`select coalesce(jsonb_agg(to_jsonb(candidate)), '[]') from (
@@ -3570,6 +3823,43 @@ commit;`;
         'notifications',coalesce((select jsonb_agg(to_jsonb(n)) from public.owner_request_notifications n join public.booking_request_submission_attempts a on a.booking_request_id=n.booking_request_id where a.id=${literal(attempt.id)}),'[]'));`),
         );
     }
+    const finalBrowser = await browserInventory();
+    assert.deepEqual(
+      finalBrowser,
+      initialBrowser,
+      "Supplemental booking concurrency must preserve browser profile and unit ownership.",
+    );
+    const finalBrowserItems = await browserClaimItems(finalBrowser);
+    const addedBrowserItems = finalBrowserItems.filter(
+      (item) =>
+        !initialBrowserItems.some(
+          (prior) =>
+            prior.claim_id === item.claim_id &&
+            prior.unit_id === item.unit_id &&
+            prior.service_day === item.service_day,
+        ),
+    );
+    const pricing = browserPricing(finalBrowser);
+    console.log(
+      "Browser booking inventory isolation:",
+      JSON.stringify({
+        addedActiveClaimItems: addedBrowserItems.length,
+        pricing,
+      }),
+    );
+    assert.equal(
+      addedBrowserItems.length,
+      0,
+      "Supplemental booking concurrency added active claim items to browser inventory.",
+    );
+    assert.deepEqual(
+      pricing,
+      { status: 0, sqlstate: null },
+      "Browser journey production pricing must still succeed.",
+    );
+    console.log(
+      "PASS supplemental_booking_preserves_browser_inventory: unchanged browser ownership, no added active claim items, production pricing succeeds.",
+    );
   }
   await verifySuspensionSerialization();
   timingOutcome = "passed";

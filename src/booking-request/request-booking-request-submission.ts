@@ -33,8 +33,9 @@ export async function createRequestBookingRequestSubmission() {
     console.error("Booking Request expiry reconciliation failed");
     return undefined;
   }
-  return createBookingRequestSubmission({
-    repository: new SupabaseBookingRequestSubmissionRepository(client),
+  const repository = new SupabaseBookingRequestSubmissionRepository(client);
+  const submission = createBookingRequestSubmission({
+    repository,
     paymentProvider,
     operations,
     diagnostics: {
@@ -42,4 +43,17 @@ export async function createRequestBookingRequestSubmission() {
         console.error("Booking Request submission failed", event),
     },
   });
+  let recoveries;
+  try {
+    recoveries = await repository.dueAuthorizedRecoveries(
+      paymentProvider.identity,
+    );
+  } catch {
+    console.error("Booking Request recovery selection failed");
+    return undefined;
+  }
+  for (const attempt of recoveries) {
+    await submission.recoverAuthorized(attempt);
+  }
+  return submission;
 }

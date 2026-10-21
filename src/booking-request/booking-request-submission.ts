@@ -13,6 +13,7 @@ import {
   createPaymentLifecycle,
   ProviderExecutionNotStartedError,
   rehydratePaymentAuthorizationLifecycle,
+  type PaymentLifecycle,
 } from "@/payment/payment-lifecycle";
 
 import { isContactSafeBookingRequestText } from "./booking-request-content";
@@ -55,6 +56,13 @@ export interface SubmissionAttempt {
   readonly paymentLifecycleId: string;
   readonly paymentSnapshot: PaymentLifecycleSnapshot | null;
   readonly paymentProviderIdentity: PaymentProviderIdentity | null;
+}
+
+export interface RecoverableSubmissionAttempt extends SubmissionAttempt {
+  readonly bookingPriceFils: number;
+  readonly bookingServiceFeeFils: number;
+  readonly paymentSnapshot: PaymentLifecycleSnapshot;
+  readonly paymentProviderIdentity: PaymentProviderIdentity;
 }
 
 export type SubmissionFailureStatus =
@@ -129,6 +137,9 @@ export class BookingRequestAuthorizationClaimNotPersisted extends Error {
 
 export interface BookingRequestSubmission {
   submit(input: SubmissionInput): Promise<SubmissionResult>;
+  recoverAuthorized(
+    attempt: RecoverableSubmissionAttempt,
+  ): Promise<SubmissionResult>;
 }
 
 export type BookingRequestDiagnosticCode =
@@ -213,22 +224,106 @@ export function createBookingRequestSubmission({
   operations: PaymentOperationExecution;
   diagnostics?: BookingRequestDiagnostics;
 }): BookingRequestSubmission {
+  const record = (code: BookingRequestDiagnosticCode, attemptId?: string) => {
+    diagnostics?.record({ code, ...(attemptId ? { attemptId } : {}) });
+  };
+  const markReconciliationRequired = async (attemptId: string) => {
+    try {
+      await repository.markReconciliationRequired(attemptId);
+    } catch {
+      record("booking_request_reconciliation_marker_failed", attemptId);
+    }
+  };
+  const finalizeAuthorized = async (
+    attemptId: string,
+    payment: PaymentLifecycle,
+    customerTotalFils: number,
+  ): Promise<SubmissionResult> => {
+    try {
+      return await repository.finalize(attemptId, payment.snapshot());
+    } catch {
+      record("booking_request_finalization_failed", attemptId);
+      let lookup: SubmissionLookupResult = { status: "unknown" };
+      try {
+        lookup = await repository.lookup(attemptId);
+      } catch {
+        record("booking_request_lookup_failed", attemptId);
+      }
+      if (lookup.status === "pending") return lookup;
+      if (lookup.status === "unknown") {
+        record("booking_request_lookup_unknown", attemptId);
+      }
+      if (lookup.status === "absent") {
+        try {
+          const release = await payment.release(customerTotalFils);
+          if (release.status === "succeeded") {
+            return { status: "unavailable" };
+          }
+        } catch {
+          record("booking_request_release_failed", attemptId);
+        }
+      }
+      await markReconciliationRequired(attemptId);
+      return { status: "reconciliation-required" };
+    }
+  };
+  const storedReleaseResult = async (
+    attemptId: string,
+    payment: PaymentLifecycle,
+  ): Promise<SubmissionResult | null> => {
+    const storedRelease = payment.snapshot().release;
+    if (!storedRelease) return null;
+    const release =
+      storedRelease.status === "pending"
+        ? await payment.reconcile(storedRelease.logicalOperationId)
+        : storedRelease;
+    if (release.status === "succeeded") return { status: "unavailable" };
+    await markReconciliationRequired(attemptId);
+    return { status: "reconciliation-required" };
+  };
   return {
+    async recoverAuthorized(attempt) {
+      if (
+        !sameProviderIdentity(
+          attempt.paymentProviderIdentity,
+          paymentProvider.identity,
+        )
+      ) {
+        record("booking_request_provider_identity_mismatch", attempt.id);
+        await markReconciliationRequired(attempt.id);
+        return { status: "reconciliation-required" };
+      }
+      let payment: PaymentLifecycle;
+      try {
+        payment = rehydratePaymentAuthorizationLifecycle(
+          attempt,
+          paymentProvider,
+          attempt.paymentSnapshot,
+          {
+            operations,
+            save: (snapshot) =>
+              repository.savePaymentSnapshot(
+                attempt.id,
+                snapshot,
+                paymentProvider.identity,
+              ),
+          },
+        );
+        const releaseResult = await storedReleaseResult(attempt.id, payment);
+        if (releaseResult) return releaseResult;
+      } catch {
+        record("booking_request_rehydration_failed", attempt.id);
+        await markReconciliationRequired(attempt.id);
+        return { status: "reconciliation-required" };
+      }
+      return finalizeAuthorized(
+        attempt.id,
+        payment,
+        attempt.bookingPriceFils + attempt.bookingServiceFeeFils,
+      );
+    },
     async submit(input) {
       if (!validInput(input)) return { status: "invalid" };
-      const record = (
-        code: BookingRequestDiagnosticCode,
-        attemptId?: string,
-      ) => {
-        diagnostics?.record({ code, ...(attemptId ? { attemptId } : {}) });
-      };
-      const markReconciliationRequired = async (attemptId: string) => {
-        try {
-          await repository.markReconciliationRequired(attemptId);
-        } catch {
-          record("booking_request_reconciliation_marker_failed", attemptId);
-        }
-      };
       let prepared: PrepareSubmissionResult;
       try {
         prepared = await repository.prepare(input);
@@ -276,16 +371,11 @@ export function createBookingRequestSubmission({
               persistence,
             )
           : createPaymentLifecycle(paymentInput, paymentProvider, persistence);
-        const storedRelease = payment.snapshot().release;
-        if (storedRelease) {
-          const release =
-            storedRelease.status === "pending"
-              ? await payment.reconcile(storedRelease.logicalOperationId)
-              : storedRelease;
-          if (release.status === "succeeded") return { status: "unavailable" };
-          await markReconciliationRequired(prepared.attempt.id);
-          return { status: "reconciliation-required" };
-        }
+        const releaseResult = await storedReleaseResult(
+          prepared.attempt.id,
+          payment,
+        );
+        if (releaseResult) return releaseResult;
       } catch {
         record("booking_request_rehydration_failed", prepared.attempt.id);
         await markReconciliationRequired(prepared.attempt.id);
@@ -324,38 +414,11 @@ export function createBookingRequestSubmission({
         return { status: "reconciliation-required" };
       }
 
-      try {
-        return await repository.finalize(
-          prepared.attempt.id,
-          payment.snapshot(),
-        );
-      } catch {
-        record("booking_request_finalization_failed", prepared.attempt.id);
-        let lookup: SubmissionLookupResult = { status: "unknown" };
-        try {
-          lookup = await repository.lookup(prepared.attempt.id);
-        } catch {
-          record("booking_request_lookup_failed", prepared.attempt.id);
-        }
-        if (lookup.status === "pending") return lookup;
-        if (lookup.status === "unknown") {
-          record("booking_request_lookup_unknown", prepared.attempt.id);
-        }
-        if (lookup.status === "absent") {
-          try {
-            const release = await payment.release(
-              iqdToFils(input.displayedQuote.customerTotalIqd),
-            );
-            if (release.status === "succeeded") {
-              return { status: "unavailable" };
-            }
-          } catch {
-            record("booking_request_release_failed", prepared.attempt.id);
-          }
-        }
-        await markReconciliationRequired(prepared.attempt.id);
-        return { status: "reconciliation-required" };
-      }
+      return finalizeAuthorized(
+        prepared.attempt.id,
+        payment,
+        paymentInput.bookingPriceFils + paymentInput.bookingServiceFeeFils,
+      );
     },
   };
 }

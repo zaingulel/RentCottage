@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createPaymentLifecycle } from "@/payment/payment-lifecycle";
+import { PaymentSimulator } from "@/payment/payment-simulator";
+
+import type { RecoverableSubmissionAttempt } from "./booking-request-submission";
 
 const {
   createClient,
@@ -67,7 +71,8 @@ describe("request Booking Request submission factory", () => {
     const client = {
       rpc: vi.fn(async (name: string) => ({
         data:
-          name === "pending_booking_request_authorization_observations"
+          name === "pending_booking_request_authorization_observations" ||
+          name === "due_booking_request_submission_recoveries"
             ? []
             : 1,
         error: null,
@@ -167,7 +172,9 @@ it("records inquiry evidence for pending authorizations before the database expi
           ? admission
           : name === "record_booking_request_provider_operation_observation"
             ? observed
-            : 1,
+            : name === "due_booking_request_submission_recoveries"
+              ? []
+              : 1,
     error: null,
   }));
   createClient.mockReturnValue({ rpc });
@@ -184,5 +191,85 @@ it("records inquiry evidence for pending authorizations before the database expi
     "reload_booking_request_payment_operation",
     "record_booking_request_provider_operation_observation",
     "expire_booking_request_authorization_claims",
+    "due_booking_request_submission_recoveries",
+  ]);
+});
+
+it("continues both unresolved recoveries and ordinary submission", async () => {
+  vi.clearAllMocks();
+  vi.resetModules();
+  vi.stubEnv("APP_ENVIRONMENT", "test");
+  vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
+  vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
+  getServerEnvironment.mockReturnValue({
+    name: "test",
+    supabase: {
+      projectRef: "local-test",
+      url: "http://127.0.0.1:54331",
+      secretKey: "test-service-role-key",
+    },
+  });
+  const provider = new PaymentSimulator({
+    now: () => "2099-08-21T17:00:00.000Z",
+    outcomes: ["succeeded", "succeeded"],
+    identity: durablePaymentProvider.identity,
+  });
+  const candidates: RecoverableSubmissionAttempt[] = [];
+  for (const [id, paymentLifecycleId] of [
+    [
+      "22222222-2222-4222-8222-222222222222",
+      "33333333-3333-4333-8333-333333333333",
+    ],
+    [
+      "44444444-4444-4444-8444-444444444444",
+      "55555555-5555-4555-8555-555555555555",
+    ],
+  ]) {
+    const payment = createPaymentLifecycle(
+      {
+        paymentLifecycleId,
+        bookingPriceFils: 100_003_000,
+        bookingServiceFeeFils: 5_000_000,
+      },
+      provider,
+    );
+    await payment.authorize();
+    candidates.push({
+      id,
+      paymentLifecycleId,
+      bookingPriceFils: 100_003_000,
+      bookingServiceFeeFils: 5_000_000,
+      paymentSnapshot: payment.snapshot(),
+      paymentProviderIdentity: durablePaymentProvider.identity,
+    });
+  }
+  const recoverAuthorized = vi
+    .fn()
+    .mockResolvedValue({ status: "reconciliation-required" });
+  const submit = vi.fn().mockResolvedValue({ status: "pending" });
+  createSubmission.mockReturnValue({ recoverAuthorized, submit });
+  const rpc = vi.fn(async (name: string) => ({
+    data:
+      name === "due_booking_request_submission_recoveries"
+        ? candidates
+        : name === "pending_booking_request_authorization_observations"
+          ? []
+          : 1,
+    error: null,
+  }));
+  createClient.mockReturnValue({ rpc });
+  const service = await createRequestBookingRequestSubmission();
+  expect(recoverAuthorized.mock.calls).toEqual([
+    [candidates[0]],
+    [candidates[1]],
+  ]);
+  await expect(service?.submit({} as never)).resolves.toEqual({
+    status: "pending",
+  });
+  expect(submit).toHaveBeenCalledOnce();
+  expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+    "pending_booking_request_authorization_observations",
+    "expire_booking_request_authorization_claims",
+    "due_booking_request_submission_recoveries",
   ]);
 });
