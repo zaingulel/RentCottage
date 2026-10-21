@@ -10,7 +10,7 @@ state. This file holds in full only the rules every session needs; every other r
 
 ## Runtime notes
 
-A repository runs Claude Code, Codex or both. Its settings file names which under `runtimes`, as the `sync-job` skill
+A repository runs Claude Code, Codex or both. Its settings file names which under `runtimes`, as the `shared-files` skill
 says, and a repository that names none runs both. Only the named runtimes' seats, hooks, skill copies and contract file
 are installed, so a sentence here, in a skill or in a charter about a runtime the repository does not run applies to
 nothing in it.
@@ -94,8 +94,9 @@ Every rule this file does not hold in full has one home:
 | Each runtime's exact form for waiting on a helper or a long command | [`resume`](.agents/skills/resume/SKILL.md), "5. Build" |
 | The two questions that choose a review tier, the three tiers, the guard rule, what a setting-only seat change is, the cross-family route, the authorization it runs on, its single-family form in a repository that runs one runtime, and its substitution when the other family's seat cannot be reached, when `security-reviewer` runs, when the external review add-on runs and how its setting is read, how visual work is driven and how many views it needs, and the accessibility audit of visual work with the minimum target size it holds | [`resume`](.agents/skills/resume/SKILL.md), "6. Verify and review" |
 | Every other rule of the external review, in a repository that has turned that add-on on: the pool it is metered from, the allowance lookup, how each thread is settled before the draft is marked ready, whether a review still stands after a rebase, and the provider-unavailability exception | The add-on's own skill, which [`resume`](.agents/skills/resume/SKILL.md) names under "6. Verify and review" |
-| How shared files are fingerprinted, pinned and kept as real files; how a repository overrides a seat's settings and what an override may not do; how a repository names the runtimes it runs and which files each runtime owns; how a repository turns the external review add-on on or off; how a repository turns the documentation sweep off and what that leaves out; what a repository needs before it runs the workflow; and how a sync job runs: the command, what one run copies and removes, when a card is covered and how covered cards close | The [`sync-job`](.agents/skills/sync-job/SKILL.md) skill |
+| How shared files are fingerprinted, pinned and kept as real files; how a repository overrides a seat's settings and what an override may not do; how a repository names the runtimes it runs and which files each runtime owns; how a repository turns the external review add-on on or off; how a repository turns the documentation sweep off and what that leaves out; and what a repository needs before it runs the workflow | The [`shared-files`](.agents/skills/shared-files/SKILL.md) skill |
 | The tracker and triage vocabulary the vendored skills expect to have been provided | [docs/ISSUE-TRACKER.md](docs/ISSUE-TRACKER.md) |
+| What to ask the owner and what agents decide when `to-spec` or an interview for it shapes a specification: read before asking anything | [`to-issues`](.agents/skills/to-issues/SKILL.md), "Specification entry" |
 | How many skills are vendored, from which upstream repositories and at which commits | [docs/AI-WORKFLOW-runtimes.md](docs/AI-WORKFLOW-runtimes.md) |
 | The documentation sweep and its day-after triage, when the Conventions table marks them active and the settings file does not hold `"docSweep": false` | [docs/DOC-SWEEP.md](docs/DOC-SWEEP.md) and [docs/SWEEP-TRIAGE.md](docs/SWEEP-TRIAGE.md) |
 | The weekly retro, in a repository whose `docs/ISSUE-TRACKER.md` records it | [docs/WEEKLY-RETRO.md](docs/WEEKLY-RETRO.md) |
@@ -119,6 +120,12 @@ Every rule this file does not hold in full has one home:
    requires, which stays the agents' own review and no part of this gate, and both gates above keep their
    meaning. The `resume` skill owns the steps under "4. Plan".
 
+**Routine board updates.** For an owner-approved job, the coordinating session has the owner's standing
+authorisation for the board status and routing updates, job assignment and claim bookkeeping prescribed by this
+workflow, including moving the card to `Awaiting push` before requesting push authorisation. The workflow's
+eligibility, ownership and evidence checks and all owner gates still apply. This authorises board bookkeeping only,
+with no permission to publish code.
+
 A material change to the approved outcome, product meaning, or a trade-off goes back to the owner as a
 plain-language decision before it is built; a parser, state machine, or framework the outcome did not name is
 such a change. Anything short of that which the job surfaces and can sensibly finish in the same job, in the
@@ -140,8 +147,10 @@ workflow made and the paragraph above does not settle reads
 [Leftover rule](.agents/skills/closeout/SKILL.md#leftover-rule) in the `closeout` skill before it reports, deletes
 or leaves it: that section owns what a leftover is, how each is investigated and what each outcome allows. Only a
 leftover that investigation shows dead is deleted without further approval. A safeguard's refusal keeps the target
-and is reported with the evidence, never forced. This grants no general deletion or publication authority; other
-destructive actions keep exact-target approval.
+and is reported with the evidence, except for the two verified branch exceptions in
+[closeout step 5](.agents/skills/closeout/SKILL.md): this job's exact merged-pull-request head and its
+session-created pre-squash backup. That procedure owns their proof and limits; every other refusal remains binding.
+This grants no general deletion or publication authority; other destructive actions keep exact-target approval.
 
 An approval covers only the question it answered. After a context compaction, reread the owner's latest messages
 before acting on one; an approval whose question is no longer in view is asked again. A memory, summary or earlier
@@ -196,17 +205,16 @@ to the owner as a decision.
 The files `.agents/factory-manifest.json` lists are shared workflow bytes, and `AGENTS.md` shares only the text between
 its `factory-shared` markers. Each shared file is authored only in the manifest's `canonical` repository, under `src/`,
 and reaches any other repository only through the manifest: by an install, which writes a shared file only where none is
-and leaves an identical one as it is, by a sync afterwards, or by an update to a named release through its verified manifest;
-the `sync-job` skill says how a sync fingerprints files, pins them at a commit and keeps them as real files. An adopter's copy of a shared file differs from the canonical
-bytes in one way only: the value of a seat's model, effort or turn-limit line that the adopter's own committed seat
-settings file names; the `sync-job` skill says how a repository overrides a seat and what an override may not do. An
-adopter that runs one runtime carries no file of the other, and a file found at one of the other's shared paths is
-refused like a changed byte. An adopter whose settings file does not turn the external review add-on on carries none of
+and leaves an identical one as it is, or by an update to a named release of the canonical repository through its
+verified manifest; the `shared-files` skill says how shared files are fingerprinted, pinned at a release and kept as real
+files. An adopter's copy of a shared file differs from the canonical bytes in one way only: the value of a seat's model,
+effort or turn-limit line that the adopter's own committed seat settings file names; the `shared-files` skill says how a
+repository overrides a seat and what an override may not do. An adopter that runs one runtime carries no file of the
+other, and a file found at one of the other's shared paths is refused like a changed byte. An adopter whose settings file does not turn the external review add-on on carries none of
 that add-on's files, on the same terms. An adopter whose settings file turns the documentation sweep off carries none of
-the `sweep-scope` check's files, on the same terms. An ordinary shared change opens no sync card: `resume` reports at
-intake, as information, whether this repository lags the canonical copy. An urgent fix is authored in the canonical
-repository first and pulled by a sync card on the owner's decision. A job whose card is a sync card reads the
-[`sync-job`](.agents/skills/sync-job/SKILL.md) skill before it runs the sync.
+the `sweep-scope` check's files, on the same terms. A shared change reaches adopters when the owner publishes a release
+and each adopter applies it on an update card. An urgent fix is authored in the canonical repository, released, and
+applied on the owner's decision.
 
 Whoever can use the administrator bypass of the required check on `main` can put any commit on `main` when the local
 hook is skipped: the holders of that role and every write deploy key, which GitHub admits by the same bypass, so the
@@ -215,7 +223,7 @@ repository keeps the role to the owner and carries no write deploy key.
 A Claude Code session started in the root checkout keeps that checkout's git guard after it enters a job worktree, while
 it reads the permission allow list from the worktree, so a change that widens the allow list is its own card, started
 only once the guard change that bounds it is on `main` in the root checkout of the canonical repository and, through a
-sync, of every adopter. An intentional adopter exception needs owner agreement and lives outside the shared files.
+release update, of every adopter. An intentional adopter exception needs owner agreement and lives outside the shared files.
 
 <!-- factory-shared:end -->
 
@@ -254,7 +262,7 @@ inspect the migration, and land both together. Preserve the product preparation 
 | plan-first | Authentication, authorization, payments, personal data, private owner-verification files, database migrations, Row Level Security, provider/Worker trust, destructive data changes, new user-facing behaviour with no settled design |
 | owner-directed | New product meaning and unsettled user-facing design: owner direction plus domain grounding |
 | sign-off | Authentication, authorization and Row Level Security, payments, provider/Worker trust, any change that widens access to private or personal data, a change to code that deletes, erases or blanks private data or rewrites audit records (a person editing their own details is not one), and a migration that moves, rewrites or deletes existing data; each needs explicit sign-off and a named anti-regression test. Any other schema change, such as adding a column that holds no private or personal data and a read-only screen shows, takes the ordinary cross-family review |
-| security review | Authentication, authorization, payment or personal-data access, credential custody, provider-webhook trust, Row Level Security, public/private data exposure, an injection boundary, or a shared-workflow sync that changes agent permissions, hook registrations or hook scripts; privacy: [docs/product/rentcottage-mvp-prd.md](docs/product/rentcottage-mvp-prd.md#6-privacy-safety-and-moderation) |
+| security review | Authentication, authorization, payment or personal-data access, credential custody, provider-webhook trust, Row Level Security, public/private data exposure, an injection boundary, or a shared-workflow install or release update that changes agent permissions, hook registrations or hook scripts; privacy: [docs/product/rentcottage-mvp-prd.md](docs/product/rentcottage-mvp-prd.md#6-privacy-safety-and-moderation) |
 | hard to undo | What a later commit, migration or deployment cannot put right: existing rows, stored files or audit records that a migration, function, scheduled task or script has moved, rewritten or deleted once it has run; money moved at the Licensed Payment Provider (an authorization placed or released, a capture, a refund or a payout), which a later change can only follow with another movement; a notification once delivered to a customer or cottage owner; private or personal data once it has crossed a public or pre-confirmation boundary; a secret once it has reached a commit, a pull request, a log or a URL; and a GitHub, Supabase, Cloudflare or payment-provider setting, which no commit records or restores. A wrong page, service, Worker, skill, seat, document or additive schema change is not hard to undo: a later commit, migration or deployment corrects it, and a deployment is rolled back to its previous version. That the data is mock before launch changes no answer |
 | wide reach | Beyond the shared files: this file outside its shared region, this table included; `.agents/REPOSITORY.md`; `GLOSSARY.md`, which every seat takes its terms from; and the instruction documents a session or seat reads before it plans, builds or reviews: `docs/CODING-STANDARDS.md`, `docs/TESTING-STRATEGY.md`, `docs/DESIGN-SYSTEM.md` and `docs/ISSUE-TRACKER.md`. Product code, the schema, Row Level Security policies and the Worker are narrow here however far their effect reaches: the `sign-off` row and the guard rule carry that weight |
 

@@ -26,7 +26,7 @@ only from the repository's existing set (`gh label list`); a skill never creates
 |---|---|
 | `type:epic` | A parent that exists to wrap native sub-issues |
 | `type:feature` | A new user-facing capability, standalone or a child of an epic |
-| `type:task` | A bounded unit of work that adds no user-facing capability: a proof, a chore, research, tooling or a sync |
+| `type:task` | A bounded unit of work that adds no user-facing capability: a proof, a chore, research, tooling or a release update |
 | `type:bug` | A defect or regression |
 | `type:docs` | A change to documentation or instruction prose only |
 

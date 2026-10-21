@@ -1166,14 +1166,18 @@ describe("repository verification command", () => {
     ["merge watch entry", ["scripts/merge-watch.mjs"], "baseline"],
     ["merge watch library", ["scripts/lib/merge-watch.mjs"], "baseline"],
     ["merge watch tests", ["scripts/lib/merge-watch.test.mjs"], "baseline"],
-    ["shared workflow sync entry", ["scripts/factory-sync.mjs"], "baseline"],
     [
-      "shared workflow sync library",
+      "shared workflow fingerprint entry",
+      ["scripts/factory-sync.mjs"],
+      "baseline",
+    ],
+    [
+      "shared workflow fingerprint library",
       ["scripts/lib/factory-sync.mjs"],
       "baseline",
     ],
     [
-      "shared workflow sync tests",
+      "shared workflow fingerprint tests",
       ["scripts/lib/factory-sync.test.mjs"],
       "baseline",
     ],
