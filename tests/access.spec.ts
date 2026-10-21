@@ -4075,7 +4075,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     await expect(apply).toBeFocused();
     await apply.press("Enter");
     await expect(
-      panel.getByText(copy.batchRefused as string, { exact: true }),
+      panel.getByRole("alert").filter({ hasText: copy.batchRefused as string }),
     ).toBeVisible();
     await expect(
       panel.getByRole("heading", {
@@ -4271,7 +4271,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
       .getByRole("button", { name: copy.batchApply as string, exact: true })
       .click();
     await expect(
-      panel.getByText(copy.batchSaved as string, { exact: true }),
+      panel.getByRole("status").filter({ hasText: copy.batchSaved as string }),
     ).toBeVisible();
     await expect(
       panel.getByText(`${copy.batchChanged}: ${2 * (shifts.length + 1) - 2}`, {
@@ -4323,7 +4323,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
       .getByRole("button", { name: copy.batchApply as string, exact: true })
       .click();
     await expect(
-      panel.getByText(copy.batchSaved as string, { exact: true }),
+      panel.getByRole("status").filter({ hasText: copy.batchSaved as string }),
     ).toBeVisible();
     await expect(
       month
