@@ -923,3 +923,71 @@ it("preserves inventory operation outcomes through the real adapter", async () =
     expect(storageFrom, context).not.toHaveBeenCalled();
   }
 });
+
+it("preserves inventory provider cause depth and first-code precedence", async () => {
+  const knownCodeAtDepth = (depth: number): unknown => {
+    let error: unknown = { code: "RC409" };
+    for (let level = 0; level < depth; level += 1) {
+      error = { cause: error };
+    }
+    return error;
+  };
+  const cases = [
+    {
+      name: "immediate nested known code",
+      error: { cause: { code: "RC409" } },
+      expected: { status: "conflict" },
+    },
+    {
+      name: "known code at raw depth six",
+      error: knownCodeAtDepth(6),
+      expected: { status: "conflict" },
+    },
+    {
+      name: "known code at raw depth seven",
+      error: knownCodeAtDepth(7),
+      expected: { status: "unavailable" },
+    },
+    {
+      name: "outer unknown string masks a known cause",
+      error: { code: "UNKNOWN", cause: { code: "RC409" } },
+      expected: { status: "unavailable" },
+    },
+    {
+      name: "outer numeric code permits a known cause",
+      error: { code: 409, cause: { code: "RC409" } },
+      expected: { status: "conflict" },
+    },
+    {
+      name: "constructor string is unknown",
+      error: { code: "constructor" },
+      expected: { status: "unavailable" },
+    },
+  ];
+  for (const example of cases) {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: example.error });
+    const inventory = createCottageInventory(
+      new SupabaseCottageInventoryRepository({
+        rpc,
+      } as unknown as SupabaseClient),
+    );
+    await expect(
+      inventory.savePricing(profileId, revisionId, {
+        units: [{ id: shiftId, kind: "shift", standardPriceIqd: 120000 }],
+      }),
+      example.name,
+    ).resolves.toEqual(example.expected);
+    expect(rpc, example.name).toHaveBeenCalledExactlyOnceWith(
+      "save_cottage_inventory_pricing",
+      {
+        target_profile_id: profileId,
+        target_schedule_revision_id: revisionId,
+        requested_prices: {
+          units: [
+            { unitId: shiftId, unitKind: "shift", standardPriceIqd: 120000 },
+          ],
+        },
+      },
+    );
+  }
+});
