@@ -18,6 +18,8 @@ function repository(): CottageInventoryRepository {
       units: [],
     })),
     savePricing: vi.fn(async (input) => input),
+    setAvailabilityBatch:
+      vi.fn<CottageInventoryRepository["setAvailabilityBatch"]>(),
     setAvailability: vi.fn(async (input) => input),
     resolvePublicAvailability: vi.fn(async () => ({
       profileId,
@@ -141,6 +143,8 @@ describe("Cottage Inventory", () => {
         units: [],
       })),
       savePricing: vi.fn(async (input) => input),
+      setAvailabilityBatch:
+        vi.fn<CottageInventoryRepository["setAvailabilityBatch"]>(),
       setAvailability: vi.fn(async (input) => input),
       resolvePublicAvailability: vi.fn(async () => ({
         profileId,
@@ -270,5 +274,92 @@ it("validates bounded owner calendar spans before persistence", async () => {
         "2099-01-01",
       ),
     ).resolves.toEqual({ status });
+  }
+});
+
+it("rejects invalid owner calendar batches before persistence", async () => {
+  const store = repository();
+  const setAvailabilityBatch = vi.fn().mockResolvedValue({ status: "saved" });
+  const inventory = createCottageInventory({ ...store, setAvailabilityBatch });
+  const batch = {
+    from: "2096-01-31",
+    to: "2096-02-01",
+    unitKeys: [{ id: shiftId, kind: "shift" }],
+    state: "closed",
+    mode: "range",
+    reviewConfirmed: false,
+    replacePrivateBlocks: [],
+    cells: ["2096-02-01", "2096-01-31"].map((serviceDay) => ({
+      serviceDay,
+      id: shiftId,
+      kind: "shift",
+      expectedOwnerState: "open",
+    })),
+  };
+  const invalid = [
+    null,
+    [],
+    {},
+    { ...batch, extra: true },
+    { ...batch, from: "2096-02-30" },
+    { ...batch, from: "0000-01-01" },
+    { ...batch, from: "2096-02-02" },
+    { ...batch, to: "2096-03-02" },
+    { ...batch, reviewConfirmed: "false" },
+    { ...batch, reviewConfirmed: true },
+    { ...batch, mode: "reviewed", reviewConfirmed: true },
+    { ...batch, cells: [] },
+    { ...batch, cells: [batch.cells[0], batch.cells[0]] },
+    { ...batch, unitKeys: [batch.unitKeys[0], batch.unitKeys[0]] },
+    { ...batch, unitKeys: [] },
+    { ...batch, unitKeys: [{ id: "bad", kind: "shift" }] },
+    { ...batch, state: "pending_hold" },
+    { ...batch, cells: [{ ...batch.cells[0], extra: true }] },
+    { ...batch, cells: [{ ...batch.cells[0], expectedOwnerState: null }] },
+    { ...batch, cells: [{ ...batch.cells[0], serviceDay: "2096-02-02" }] },
+    {
+      ...batch,
+      replacePrivateBlocks: [
+        { serviceDay: "2096-01-31", id: shiftId, kind: "shift" },
+      ],
+    },
+  ];
+  for (const input of invalid) {
+    await expect(
+      inventory.setAvailabilityBatch(profileId, revisionId, input),
+    ).resolves.toEqual({ status: "invalid", fields: ["batch"] });
+  }
+  expect(setAvailabilityBatch).not.toHaveBeenCalled();
+  await inventory.setAvailabilityBatch(profileId, revisionId, batch);
+  expect(setAvailabilityBatch).toHaveBeenLastCalledWith({
+    profileId,
+    scheduleRevisionId: revisionId,
+    batch: { ...batch, cells: [...batch.cells].reverse() },
+  });
+  const reviewed = {
+    ...batch,
+    mode: "reviewed",
+    reviewConfirmed: true,
+    cells: [batch.cells[0]],
+  };
+  await inventory.setAvailabilityBatch(profileId, revisionId, reviewed);
+  expect(setAvailabilityBatch).toHaveBeenLastCalledWith({
+    profileId,
+    scheduleRevisionId: revisionId,
+    batch: reviewed,
+  });
+  for (const [code, status] of [
+    ["22023", "invalid"],
+    ["RC409", "conflict"],
+    ["42501", "denied"],
+    ["RC202", "denied"],
+    ["offline", "unavailable"],
+  ]) {
+    setAvailabilityBatch.mockRejectedValueOnce({ cause: { code } });
+    await expect(
+      inventory.setAvailabilityBatch(profileId, revisionId, batch),
+    ).resolves.toEqual(
+      status === "invalid" ? { status, fields: ["batch"] } : { status },
+    );
   }
 });

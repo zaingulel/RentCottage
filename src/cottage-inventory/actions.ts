@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 
 import { isLocale, type Locale } from "@/i18n/routing";
 
-import type { CottageInventoryOwnerCalendarSpan } from "./cottage-inventory";
+import type {
+  CottageInventoryBatchRefused,
+  CottageInventoryBatchSaved,
+  CottageInventoryOwnerCalendarSpan,
+} from "./cottage-inventory";
 import { createRequestCottageInventory } from "./request-cottage-inventory";
 
 export type CottageInventoryActionState = {
@@ -238,4 +242,58 @@ export async function loadCottageInventoryCalendarSpanAction(
     return { status: "unavailable" };
   }
   return { status: "loaded", calendar: result.calendar };
+}
+
+export type CottageInventoryBatchActionState =
+  | { status: "idle" }
+  | { status: "invalid"; fields: string[] }
+  | { status: "conflict" | "denied" | "unavailable" }
+  | CottageInventoryBatchRefused
+  | {
+      status: "saved";
+      receipt: CottageInventoryBatchSaved;
+      refresh: { status: "required" | "unavailable" };
+    };
+
+export async function setCottageInventoryAvailabilityBatchAction(
+  _previous: CottageInventoryBatchActionState,
+  formData: FormData,
+): Promise<CottageInventoryBatchActionState> {
+  for (const field of ["locale", "profileId", "scheduleRevisionId", "batch"]) {
+    const values = formData.getAll(field);
+    if (values.length !== 1 || typeof values[0] !== "string")
+      return { status: "invalid", fields: [field] };
+  }
+  const requestedLocale = locale(formData);
+  if (!requestedLocale) return { status: "invalid", fields: ["locale"] };
+  let batch: unknown;
+  try {
+    batch = JSON.parse(text(formData, "batch"));
+  } catch {
+    return { status: "invalid", fields: ["batch"] };
+  }
+  if (batch === null || typeof batch !== "object" || Array.isArray(batch))
+    return { status: "invalid", fields: ["batch"] };
+  const profileId = text(formData, "profileId");
+  const inventory = await createRequestCottageInventory();
+  const result = await inventory.setAvailabilityBatch(
+    profileId,
+    text(formData, "scheduleRevisionId"),
+    batch,
+  );
+  if (result.status !== "saved") return result;
+  try {
+    revalidateOwnerPath(requestedLocale, profileId);
+    return {
+      status: "saved",
+      receipt: result,
+      refresh: { status: "required" },
+    };
+  } catch {
+    return {
+      status: "saved",
+      receipt: result,
+      refresh: { status: "unavailable" },
+    };
+  }
 }

@@ -588,3 +588,150 @@ it("returns a complete scoped owner calendar span and rejects corrupt cells", as
     "Cottage Inventory provider is unavailable",
   );
 });
+
+it("rejects malformed batch receipts and preserves refusals", async () => {
+  const request = {
+    from: "2099-08-20",
+    to: "2099-08-21",
+    unitKeys: [{ id: shiftId, kind: "shift" as const }],
+    state: "closed" as const,
+    mode: "range" as const,
+    reviewConfirmed: false,
+    replacePrivateBlocks: [],
+    cells: [
+      {
+        serviceDay: "2099-08-20",
+        id: shiftId,
+        kind: "shift" as const,
+        expectedOwnerState: "open" as const,
+      },
+      {
+        serviceDay: "2099-08-21",
+        id: shiftId,
+        kind: "shift" as const,
+        expectedOwnerState: "closed" as const,
+      },
+    ],
+  };
+  const coordinates = request.cells.map(({ serviceDay, id, kind }) => ({
+    serviceDay,
+    id,
+    kind,
+  }));
+  const saved = {
+    status: "saved",
+    profileId,
+    scheduleRevisionId: revisionId,
+    request,
+    changed: [coordinates[0]],
+    unchanged: [coordinates[1]],
+  };
+  const unitKeys = [
+    { id: shiftId, kind: "shift" },
+    { id: secondShiftId, kind: "shift" },
+    { id: bundleId, kind: "full_day_bundle" },
+  ];
+  const calendar = {
+    profileId,
+    scheduleRevisionId: revisionId,
+    from: request.from,
+    to: request.to,
+    asOf: "2099-08-01T00:00:00Z",
+    unitKeys,
+    days: request.cells.map((cell, day) => ({
+      serviceDay: cell.serviceDay,
+      units: unitKeys.map((key, i) => ({
+        ...key,
+        ownerState: day === 0 && i === 0 ? "open" : "closed",
+        priceIqd: 125000,
+        available: false,
+        calendarState:
+          day === 0 && i === 0
+            ? "pending_hold"
+            : day === 0 && i === 2
+              ? "component_unavailable"
+              : "closed",
+        commitmentReference: day === 0 && i === 0 ? "RC-BATCH-HOLD" : null,
+        editable: !(day === 0 && (i === 0 || i === 2)),
+        temporarilyUnavailable: false,
+      })),
+    })),
+  };
+  const refused = {
+    status: "refused",
+    profileId,
+    scheduleRevisionId: revisionId,
+    request,
+    conflicts: [
+      {
+        ...coordinates[0],
+        reason: "pending_hold",
+        commitmentReference: "RC-BATCH-HOLD",
+      },
+    ],
+    eligible: [request.cells[1]],
+    calendar,
+  };
+  const rpc = vi.fn().mockResolvedValue({ data: saved, error: null });
+  const repository = new SupabaseCottageInventoryRepository({
+    rpc,
+  } as unknown as SupabaseClient);
+  const input = { profileId, scheduleRevisionId: revisionId, batch: request };
+  await expect(repository.setAvailabilityBatch(input)).resolves.toEqual(saved);
+  expect(rpc).toHaveBeenCalledExactlyOnceWith(
+    "set_cottage_inventory_availability_batch",
+    {
+      target_profile_id: profileId,
+      target_schedule_revision_id: revisionId,
+      requested_batch: request,
+    },
+  );
+  rpc.mockResolvedValueOnce({ data: refused, error: null });
+  await expect(repository.setAvailabilityBatch(input)).resolves.toEqual(
+    refused,
+  );
+  for (const data of [
+    { ...saved, status: "partial" },
+    { ...saved, profileId: shiftId },
+    { ...saved, extra: true },
+    { ...saved, request: { ...request, from: "2099-08-19" } },
+    {
+      ...saved,
+      request: {
+        ...request,
+        cells: [
+          { ...request.cells[0], expectedOwnerState: "closed" },
+          request.cells[1],
+        ],
+      },
+    },
+    { ...saved, request: { ...request, extra: true } },
+    { ...saved, changed: [] },
+    { ...saved, changed: coordinates, unchanged: [] },
+    { ...saved, changed: [coordinates[0], coordinates[0]] },
+    { ...saved, unchanged: [{ ...coordinates[1], id: secondShiftId }] },
+    { ...refused, conflicts: [] },
+    { ...refused, eligible: [] },
+    {
+      ...refused,
+      eligible: [{ ...request.cells[1], expectedOwnerState: "open" }],
+    },
+    { ...refused, eligible: [request.cells[0], request.cells[1]] },
+    { ...refused, conflicts: [{ ...refused.conflicts[0], reason: "unknown" }] },
+    {
+      ...refused,
+      conflicts: [{ ...refused.conflicts[0], commitmentReference: "forged" }],
+    },
+    {
+      ...refused,
+      conflicts: [{ ...refused.conflicts[0], reason: "stale_state" }],
+    },
+    { ...refused, calendar: { ...calendar, from: "2099-08-19" } },
+    { ...refused, calendar: { ...calendar, days: [] } },
+  ]) {
+    rpc.mockResolvedValueOnce({ data, error: null });
+    await expect(repository.setAvailabilityBatch(input)).rejects.toThrow(
+      "Cottage Inventory provider data is invalid",
+    );
+  }
+});

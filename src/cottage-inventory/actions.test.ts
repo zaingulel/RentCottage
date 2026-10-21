@@ -15,6 +15,7 @@ import {
   loadCottageInventoryCalendarSpanAction,
   saveCottageInventoryPricingAction,
   setCottageInventoryAvailabilityAction,
+  setCottageInventoryAvailabilityBatchAction,
 } from "./actions";
 
 describe("Cottage Inventory actions", () => {
@@ -431,5 +432,96 @@ describe("Cottage Inventory actions", () => {
       ).resolves.toEqual({ status });
     }
     expect(revalidatePath).not.toHaveBeenCalled();
+  });
+  it("preserves saved batch evidence when refresh is unavailable", async () => {
+    const profileId = "70000000-0000-4000-8000-000000000001";
+    const scheduleRevisionId = "71000000-0000-4000-8000-000000000001";
+    const batch = {
+      from: "2099-08-20",
+      to: "2099-08-20",
+      unitKeys: [],
+      cells: [],
+    };
+    const receipt = {
+      status: "saved",
+      profileId,
+      scheduleRevisionId,
+      request: batch,
+      changed: [],
+      unchanged: [],
+    };
+    const setAvailabilityBatch = vi.fn().mockResolvedValue(receipt);
+    const resolveOwnerCalendarSpan = vi.fn();
+    createRequestCottageInventory.mockResolvedValue({
+      setAvailabilityBatch,
+      resolveOwnerCalendarSpan,
+    });
+    const form = new FormData();
+    for (const [key, value] of Object.entries({
+      locale: "ar",
+      profileId,
+      scheduleRevisionId,
+      batch: JSON.stringify(batch),
+    }))
+      form.set(key, value);
+    form.set("ownerUserId", "hostile");
+    revalidatePath.mockImplementationOnce(() => {
+      throw new Error("refresh failed");
+    });
+    await expect(
+      setCottageInventoryAvailabilityBatchAction({ status: "idle" }, form),
+    ).resolves.toEqual({
+      status: "saved",
+      receipt,
+      refresh: { status: "unavailable" },
+    });
+    expect(setAvailabilityBatch).toHaveBeenCalledExactlyOnceWith(
+      profileId,
+      scheduleRevisionId,
+      batch,
+    );
+    expect(resolveOwnerCalendarSpan).not.toHaveBeenCalled();
+    await expect(
+      setCottageInventoryAvailabilityBatchAction({ status: "idle" }, form),
+    ).resolves.toEqual({
+      status: "saved",
+      receipt,
+      refresh: { status: "required" },
+    });
+    expect(revalidatePath).toHaveBeenLastCalledWith(
+      `/ar/owner/cottages/${profileId}`,
+    );
+    for (const status of ["refused", "denied", "conflict", "unavailable"]) {
+      const failure = { status };
+      setAvailabilityBatch.mockResolvedValueOnce(failure);
+      revalidatePath.mockClear();
+      await expect(
+        setCottageInventoryAvailabilityBatchAction({ status: "idle" }, form),
+      ).resolves.toEqual(failure);
+      expect(revalidatePath).not.toHaveBeenCalled();
+    }
+    for (const field of [
+      "locale",
+      "profileId",
+      "scheduleRevisionId",
+      "batch",
+    ]) {
+      const invalid = new FormData();
+      for (const [key, value] of form.entries()) invalid.append(key, value);
+      invalid.append(field, field === "locale" ? "ar" : "duplicate");
+      setAvailabilityBatch.mockClear();
+      await expect(
+        setCottageInventoryAvailabilityBatchAction({ status: "idle" }, invalid),
+      ).resolves.toMatchObject({ status: "invalid" });
+      expect(setAvailabilityBatch).not.toHaveBeenCalled();
+    }
+    for (const invalid of ["{", "null", "[]", '"object"']) {
+      form.set("batch", invalid);
+      setAvailabilityBatch.mockClear();
+      await expect(
+        setCottageInventoryAvailabilityBatchAction({ status: "idle" }, form),
+      ).resolves.toEqual({ status: "invalid", fields: ["batch"] });
+      expect(setAvailabilityBatch).not.toHaveBeenCalled();
+    }
   });
 });

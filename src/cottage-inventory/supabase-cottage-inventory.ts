@@ -1,6 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { cottageInventoryBatchConflictReasons } from "./cottage-inventory";
+
 import type {
+  CottageInventoryBatchReceipt,
+  CottageInventoryCoordinate,
+  CottageInventoryReviewedCell,
+  CottageInventoryBatchConflict,
+  CottageInventoryAvailabilityBatchInput,
   CottageInventoryRepository,
   CottageInventoryOwnerEditorState,
   CottageInventoryOwnerEditorUnit,
@@ -438,6 +445,216 @@ function parseOwnerCalendarSpan(
   return { ...expected, asOf: span.asOf, unitKeys, days };
 }
 
+function batchCoordinate(
+  value: unknown,
+  extra: string[] = [],
+): CottageInventoryCoordinate {
+  const coordinate = record(value);
+  exactKeys(coordinate, ["serviceDay", "id", "kind", ...extra]);
+  if (coordinate.kind !== "shift" && coordinate.kind !== "full_day_bundle") {
+    throw new Error("Cottage Inventory provider data is invalid");
+  }
+  return {
+    serviceDay: requiredServiceDay(coordinate.serviceDay),
+    id: requiredUuid(coordinate.id),
+    kind: coordinate.kind,
+  };
+}
+
+function batchCoordinateKey(value: CottageInventoryCoordinate) {
+  return `${value.serviceDay}|${value.kind}|${value.id}`;
+}
+
+function canonicalCoordinates(values: CottageInventoryCoordinate[]) {
+  const keys = values.map(batchCoordinateKey);
+  if (keys.some((key, index) => index > 0 && keys[index - 1]! >= key)) {
+    throw new Error("Cottage Inventory provider data is invalid");
+  }
+}
+
+function assertEchoedBatch(
+  value: unknown,
+  expected: CottageInventoryAvailabilityBatchInput,
+) {
+  const request = record(value);
+  exactKeys(request, [
+    "from",
+    "to",
+    "unitKeys",
+    "state",
+    "mode",
+    "cells",
+    "replacePrivateBlocks",
+    "reviewConfirmed",
+  ]);
+  for (const key of [
+    "from",
+    "to",
+    "state",
+    "mode",
+    "reviewConfirmed",
+  ] as const) {
+    if (request[key] !== expected[key])
+      throw new Error("Cottage Inventory provider data is invalid");
+  }
+  for (const key of ["unitKeys", "cells", "replacePrivateBlocks"] as const) {
+    const actual = request[key];
+    const sent = expected[key];
+    if (!Array.isArray(actual) || actual.length !== sent.length)
+      throw new Error("Cottage Inventory provider data is invalid");
+    for (const [index, value] of actual.entries()) {
+      const entry = record(value);
+      const original = sent[index]!;
+      exactKeys(entry, Object.keys(original));
+      if (
+        Object.entries(original).some(
+          ([field, value]) => entry[field] !== value,
+        )
+      ) {
+        throw new Error("Cottage Inventory provider data is invalid");
+      }
+    }
+  }
+}
+
+function parseBatchReceipt(
+  value: unknown,
+  input: Parameters<CottageInventoryRepository["setAvailabilityBatch"]>[0],
+): CottageInventoryBatchReceipt {
+  const receipt = record(value);
+  if (receipt.status !== "saved" && receipt.status !== "refused")
+    throw new Error("Cottage Inventory provider data is invalid");
+  exactKeys(
+    receipt,
+    receipt.status === "saved"
+      ? [
+          "status",
+          "profileId",
+          "scheduleRevisionId",
+          "request",
+          "changed",
+          "unchanged",
+        ]
+      : [
+          "status",
+          "profileId",
+          "scheduleRevisionId",
+          "request",
+          "conflicts",
+          "eligible",
+          "calendar",
+        ],
+  );
+  if (
+    requiredUuid(receipt.profileId) !== input.profileId ||
+    requiredUuid(receipt.scheduleRevisionId) !== input.scheduleRevisionId
+  ) {
+    throw new Error("Cottage Inventory provider data is invalid");
+  }
+  assertEchoedBatch(receipt.request, input.batch);
+  const submitted = new Map(
+    input.batch.cells.map((cell) => [batchCoordinateKey(cell), cell]),
+  );
+  const covered = new Set<string>();
+  const include = (cell: CottageInventoryCoordinate) => {
+    const key = batchCoordinateKey(cell);
+    const original = submitted.get(key);
+    if (!original || covered.has(key))
+      throw new Error("Cottage Inventory provider data is invalid");
+    covered.add(key);
+    return original;
+  };
+  const envelope = {
+    profileId: input.profileId,
+    scheduleRevisionId: input.scheduleRevisionId,
+    request: input.batch,
+  };
+  if (receipt.status === "saved") {
+    if (!Array.isArray(receipt.changed) || !Array.isArray(receipt.unchanged))
+      throw new Error("Cottage Inventory provider data is invalid");
+    const changed = receipt.changed.map((value) => batchCoordinate(value));
+    const unchanged = receipt.unchanged.map((value) => batchCoordinate(value));
+    canonicalCoordinates(changed);
+    canonicalCoordinates(unchanged);
+    for (const [values, isChanged] of [
+      [changed, true],
+      [unchanged, false],
+    ] as const) {
+      for (const cell of values) {
+        if (
+          (include(cell).expectedOwnerState !== input.batch.state) !==
+          isChanged
+        )
+          throw new Error("Cottage Inventory provider data is invalid");
+      }
+    }
+    if (covered.size !== submitted.size)
+      throw new Error("Cottage Inventory provider data is invalid");
+    return { status: "saved", ...envelope, changed, unchanged };
+  }
+  if (
+    !Array.isArray(receipt.conflicts) ||
+    receipt.conflicts.length === 0 ||
+    !Array.isArray(receipt.eligible)
+  ) {
+    throw new Error("Cottage Inventory provider data is invalid");
+  }
+  const calendar = parseOwnerCalendarSpan(receipt.calendar, {
+    profileId: input.profileId,
+    scheduleRevisionId: input.scheduleRevisionId,
+    from: input.batch.from,
+    to: input.batch.to,
+  });
+  const conflicts = receipt.conflicts.map(
+    (value): CottageInventoryBatchConflict => {
+      const cell = batchCoordinate(value, ["reason", "commitmentReference"]);
+      include(cell);
+      const conflict = record(value);
+      if (
+        !cottageInventoryBatchConflictReasons.some(
+          (reason) => reason === conflict.reason,
+        )
+      )
+        throw new Error("Cottage Inventory provider data is invalid");
+      const reason = conflict.reason as CottageInventoryBatchConflict["reason"];
+      const unit = calendar.days
+        .find((day) => day.serviceDay === cell.serviceDay)
+        ?.units.find((unit) => unit.id === cell.id && unit.kind === cell.kind);
+      if (!unit) throw new Error("Cottage Inventory provider data is invalid");
+      if (reason === "pending_hold" || reason === "confirmed_booking") {
+        if (
+          unit.calendarState !== reason ||
+          typeof conflict.commitmentReference !== "string" ||
+          conflict.commitmentReference.trim() === "" ||
+          conflict.commitmentReference !== unit.commitmentReference
+        ) {
+          throw new Error("Cottage Inventory provider data is invalid");
+        }
+      } else if (conflict.commitmentReference !== null)
+        throw new Error("Cottage Inventory provider data is invalid");
+      return {
+        ...cell,
+        reason,
+        commitmentReference: conflict.commitmentReference as string | null,
+      };
+    },
+  );
+  const eligible = receipt.eligible.map(
+    (value): CottageInventoryReviewedCell => {
+      const cell = batchCoordinate(value, ["expectedOwnerState"]);
+      const original = include(cell);
+      if (record(value).expectedOwnerState !== original.expectedOwnerState)
+        throw new Error("Cottage Inventory provider data is invalid");
+      return { ...cell, expectedOwnerState: original.expectedOwnerState };
+    },
+  );
+  canonicalCoordinates(conflicts);
+  canonicalCoordinates(eligible);
+  if (covered.size !== submitted.size)
+    throw new Error("Cottage Inventory provider data is invalid");
+  return { status: "refused", ...envelope, conflicts, eligible, calendar };
+}
+
 function assertSuccess(error: unknown): void {
   if (error) {
     throw new Error("Cottage Inventory provider is unavailable", {
@@ -548,6 +765,21 @@ export class SupabaseCottageInventoryRepository implements CottageInventoryRepos
     );
     assertSuccess(error);
     return parseOwnerCalendar(data, input);
+  }
+
+  async setAvailabilityBatch(
+    input: Parameters<CottageInventoryRepository["setAvailabilityBatch"]>[0],
+  ): Promise<CottageInventoryBatchReceipt> {
+    const { data, error } = await this.client.rpc(
+      "set_cottage_inventory_availability_batch",
+      {
+        target_profile_id: input.profileId,
+        target_schedule_revision_id: input.scheduleRevisionId,
+        requested_batch: input.batch,
+      },
+    );
+    assertSuccess(error);
+    return parseBatchReceipt(data, input);
   }
 
   async setAvailability(
