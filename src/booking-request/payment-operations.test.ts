@@ -3,6 +3,35 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { preparePaymentOperations } from "./payment-operations";
+
+it("admits payment operations only in the exact local test runtime", () => {
+  const localEnvironment = {
+    APP_ENVIRONMENT: "test",
+    SUPABASE_PROJECT_REF: "local-test",
+    SUPABASE_URL: "http://127.0.0.1:54331",
+    SUPABASE_SECRET_KEY: "fictional-test-secret",
+  };
+  const forbiddenEnvironments = [
+    { APP_ENVIRONMENT: "production" },
+    { APP_ENVIRONMENT: "preview" },
+    { SUPABASE_PROJECT_REF: "another-project" },
+    { SUPABASE_URL: "https://fictional-project.supabase.co" },
+    { SUPABASE_URL: "http://fictional-project.example:54331" },
+    { SUPABASE_URL: "not-a-url" },
+    { APP_ENVIRONMENT: undefined },
+    { SUPABASE_SECRET_KEY: undefined },
+  ];
+
+  expect(preparePaymentOperations(localEnvironment)).toBeTypeOf("function");
+  for (const environment of forbiddenEnvironments) {
+    expect(
+      preparePaymentOperations({ ...localEnvironment, ...environment }),
+      JSON.stringify(environment),
+    ).toBeUndefined();
+  }
+});
+
 const sources = [
   ...readdirSync(join(process.cwd(), "src"), { recursive: true })
     .map((file) => `src/${String(file).replaceAll("\\", "/")}`)
