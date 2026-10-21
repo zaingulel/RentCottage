@@ -339,9 +339,10 @@ describe("Cottage Availability Calendar", () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it("renders every month state in each launch language without daily loading", async () => {
-    const Calendar = await component();
-    for (const locale of ["en", "ar", "ckb"] as const) {
+  it.each(["en", "ar", "ckb"] as const)(
+    "renders every month state in each launch language without daily loading: %s",
+    async (locale) => {
+      const Calendar = await component();
       loadSpan.mockResolvedValue({
         status: "loaded",
         calendar: calendar(
@@ -505,9 +506,10 @@ describe("Cottage Availability Calendar", () => {
         panel.getByRole("button", { name: copy.batchApply as string }),
       );
       expect(await screen.findByText(copy.reasonStale as string)).toBeVisible();
-      view.unmount();
-      loadSpan.mockClear();
-    }
+    },
+  );
+  it("rejects a month snapshot with the wrong unit manifest", async () => {
+    const Calendar = await component();
     const wrong = calendar();
     wrong.unitKeys[0]!.id = "another-shift";
     loadSpan.mockResolvedValue({ status: "loaded", calendar: wrong });
@@ -935,7 +937,7 @@ describe("Cottage Availability Calendar", () => {
     loadSpan.mockImplementation(loadBatchCalendar);
     const view = render(<Calendar {...batchProps} />);
     await screen.findByLabelText("From date");
-    let panel = within(
+    const panel = within(
       screen.getByRole("region", { name: "Change availability" }),
     );
     const navigation = within(
@@ -1227,6 +1229,17 @@ describe("Cottage Availability Calendar", () => {
     expect(
       panel.queryByRole("button", { name: "Apply reviewed changes" }),
     ).not.toBeInTheDocument();
+  });
+  it("clears reviewed changes after each submission failure", async () => {
+    const Calendar = await component();
+    const user = userEvent.setup();
+    loadSpan.mockImplementation(loadBatchCalendar);
+    render(<Calendar {...batchProps} />);
+    await chooseBatch(user);
+    const panel = within(
+      screen.getByRole("region", { name: "Change availability" }),
+    );
+    const consentName = `Replace private block: ${first} · Shift 3: Late`;
     for (const status of [
       "invalid",
       "denied",
@@ -1259,6 +1272,21 @@ describe("Cottage Availability Calendar", () => {
       );
       expect(screen.getAllByRole("alert").length).toBeGreaterThan(0);
     }
+  });
+  it("invalidates reviewed changes after draft and scope changes", async () => {
+    const Calendar = await component();
+    const user = userEvent.setup();
+    loadSpan.mockImplementation(loadBatchCalendar);
+    const view = render(<Calendar {...batchProps} />);
+    await chooseBatch(user);
+    let panel = within(
+      screen.getByRole("region", { name: "Change availability" }),
+    );
+    const navigation = within(
+      view.container.querySelector<HTMLElement>(
+        ".cottage-calendar-navigation",
+      )!,
+    );
     await user.click(
       panel.getByRole("button", { name: "Review availability changes" }),
     );
