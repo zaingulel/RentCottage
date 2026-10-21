@@ -58,12 +58,10 @@ it("admits review services only in the exact local test runtime", async () => {
     const client = { auth: { getUser }, rpc };
     requestClient.mockResolvedValue(client);
     createClient.mockReturnValue(client);
-    const { createRequestCustomerReview } = await import(
-      "./request-customer-review"
-    );
-    const { createRequestReviewTranslation } = await import(
-      "./request-review-translation"
-    );
+    const { createRequestCustomerReview } =
+      await import("./request-customer-review");
+    const { createRequestReviewTranslation } =
+      await import("./request-review-translation");
     const review = await createRequestCustomerReview();
     const translation = createRequestReviewTranslation();
 

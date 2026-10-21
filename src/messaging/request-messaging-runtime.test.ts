@@ -60,9 +60,8 @@ it("keeps messaging effects unavailable outside the exact local test runtime", a
     const client = { auth: { getUser }, rpc };
     requestClient.mockResolvedValue(client);
     createClient.mockReturnValue(client);
-    const { createRequestMessagingRuntime } = await import(
-      "./request-messaging-runtime"
-    );
+    const { createRequestMessagingRuntime } =
+      await import("./request-messaging-runtime");
     const runtime = await createRequestMessagingRuntime();
 
     if (Object.keys(environment).length === 0) {
