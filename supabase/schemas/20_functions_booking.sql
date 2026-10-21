@@ -3777,7 +3777,7 @@ begin
     cancellation_policy_version, acceptance_locale, acceptance_evidence,
     acceptance_evidence_fingerprint,
     marketplace_commission_rate_basis_points,
-    marketplace_commission_amount_fils, created_at
+    marketplace_commission_amount_fils, created_at, period_presentation
   ) values (
     snapshot_id, attempt.customer_user_id, attempt.profile_id,
     attempt.quote_fingerprint, attempt.intent_fingerprint,
@@ -3794,7 +3794,12 @@ begin
     ), 'hex'),
     1000,
     (current_quote ->> 'bookingPriceIqd')::bigint * 100,
-    submission_created_at
+    submission_created_at,
+    public.cottage_booking_period_presentation((
+      select commitments.schedule_revision_id
+      from public.cottage_booking_period_commitments commitments
+      where commitments.id = (hold ->> 'bookingPeriodCommitmentId')::uuid
+    ))
   );
   response_deadline := submission_created_at + interval '4 hours';
   insert into public.booking_requests (
@@ -4019,6 +4024,25 @@ $$;
 
 ALTER FUNCTION "public"."get_confirmed_booking_access"("target_reference" "text") OWNER TO "postgres";
 
+CREATE OR REPLACE FUNCTION "public"."get_confirmed_booking_access_presentation"("target_reference" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare projection jsonb;
+begin
+  projection := public.get_confirmed_booking_access(target_reference);
+  if projection is null then return null; end if;
+  return projection || jsonb_build_object('periodPresentation', (
+    select coalesce(snapshots.period_presentation, 'original-names')
+    from public.booking_requests requests
+    join public.booking_snapshots snapshots on snapshots.id = requests.booking_snapshot_id
+    where requests.booking_request_reference = target_reference
+  ));
+end;
+$$;
+
+ALTER FUNCTION "public"."get_confirmed_booking_access_presentation"("target_reference" "text") OWNER TO "postgres";
+
 CREATE OR REPLACE FUNCTION "public"."get_customer_booking_request"("target_reference" "text") RETURNS "jsonb"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
@@ -4050,6 +4074,25 @@ CREATE OR REPLACE FUNCTION "public"."get_customer_booking_request"("target_refer
 $$;
 
 ALTER FUNCTION "public"."get_customer_booking_request"("target_reference" "text") OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."get_customer_booking_request_presentation"("target_reference" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare projection jsonb;
+begin
+  projection := public.get_customer_booking_request(target_reference);
+  if projection is null then return null; end if;
+  return projection || jsonb_build_object('periodPresentation', (
+    select coalesce(snapshots.period_presentation, 'original-names')
+    from public.booking_requests requests
+    join public.booking_snapshots snapshots on snapshots.id = requests.booking_snapshot_id
+    where requests.booking_request_reference = target_reference
+  ));
+end;
+$$;
+
+ALTER FUNCTION "public"."get_customer_booking_request_presentation"("target_reference" "text") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."get_public_booking_quote"("target_locale" "public"."cottage_profile_source_language", "target_slug" "text", "requested_search" "jsonb") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
@@ -8528,3 +8571,55 @@ begin
 end;
 $$;
 ALTER FUNCTION private.prepare_booking_request_release(uuid, uuid, text, text, text, uuid) OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION "public"."cottage_booking_period_presentation"("target_schedule_revision_id" "uuid") RETURNS "text"
+    LANGUAGE "plpgsql" STABLE SECURITY INVOKER
+    SET "search_path" TO ''
+    AS $$
+begin
+  if not exists (
+    select 1
+    from public.cottage_shift_schedule_revisions schedules
+    join public.cottage_shifts morning
+      on morning.schedule_revision_id = schedules.id and morning.position = 1
+    join public.cottage_shifts evening
+      on evening.schedule_revision_id = schedules.id and evening.position = 2
+    where schedules.id = target_schedule_revision_id
+      and morning.start_time < evening.start_time
+      and (select count(*) from public.cottage_shifts shifts
+        where shifts.schedule_revision_id = schedules.id) = 2
+  ) then
+    raise exception 'Current Booking Period presentation is unavailable'
+      using errcode = 'RC204';
+  end if;
+  return 'morning-evening-v1';
+end;
+$$;
+
+ALTER FUNCTION "public"."cottage_booking_period_presentation"("target_schedule_revision_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."get_public_booking_quote_presentation"("target_locale" "public"."cottage_profile_source_language", "target_slug" "text", "requested_search" "jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare quote jsonb;
+declare schedule_revision_id uuid;
+begin
+  quote := public.get_public_booking_quote_with_fingerprint(
+    target_locale, target_slug, requested_search
+  );
+  if quote ->> 'status' <> 'quoted' then
+    return quote;
+  end if;
+  select profiles.current_shift_schedule_id into schedule_revision_id
+  from public.cottage_marketplace_listings listings
+  join public.owner_application_cottage_profiles profiles on profiles.id = listings.profile_id
+  where listings.public_slug = target_slug
+    and public.is_cottage_publicly_discoverable(profiles.id);
+  return quote || jsonb_build_object('periodPresentation',
+    public.cottage_booking_period_presentation(schedule_revision_id));
+end;
+$$;
+
+ALTER FUNCTION "public"."get_public_booking_quote_presentation"("target_locale" "public"."cottage_profile_source_language", "target_slug" "text", "requested_search" "jsonb") OWNER TO "postgres";

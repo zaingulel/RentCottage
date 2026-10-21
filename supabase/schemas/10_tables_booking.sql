@@ -630,11 +630,13 @@ CREATE TABLE IF NOT EXISTS "public"."booking_snapshots" (
     "marketplace_commission_rate_basis_points" smallint NOT NULL,
     "marketplace_commission_amount_fils" bigint NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "period_presentation" "text",
     CONSTRAINT "booking_snapshots_acceptance_evidence_fingerprint_check" CHECK (("acceptance_evidence_fingerprint" ~ '^[0-9a-f]{64}$'::"text")),
     CONSTRAINT "booking_snapshots_booking_terms_sha256_check" CHECK (("booking_terms_sha256" ~ '^[0-9a-f]{64}$'::"text")),
     CONSTRAINT "booking_snapshots_check" CHECK ((("marketplace_commission_amount_fils" > 0) AND ("marketplace_commission_amount_fils" = ((("quote_payload" ->> 'bookingPriceIqd'::"text"))::bigint * 100)))),
     CONSTRAINT "booking_snapshots_intent_fingerprint_check" CHECK (("intent_fingerprint" ~ '^[0-9a-f]{64}$'::"text")),
     CONSTRAINT "booking_snapshots_marketplace_commission_rate_basis_point_check" CHECK (("marketplace_commission_rate_basis_points" = 1000)),
+    CONSTRAINT "booking_snapshots_period_presentation_check" CHECK (("period_presentation" = ANY (ARRAY['morning-evening-v1'::"text", 'original-names'::"text"]))),
     CONSTRAINT "booking_snapshots_quote_fingerprint_check" CHECK (("quote_fingerprint" ~ '^[0-9a-f]{64}$'::"text"))
 );
 

@@ -48,7 +48,7 @@ create or replace function pg_temp.capture_execute(permit jsonb,outcome text def
   select pg_temp.payment_fixture_execute('admit_booking_request_capture',permit,outcome);
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
-select plan(45);
+select plan(57);
 
 -- BEGIN CONFIRMATION FIXTURE
 -- BEGIN CAPTURE RECOVERY SOURCE
@@ -167,7 +167,7 @@ select is(public.list_owner_booking_request_notifications()#>>'{0,paymentStatus}
   'The authenticated Owner sees the same capture-processing projection');
 reset role;
 savepoint substituted_snapshot;
-insert into public.booking_snapshots select '40000000-0000-4000-8000-000000001002'::uuid,'10000000-0000-4000-8000-000000001003'::uuid,profile_id,quote_fingerprint,intent_fingerprint,quote_payload,intent_payload,booking_terms_version,booking_terms_locale,booking_terms_body,booking_terms_sha256,cancellation_policy_version,acceptance_locale,acceptance_evidence,acceptance_evidence_fingerprint,marketplace_commission_rate_basis_points,marketplace_commission_amount_fils,created_at from public.booking_snapshots where id='40000000-0000-4000-8000-000000001001';
+insert into public.booking_snapshots (id,customer_user_id,profile_id,quote_fingerprint,intent_fingerprint,quote_payload,intent_payload,booking_terms_version,booking_terms_locale,booking_terms_body,booking_terms_sha256,cancellation_policy_version,acceptance_locale,acceptance_evidence,acceptance_evidence_fingerprint,marketplace_commission_rate_basis_points,marketplace_commission_amount_fils,created_at) select '40000000-0000-4000-8000-000000001002'::uuid,'10000000-0000-4000-8000-000000001003'::uuid,profile_id,quote_fingerprint,intent_fingerprint,quote_payload,intent_payload,booking_terms_version,booking_terms_locale,booking_terms_body,booking_terms_sha256,cancellation_policy_version,acceptance_locale,acceptance_evidence,acceptance_evidence_fingerprint,marketplace_commission_rate_basis_points,marketplace_commission_amount_fils,created_at from public.booking_snapshots where id='40000000-0000-4000-8000-000000001001';
 update public.booking_requests set booking_snapshot_id='40000000-0000-4000-8000-000000001002' where id='60000000-0000-4000-8000-000000001001';
 set local role service_role;
 select throws_ok($$select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001',(select result->'snapshot' from confirmation_capture))$$,'RC409',null,'valid but substituted Booking Snapshot is rejected');
@@ -293,5 +293,153 @@ select ok(jsonb_array_length(:'job628_confirmed_before_proof'::jsonb -> 'snapsho
 select ok(:'job628_confirmed_before_result'::jsonb ->> 'receiptId' is not null
   and (:'job628_confirmed_hidden_result'::jsonb - 'coverMediaId')=(:'job628_confirmed_before_result'::jsonb - 'coverMediaId'),
   'hidden confirmed cover leaves every preserved access receipt field unchanged');
+select throws_ok($invalid$
+  insert into public.booking_snapshots (id,customer_user_id,profile_id,quote_fingerprint,intent_fingerprint,quote_payload,intent_payload,booking_terms_version,booking_terms_locale,booking_terms_body,booking_terms_sha256,cancellation_policy_version,acceptance_locale,acceptance_evidence,acceptance_evidence_fingerprint,marketplace_commission_rate_basis_points,marketplace_commission_amount_fils,created_at,period_presentation)
+  select '40000000-0000-4000-8000-000000006265',customer_user_id,profile_id,quote_fingerprint,intent_fingerprint,quote_payload,intent_payload,booking_terms_version,booking_terms_locale,booking_terms_body,booking_terms_sha256,cancellation_policy_version,acceptance_locale,acceptance_evidence,acceptance_evidence_fingerprint,marketplace_commission_rate_basis_points,marketplace_commission_amount_fils,created_at,'unsupported-marker'
+  from public.booking_snapshots where id='40000000-0000-4000-8000-000000001001';
+$invalid$, '23514', null, 'stored period identity rejects unsupported markers');
+
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+select is(public.get_customer_booking_request_presentation('RC-REQ-0000000000001001'),
+  public.get_customer_booking_request('RC-REQ-0000000000001001') || '{"periodPresentation":"original-names"}'::jsonb,
+  'historical Customer presentation preserves original period data with NULL metadata');
+select lives_ok($presentation$
+  do $body$ begin
+    if public.get_confirmed_booking_access_presentation('RC-REQ-0000000000001001') is distinct from
+      public.get_confirmed_booking_access('RC-REQ-0000000000001001') || '{"periodPresentation":"original-names"}'::jsonb then
+      raise exception 'Historical confirmed Customer presentation changed the original receipt projection';
+    end if;
+  end; $body$;
+$presentation$, 'historical confirmed Customer presentation preserves original period data with NULL metadata');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+select lives_ok($presentation$
+  do $body$ begin
+    if public.get_confirmed_booking_access_presentation('RC-REQ-0000000000001001') is distinct from
+      public.get_confirmed_booking_access('RC-REQ-0000000000001001') || '{"periodPresentation":"original-names"}'::jsonb then
+      raise exception 'Historical confirmed Owner presentation changed the original receipt projection';
+    end if;
+  end; $body$;
+$presentation$, 'historical confirmed Owner presentation preserves original period data with NULL metadata');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001003',true);
+select lives_ok($presentation$
+  do $body$ begin
+    if public.get_confirmed_booking_access_presentation('RC-REQ-0000000000001001') is not null then
+      raise exception 'Nonrecipient discovered confirmed presentation';
+    end if;
+  end; $body$;
+$presentation$, 'confirmed presentation denies a nonrecipient');
+reset role;
+set local role anon;
+select throws_ok($$select public.get_confirmed_booking_access_presentation('RC-REQ-0000000000001001')$$,
+  '42501', null, 'confirmed presentation denies anonymous execution');
+reset role;
+set local role service_role;
+select throws_ok($$select public.get_confirmed_booking_access_presentation('RC-REQ-0000000000001001')$$,
+  '42501', null, 'confirmed presentation denies service-role execution');
+reset role;
+select ok(coalesce(has_function_privilege('authenticated', to_regprocedure('public.get_confirmed_booking_access_presentation(text)'), 'execute'), false)
+  and not coalesce(has_function_privilege('anon', to_regprocedure('public.get_confirmed_booking_access_presentation(text)'), 'execute'), false)
+  and not coalesce(has_function_privilege('service_role', to_regprocedure('public.get_confirmed_booking_access_presentation(text)'), 'execute'), false),
+  'confirmed presentation grants only authenticated execution among API roles');
+select is((select period_presentation from public.booking_snapshots where id='40000000-0000-4000-8000-000000001001'),
+  null::text, 'historical presentation leaves the stored NULL marker untouched');
+
+-- Separate current two-shift purchase; the historical graph remains unchanged.
+insert into public.cottage_shift_schedule_revisions (id,profile_id,revision,full_day_bundle_id)
+values ('30000000-0000-4000-8000-000000006265','20000000-0000-4000-8000-000000001001',2,'31000000-0000-4000-8000-000000006265');
+select set_config('rentcottage.shift_schedule_write_revision_id','30000000-0000-4000-8000-000000006265',true);
+insert into public.cottage_shifts (id,schedule_revision_id,position,name,start_time,end_time) values
+('32000000-0000-4000-8000-000000006265','30000000-0000-4000-8000-000000006265',1,'Dawn stay','08:00','12:00'),
+('32000000-0000-4000-8000-000000006266','30000000-0000-4000-8000-000000006265',2,'Dusk stay','14:00','18:00');
+select set_config('rentcottage.shift_schedule_write_revision_id','',true);
+insert into public.booking_snapshots
+(id,customer_user_id,profile_id,quote_fingerprint,intent_fingerprint,quote_payload,intent_payload,booking_terms_version,booking_terms_locale,booking_terms_body,booking_terms_sha256,cancellation_policy_version,acceptance_locale,acceptance_evidence,acceptance_evidence_fingerprint,marketplace_commission_rate_basis_points,marketplace_commission_amount_fils,created_at,period_presentation)
+values ('40000000-0000-4000-8000-000000006265','10000000-0000-4000-8000-000000001002','20000000-0000-4000-8000-000000001001',repeat('a',64),encode(extensions.digest(convert_to('{"customerName":"Fictional Morning Customer","partySize":4}'::jsonb::text, 'UTF8'), 'sha256'), 'hex'),
+'{"bookingPriceIqd":110000,"serviceFeeIqd":5000,"customerTotalIqd":115000,"items":[{"serviceDay":"2101-03-01","kind":"shift","position":1,"displayName":"Dawn stay","startsAt":"2101-03-01T05:00:00.000Z","endsAt":"2101-03-01T09:00:00.000Z","crossesMidnight":false,"priceIqd":110000}]}'::jsonb,
+'{"customerName":"Fictional Morning Customer","partySize":4}'::jsonb,'confirmation-test-v1','en','Fictional terms',repeat('c',64),'fictional-cancellation-v1','en','{}'::jsonb,repeat('d',64),1000,11000000,'2100-12-31 12:00+00','morning-evening-v1');
+insert into public.cottage_booking_period_commitments
+(id,customer_user_id,profile_id,schedule_revision_id,commitment_reference,status,access_ranges,created_at)
+values ('50000000-0000-4000-8000-000000006265','10000000-0000-4000-8000-000000001002','20000000-0000-4000-8000-000000001001','30000000-0000-4000-8000-000000006265','CONFIRMATION-HOLD-6265','pending_hold','{["2101-03-01 05:00+00","2101-03-01 09:00+00")}'::tstzmultirange,'2100-12-31 11:59:59+00');
+insert into public.cottage_inventory_commitments
+(id,unit_kind,unit_id,service_day,committed_price_iqd,booking_period_commitment_id) values
+('51000000-0000-4000-8000-000000006265','shift','32000000-0000-4000-8000-000000006265','2101-03-01',110000,'50000000-0000-4000-8000-000000006265');
+insert into public.cottage_booking_period_occupancies
+(booking_period_commitment_id,schedule_revision_id,shift_id,service_day,active) values
+('50000000-0000-4000-8000-000000006265','30000000-0000-4000-8000-000000006265','32000000-0000-4000-8000-000000006265','2101-03-01',true);
+insert into public.booking_requests
+(id,booking_request_reference,customer_user_id,owner_user_id,profile_id,booking_snapshot_id,booking_period_commitment_id,payment_lifecycle_id,customer_name,party_size,status,response_deadline,created_at,settled_at)
+values ('60000000-0000-4000-8000-000000006265','RC-REQ-0000000000006265','10000000-0000-4000-8000-000000001002','10000000-0000-4000-8000-000000001001','20000000-0000-4000-8000-000000001001','40000000-0000-4000-8000-000000006265','50000000-0000-4000-8000-000000006265','73000000-0000-4000-8000-000000006265','Fictional Morning Customer',4,'accepted','2100-12-31 16:00+00','2100-12-31 12:00+00','2100-12-31 13:00+00');
+insert into public.booking_request_submission_attempts
+(id,customer_user_id,idempotency_key,payment_lifecycle_id,profile_id,locale,public_slug,requested_search,quote_fingerprint,quote_payload,intent_fingerprint,intent_payload,payment_snapshot,authorization_provider,authorization_environment,authorization_merchant_id,authorization_terminal_id,authorization_provider_request_id,authorization_provider_reference,authorization_movement_reference,state,booking_request_id)
+values ('70000000-0000-4000-8000-000000006265','10000000-0000-4000-8000-000000001002','71000000-0000-4000-8000-000000006265','73000000-0000-4000-8000-000000006265','20000000-0000-4000-8000-000000001001','en','confirmation-cottage','{}'::jsonb,repeat('a',64),
+'{"bookingPriceIqd":110000,"serviceFeeIqd":5000,"customerTotalIqd":115000,"items":[{"serviceDay":"2101-03-01","kind":"shift","position":1,"displayName":"Dawn stay","startsAt":"2101-03-01T05:00:00.000Z","endsAt":"2101-03-01T09:00:00.000Z","crossesMidnight":false,"priceIqd":110000}]}'::jsonb,
+encode(extensions.digest(convert_to('{"customerName":"Fictional Morning Customer","partySize":4}'::jsonb::text, 'UTF8'), 'sha256'), 'hex'),'{"customerName":"Fictional Morning Customer","partySize":4}'::jsonb,
+jsonb_build_object('paymentLifecycleId','73000000-0000-4000-8000-000000006265','currency','IQD','bookingPriceFils',110000000,'bookingServiceFeeFils',5000000,'customerTotalFils',115000000,
+'authorization',jsonb_build_object('paymentLifecycleId','73000000-0000-4000-8000-000000006265','kind','authorization','logicalOperationId','73000000-0000-4000-8000-000000006265:authorization','attemptId','73000000-0000-4000-8000-000000006265:authorization:attempt-1','status','succeeded','amountFils',115000000,'providerRequestId','confirmation-auth-request-6265','providerReference','confirmation-auth-reference-6265','movementReference','confirmation-auth-movement-6265','reconciliationRequired',false,'retrySafe',false),
+'capture',null,'release',null,'movements',jsonb_build_array(jsonb_build_object('kind','authorization','logicalOperationId','73000000-0000-4000-8000-000000006265:authorization','attemptId','73000000-0000-4000-8000-000000006265:authorization:attempt-1','amountFils',115000000,'movementReference','confirmation-auth-movement-6265','recordedAt','2026-01-01T12:00:00.000Z'))),
+'fictional-payments','local-test','fictional-merchant','fictional-terminal','confirmation-auth-request-6265','confirmation-auth-reference-6265','confirmation-auth-movement-6265','finalized','60000000-0000-4000-8000-000000006265');
+insert into public.booking_request_authorization_claims
+(id,attempt_id,generation,state_revision,state,customer_user_id,profile_id,schedule_revision_id,payment_lifecycle_id,logical_operation_id,physical_attempt_id,amount_fils,currency,provider,environment,merchant_id,terminal_id,provider_idempotency_key,quote_fingerprint,intent_fingerprint,access_ranges,not_after,reconciliation_expires_at)
+values ('72000000-0000-4000-8000-000000006265','70000000-0000-4000-8000-000000006265',1,2,'converted','10000000-0000-4000-8000-000000001002','20000000-0000-4000-8000-000000001001','30000000-0000-4000-8000-000000006265','73000000-0000-4000-8000-000000006265','73000000-0000-4000-8000-000000006265:authorization','73000000-0000-4000-8000-000000006265:authorization:attempt-1',115000000,'IQD','fictional-payments','local-test','fictional-merchant','fictional-terminal','booking-request:72000000-0000-4000-8000-000000006265:1',repeat('a',64),encode(extensions.digest(convert_to('{"customerName":"Fictional Morning Customer","partySize":4}'::jsonb::text, 'UTF8'), 'sha256'), 'hex'),'{["2101-03-01 05:00+00","2101-03-01 09:00+00")}'::tstzmultirange,'2101-01-01 00:00+00','2100-12-31 23:59+00');
+insert into public.booking_request_authorization_claim_items
+(claim_id,unit_kind,unit_id,service_day,price_iqd) values
+('72000000-0000-4000-8000-000000006265','shift','32000000-0000-4000-8000-000000006265','2101-03-01',110000);
+insert into public.booking_request_authorization_claim_occupancies
+(claim_id,schedule_revision_id,shift_id,service_day,active)
+select '72000000-0000-4000-8000-000000006265',schedule_revision_id,shift_id,service_day,false
+from public.cottage_booking_period_occupancies where booking_period_commitment_id='50000000-0000-4000-8000-000000006265';
+insert into public.booking_request_provider_operation_identities
+(attempt_id,operation_kind,provider,environment,merchant_id,terminal_id,provider_request_id,provider_reference,movement_reference)
+values ('70000000-0000-4000-8000-000000006265','authorization','fictional-payments','local-test','fictional-merchant','fictional-terminal','confirmation-auth-request-6265','confirmation-auth-reference-6265','confirmation-auth-movement-6265');
+insert into public.booking_request_capture_work
+(booking_request_id,attempt_id,authorization_claim_id,authorization_claim_generation,payment_lifecycle_id,authorization_logical_operation_id,authorization_physical_attempt_id,capture_logical_operation_id,capture_physical_attempt_id,amount_fils,currency,provider,environment,merchant_id,terminal_id,provider_idempotency_key,request_fingerprint)
+values ('60000000-0000-4000-8000-000000006265','70000000-0000-4000-8000-000000006265','72000000-0000-4000-8000-000000006265',1,'73000000-0000-4000-8000-000000006265','73000000-0000-4000-8000-000000006265:authorization','73000000-0000-4000-8000-000000006265:authorization:attempt-1','73000000-0000-4000-8000-000000006265:capture','73000000-0000-4000-8000-000000006265:capture:attempt-2',115000000,'IQD','fictional-payments','local-test','fictional-merchant','fictional-terminal','booking-request-capture:60000000-0000-4000-8000-000000006265:1','b746e403f344437258033a0cf2296c4a5633c845f3b54067883ffea80b0ba119');
+
+set local role service_role;
+create temp table presentation_capture_lease as select public.lease_booking_request_capture_work('60000000-0000-4000-8000-000000006265','{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) result;
+create temp table presentation_capture_result as select pg_temp.capture_execute((select result->'permit' from presentation_capture_lease)) result;
+create temp table presentation_capture as select public.complete_booking_request_capture('60000000-0000-4000-8000-000000006265',1,(select (result#>>'{permit,leaseToken}')::uuid from presentation_capture_lease),(select result from presentation_capture_result)) result;
+reset role;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+select lives_ok($presentation$
+  do $body$ begin
+    if public.get_confirmed_booking_access_presentation('RC-REQ-0000000000006265') is not null then
+      raise exception 'Confirmed presentation disclosed a request before finalization';
+    end if;
+  end; $body$;
+$presentation$, 'confirmed presentation denies access before real finalization');
+reset role;
+set local role service_role;
+create temp table presentation_confirmation as select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000006265',(select result->'snapshot' from presentation_capture)) result;
+reset role;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
+set local role authenticated;
+select lives_ok($presentation$
+  do $body$
+  declare projected jsonb;
+  begin
+    projected := public.get_confirmed_booking_access_presentation('RC-REQ-0000000000006265');
+    if projected ->> 'periodPresentation' is distinct from 'morning-evening-v1'
+      or projected - 'periodPresentation' is distinct from public.get_confirmed_booking_access('RC-REQ-0000000000006265') then
+      raise exception 'Confirmed Customer presentation must retain the stored two-shift identity and exact receipt';
+    end if;
+  end; $body$;
+$presentation$, 'confirmed Customer presentation reads the stored two-shift identity');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+select lives_ok($presentation$
+  do $body$
+  declare projected jsonb;
+  begin
+    projected := public.get_confirmed_booking_access_presentation('RC-REQ-0000000000006265');
+    if projected ->> 'periodPresentation' is distinct from 'morning-evening-v1'
+      or projected - 'periodPresentation' is distinct from public.get_confirmed_booking_access('RC-REQ-0000000000006265') then
+      raise exception 'Confirmed Owner presentation must retain the stored two-shift identity and exact receipt';
+    end if;
+  end; $body$;
+$presentation$, 'confirmed Owner presentation reads the stored two-shift identity');
+reset role;
+
 select * from finish();
 rollback;
