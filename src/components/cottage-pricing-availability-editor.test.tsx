@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CottageShiftSchedule } from "@/cottage-shift-schedule/cottage-shift-schedule";
 import type { CottageInventoryOwnerEditorState } from "@/cottage-inventory/cottage-inventory";
@@ -8,14 +8,17 @@ import { cottagePricingAvailabilityMessages } from "@/i18n/cottage-pricing-avail
 import { cottageShiftScheduleMessages } from "@/i18n/cottage-shift-schedule-messages";
 
 vi.mock("server-only", () => ({}));
-const { loadAvailability, saveAvailability, savePricing } = vi.hoisted(() => ({
-  loadAvailability: vi.fn(),
-  saveAvailability: vi.fn(),
-  savePricing: vi.fn(),
-}));
+const { loadAvailability, loadSpan, saveAvailability, savePricing } =
+  vi.hoisted(() => ({
+    loadAvailability: vi.fn(),
+    loadSpan: vi.fn(),
+    saveAvailability: vi.fn(),
+    savePricing: vi.fn(),
+  }));
 vi.mock("@/cottage-inventory/actions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/cottage-inventory/actions")>()),
   loadCottageInventoryAvailabilityAction: loadAvailability,
+  loadCottageInventoryCalendarSpanAction: loadSpan,
   saveCottageInventoryPricingAction: savePricing,
   setCottageInventoryAvailabilityAction: saveAvailability,
 }));
@@ -111,7 +114,11 @@ const roundTripPricingAfterOverride: CottageInventoryOwnerEditorState = {
 };
 
 describe("Cottage Pricing and Availability editor", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    loadSpan.mockResolvedValue({ status: "unavailable" });
+  });
+  afterEach(() => vi.useRealTimers());
 
   it("historical three-shift pricing preserves all units without two-shift claims", async () => {
     const hostileName = 'Dawn <img src=x onerror="alert(1)">';
@@ -960,5 +967,103 @@ describe("Cottage Pricing and Availability editor", () => {
     expect(
       screen.getByRole("button", { name: "Save availability" }),
     ).toBeEnabled();
+  });
+  it("refreshes the visible month after successful pricing and day saves", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2028-02-01T00:00:00Z"));
+    loadSpan.mockImplementation(async (_previous, form: FormData) => ({
+      status: "loaded",
+      calendar: {
+        profileId: schedule.profileId,
+        scheduleRevisionId: schedule.scheduleRevisionId,
+        from: form.get("from"),
+        to: form.get("to"),
+        asOf: "2028-02-01T00:00:00Z",
+        unitKeys: pricing.units.map(({ id, kind }) => ({ id, kind })),
+        days: Array.from(
+          { length: Number(String(form.get("to")).slice(-2)) },
+          (_, i) => ({
+            serviceDay: `${String(form.get("from")).slice(0, 8)}${String(i + 1).padStart(2, "0")}`,
+            units: pricing.units.map(({ id, kind }) => ({
+              id,
+              kind,
+              priceIqd: 100000,
+              ownerState: "open",
+              available: true,
+              calendarState: "open",
+              commitmentReference: null,
+              editable: true,
+              temporarilyUnavailable: false,
+            })),
+          }),
+        ),
+      },
+    }));
+    savePricing.mockResolvedValue({ status: "saved" });
+    saveAvailability.mockResolvedValue({ status: "saved" });
+    loadAvailability.mockResolvedValue({
+      status: "loaded",
+      serviceDay: "2099-08-20",
+      units: pricing.units.map(({ id, kind }) => ({
+        id,
+        kind,
+        calendarState: "open",
+        commitmentReference: null,
+        editable: true,
+      })),
+    });
+    const user = userEvent.setup();
+    render(
+      <CottagePricingAvailabilityEditor
+        locale="en"
+        profileId={schedule.profileId}
+        schedule={schedule}
+        pricing={pricing}
+        editable
+        canOpen
+      />,
+    );
+    await waitFor(() => expect(loadSpan).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "Next month" }));
+    await screen.findByText("2028-03-31", { selector: "time" });
+    expect(loadSpan).toHaveBeenCalledTimes(2);
+    for (let count = 3; count <= 4; count++) {
+      await user.click(screen.getByRole("button", { name: "Save prices" }));
+      await waitFor(() => expect(loadSpan).toHaveBeenCalledTimes(count));
+      expect(
+        await screen.findByText("2028-03-31", { selector: "time" }),
+      ).toBeVisible();
+    }
+    savePricing.mockResolvedValueOnce({ status: "invalid" });
+    await user.click(screen.getByRole("button", { name: "Save prices" }));
+    await screen.findByText(
+      "Check the highlighted pricing or Service Day fields.",
+    );
+    expect(loadSpan).toHaveBeenCalledTimes(4);
+    await user.type(
+      screen.getByLabelText(/Service Day/, { selector: "input" }),
+      "2099-08-20",
+    );
+    await user.click(screen.getByRole("button", { name: "Load availability" }));
+    await screen.findByLabelText("Morning: Morning operational state");
+    for (let count = 5; count <= 6; count++) {
+      await user.click(
+        screen.getByRole("button", { name: "Save availability" }),
+      );
+      await waitFor(() => expect(loadSpan).toHaveBeenCalledTimes(count));
+    }
+    saveAvailability.mockResolvedValueOnce({ status: "conflict" });
+    await user.click(screen.getByRole("button", { name: "Save availability" }));
+    await screen.findByText(
+      "This inventory revision changed elsewhere. Reload before saving again.",
+    );
+    expect(loadSpan).toHaveBeenCalledTimes(6);
+    expect(screen.getByText("2028-03-31", { selector: "time" })).toBeVisible();
+    for (const call of loadSpan.mock.calls.slice(1)) {
+      expect((call[1] as FormData).get("from")).toBe("2028-03-01");
+      expect((call[1] as FormData).get("to")).toBe("2028-03-31");
+    }
+    expect(savePricing.mock.calls[1]![0]).toEqual({ status: "saved" });
+    expect(saveAvailability.mock.calls[1]![0]).toEqual({ status: "saved" });
   });
 });

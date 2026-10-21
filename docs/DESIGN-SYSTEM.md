@@ -572,6 +572,21 @@ its own; the block it sits in sets the space around it.
   Status changes follow persisted server results; a refusal retains the last persisted state and uses
   translated `ActionFeedback` with a stable focus target. An unavailable read shows an alert without active
   controls. Working-copy photo deletion remains a separate editor action.
+- Owner availability month: `CottageAvailabilityCalendar` renders one complete Gregorian month as a semantic
+  list of Saturday-start weeks, days and all saved inventory units. Above `wide`, each week's day list uses
+  seven equal columns with presentation-only leading/trailing spaces; at or below `wide`, it becomes
+  chronological date rows. The same list reflows in both directions. Days have `--line` hairline separators
+  and `--space-3` padding, with no card shadow or clipped content. Unit/state text uses `--font-size-2`, day/week
+  labels `--font-size-3`, unit gaps `--space-2` and section gaps `--space-4`. Every local name, access range,
+  state and actual booking reference stays expanded. Stored names/references use `bdi dir="auto"` and
+  Gregorian dates/times use isolated left-to-right text. Temporary protection and effective unavailability
+  have separate text; colour never carries status alone. Previous/Next are regular secondary `ActionButton`s
+  beside a labelled native date `FormControl`. Loading replaces old data with a status; failures use
+  `ActionFeedback` and a regular secondary Retry button. The existing heading stays connected with the shared
+  action-focus-target treatment; only a terminal current request renders its `ActionFocusTarget`. Retry
+  stays connected and busy until settlement. The authoritative Baghdad snapshot labels past/started units
+  read-only and bounds previous navigation; browser time only initializes the date field. The existing
+  pricing/day forms stay below the month at every width.
 - Cottage card: a cottage list card has five rows held in a subgrid so cards in a row align: cover, title, detail,
   supporting content, actions. The card grid fills its row with empty columns, so a lone card keeps its column width.
   The cover runs edge to edge at `16 / 10`, cropped with `object-fit: cover`, on `--surface-placeholder` while

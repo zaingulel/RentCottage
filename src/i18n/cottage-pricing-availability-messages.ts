@@ -1,6 +1,28 @@
 import type { Locale } from "./routing";
 
 const en = {
+  calendarHeading: "Monthly availability",
+  calendarPrevious: "Previous month",
+  calendarNext: "Next month",
+  calendarShowDate: "Show month containing date",
+  calendarWeek: "Week beginning",
+  calendarLoading: "Loading month availability…",
+  calendarLoaded: "Month availability loaded",
+  calendarRetry: "Retry month availability",
+  calendarInvalid: "Choose a valid Gregorian date and try again.",
+  calendarConflict:
+    "The Shift Schedule changed. Reload this page to see the current schedule.",
+  calendarDenied:
+    "You cannot view this cottage’s availability with your current access.",
+  calendarUnavailable:
+    "Month availability is temporarily unavailable. Try again.",
+  calendarTemporary: "Temporarily unavailable",
+  calendarNotBookable: "Not currently bookable",
+  calendarPast: "Past date · read-only",
+  calendarStarted: "Already started · read-only",
+  calendarProtected: "Protected · read-only",
+  calendarSnapshot: "Availability snapshot in Baghdad time",
+
   title: "Pricing and availability",
   intro:
     "Set positive whole Iraqi dinar prices and decide which future Service Days can be booked.",
@@ -56,6 +78,26 @@ const en = {
 type Copy = { [Key in keyof typeof en]: string | readonly string[] };
 
 const ar: Copy = {
+  calendarHeading: "التوافر الشهري",
+  calendarPrevious: "الشهر السابق",
+  calendarNext: "الشهر التالي",
+  calendarShowDate: "عرض الشهر الذي يحتوي على التاريخ",
+  calendarWeek: "الأسبوع الذي يبدأ في",
+  calendarLoading: "جارٍ تحميل توافر الشهر…",
+  calendarLoaded: "تم تحميل توافر الشهر",
+  calendarRetry: "إعادة تحميل توافر الشهر",
+  calendarInvalid: "اختر تاريخاً ميلادياً صالحاً وحاول مرة أخرى.",
+  calendarConflict:
+    "تغيّر جدول المناوبات. أعد تحميل هذه الصفحة لعرض الجدول الحالي.",
+  calendarDenied: "لا يمكنك عرض توافر هذا الكوخ بصلاحياتك الحالية.",
+  calendarUnavailable: "توافر الشهر غير متاح مؤقتاً. حاول مرة أخرى.",
+  calendarTemporary: "غير متاح مؤقتاً",
+  calendarNotBookable: "غير قابل للحجز حالياً",
+  calendarPast: "تاريخ سابق · للقراءة فقط",
+  calendarStarted: "بدأ بالفعل · للقراءة فقط",
+  calendarProtected: "محمي · للقراءة فقط",
+  calendarSnapshot: "لقطة للتوافر بتوقيت بغداد",
+
   title: "الأسعار والتوافر",
   intro:
     "حدّد أسعاراً موجبة بأعداد صحيحة بالدينار العراقي، وقرّر أيام الخدمة المستقبلية التي يمكن حجزها.",
@@ -105,6 +147,28 @@ const ar: Copy = {
 };
 
 const ckb: Copy = {
+  calendarHeading: "بەردەستبوونی مانگانە",
+  calendarPrevious: "مانگی پێشوو",
+  calendarNext: "مانگی داهاتوو",
+  calendarShowDate: "پیشاندانی مانگی بەروارەکە",
+  calendarWeek: "هەفتەی دەستپێکراو لە",
+  calendarLoading: "بەردەستبوونی مانگ بار دەکرێت…",
+  calendarLoaded: "بەردەستبوونی مانگ بار کرا",
+  calendarRetry: "دووبارە بارکردنی بەردەستبوونی مانگ",
+  calendarInvalid: "بەروارێکی زایینی دروست هەڵبژێرە و دووبارە هەوڵ بدە.",
+  calendarConflict:
+    "خشتەی شیفت گۆڕاوە. ئەم پەڕەیە نوێ بکەرەوە بۆ بینینی خشتەی ئێستا.",
+  calendarDenied:
+    "بە دەستگەیشتنی ئێستات ناتوانیت بەردەستبوونی ئەم کۆتەجە ببینیت.",
+  calendarUnavailable:
+    "بەردەستبوونی مانگ کاتیاً بەردەست نییە. دووبارە هەوڵ بدە.",
+  calendarTemporary: "کاتیاً بەردەست نییە",
+  calendarNotBookable: "ئێستا ناتوانرێت حجز بکرێت",
+  calendarPast: "بەرواری ڕابردوو · تەنها خوێندنەوە",
+  calendarStarted: "دەستی پێکردووە · تەنها خوێندنەوە",
+  calendarProtected: "پارێزراو · تەنها خوێندنەوە",
+  calendarSnapshot: "وێنەی بەردەستبوون بە کاتی بەغدا",
+
   title: "نرخ و بەردەستبوون",
   intro:
     "نرخی ئەرێنی بە ژمارەی تەواو بە دیناری عێراقی دابنێ و دیاری بکە کام ڕۆژانی خزمەتگوزاری داهاتوو دەتوانرێت حجز بکرێن.",
