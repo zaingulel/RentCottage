@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { observeRecordHeading } from "./fixtures/record-heading";
 import {
   expect,
@@ -15,6 +15,9 @@ import { createRequire } from "node:module";
 import * as OTPAuth from "otpauth";
 import { administratorQueuesMessages } from "../src/i18n/administrator-queues-messages";
 import { administratorRecordsMessages } from "../src/i18n/administrator-records-messages";
+import { administratorTotalsMessages } from "../src/i18n/administrator-totals-messages";
+import { administratorBookingMoneyExportMessages } from "../src/i18n/administrator-booking-money-export-messages";
+import { marketplaceSuspensionMessages } from "../src/i18n/marketplace-suspension-messages";
 import { messagingMessages } from "../src/i18n/messaging-messages";
 import { bookingLifecycleMessages } from "../src/i18n/booking-lifecycle-messages";
 import { customerReviewMessages } from "../src/i18n/customer-review-messages";
@@ -572,6 +575,613 @@ function anchoredServiceDay(anchor: string, offset: number) {
   expect(anchor).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   const operator = offset < 0 ? "-" : "+";
   return `'${anchor}'::date${operator}${Math.abs(offset)}`;
+}
+
+for (const [localeIndex, copy] of administratorReturnLocales.entries()) {
+  const locale = copy.locale;
+  test(`${locale} connected administration preserves one fictional booking graph`, async ({
+    page,
+    browser,
+  }, testInfo) => {
+    requireLocalDatabase();
+    testInfo.annotations.push({
+      type: "fixed suppliers",
+      description:
+        "Fictional-payments/local-test capture succeeds; local Auth provisions synthetic identities without SMS. Original fictional review text is retained across languages without claiming translation, notification delivery or an external map operation.",
+    });
+    const allocated: Record<string, readonly string[]> = {
+      mobile: ["88", "89", "93"],
+      desktop: ["94", "95", "96"],
+      worker: ["97", "98", "99"],
+    };
+    const namespace = allocated[testInfo.project.name]?.[localeIndex];
+    if (!namespace)
+      throw new Error("Connected administration project is unmapped");
+    if (testInfo.project.name === "worker")
+      await page.setViewportSize({ width: 393, height: 851 });
+    const harness = createLocalSupabaseConcurrencyHarness();
+    harness.guardDisposableLocalDatabase();
+    const privileged = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SECRET_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    );
+    const cleanup = async () => {
+      const users = await listAllAccessFixtureUsers(privileged.auth.admin);
+      harness.runSql(
+        reviewFixtureCleanup(namespace, {
+          owner: findAccessFixtureUser(users, `+964757000${namespace}01`)?.id,
+          customer: findAccessFixtureUser(users, `+964757000${namespace}02`)
+            ?.id,
+          other: findAccessFixtureUser(users, `+964757000${namespace}03`)?.id,
+        }),
+      );
+    };
+    const contexts: Awaited<ReturnType<typeof browser.newContext>>[] = [];
+    await cleanup();
+    try {
+      const anchor = harness.runSql(
+        "select (clock_timestamp() at time zone 'Asia/Baghdad')::date;",
+      );
+      const fixture = await seedFixture(namespace, {
+        startDaySql: anchoredServiceDay(anchor, -3),
+      });
+      const reference = fixture.ids.bookingReference;
+      const requestId = fixture.ids.requestId;
+      const original = "Fictional stay <em data-admin-proof>literal</em>";
+      const hideReason = "Fictional private connected moderation reason";
+      const suspendReason = "Fictional private connected Customer restriction";
+      const restoreReason = "Fictional private connected Customer restoration";
+      const reviews = customerReviewMessages[locale];
+      const records = administratorRecordsMessages[locale];
+      const totals = administratorTotalsMessages[locale];
+      const exporting = administratorBookingMoneyExportMessages[locale];
+      const restriction = marketplaceSuspensionMessages[locale];
+      const customer = await signedInPhoneClient(fixture.phones.customer);
+      const other = await signedInPhoneClient(fixture.phones.other);
+      const financialArgs = {
+        target_reference: reference,
+        target_actor_role: "customer",
+      };
+      const expectUnrelatedDenied = async () => {
+        const denied = await other.rpc(
+          "get_booking_financial_view",
+          financialArgs,
+        );
+        expect(denied.error?.code).toBe("42501");
+        expect(denied.data).toBeNull();
+      };
+      const readFinancial = async () => {
+        const financial = await customer.rpc(
+          "get_booking_financial_view",
+          financialArgs,
+        );
+        expect(financial.error).toBeNull();
+        expect(financial.data).toMatchObject({
+          bookingRequestId: requestId,
+          bookingRequestReference: reference,
+          actorRole: "customer",
+          captured: {
+            bookingPriceFils: 110000000,
+            bookingServiceFeeFils: 5000000,
+          },
+        });
+        expect(financial.data).not.toHaveProperty("audit");
+        return financial.data;
+      };
+      const readImmutable = () => {
+        const facts = JSON.parse(
+          harness.runSql(`select jsonb_agg(jsonb_build_object(
+          'request',to_jsonb(requests),'snapshot',to_jsonb(snapshots),
+          'confirmation',to_jsonb(confirmations),
+          'payments',(select jsonb_agg(to_jsonb(operations) order by operations.id)
+            from public.payment_provider_operations operations
+            where operations.payment_lifecycle_id=requests.payment_lifecycle_id),
+          'history',(select jsonb_agg(to_jsonb(history) order by history.sequence)
+            from public.booking_request_payment_history history where history.booking_request_id=requests.id)
+        )) from public.booking_requests requests
+        join public.booking_snapshots snapshots on snapshots.id=requests.booking_snapshot_id
+        join public.booking_confirmations confirmations on confirmations.booking_request_id=requests.id
+        where requests.id='${requestId}';`),
+        ) as Array<{
+          request: { id: string; customer_user_id: string; profile_id: string };
+          snapshot: { id: string; quote_payload: { bookingPriceIqd: number } };
+          confirmation: { id: string; booking_request_id: string };
+          payments: unknown[];
+          history: unknown[];
+        }>;
+        expect(facts).toHaveLength(1);
+        expect(facts[0]).toMatchObject({
+          request: {
+            id: requestId,
+            customer_user_id: fixture.identities.customer,
+            profile_id: fixture.ids.profileId,
+          },
+          snapshot: {
+            id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+            quote_payload: { bookingPriceIqd: 110000 },
+          },
+          confirmation: {
+            id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+            booking_request_id: requestId,
+          },
+        });
+        expect(Array.isArray(facts[0].payments)).toBe(true);
+        expect(facts[0].payments.length).toBeGreaterThan(0);
+        expect(Array.isArray(facts[0].history)).toBe(true);
+        expect(facts[0].history.length).toBeGreaterThan(0);
+        return facts[0];
+      };
+      const immutableBefore = readImmutable();
+      const financialBefore = await readFinancial();
+      await expectUnrelatedDenied();
+      const submitted = await customer.rpc("submit_customer_review", {
+        target_reference: reference,
+        target_rating: 5,
+        target_original_language: "en",
+        target_original_body: original,
+      });
+      expect(submitted.error).toBeNull();
+      expect(submitted.data).toMatchObject({
+        status: "submitted",
+        reviewId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      });
+      const reviewId: string = submitted.data.reviewId;
+      const readReview = () => {
+        const rows = JSON.parse(
+          harness.runSql(`select jsonb_agg(to_jsonb(reviews))
+          from public.customer_reviews reviews where reviews.booking_request_id='${requestId}';`),
+        );
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({
+          id: reviewId,
+          author_user_id: fixture.identities.customer,
+          booking_request_id: requestId,
+          profile_id: fixture.ids.profileId,
+          rating: 5,
+          original_language: "en",
+          original_body: original,
+        });
+        return rows[0];
+      };
+      const reviewBefore = readReview();
+      const confirmationDays = JSON.parse(
+        harness.runSql(`select jsonb_agg(
+        (confirmations.confirmed_at at time zone 'Asia/Baghdad')::date)
+        from public.booking_confirmations confirmations where confirmations.booking_request_id='${requestId}';`),
+      ) as string[];
+      expect(confirmationDays).toHaveLength(1);
+      const confirmationDay = confirmationDays[0];
+      expect(confirmationDay).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      const evidence = async (view: string) => {
+        await expect(page.locator("html")).toHaveAttribute(
+          "dir",
+          copy.direction,
+        );
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () => document.documentElement.scrollWidth <= innerWidth,
+            ),
+          )
+          .toBe(true);
+        await page.screenshot({
+          path: testInfo.outputPath(
+            `connected-administration-${locale}-${view}.png`,
+          ),
+          fullPage: true,
+        });
+      };
+      const keyboardControl = async (control: Locator) => {
+        await expect(control).toBeVisible();
+        const box = await control.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.width).toBeGreaterThanOrEqual(24);
+        expect(box!.height).toBeGreaterThanOrEqual(24);
+        await control.focus();
+        await expect(control).toBeFocused();
+      };
+      const visitorContext = await browser.newContext({
+        baseURL: testInfo.project.use.baseURL,
+        viewport: page.viewportSize()!,
+      });
+      contexts.push(visitorContext);
+      const visitor = await visitorContext.newPage();
+      const publicPath = `/${locale}/cottages/${fixture.publicSlug}/reviews`;
+      await visitor.goto(publicPath);
+      await expect(visitor.getByText(original, { exact: true })).toBeVisible();
+      await expect(
+        visitor.getByText(original, { exact: true }),
+      ).toHaveAttribute("lang", "en");
+      await expect(visitor.locator("em, [data-admin-proof]")).toHaveCount(0);
+      const administrator = await provisionAdministrator(
+        `connected-administration-${locale}`,
+      );
+      const exportAudits = () =>
+        JSON.parse(
+          harness.runSql(`select coalesce(jsonb_agg(to_jsonb(exports)),'[]'::jsonb)
+        from private.administrator_booking_money_exports exports where exports.administrator_user_id='${administrator.userId}';`),
+        );
+      expect(exportAudits()).toEqual([]);
+      await page.goto(`/${locale}/administrator/access`);
+      const secret = await beginAdministratorMfa(
+        page,
+        administrator.email,
+        copy,
+      );
+      const beforeMfa = await page.context().newPage();
+      try {
+        await beforeMfa.goto(`/${locale}/administrator/reviews`);
+        await expect(beforeMfa.getByText(copy.accessRequired)).toBeVisible();
+        await expect(beforeMfa.getByRole("article")).toHaveCount(0);
+        await expect(beforeMfa.getByText(reference)).toHaveCount(0);
+        await beforeMfa.goto(`/${locale}/administrator/totals`);
+        await expect(beforeMfa.getByText(records.accessRequired)).toBeVisible();
+        await expect(beforeMfa.getByText(reference)).toHaveCount(0);
+        const origin = new URL(beforeMfa.url()).origin;
+        const deniedExport = await beforeMfa.request.post(
+          `/${locale}/administrator/totals/export`,
+          {
+            form: {
+              state: "completed",
+              from: confirmationDay,
+              through: confirmationDay,
+            },
+            headers: { Origin: origin, "Sec-Fetch-Site": "same-origin" },
+            maxRedirects: 0,
+          },
+        );
+        expect(deniedExport.status()).toBe(303);
+        expect(deniedExport.headers().location).toBe(
+          `${origin}/${locale}/administrator/totals?exportError=access_required`,
+        );
+        expect(deniedExport.headers()["content-type"] ?? "").not.toContain(
+          "text/csv",
+        );
+        expect(deniedExport.headers()["content-disposition"]).toBeUndefined();
+        expect(exportAudits()).toEqual([]);
+      } finally {
+        await beforeMfa.close();
+      }
+      await page.getByLabel(copy.mfaCode).fill(
+        new OTPAuth.TOTP({
+          secret: OTPAuth.Secret.fromBase32(secret),
+        }).generate(),
+      );
+      await page
+        .getByRole("button", { name: copy.verify, exact: true })
+        .press("Enter");
+      await expect(page.getByLabel(copy.mfaCode)).toHaveCount(0);
+      await page.goto(`/${locale}/administrator/totals`);
+      await page.getByLabel(records.status).selectOption("completed");
+      await page.getByLabel(records.from).fill(confirmationDay);
+      await page.getByLabel(records.through).fill(confirmationDay);
+      await page
+        .getByRole("button", { name: totals.apply, exact: true })
+        .press("Enter");
+      await expect(page).toHaveURL(
+        (url) =>
+          url.searchParams.get("state") === "completed" &&
+          url.searchParams.get("from") === confirmationDay &&
+          url.searchParams.get("through") === confirmationDay,
+      );
+      const visited = new Set<string>();
+      let bookingLink = page.getByRole("link", {
+        name: reference,
+        exact: true,
+      });
+      while ((await bookingLink.count()) === 0) {
+        expect(visited.has(page.url())).toBe(false);
+        visited.add(page.url());
+        const next = page.getByRole("link", {
+          name: records.next,
+          exact: true,
+        });
+        await expect(next).toHaveCount(1);
+        await next.click();
+        bookingLink = page.getByRole("link", { name: reference, exact: true });
+      }
+      await expect(bookingLink).toHaveCount(1);
+      const money = bookingLink
+        .locator("xpath=ancestor::li[1]")
+        .locator("details");
+      await money.getByText(totals.bookingMoney, { exact: true }).click();
+      const expectedAmounts =
+        locale === "ckb"
+          ? [
+              "IQD ١١٠٬٠٠٠",
+              "IQD ٥٬٠٠٠",
+              "IQD ١١٥٬٠٠٠",
+              "IQD ١١٬٠٠٠",
+              "IQD ٩٩٬٠٠٠",
+            ]
+          : [
+              "IQD 110,000",
+              "IQD 5,000",
+              "IQD 115,000",
+              "IQD 11,000",
+              "IQD 99,000",
+            ];
+      for (const [index, label] of [
+        totals.bookingPrice,
+        totals.bookingServiceFees,
+        totals.customerTotal,
+        totals.commissionAtCapture,
+        totals.ownerShareAtCapture,
+      ].entries())
+        await expect(
+          money
+            .getByText(label, { exact: true })
+            .locator("xpath=following-sibling::dd[1]"),
+        ).toHaveText(expectedAmounts[index]);
+      const exportButton = page.getByRole("button", {
+        name: exporting.export,
+        exact: true,
+      });
+      await keyboardControl(exportButton);
+      await evidence("finance");
+      const downloadPending = page.waitForEvent("download");
+      await exportButton.press("Enter");
+      const download = await downloadPending;
+      expect(download.suggestedFilename()).toMatch(
+        /^rentcottage-money-[0-9a-f-]{36}\.csv$/,
+      );
+      const downloadPath = await download.path();
+      expect(downloadPath).not.toBeNull();
+      const csv = await readFile(downloadPath!, "utf8");
+      expect(csv.startsWith("\uFEFF")).toBe(true);
+      const lines = csv.slice(1).split("\r\n");
+      expect(lines.pop()).toBe("");
+      expect(lines.shift()).toContain(
+        `"${totals.bookingPrice} - ${exporting.currency}"`,
+      );
+      const targetRows = lines.filter((line) =>
+        line.includes(`"${reference}","${requestId}"`),
+      );
+      expect(targetRows).toHaveLength(1);
+      expect(targetRows[0]).toContain(
+        `"${exporting.booking}","${reference}","${requestId}"`,
+      );
+      expect(targetRows[0]).toContain('"110000","5000","115000","11000"');
+      expect(targetRows[0]).toContain('"11000","99000","99000","0"');
+      const exportId = download
+        .suggestedFilename()
+        .slice("rentcottage-money-".length, -4);
+      const audits = exportAudits();
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toMatchObject({
+        id: exportId,
+        administrator_user_id: administrator.userId,
+        filter_state: "completed",
+        filter_from: confirmationDay,
+        filter_through: confirmationDay,
+        recorded_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        booking_request_ids: expect.arrayContaining([requestId]),
+      });
+      expect(
+        audits[0].booking_request_ids.filter((id: string) => id === requestId),
+      ).toHaveLength(1);
+      const stamped = JSON.parse(
+        harness.runSql(`select jsonb_agg(to_char(exports.recorded_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"+00:00"'))
+        from private.administrator_booking_money_exports exports where exports.id='${exportId}';`),
+      ) as string[];
+      expect(stamped).toHaveLength(1);
+      expect(targetRows[0]).toContain(`"${exportId}","${stamped[0]}"`);
+      for (const privateValue of [
+        ...Object.values(fixture.phones),
+        ...Object.values(fixture.identities),
+        administrator.userId,
+        "Fictional private address",
+        "Fictional house rules",
+        original,
+        hideReason,
+        suspendReason,
+        restoreReason,
+      ])
+        expect(csv).not.toContain(privateValue);
+      await expect(exportButton).toBeFocused();
+      await writeFile(
+        testInfo.outputPath(
+          `connected-administration-${locale}-export-audit.json`,
+        ),
+        JSON.stringify(audits[0], null, 2),
+      );
+      await page.goto(`/${locale}/administrator/reviews?state=unhidden`);
+      const review = await openAdministratorReview(page, reference, locale);
+      await expect(review.getByText(original, { exact: true })).toBeVisible();
+      await expect(review.locator("em, [data-admin-proof]")).toHaveCount(0);
+      await review.getByLabel(reviews.hideReason).fill(hideReason);
+      const hide = review.getByRole("button", {
+        name: reviews.hide,
+        exact: true,
+      });
+      await keyboardControl(hide);
+      await hide.press("Enter");
+      await expect(review).toHaveCount(0);
+      await expect(
+        page.getByRole("heading", {
+          name: reviews.administratorTitle,
+          level: 1,
+        }),
+      ).toBeFocused();
+      const readHide = () => {
+        const rows = JSON.parse(
+          harness.runSql(
+            `select jsonb_agg(to_jsonb(hides)) from public.customer_review_hides hides where hides.review_id='${reviewId}';`,
+          ),
+        );
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({
+          review_id: reviewId,
+          administrator_user_id: administrator.userId,
+          reason: hideReason,
+          hidden_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        });
+        return rows;
+      };
+      const hideBefore = readHide();
+      const expectHiddenReview = async () => {
+        await page.goto(`/${locale}/administrator/reviews?state=hidden`);
+        const hidden = await openAdministratorReview(page, reference, locale);
+        await expect(hidden.getByText(original, { exact: true })).toBeVisible();
+        await expect(
+          hidden.getByText(hideReason, { exact: true }),
+        ).toBeVisible();
+        const rating = locale === "ckb" ? "٥ / ٥" : "5 / 5";
+        await expect(
+          hidden.getByText(
+            `${reviews.rating}: ${rating} ${reviews.ratingValue}`,
+            {
+              exact: true,
+            },
+          ),
+        ).toBeVisible();
+        await expect(hidden.locator("em, [data-admin-proof]")).toHaveCount(0);
+        expect(readReview()).toEqual(reviewBefore);
+        expect(readHide()).toEqual(hideBefore);
+      };
+      await expectHiddenReview();
+      await evidence("moderation");
+      await visitor.goto(publicPath);
+      await expect(visitor.getByText(original, { exact: true })).toHaveCount(0);
+      const customerContext = await browser.newContext({
+        baseURL: testInfo.project.use.baseURL,
+        viewport: page.viewportSize()!,
+      });
+      contexts.push(customerContext);
+      const customerPage = await customerContext.newPage();
+      const customerPath = `/${locale}/booking-requests/${reference}`;
+      const expectCustomerHistory = async () => {
+        await signInPhone(customerPage, fixture.phones.customer, customerPath);
+        await expect(
+          customerPage
+            .getByRole("region", {
+              name: bookingLifecycleMessages[locale].completed,
+              exact: true,
+            })
+            .getByText(`CUSTOMER-REVIEW-HOLD-${namespace}`, { exact: true }),
+        ).toBeVisible();
+        const ownReview = customerPage.getByRole("region", {
+          name: reviews.submitted,
+          exact: true,
+        });
+        await expect(
+          ownReview.getByText(original, { exact: true }),
+        ).toBeVisible();
+        await expect(ownReview.getByRole("status")).toHaveText(reviews.hidden);
+        expect(await readFinancial()).toEqual(financialBefore);
+        await expectUnrelatedDenied();
+      };
+      const readRestrictions = () =>
+        JSON.parse(
+          harness.runSql(`select coalesce(jsonb_agg(to_jsonb(actions) order by actions.resulting_revision),'[]'::jsonb)
+        from private.marketplace_suspension_actions actions where actions.target_kind='customer' and actions.account_user_id='${fixture.identities.customer}';`),
+        ) as Array<{
+          actor_user_id: string;
+          action: string;
+          reason: string;
+          from_state: string;
+          to_state: string;
+          expected_revision: number;
+          resulting_revision: number;
+          created_at: string;
+        }>;
+      expect(readRestrictions()).toEqual([]);
+      await page.goto(
+        `/${locale}/administrator/records/account/${fixture.identities.customer}`,
+      );
+      const panel = page.getByRole("region", {
+        name: restriction.titles.customer,
+        exact: true,
+      });
+      await expect(panel.locator(".status-badge")).toHaveText(
+        restriction.states.active,
+      );
+      for (const [index, action] of ["suspend", "reactivate"].entries()) {
+        const suspending = action === "suspend";
+        const reason = suspending ? suspendReason : restoreReason;
+        const state = suspending ? "suspended" : "active";
+        await panel
+          .getByLabel(restriction.reason, { exact: true })
+          .fill(reason);
+        const control = panel.getByRole("button", {
+          name: suspending ? restriction.suspend : restriction.reactivate,
+          exact: true,
+        });
+        await keyboardControl(control);
+        await control.press("Enter");
+        await expect(panel.getByRole("status")).toContainText(
+          restriction.completed,
+        );
+        await expect(panel.locator(".status-badge")).toHaveText(
+          restriction.states[state],
+        );
+        const history = readRestrictions();
+        expect(history).toHaveLength(index + 1);
+        expect(history[index]).toMatchObject({
+          actor_user_id: administrator.userId,
+          action,
+          reason,
+          from_state: suspending ? "active" : "suspended",
+          to_state: state,
+          expected_revision: index,
+          resulting_revision: index + 1,
+          created_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        });
+        if (index === 1)
+          expect(history[0]).toMatchObject({
+            action: "suspend",
+            resulting_revision: history[1].expected_revision,
+          });
+        const auditItem = panel
+          .getByRole("listitem")
+          .filter({ hasText: reason });
+        await expect(auditItem).toHaveCount(1);
+        await expect(
+          auditItem.getByText(administrator.userId, { exact: true }),
+        ).toBeVisible();
+        expect(
+          Date.parse(
+            (await auditItem.locator("time").getAttribute("datetime"))!,
+          ),
+        ).toBe(Date.parse(history[index].created_at));
+        await evidence(`restriction-${state}`);
+        await panel
+          .getByRole("button", { name: restriction.refresh, exact: true })
+          .press("Enter");
+        await expect(panel.getByRole("status")).toContainText(
+          restriction.refreshed,
+        );
+        expect(readRestrictions()).toEqual(history);
+        expect(readImmutable()).toEqual(immutableBefore);
+        expect(readReview()).toEqual(reviewBefore);
+        expect(readHide()).toEqual(hideBefore);
+        await expectCustomerHistory();
+      }
+      expect(readRestrictions()).toHaveLength(2);
+      await expectHiddenReview();
+      await visitor.goto(publicPath);
+      const publicHtml = await visitor.content();
+      for (const privateValue of [
+        original,
+        hideReason,
+        suspendReason,
+        restoreReason,
+        reviewId,
+        requestId,
+        reference,
+        administrator.userId,
+        fixture.identities.customer,
+        fixture.identities.owner,
+        ...Object.values(fixture.phones),
+      ])
+        expect(publicHtml).not.toContain(privateValue);
+      await expect(visitor.locator("em, [data-admin-proof]")).toHaveCount(0);
+    } finally {
+      for (const context of contexts) await context.close();
+      await cleanup();
+    }
+  });
 }
 
 test("connected completed stay from messaging to review", async ({
