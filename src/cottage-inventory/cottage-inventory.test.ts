@@ -423,7 +423,6 @@ it("rejects invalid owner calendar batches before persistence", async () => {
     [new CottageInventoryOperationError("invalid_batch"), "invalid"],
     [new CottageInventoryOperationError("conflict"), "conflict"],
     [new CottageInventoryOperationError("denied"), "denied"],
-    [new CottageInventoryOperationError("denied"), "denied"],
     [new Error("offline"), "unavailable"],
   ]) {
     setAvailabilityBatch.mockRejectedValueOnce(error);

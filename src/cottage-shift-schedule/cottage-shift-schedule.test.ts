@@ -273,25 +273,28 @@ describe("Cottage Shift Schedule", () => {
   );
 
   it.each([
-    ["RC409", "conflict"],
-    ["42501", "denied"],
-    ["RC202", "denied"],
-    ["PGRST000", "unavailable"],
-  ] as const)("maps provider %s failures honestly", async (code, status) => {
-    const store = repository();
-    store.save = async () => {
-      throw status === "unavailable"
-        ? Object.assign(new Error("provider failure"), { code })
-        : new CottageShiftScheduleOperationError(status);
-    };
+    ["conflict", new CottageShiftScheduleOperationError("conflict")],
+    ["denied", new CottageShiftScheduleOperationError("denied")],
+    [
+      "unavailable",
+      Object.assign(new Error("provider failure"), { code: "PGRST000" }),
+    ],
+  ] as const)(
+    "returns %s for a repository save failure",
+    async (status, error) => {
+      const store = repository();
+      store.save = async () => {
+        throw error;
+      };
 
-    await expect(
-      createCottageShiftSchedule(store).save(profileId, 0, {
-        shifts: [
-          { name: "Day", startTime: "08:00", endTime: "12:00" },
-          { name: "Night", startTime: "18:00", endTime: "23:00" },
-        ],
-      }),
-    ).resolves.toEqual({ status });
-  });
+      await expect(
+        createCottageShiftSchedule(store).save(profileId, 0, {
+          shifts: [
+            { name: "Day", startTime: "08:00", endTime: "12:00" },
+            { name: "Night", startTime: "18:00", endTime: "23:00" },
+          ],
+        }),
+      ).resolves.toEqual({ status });
+    },
+  );
 });

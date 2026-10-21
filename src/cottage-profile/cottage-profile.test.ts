@@ -285,18 +285,14 @@ describe("Cottage Profile", () => {
       hidden: false,
       reason: "Restore approved photo",
     });
-    for (const [code, status] of [
-      ["42501", "denied"],
-      ["RC409", "conflict"],
-      ["RC203", "last_photo"],
-      ["RC204", "unavailable"],
-      ["unexpected", "unavailable"],
+    for (const [error, status] of [
+      [new CottageProfileOperationError("denied"), "denied"],
+      [new CottageProfileOperationError("conflict"), "conflict"],
+      [new CottageProfileOperationError("last_photo"), "last_photo"],
+      [{ code: "RC204" }, "unavailable"],
+      [{ code: "unexpected" }, "unavailable"],
     ] as const) {
-      photo.mockRejectedValueOnce(
-        status === "unavailable"
-          ? { code }
-          : new CottageProfileOperationError(status),
-      );
+      photo.mockRejectedValueOnce(error);
       await expect(
         cottageProfile.setAdministratorPhotoHidden(
           profileId,
@@ -443,12 +439,9 @@ describe("Cottage Profile", () => {
     ).rejects.toThrow("provider unavailable");
   });
 
-  it.each([
-    ["RC420", "capacity_limit"],
-    ["RC429", "rate_limit"],
-  ] as const)(
-    "returns the stable %s draft-creation refusal as %s",
-    async (_code, status) => {
+  it.each(["capacity_limit", "rate_limit"] as const)(
+    "returns the stable %s draft-creation refusal",
+    async (status) => {
       const { cottageProfile, repository } = setup();
       vi.spyOn(repository, "createDraft").mockRejectedValue(
         new CottageProfileOperationError(status),
