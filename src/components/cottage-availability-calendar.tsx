@@ -28,7 +28,10 @@ import type {
   CottageInventoryUnitKind,
 } from "@/cottage-inventory/cottage-inventory";
 import { cottagePricingAvailabilityMessages } from "@/i18n/cottage-pricing-availability-messages";
-import { cottageShiftScheduleMessages } from "@/i18n/cottage-shift-schedule-messages";
+import {
+  cottageShiftScheduleMessages,
+  type Copy as ScheduleCopy,
+} from "@/i18n/cottage-shift-schedule-messages";
 import { directionFor, type Locale } from "@/i18n/routing";
 
 import { CottageAccessRange } from "./cottage-access-range";
@@ -52,6 +55,35 @@ export type CottageAvailabilityCalendarUnit = {
   endTime: string;
   crossesMidnight: boolean;
 };
+
+export function accessRange(
+  copy: ScheduleCopy,
+  unit: CottageAvailabilityCalendarUnit,
+) {
+  return (
+    <>
+      <CottageAccessRange
+        template={copy.accessRange}
+        start={unit.startTime}
+        end={unit.endTime}
+      />{" "}
+      ({unit.crossesMidnight ? copy.nextDay : copy.sameDay})
+    </>
+  );
+}
+
+export function unitName(unit: CottageAvailabilityCalendarUnit) {
+  return (
+    <>
+      {unit.identity}
+      {unit.localName !== undefined ? (
+        <>
+          : <bdi dir="auto">{unit.localName}</bdi>
+        </>
+      ) : null}
+    </>
+  );
+}
 
 function baghdadDate(instant: Date) {
   const parts = new Intl.DateTimeFormat("en", {
@@ -670,22 +702,8 @@ export function CottageAvailabilityCalendar({
   function unitDetails(unit: CottageAvailabilityCalendarUnit) {
     return (
       <>
-        <strong>
-          {unit.identity}
-          {unit.localName !== undefined ? (
-            <>
-              : <bdi dir="auto">{unit.localName}</bdi>
-            </>
-          ) : null}
-        </strong>
-        <span>
-          <CottageAccessRange
-            template={scheduleCopy.accessRange}
-            start={unit.startTime}
-            end={unit.endTime}
-          />{" "}
-          ({unit.crossesMidnight ? scheduleCopy.nextDay : scheduleCopy.sameDay})
-        </span>
+        <strong>{unitName(unit)}</strong>
+        <span>{accessRange(scheduleCopy, unit)}</span>
       </>
     );
   }

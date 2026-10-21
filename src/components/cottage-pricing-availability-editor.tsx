@@ -21,9 +21,10 @@ import {
 } from "@/i18n/cottage-shift-schedule-messages";
 import { directionFor, type Locale } from "@/i18n/routing";
 
-import { CottageAccessRange } from "./cottage-access-range";
 import {
   CottageAvailabilityCalendar,
+  accessRange,
+  unitName,
   type CottageAvailabilityCalendarUnit,
 } from "./cottage-availability-calendar";
 
@@ -72,32 +73,6 @@ function unitsFor(
       crossesMidnight: schedule.fullDayCrossesMidnight,
     },
   ];
-}
-
-function accessRange(copy: ScheduleCopy, unit: InventoryUnit) {
-  return (
-    <>
-      <CottageAccessRange
-        template={copy.accessRange}
-        start={unit.startTime}
-        end={unit.endTime}
-      />{" "}
-      ({unit.crossesMidnight ? copy.nextDay : copy.sameDay})
-    </>
-  );
-}
-
-function unitName(unit: InventoryUnit) {
-  return (
-    <>
-      {unit.identity}
-      {unit.localName !== undefined ? (
-        <>
-          : <bdi dir="auto">{unit.localName}</bdi>
-        </>
-      ) : null}
-    </>
-  );
 }
 
 function feedback(

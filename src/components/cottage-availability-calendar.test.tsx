@@ -327,7 +327,7 @@ async function chooseBatch(user: ReturnType<typeof userEvent.setup>) {
   await user.click(
     panel.getByRole("button", { name: "Review availability changes" }),
   );
-  await panel.findByRole("list", { name: "Included cells" });
+  await panel.findByRole("list", { name: "Included dates and periods" });
 }
 
 describe("Cottage Availability Calendar", () => {
@@ -954,7 +954,9 @@ describe("Cottage Availability Calendar", () => {
       ),
     ).toBeVisible();
     await chooseBatch(user);
-    const included = panel.getByRole("list", { name: "Included cells" });
+    const included = panel.getByRole("list", {
+      name: "Included dates and periods",
+    });
     const includedCells = within(included).getAllByRole("listitem");
     expect(includedCells).toHaveLength(8);
     for (const day of [first, second])
@@ -1136,10 +1138,10 @@ describe("Cottage Availability Calendar", () => {
       ),
     ).toBeVisible();
     expect(
-      panel.getByRole("list", { name: "Eligible cells" }).children,
+      panel.getByRole("list", { name: "Eligible dates and periods" }).children,
     ).toHaveLength(6);
     expect(
-      panel.getByRole("list", { name: "Excluded cells" }).children,
+      panel.getByRole("list", { name: "Excluded dates and periods" }).children,
     ).toHaveLength(2);
     const offer = panel.getByRole("button", {
       name: "Review eligible changes",
@@ -1149,7 +1151,7 @@ describe("Cottage Availability Calendar", () => {
     await waitFor(() => expect(heading).toHaveFocus());
     expect(saveBatch).toHaveBeenCalledTimes(1);
     expect(
-      panel.getByRole("list", { name: "Included cells" }).children,
+      panel.getByRole("list", { name: "Included dates and periods" }).children,
     ).toHaveLength(6);
     const confirmation = panel.getByRole("checkbox", {
       name: "I reviewed this smaller batch",
@@ -1234,7 +1236,7 @@ describe("Cottage Availability Calendar", () => {
       await user.click(
         panel.getByRole("button", { name: "Review availability changes" }),
       );
-      await panel.findByRole("list", { name: "Included cells" });
+      await panel.findByRole("list", { name: "Included dates and periods" });
       await user.click(panel.getByRole("checkbox", { name: consentName }));
       saveBatch.mockResolvedValueOnce(
         status === "invalid" ? { status, fields: ["batch"] } : { status },
@@ -1260,12 +1262,12 @@ describe("Cottage Availability Calendar", () => {
     await user.click(
       panel.getByRole("button", { name: "Review availability changes" }),
     );
-    await panel.findByRole("list", { name: "Included cells" });
+    await panel.findByRole("list", { name: "Included dates and periods" });
     fireEvent.change(panel.getByLabelText("To date"), {
       target: { value: "2028-04-02" },
     });
     expect(
-      panel.queryByRole("list", { name: "Included cells" }),
+      panel.queryByRole("list", { name: "Included dates and periods" }),
     ).not.toBeInTheDocument();
     const reads = loadSpan.mock.calls.length;
     await user.click(
@@ -1316,12 +1318,12 @@ describe("Cottage Availability Calendar", () => {
       navigation.getByLabelText("Show month containing date"),
     ).toHaveFocus();
     expect(
-      panel.queryByRole("list", { name: "Included cells" }),
+      panel.queryByRole("list", { name: "Included dates and periods" }),
     ).not.toBeInTheDocument();
     await user.click(
       panel.getByRole("button", { name: "Review availability changes" }),
     );
-    await panel.findByRole("list", { name: "Included cells" });
+    await panel.findByRole("list", { name: "Included dates and periods" });
     view.rerender(<Calendar {...batchProps} refreshKey={1} canOpen={false} />);
     expect(
       panel.queryByRole("button", { name: "Apply reviewed changes" }),
@@ -1333,12 +1335,12 @@ describe("Cottage Availability Calendar", () => {
     await user.click(
       panel.getByRole("button", { name: "Review availability changes" }),
     );
-    await panel.findByRole("list", { name: "Included cells" });
+    await panel.findByRole("list", { name: "Included dates and periods" });
     await user.click(
       panel.getByRole("checkbox", { name: batchUnits[2]!.label }),
     );
     expect(
-      panel.queryByRole("list", { name: "Included cells" }),
+      panel.queryByRole("list", { name: "Included dates and periods" }),
     ).not.toBeInTheDocument();
     await user.click(
       panel.getByRole("checkbox", { name: batchUnits[2]!.label }),
@@ -1378,7 +1380,7 @@ describe("Cottage Availability Calendar", () => {
       }),
     );
     expect(
-      panel.queryByRole("list", { name: "Included cells" }),
+      panel.queryByRole("list", { name: "Included dates and periods" }),
     ).not.toBeInTheDocument();
     for (const unit of batchUnits)
       expect(
@@ -1398,7 +1400,7 @@ describe("Cottage Availability Calendar", () => {
     ).not.toBeInTheDocument();
     view.rerender(<Calendar {...newProfile} units={batchUnits.slice(1)} />);
     expect(
-      panel.queryByRole("list", { name: "Included cells" }),
+      panel.queryByRole("list", { name: "Included dates and periods" }),
     ).not.toBeInTheDocument();
   });
   it("keeps saved outcome when calendar refresh fails", async () => {
@@ -1553,7 +1555,7 @@ describe("Cottage Availability Calendar", () => {
     await user.click(
       panel.getByRole("button", { name: "Review availability changes" }),
     );
-    await panel.findByRole("list", { name: "Included cells" });
+    await panel.findByRole("list", { name: "Included dates and periods" });
     saveBatch.mockImplementationOnce(async (_previous, form: FormData) => ({
       status: "saved",
       receipt: {
@@ -1576,7 +1578,7 @@ describe("Cottage Availability Calendar", () => {
     await user.click(
       panel.getByRole("button", { name: "Review availability changes" }),
     );
-    await panel.findByRole("list", { name: "Included cells" });
+    await panel.findByRole("list", { name: "Included dates and periods" });
     saveBatch.mockRejectedValueOnce(new Error("write transport"));
     const unknownRefresh = deferred<{
       status: "loaded";
@@ -1619,7 +1621,7 @@ describe("Cottage Availability Calendar", () => {
     await user.click(
       panel.getByRole("button", { name: "Review availability changes" }),
     );
-    await panel.findByRole("list", { name: "Included cells" });
+    await panel.findByRole("list", { name: "Included dates and periods" });
     const late = deferred<CottageInventoryBatchActionState>();
     saveBatch.mockReturnValueOnce(late.promise);
     const lateApply = panel.getByRole("button", {
