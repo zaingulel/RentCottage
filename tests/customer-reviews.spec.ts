@@ -878,7 +878,12 @@ for (const [localeIndex, copy] of administratorReturnLocales.entries()) {
           exact: true,
         });
         await expect(next).toHaveCount(1);
+        const nextHref = await next.getAttribute("href");
+        if (!nextHref)
+          throw new Error("Administrator finance pagination returned no href");
+        const nextUrl = new URL(nextHref, page.url()).href;
         await next.click();
+        await expect(page).toHaveURL(nextUrl);
         bookingLink = page.getByRole("link", { name: reference, exact: true });
       }
       await expect(bookingLink).toHaveCount(1);
@@ -1161,9 +1166,9 @@ for (const [localeIndex, copy] of administratorReturnLocales.entries()) {
       expect(readRestrictions()).toHaveLength(2);
       await expectHiddenReview();
       await visitor.goto(publicPath);
+      await expect(visitor.getByText(original, { exact: true })).toHaveCount(0);
       const publicHtml = await visitor.content();
       for (const privateValue of [
-        original,
         hideReason,
         suspendReason,
         restoreReason,
