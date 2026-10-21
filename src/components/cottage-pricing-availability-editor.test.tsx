@@ -410,9 +410,9 @@ describe("Cottage Pricing and Availability editor", () => {
         schedule.shifts[1]!.id,
         schedule.fullDayBundleId,
       ]);
-      expect(await screen.findByRole("status")).toHaveTextContent(
-        copy.saved as string,
-      );
+      expect(
+        await screen.findByText(copy.saved as string, { exact: true }),
+      ).toHaveAttribute("role", "status");
       expect(saveAvailability).not.toHaveBeenCalled();
       expect(loadAvailability).not.toHaveBeenCalled();
     },
