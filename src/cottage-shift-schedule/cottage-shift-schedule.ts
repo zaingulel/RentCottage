@@ -36,6 +36,20 @@ export interface CottageShiftScheduleRepository {
   }): Promise<StoredCottageShiftSchedule>;
 }
 
+export type CottageShiftScheduleOperationOutcome =
+  | "committed"
+  | "conflict"
+  | "denied";
+
+export class CottageShiftScheduleOperationError extends Error {
+  constructor(
+    readonly outcome: CottageShiftScheduleOperationOutcome,
+    options?: ErrorOptions,
+  ) {
+    super("Cottage Shift Schedule operation outcome: " + outcome, options);
+  }
+}
+
 export type CottageShiftScheduleLoadResult =
   | { status: "loaded"; schedule: CottageShiftSchedule | null }
   | { status: "denied" | "unavailable" };
@@ -81,24 +95,6 @@ function withFullDay(
     fullDayShiftIds: schedule.shifts.map(({ id }) => id),
     ...fullDayCoverage(schedule.shifts),
   };
-}
-
-function providerCode(error: unknown): string | undefined {
-  let candidate = error;
-  for (let depth = 0; depth < 8; depth += 1) {
-    if (!candidate || typeof candidate !== "object") return undefined;
-    const value = candidate as { code?: unknown; cause?: unknown };
-    if (typeof value.code === "string") return value.code;
-    candidate = value.cause;
-  }
-  return undefined;
-}
-
-function mapFailure(error: unknown): "conflict" | "denied" | "unavailable" {
-  const code = providerCode(error);
-  if (code === "RC409") return "conflict";
-  if (code === "42501" || code === "RC202") return "denied";
-  return "unavailable";
 }
 
 export function readCottageShiftSchedule(value: unknown):
@@ -195,7 +191,11 @@ export function createCottageShiftSchedule(
         };
       } catch (error) {
         return {
-          status: mapFailure(error) === "denied" ? "denied" : "unavailable",
+          status:
+            error instanceof CottageShiftScheduleOperationError &&
+            error.outcome === "denied"
+              ? "denied"
+              : "unavailable",
         };
       }
     },
@@ -224,7 +224,9 @@ export function createCottageShiftSchedule(
       } catch (error) {
         return {
           status:
-            providerCode(error) === "RC204" ? "committed" : mapFailure(error),
+            error instanceof CottageShiftScheduleOperationError
+              ? error.outcome
+              : "unavailable",
         };
       }
     },

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createCottageShiftSchedule,
+  CottageShiftScheduleOperationError,
   readCottageShiftSchedule,
   type CottageShiftScheduleRepository,
 } from "./cottage-shift-schedule";
@@ -279,7 +280,9 @@ describe("Cottage Shift Schedule", () => {
   ] as const)("maps provider %s failures honestly", async (code, status) => {
     const store = repository();
     store.save = async () => {
-      throw Object.assign(new Error("provider failure"), { code });
+      throw status === "unavailable"
+        ? Object.assign(new Error("provider failure"), { code })
+        : new CottageShiftScheduleOperationError(status);
     };
 
     await expect(
