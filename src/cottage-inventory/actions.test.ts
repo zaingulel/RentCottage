@@ -436,18 +436,27 @@ describe("Cottage Inventory actions", () => {
   it("preserves saved batch evidence when refresh is unavailable", async () => {
     const profileId = "70000000-0000-4000-8000-000000000001";
     const scheduleRevisionId = "71000000-0000-4000-8000-000000000001";
+    const coordinate = {
+      serviceDay: "2099-08-20",
+      id: "72000000-0000-4000-8000-000000000001",
+      kind: "shift",
+    };
     const batch = {
       from: "2099-08-20",
       to: "2099-08-20",
-      unitKeys: [],
-      cells: [],
+      unitKeys: [{ id: coordinate.id, kind: coordinate.kind }],
+      state: "closed",
+      mode: "range",
+      cells: [{ ...coordinate, expectedOwnerState: "open" }],
+      replacePrivateBlocks: [],
+      reviewConfirmed: false,
     };
     const receipt = {
       status: "saved",
       profileId,
       scheduleRevisionId,
       request: batch,
-      changed: [],
+      changed: [coordinate],
       unchanged: [],
     };
     const setAvailabilityBatch = vi.fn().mockResolvedValue(receipt);
@@ -492,7 +501,51 @@ describe("Cottage Inventory actions", () => {
       `/ar/owner/cottages/${profileId}`,
     );
     for (const status of ["refused", "denied", "conflict", "unavailable"]) {
-      const failure = { status };
+      const unitKeys = [
+        batch.unitKeys[0],
+        { id: "72000000-0000-4000-8000-000000000002", kind: "shift" },
+        { id: "73000000-0000-4000-8000-000000000001", kind: "full_day_bundle" },
+      ];
+      const failure =
+        status === "refused"
+          ? {
+              status,
+              profileId,
+              scheduleRevisionId,
+              request: batch,
+              conflicts: [
+                {
+                  ...coordinate,
+                  reason: "stale_state",
+                  commitmentReference: null,
+                },
+              ],
+              eligible: [],
+              calendar: {
+                profileId,
+                scheduleRevisionId,
+                from: batch.from,
+                to: batch.to,
+                asOf: "2099-08-19T12:00:00.000Z",
+                unitKeys,
+                days: [
+                  {
+                    serviceDay: batch.from,
+                    units: unitKeys.map((unit) => ({
+                      ...unit,
+                      ownerState: "closed",
+                      calendarState: "closed",
+                      priceIqd: null,
+                      commitmentReference: null,
+                      available: false,
+                      editable: true,
+                      temporarilyUnavailable: false,
+                    })),
+                  },
+                ],
+              },
+            }
+          : { status };
       setAvailabilityBatch.mockResolvedValueOnce(failure);
       revalidatePath.mockClear();
       await expect(
@@ -506,15 +559,36 @@ describe("Cottage Inventory actions", () => {
       "scheduleRevisionId",
       "batch",
     ]) {
-      const invalid = new FormData();
-      for (const [key, value] of form.entries()) invalid.append(key, value);
-      invalid.append(field, field === "locale" ? "ar" : "duplicate");
-      setAvailabilityBatch.mockClear();
-      await expect(
-        setCottageInventoryAvailabilityBatchAction({ status: "idle" }, invalid),
-      ).resolves.toMatchObject({ status: "invalid" });
-      expect(setAvailabilityBatch).not.toHaveBeenCalled();
+      for (const variant of ["duplicate", "missing", "non-string"]) {
+        const invalid = new FormData();
+        for (const [key, value] of form.entries()) invalid.append(key, value);
+        if (variant === "duplicate")
+          invalid.append(field, field === "locale" ? "ar" : "duplicate");
+        else if (variant === "missing") invalid.delete(field);
+        else
+          invalid.set(
+            field,
+            new Blob(["invalid"], { type: "text/plain" }),
+            "invalid.txt",
+          );
+        setAvailabilityBatch.mockClear();
+        await expect(
+          setCottageInventoryAvailabilityBatchAction(
+            { status: "idle" },
+            invalid,
+          ),
+        ).resolves.toEqual({ status: "invalid", fields: [field] });
+        expect(setAvailabilityBatch).not.toHaveBeenCalled();
+      }
     }
+    setAvailabilityBatch.mockRejectedValueOnce(
+      new Error("Unknown mutation outcome"),
+    );
+    revalidatePath.mockClear();
+    await expect(
+      setCottageInventoryAvailabilityBatchAction({ status: "idle" }, form),
+    ).rejects.toThrow("Unknown mutation outcome");
+    expect(revalidatePath).not.toHaveBeenCalled();
     for (const invalid of ["{", "null", "[]", '"object"']) {
       form.set("batch", invalid);
       setAvailabilityBatch.mockClear();

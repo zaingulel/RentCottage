@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(124);
+select plan(128);
 
 select col_type_is(
   'public', 'cottage_booking_period_commitments', 'status',
@@ -2565,6 +2565,479 @@ begin
 end;
 $body$;
 $test$, 'owner span denies foreign and unauthorized roles');
+reset role;
+
+create function pg_temp.fail_late_calendar_batch_day() returns trigger language plpgsql as $$
+begin
+  if new.service_day = date '2099-12-21' then raise exception 'Injected late-day write failure' using errcode = 'ZX304'; end if;
+  return new;
+end;
+$$;
+
+select lives_ok($test$
+do $body$
+declare request jsonb;
+declare result jsonb;
+declare before_rows jsonb;
+declare after_rows jsonb;
+declare new_profile uuid := gen_random_uuid();
+declare new_revision uuid := gen_random_uuid();
+declare new_shift uuid := gen_random_uuid();
+declare new_second_shift uuid := gen_random_uuid();
+declare new_bundle uuid := gen_random_uuid();
+begin
+  request := jsonb_build_object('from', '2099-10-02', 'to', '2099-10-06',
+    'unitKeys', jsonb_build_array(jsonb_build_object('id', current_setting('rentcottage.equality_shift_id'), 'kind', 'shift')),
+    'state', 'open', 'mode', 'range', 'reviewConfirmed', false, 'replacePrivateBlocks', '[]'::jsonb,
+    'cells', (select jsonb_agg(jsonb_build_object('serviceDay', to_char(date '2099-10-02' + i, 'YYYY-MM-DD'),
+      'id', current_setting('rentcottage.equality_shift_id'), 'kind', 'shift',
+      'expectedOwnerState', case when i = 0 then 'private_blocked' when i = 4 then 'closed' else 'open' end) order by i) from generate_series(0, 4) i));
+  select jsonb_build_object('availability', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_inventory_availability r),
+    'prices', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_inventory_standard_prices r),
+    'bookings', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_booking_period_commitments r),
+    'occupancies', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_booking_period_occupancies r),
+    'datePrices', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_inventory_date_price_overrides r),
+    'selectedCommitments', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_inventory_commitments r),
+    'claimOccupancies', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.booking_request_authorization_claim_occupancies r),
+    'schedules', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_shift_schedule_revisions r),
+    'shifts', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_shifts r),
+    'claims', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.booking_request_authorization_claims r)) into before_rows;
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002601","role":"authenticated","aal":"aal1"}', true);
+  perform set_config('role', 'authenticated', true);
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601',
+    current_setting('rentcottage.equality_revision_id')::uuid, request);
+  if result ->> 'status' is distinct from 'refused' or result -> 'request' <> request
+    or result -> 'eligible' <> jsonb_build_array(request -> 'cells' -> 4)
+    or (select jsonb_agg(c ->> 'reason' order by c ->> 'serviceDay') from jsonb_array_elements(result -> 'conflicts') c)
+      <> '["private_block_consent_required","pending_hold","confirmed_booking","temporary_unavailable"]'::jsonb
+    or (select jsonb_agg(c -> 'commitmentReference' order by c ->> 'serviceDay') from jsonb_array_elements(result -> 'conflicts') c)
+      <> '[null,"RC-SPAN-HOLD","RC-SPAN-CONFIRMED",null]'::jsonb
+    or jsonb_array_length(result -> 'calendar' -> 'days') <> 5 then
+    raise exception 'Batch refusal did not preserve exact protected partition: %', result;
+  end if;
+  perform set_config('role', 'none', true);
+  select jsonb_build_object('availability', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_inventory_availability r),
+    'prices', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_inventory_standard_prices r),
+    'bookings', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_booking_period_commitments r),
+    'occupancies', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_booking_period_occupancies r),
+    'datePrices', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_inventory_date_price_overrides r),
+    'selectedCommitments', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_inventory_commitments r),
+    'claimOccupancies', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.booking_request_authorization_claim_occupancies r),
+    'schedules', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_shift_schedule_revisions r),
+    'shifts', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.cottage_shifts r),
+    'claims', (select jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text) from public.booking_request_authorization_claims r)) into after_rows;
+  if after_rows is distinct from before_rows then raise exception 'Refused batch changed persisted facts'; end if;
+  -- Protected selections refuse even a raw-state no-op; protection precedes a stale expectation.
+  request := request || jsonb_build_object('state', 'open', 'cells',
+    (select jsonb_agg(c || '{"expectedOwnerState":"closed"}'::jsonb order by c ->> 'serviceDay') from jsonb_array_elements(request -> 'cells') c));
+  perform set_config('role', 'authenticated', true);
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601',
+    current_setting('rentcottage.equality_revision_id')::uuid, request);
+  if (select jsonb_agg(c ->> 'reason' order by c ->> 'serviceDay') from jsonb_array_elements(result -> 'conflicts') c)
+    <> '["stale_state","pending_hold","confirmed_booking","temporary_unavailable"]'::jsonb then
+    raise exception 'Protected no-op/claim precedence changed: %', result; end if;
+  perform set_config('role', 'none', true);
+  -- Use the suite's native schedule-fixture pattern in a rolled-back subtransaction to hit exact transaction-time equality.
+  begin
+    insert into public.owner_application_cottage_profiles(id, owner_user_id, name, governorate, approximate_location, exact_address,
+      capacity, bedrooms, bathrooms, amenities, source_language, description, house_rules, status)
+      values(new_profile, '00000000-0000-0000-0000-000000002601', 'Batch equality', 'Erbil', 'Test area', 'Test address',
+        4, 2, 1, array['garden'], 'en', 'Test description', 'Test rules', 'draft');
+    insert into public.cottage_shift_schedule_revisions(id, profile_id, revision, full_day_bundle_id)
+      values(new_revision, new_profile, 1, new_bundle);
+    perform set_config('rentcottage.shift_schedule_write_revision_id', new_revision::text, true);
+    insert into public.cottage_shifts(id, schedule_revision_id, position, name, start_time, end_time)
+      values(new_shift, new_revision, 1, 'Batch equality', (now() at time zone 'Asia/Baghdad')::time,
+        ((now() at time zone 'Asia/Baghdad')::time + interval '1 hour')::time),
+      (new_second_shift, new_revision, 2, 'Batch later', ((now() at time zone 'Asia/Baghdad')::time + interval '2 hours')::time,
+        ((now() at time zone 'Asia/Baghdad')::time + interval '3 hours')::time);
+    perform set_config('rentcottage.shift_schedule_write_revision_id', '', true);
+    update public.owner_application_cottage_profiles set current_shift_schedule_id = new_revision where id = new_profile;
+    request := jsonb_build_object('from', current_setting('rentcottage.equality_service_day'), 'to', current_setting('rentcottage.equality_service_day'),
+      'unitKeys', jsonb_build_array(jsonb_build_object('id', new_shift, 'kind', 'shift')),
+      'state', 'open', 'mode', 'range', 'reviewConfirmed', false, 'replacePrivateBlocks', '[]'::jsonb,
+      'cells', jsonb_build_array(jsonb_build_object('serviceDay', current_setting('rentcottage.equality_service_day'),
+        'id', new_shift, 'kind', 'shift', 'expectedOwnerState', 'closed')));
+    perform set_config('role', 'authenticated', true);
+    result := public.set_cottage_inventory_availability_batch(new_profile, new_revision, request);
+    if result ->> 'status' is distinct from 'refused' or result -> 'conflicts' -> 0 ->> 'reason' <> 'started' then
+      raise exception 'Exact start equality was editable: %', result; end if;
+    result := public.set_cottage_inventory_availability_batch(new_profile, new_revision, request || '{"state":"closed"}'::jsonb);
+    if result ->> 'status' is distinct from 'saved' or result -> 'changed' <> '[]'::jsonb then
+      raise exception 'Started unprotected no-op did not bypass deadline: %', result; end if;
+  request := jsonb_build_object('from', '2099-12-10', 'to', '2099-12-10',
+    'unitKeys', jsonb_build_array(jsonb_build_object('id', new_shift, 'kind', 'shift')),
+    'state', 'closed', 'mode', 'range', 'reviewConfirmed', false, 'replacePrivateBlocks', '[]'::jsonb,
+    'cells', jsonb_build_array(jsonb_build_object('serviceDay', '2099-12-10', 'id', new_shift, 'kind', 'shift', 'expectedOwnerState', 'closed')));
+  perform set_config('role', 'authenticated', true);
+  result := public.set_cottage_inventory_availability_batch(new_profile, new_revision, request);
+  if result ->> 'status' is distinct from 'saved' then raise exception 'Unpublished no-op was refused: %', result; end if;
+  result := public.set_cottage_inventory_availability_batch(new_profile, new_revision,
+    request || '{"state":"open"}'::jsonb);
+  if result ->> 'status' is distinct from 'refused' or result -> 'conflicts' -> 0 ->> 'reason' <> 'publication_required' then
+    raise exception 'Unpublished actual opening was accepted: %', result; end if;
+  result := public.set_cottage_inventory_availability_batch(new_profile, new_revision,
+    request || '{"state":"private_blocked"}'::jsonb);
+  if result ->> 'status' is distinct from 'saved' then raise exception 'Unpublished closure/block was refused: %', result; end if;
+  perform set_config('role', 'none', true);
+    raise exception 'Restore isolated deadline/publication fixture' using errcode = 'ZX305';
+  exception when sqlstate 'ZX305' then null; end;
+  perform set_config('role', 'none', true);
+  begin
+    delete from public.cottage_inventory_standard_prices where schedule_revision_id = current_setting('rentcottage.equality_revision_id')::uuid
+      and unit_id = current_setting('rentcottage.equality_second_shift_id')::uuid;
+    request := request || jsonb_build_object('from', '2099-12-11', 'to', '2099-12-11', 'state', 'open',
+      'unitKeys', jsonb_build_array(jsonb_build_object('id', current_setting('rentcottage.equality_second_shift_id'), 'kind', 'shift')),
+      'cells', jsonb_build_array(jsonb_build_object('serviceDay', '2099-12-11', 'id', current_setting('rentcottage.equality_second_shift_id'),
+        'kind', 'shift', 'expectedOwnerState', 'closed')));
+    perform set_config('role', 'authenticated', true);
+    result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', current_setting('rentcottage.equality_revision_id')::uuid, request);
+    if result ->> 'status' is distinct from 'saved' or not exists (
+      select 1 from jsonb_array_elements(public.resolve_cottage_inventory_owner_calendar_span('30000000-0000-4000-8000-000000002601',
+        current_setting('rentcottage.equality_revision_id')::uuid, '2099-12-11', '2099-12-11') -> 'days' -> 0 -> 'units') u
+      where u ->> 'id' = current_setting('rentcottage.equality_second_shift_id') and u ->> 'ownerState' = 'open' and u -> 'available' = 'false'::jsonb) then
+      raise exception 'Unpriced raw opening was rejected or fabricated bookability: %', result; end if;
+    raise exception 'Restore unpriced fixture' using errcode = 'ZX305';
+  exception when sqlstate 'ZX305' then null; end;
+  perform set_config('role', 'none', true);
+  create trigger calendar_batch_late_failure before insert or update on public.cottage_inventory_availability
+    for each row execute function pg_temp.fail_late_calendar_batch_day();
+  request := request || jsonb_build_object('from', '2099-12-20', 'to', '2099-12-21', 'state', 'open',
+    'unitKeys', jsonb_build_array(jsonb_build_object('id', current_setting('rentcottage.equality_shift_id'), 'kind', 'shift')),
+    'cells', jsonb_build_array(
+    jsonb_build_object('serviceDay', '2099-12-20', 'id', current_setting('rentcottage.equality_shift_id'), 'kind', 'shift', 'expectedOwnerState', 'closed'),
+    jsonb_build_object('serviceDay', '2099-12-21', 'id', current_setting('rentcottage.equality_shift_id'), 'kind', 'shift', 'expectedOwnerState', 'closed')));
+  begin
+    perform set_config('role', 'authenticated', true);
+    perform public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', current_setting('rentcottage.equality_revision_id')::uuid, request);
+    raise exception 'Late-day failure was swallowed';
+  exception when sqlstate 'ZX304' then null; end;
+  perform set_config('role', 'none', true);
+  drop trigger calendar_batch_late_failure on public.cottage_inventory_availability;
+  if exists (select 1 from public.cottage_inventory_availability where schedule_revision_id = current_setting('rentcottage.equality_revision_id')::uuid
+    and service_day between '2099-12-20' and '2099-12-21') then raise exception 'Late-day failure retained an earlier day write'; end if;
+end;
+$body$;
+$test$, 'batch refusal preserves every requested day and protected record');
+reset role;
+
+
+select lives_ok($test$
+do $body$
+declare request jsonb;
+declare result jsonb;
+declare original_ctid tid;
+declare revision uuid := current_setting('rentcottage.equality_revision_id')::uuid;
+declare first_id text := current_setting('rentcottage.equality_shift_id');
+declare second_id text := current_setting('rentcottage.equality_second_shift_id');
+declare bundle_id text := current_setting('rentcottage.equality_bundle_id');
+begin
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002601","role":"authenticated","aal":"aal1"}', true);
+  perform set_config('role', 'authenticated', true);
+  perform public.set_cottage_inventory_availability('30000000-0000-4000-8000-000000002601', revision,
+    '2099-11-01', jsonb_build_array(jsonb_build_object('unitId', first_id, 'unitKind', 'shift', 'state', 'open')));
+  perform set_config('role', 'none', true);
+  select ctid into original_ctid from public.cottage_inventory_availability
+    where schedule_revision_id = revision and unit_id = first_id::uuid and service_day = '2099-11-01';
+  request := jsonb_build_object('from', '2099-11-01', 'to', '2099-11-03',
+    'unitKeys', jsonb_build_array(jsonb_build_object('id', first_id, 'kind', 'shift'), jsonb_build_object('id', second_id, 'kind', 'shift')),
+    'state', 'open', 'mode', 'reviewed', 'reviewConfirmed', true, 'replacePrivateBlocks', '[]'::jsonb,
+    'cells', jsonb_build_array(
+      jsonb_build_object('serviceDay', '2099-11-01', 'id', first_id, 'kind', 'shift', 'expectedOwnerState', 'open'),
+      jsonb_build_object('serviceDay', '2099-11-02', 'id', second_id, 'kind', 'shift', 'expectedOwnerState', 'closed')));
+  perform set_config('role', 'authenticated', true);
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+  if result ->> 'status' is distinct from 'saved' or result -> 'changed' <> jsonb_build_array((request -> 'cells' -> 1) - 'expectedOwnerState')
+    or result -> 'unchanged' <> jsonb_build_array((request -> 'cells' -> 0) - 'expectedOwnerState')
+    or result -> 'request' ->> 'from' <> '2099-11-01' or result -> 'request' ->> 'to' <> '2099-11-03'
+    or jsonb_array_length(result -> 'request' -> 'unitKeys') <> 2 then raise exception 'Reviewed receipt lost original scope: %', result; end if;
+  perform set_config('role', 'none', true);
+  if not exists (select 1 from public.cottage_inventory_availability where schedule_revision_id = revision
+      and unit_id = first_id::uuid and service_day = '2099-11-01' and ctid = original_ctid)
+    or (select count(*) from public.cottage_inventory_availability where schedule_revision_id = revision
+      and service_day between '2099-11-01' and '2099-11-03') <> 2
+    or not exists (select 1 from public.cottage_inventory_availability where schedule_revision_id = revision
+      and unit_id = second_id::uuid and service_day = '2099-11-02' and state = 'open') then
+    raise exception 'Reviewed batch rewrote its no-op or an unrelated coordinate'; end if;
+  perform set_config('role', 'authenticated', true);
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+  if result ->> 'status' is distinct from 'refused' or result -> 'conflicts' -> 0 ->> 'reason' <> 'stale_state'
+    or result -> 'eligible' <> jsonb_build_array(request -> 'cells' -> 0) then raise exception 'Retry silently refreshed expectations: %', result; end if;
+  perform set_config('role', 'none', true);
+  perform pg_temp.create_test_inventory_commitment(revision, 'shift', second_id::uuid, '2099-11-02',
+    'RC-BATCH-NEW-HOLD', 130000, 'pending_hold');
+  perform set_config('role', 'authenticated', true);
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+  if result ->> 'status' is distinct from 'refused' or result -> 'conflicts' -> 0 ->> 'reason' <> 'pending_hold'
+    or result -> 'conflicts' -> 0 ->> 'commitmentReference' <> 'RC-BATCH-NEW-HOLD'
+    or result -> 'eligible' <> jsonb_build_array(request -> 'cells' -> 0) then raise exception 'Fresh hold did not refuse the entire retry: %', result; end if;
+
+  perform public.set_cottage_inventory_availability('30000000-0000-4000-8000-000000002601', revision,
+    '2099-11-10', jsonb_build_array(
+      jsonb_build_object('unitId', first_id, 'unitKind', 'shift', 'state', 'open'),
+      jsonb_build_object('unitId', second_id, 'unitKind', 'shift', 'state', 'open'),
+      jsonb_build_object('unitId', bundle_id, 'unitKind', 'full_day_bundle', 'state', 'open')));
+  request := jsonb_build_object('from', '2099-11-10', 'to', '2099-11-10',
+    'unitKeys', jsonb_build_array(jsonb_build_object('id', first_id, 'kind', 'shift')),
+    'state', 'closed', 'mode', 'range', 'reviewConfirmed', false, 'replacePrivateBlocks', '[]'::jsonb,
+    'cells', jsonb_build_array(jsonb_build_object('serviceDay', '2099-11-10', 'id', first_id, 'kind', 'shift', 'expectedOwnerState', 'open')));
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+  if result ->> 'status' is distinct from 'refused' or result -> 'conflicts' <> jsonb_build_array(
+    ((request -> 'cells' -> 0) - 'expectedOwnerState') || '{"reason":"open_bundle_dependency","commitmentReference":null}'::jsonb)
+    or result -> 'eligible' <> '[]'::jsonb then raise exception 'Unselected bundle dependency was misattributed: %', result; end if;
+  request := request || jsonb_build_object('unitKeys', jsonb_build_array(
+      jsonb_build_object('id', bundle_id, 'kind', 'full_day_bundle'), jsonb_build_object('id', first_id, 'kind', 'shift')),
+    'cells', jsonb_build_array(
+      jsonb_build_object('serviceDay', '2099-11-10', 'id', bundle_id, 'kind', 'full_day_bundle', 'expectedOwnerState', 'open'), request -> 'cells' -> 0));
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+  if result ->> 'status' is distinct from 'saved' or jsonb_array_length(result -> 'changed') <> 2 then
+    raise exception 'Explicit bundle closure did not resolve its dependency: %', result; end if;
+  request := request || jsonb_build_object('from', '2099-11-11', 'to', '2099-11-11', 'state', 'open',
+    'cells', jsonb_build_array(
+      jsonb_build_object('serviceDay', '2099-11-11', 'id', bundle_id, 'kind', 'full_day_bundle', 'expectedOwnerState', 'closed'),
+      jsonb_build_object('serviceDay', '2099-11-11', 'id', first_id, 'kind', 'shift', 'expectedOwnerState', 'closed')));
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+  if result ->> 'status' is distinct from 'refused' or result -> 'conflicts' -> 0 ->> 'reason' <> 'bundle_components_unavailable'
+    or result -> 'eligible' <> jsonb_build_array(request -> 'cells' -> 1) then raise exception 'Opening bundle lost eligible component: %', result; end if;
+  request := request || jsonb_build_object('mode', 'reviewed', 'reviewConfirmed', true, 'cells', result -> 'eligible');
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+  if result ->> 'status' is distinct from 'saved' then raise exception 'Explicit component subset failed: %', result; end if;
+  perform set_config('role', 'none', true);
+  if (select count(*) from public.cottage_inventory_availability where schedule_revision_id = revision and service_day = '2099-11-11') <> 1
+    or not exists (select 1 from jsonb_array_elements(public.resolve_cottage_inventory_public_availability(
+      '30000000-0000-4000-8000-000000002601', revision, '2099-11-11') -> 'units') u
+      where u ->> 'id' = first_id and (u ->> 'available')::boolean) then
+    raise exception 'Reviewed public readback or unrelated bundle state is wrong'; end if;
+  -- Keep both components raw-open while removing one component price: opening the bundle must still refuse.
+  perform set_config('role', 'authenticated', true);
+  perform public.set_cottage_inventory_availability('30000000-0000-4000-8000-000000002601', revision,
+    '2099-11-12', jsonb_build_array(jsonb_build_object('unitId', first_id, 'unitKind', 'shift', 'state', 'open'),
+      jsonb_build_object('unitId', second_id, 'unitKind', 'shift', 'state', 'open')));
+  perform set_config('role', 'none', true);
+  delete from public.cottage_inventory_standard_prices where schedule_revision_id = revision and unit_id = second_id::uuid;
+  request := jsonb_build_object('from', '2099-11-12', 'to', '2099-11-12',
+    'unitKeys', jsonb_build_array(jsonb_build_object('id', bundle_id, 'kind', 'full_day_bundle')),
+    'state', 'open', 'mode', 'range', 'reviewConfirmed', false, 'replacePrivateBlocks', '[]'::jsonb,
+    'cells', jsonb_build_array(jsonb_build_object('serviceDay', '2099-11-12', 'id', bundle_id, 'kind', 'full_day_bundle', 'expectedOwnerState', 'closed')));
+  perform set_config('role', 'authenticated', true);
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+  if result ->> 'status' is distinct from 'refused' or result -> 'conflicts' -> 0 ->> 'reason' <> 'bundle_components_unavailable' then
+    raise exception 'Missing component price was not protected: %', result; end if;
+  perform set_config('role', 'none', true);
+  insert into public.cottage_inventory_standard_prices(schedule_revision_id, unit_kind, unit_id, price_iqd) values(revision, 'shift', second_id::uuid, 130000);
+  begin
+    perform set_config('role', 'authenticated', true);
+    perform public.set_cottage_inventory_availability('30000000-0000-4000-8000-000000002601', revision,
+      '2099-11-13', jsonb_build_array(jsonb_build_object('unitId', first_id, 'unitKind', 'shift', 'state', 'open'),
+        jsonb_build_object('unitId', second_id, 'unitKind', 'shift', 'state', 'open')));
+    perform set_config('role', 'none', true);
+    delete from public.cottage_inventory_standard_prices where schedule_revision_id = revision and unit_id = bundle_id::uuid;
+    request := request || jsonb_build_object('from', '2099-11-13', 'to', '2099-11-13',
+      'cells', jsonb_build_array((request -> 'cells' -> 0) || '{"serviceDay":"2099-11-13"}'::jsonb));
+    perform set_config('role', 'authenticated', true);
+    result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+    if result ->> 'status' is distinct from 'saved' or not exists (
+      select 1 from jsonb_array_elements(public.resolve_cottage_inventory_owner_calendar_span('30000000-0000-4000-8000-000000002601',
+        revision, '2099-11-13', '2099-11-13') -> 'days' -> 0 -> 'units') u
+      where u ->> 'id' = bundle_id and u ->> 'ownerState' = 'open' and u -> 'available' = 'false'::jsonb) then
+      raise exception 'Bundle own price became an opening requirement: %', result; end if;
+    raise exception 'Restore bundle-price fixture' using errcode = 'ZX305';
+  exception when sqlstate 'ZX305' then null; end;
+  perform set_config('role', 'authenticated', true);
+  perform public.set_cottage_inventory_availability('30000000-0000-4000-8000-000000002601', revision,
+    '2099-11-14', jsonb_build_array(jsonb_build_object('unitId', first_id, 'unitKind', 'shift', 'state', 'open'),
+      jsonb_build_object('unitId', second_id, 'unitKind', 'shift', 'state', 'open'),
+      jsonb_build_object('unitId', bundle_id, 'unitKind', 'full_day_bundle', 'state', 'open')));
+  perform set_config('role', 'none', true);
+  begin
+    -- Native fixture edits model a pre-existing unavailable component, without changing the old writer.
+    update public.cottage_inventory_availability set state = 'closed' where schedule_revision_id = revision
+      and unit_id = first_id::uuid and service_day = '2099-11-14';
+    delete from public.cottage_inventory_standard_prices where schedule_revision_id = revision and unit_id = second_id::uuid;
+    request := jsonb_build_object('from', '2099-11-14', 'to', '2099-11-14',
+      'unitKeys', jsonb_build_array(jsonb_build_object('id', first_id, 'kind', 'shift')),
+      'state', 'open', 'mode', 'range', 'reviewConfirmed', false, 'replacePrivateBlocks', '[]'::jsonb,
+      'cells', jsonb_build_array(jsonb_build_object('serviceDay', '2099-11-14', 'id', first_id, 'kind', 'shift', 'expectedOwnerState', 'closed')));
+    perform set_config('role', 'authenticated', true);
+    result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+    if result ->> 'status' is distinct from 'refused' or result -> 'conflicts' -> 0 ->> 'reason' <> 'open_bundle_dependency'
+      or result -> 'eligible' <> '[]'::jsonb then raise exception 'Improving a component hid a pre-existing bundle dependency: %', result; end if;
+    raise exception 'Restore prior-component fixture' using errcode = 'ZX305';
+  exception when sqlstate 'ZX305' then null; end;
+  perform set_config('role', 'none', true);
+end;
+$body$;
+$test$, 'reviewed subset changes only explicitly included cells');
+reset role;
+
+select lives_ok($test$
+do $body$
+declare request jsonb;
+declare result jsonb;
+declare invalid_consent jsonb;
+declare revision uuid := current_setting('rentcottage.equality_revision_id')::uuid;
+declare first_id text := current_setting('rentcottage.equality_shift_id');
+begin
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002601","role":"authenticated","aal":"aal1"}', true);
+  perform set_config('role', 'authenticated', true);
+  request := jsonb_build_object('from', '2099-10-02', 'to', '2099-10-02',
+    'unitKeys', jsonb_build_array(jsonb_build_object('id', first_id, 'kind', 'shift')),
+    'state', 'closed', 'mode', 'range', 'reviewConfirmed', false, 'replacePrivateBlocks', '[]'::jsonb,
+    'cells', jsonb_build_array(jsonb_build_object('serviceDay', '2099-10-02', 'id', first_id, 'kind', 'shift', 'expectedOwnerState', 'private_blocked')));
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+  if result ->> 'status' is distinct from 'refused' or result -> 'conflicts' -> 0 ->> 'reason' <> 'private_block_consent_required'
+    or result -> 'eligible' <> '[]'::jsonb then raise exception 'Private Block consent was assumed: %', result; end if;
+  for invalid_consent in select value from jsonb_array_elements(jsonb_build_array(
+    jsonb_build_array(((request -> 'cells' -> 0) - 'expectedOwnerState') || '{"serviceDay":"2099-10-01"}'::jsonb),
+    jsonb_build_array(((request -> 'cells' -> 0) - 'expectedOwnerState') || '{"extra":true}'::jsonb),
+    jsonb_build_array((request -> 'cells' -> 0) - 'expectedOwnerState', (request -> 'cells' -> 0) - 'expectedOwnerState'),
+    'null'::jsonb)) loop
+    begin
+      perform public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision,
+        request || jsonb_build_object('replacePrivateBlocks', invalid_consent));
+      raise exception 'Misbound, duplicate or unknown consent was accepted';
+    exception when invalid_parameter_value then null; end;
+  end loop;
+  request := request || jsonb_build_object('replacePrivateBlocks', jsonb_build_array((request -> 'cells' -> 0) - 'expectedOwnerState'));
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+  if result ->> 'status' is distinct from 'saved' or jsonb_array_length(result -> 'changed') <> 1 then
+    raise exception 'Exact named consent did not permit replacement: %', result; end if;
+  -- Fresh Private Blocks must not be offered with a silently refreshed expectation.
+  perform public.set_cottage_inventory_availability('30000000-0000-4000-8000-000000002601', revision,
+    '2099-11-20', jsonb_build_array(jsonb_build_object('unitId', first_id, 'unitKind', 'shift', 'state', 'private_blocked')));
+  request := request || jsonb_build_object('from', '2099-11-20', 'to', '2099-11-21', 'mode', 'reviewed',
+    'reviewConfirmed', true, 'replacePrivateBlocks', '[]'::jsonb, 'cells', jsonb_build_array(
+      jsonb_build_object('serviceDay', '2099-11-20', 'id', first_id, 'kind', 'shift', 'expectedOwnerState', 'closed')));
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+  if result ->> 'status' is distinct from 'refused' or result -> 'conflicts' -> 0 ->> 'reason' <> 'stale_state'
+    or result -> 'eligible' <> '[]'::jsonb then raise exception 'New Private Block became eligible: %', result; end if;
+  request := request || jsonb_build_object('cells', jsonb_build_array((request -> 'cells' -> 0) || '{"expectedOwnerState":"private_blocked"}'::jsonb),
+    'replacePrivateBlocks', jsonb_build_array((request -> 'cells' -> 0) - 'expectedOwnerState'), 'reviewConfirmed', false);
+  begin
+    perform public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+    raise exception 'Consent bypassed explicit smaller-batch confirmation';
+  exception when invalid_parameter_value then null; end;
+  perform set_config('role', 'none', true);
+end;
+$body$;
+$test$, 'private block replacement requires matching named intent');
+reset role;
+
+select lives_ok($test$
+do $body$
+declare request jsonb;
+declare invalid_request jsonb;
+declare result jsonb;
+declare caller text;
+declare approval text;
+declare abandoned_profile uuid := gen_random_uuid();
+declare abandoned_version bigint;
+declare revision uuid := current_setting('rentcottage.equality_revision_id')::uuid;
+declare first_id text := current_setting('rentcottage.equality_shift_id');
+begin
+  request := jsonb_build_object('from', '2099-12-01', 'to', '2099-12-01',
+    'unitKeys', jsonb_build_array(jsonb_build_object('id', first_id, 'kind', 'shift')),
+    'state', 'closed', 'mode', 'range', 'reviewConfirmed', false, 'replacePrivateBlocks', '[]'::jsonb,
+    'cells', jsonb_build_array(jsonb_build_object('serviceDay', '2099-12-01', 'id', first_id, 'kind', 'shift', 'expectedOwnerState', 'closed')));
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002601","role":"authenticated","aal":"aal1"}', true);
+  perform set_config('role', 'authenticated', true);
+  for invalid_request in select value from jsonb_array_elements(jsonb_build_array(
+    'null'::jsonb, '[]'::jsonb, request - 'mode', request || '{"extra":true}'::jsonb,
+    request || '{"from":null}'::jsonb, request || '{"from":"2099-02-29"}'::jsonb,
+    request || '{"to":"2100-01-01"}'::jsonb, request || '{"from":"0000-01-01"}'::jsonb,
+    request || '{"to":"infinity"}'::jsonb, request || '{"from":"2099-12-02"}'::jsonb,
+    request || '{"state":null}'::jsonb, request || '{"state":"pending_hold"}'::jsonb,
+    request || '{"mode":"partial"}'::jsonb, request || '{"reviewConfirmed":"false"}'::jsonb,
+    request || '{"reviewConfirmed":true}'::jsonb, request || '{"mode":"reviewed","reviewConfirmed":true}'::jsonb,
+    request || '{"cells":[]}'::jsonb, request || '{"cells":null}'::jsonb,
+    request || jsonb_build_object('unitKeys', jsonb_build_array(request -> 'unitKeys' -> 0, request -> 'unitKeys' -> 0)),
+    request || jsonb_build_object('unitKeys', jsonb_build_array(jsonb_build_object('id', 'not-a-uuid', 'kind', 'shift'))),
+    request || jsonb_build_object('unitKeys', jsonb_build_array(jsonb_build_object('id', gen_random_uuid(), 'kind', 'shift'))),
+    request || jsonb_build_object('cells', jsonb_build_array(request -> 'cells' -> 0, request -> 'cells' -> 0)),
+    request || jsonb_build_object('cells', jsonb_build_array((request -> 'cells' -> 0) || '{"extra":true}'::jsonb)),
+    request || jsonb_build_object('cells', jsonb_build_array((request -> 'cells' -> 0) || '{"expectedOwnerState":null}'::jsonb)),
+    request || jsonb_build_object('cells', jsonb_build_array((request -> 'cells' -> 0) || '{"serviceDay":"2099-11-30"}'::jsonb)),
+    request || jsonb_build_object('cells', jsonb_build_array((request -> 'cells' -> 0) || jsonb_build_object('id', gen_random_uuid())))
+  )) loop
+    begin
+      perform public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, invalid_request);
+      raise exception 'Hostile batch was accepted: %', invalid_request;
+    exception when invalid_parameter_value then null; end;
+  end loop;
+  begin
+    perform public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', gen_random_uuid(), request);
+    raise exception 'Stale revision batch was accepted';
+  exception when sqlstate 'RC409' then null; end;
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+  if result ->> 'status' is distinct from 'saved' or result -> 'changed' <> '[]'::jsonb or jsonb_array_length(result -> 'unchanged') <> 1 then
+    raise exception 'One-day no-op was not accepted: %', result; end if;
+  request := request || jsonb_build_object('from', '2096-02-15', 'to', '2096-03-16', 'cells',
+    (select jsonb_agg(jsonb_build_object('serviceDay', to_char(date '2096-02-15' + i, 'YYYY-MM-DD'),
+      'id', first_id, 'kind', 'shift', 'expectedOwnerState', 'closed') order by i) from generate_series(0, 30) i));
+  result := public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+  if result ->> 'status' is distinct from 'saved' or jsonb_array_length(result -> 'unchanged') <> 31 then
+    raise exception 'Leap-year cross-month 31-day boundary failed: %', result; end if;
+  begin
+    perform public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision,
+      request || jsonb_build_object('to', '2096-03-17', 'cells', (request -> 'cells') || jsonb_build_array(
+        jsonb_build_object('serviceDay', '2096-03-17', 'id', first_id, 'kind', 'shift', 'expectedOwnerState', 'closed'))));
+    raise exception '32-day complete batch was accepted';
+  exception when invalid_parameter_value then null; end;
+  perform set_config('role', 'none', true);
+  foreach caller in array array['anon', 'service_role'] loop
+    if has_function_privilege(caller, 'public.set_cottage_inventory_availability_batch(uuid,uuid,jsonb)', 'EXECUTE') then
+      raise exception 'Unauthorized database role has batch execute: %', caller; end if;
+    perform set_config('role', caller, true);
+    begin
+      perform public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+      raise exception 'Unauthorized database role wrote batch';
+    exception when insufficient_privilege then null; end;
+    perform set_config('role', 'none', true);
+  end loop;
+  foreach caller in array array['00000000-0000-0000-0000-000000002699', '00000000-0000-0000-0000-000000002603', null] loop
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', caller, 'role', 'authenticated', 'aal', 'aal2')::text, true);
+    perform set_config('role', 'authenticated', true);
+    begin
+      perform public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', gen_random_uuid(), request);
+      raise exception 'Unauthorized actor wrote or learned revision distinction';
+    exception when insufficient_privilege then null; end;
+    perform set_config('role', 'none', true);
+  end loop;
+  foreach approval in array array['prospective', 'expired', 'suspended'] loop
+    update public.account_contexts set owner_approval_state = approval::public.owner_approval_state where user_id = '00000000-0000-0000-0000-000000002601';
+    perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002601","role":"authenticated","aal":"aal1"}', true);
+    perform set_config('role', 'authenticated', true);
+    begin
+      perform public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+      raise exception 'Unapproved owner wrote batch';
+    exception when insufficient_privilege then null; end;
+    perform set_config('role', 'none', true);
+  end loop;
+  update public.account_contexts set owner_approval_state = 'approved' where user_id = '00000000-0000-0000-0000-000000002601';
+  update public.account_contexts set role = 'platform_administrator' where user_id = '00000000-0000-0000-0000-000000002699';
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002699","role":"authenticated","aal":"aal2"}', true);
+  perform set_config('role', 'authenticated', true);
+  begin
+    perform public.set_cottage_inventory_availability_batch('30000000-0000-4000-8000-000000002601', revision, request);
+    raise exception 'Administrator wrote batch';
+  exception when insufficient_privilege then null; end;
+  perform set_config('role', 'none', true);
+  update public.account_contexts set role = 'customer' where user_id = '00000000-0000-0000-0000-000000002699';
+  insert into public.owner_application_cottage_profiles(id, owner_user_id, name, governorate, approximate_location, exact_address,
+    capacity, bedrooms, bathrooms, amenities, source_language, description, house_rules, status)
+    values(abandoned_profile, '00000000-0000-0000-0000-000000002601', 'Batch abandoned draft', 'Erbil', 'Test area', 'Test address',
+      4, 2, 1, array['garden'], 'en', 'Test description', 'Test rules', 'draft') returning version into abandoned_version;
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000002601","role":"authenticated","aal":"aal1"}', true);
+  perform set_config('role', 'authenticated', true);
+  perform public.abandon_owner_cottage_profile_draft(abandoned_profile, abandoned_version);
+  begin
+    perform public.set_cottage_inventory_availability_batch(abandoned_profile, revision, request);
+    raise exception 'Abandoned profile batch was accepted';
+  exception when sqlstate 'RC202' then null; end;
+  perform set_config('role', 'none', true);
+end;
+$body$;
+$test$, 'batch rejects stale revisions and hostile selections');
 reset role;
 
 select * from finish();

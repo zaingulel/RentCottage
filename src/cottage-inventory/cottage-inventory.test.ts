@@ -279,7 +279,7 @@ it("validates bounded owner calendar spans before persistence", async () => {
 
 it("rejects invalid owner calendar batches before persistence", async () => {
   const store = repository();
-  const setAvailabilityBatch = vi.fn().mockResolvedValue({ status: "saved" });
+  const setAvailabilityBatch = vi.fn();
   const inventory = createCottageInventory({ ...store, setAvailabilityBatch });
   const batch = {
     from: "2096-01-31",
@@ -330,7 +330,23 @@ it("rejects invalid owner calendar batches before persistence", async () => {
     ).resolves.toEqual({ status: "invalid", fields: ["batch"] });
   }
   expect(setAvailabilityBatch).not.toHaveBeenCalled();
-  await inventory.setAvailabilityBatch(profileId, revisionId, batch);
+  const normalized = { ...batch, cells: [...batch.cells].reverse() };
+  const receipt = {
+    status: "saved",
+    profileId,
+    scheduleRevisionId: revisionId,
+    request: normalized,
+    changed: normalized.cells.map(({ serviceDay, id, kind }) => ({
+      serviceDay,
+      id,
+      kind,
+    })),
+    unchanged: [],
+  };
+  setAvailabilityBatch.mockResolvedValueOnce(receipt);
+  await expect(
+    inventory.setAvailabilityBatch(profileId, revisionId, batch),
+  ).resolves.toBe(receipt);
   expect(setAvailabilityBatch).toHaveBeenLastCalledWith({
     profileId,
     scheduleRevisionId: revisionId,
@@ -342,12 +358,66 @@ it("rejects invalid owner calendar batches before persistence", async () => {
     reviewConfirmed: true,
     cells: [batch.cells[0]],
   };
-  await inventory.setAvailabilityBatch(profileId, revisionId, reviewed);
+  const reviewedReceipt = {
+    ...receipt,
+    request: reviewed,
+    changed: reviewed.cells.map(({ serviceDay, id, kind }) => ({
+      serviceDay,
+      id,
+      kind,
+    })),
+  };
+  setAvailabilityBatch.mockResolvedValueOnce(reviewedReceipt);
+  await expect(
+    inventory.setAvailabilityBatch(profileId, revisionId, reviewed),
+  ).resolves.toBe(reviewedReceipt);
   expect(setAvailabilityBatch).toHaveBeenLastCalledWith({
     profileId,
     scheduleRevisionId: revisionId,
     batch: reviewed,
   });
+  const january = Array.from({ length: 31 }, (_, index) => ({
+    serviceDay: `2096-01-${String(index + 1).padStart(2, "0")}`,
+    id: shiftId,
+    kind: "shift",
+    expectedOwnerState: "open",
+  }));
+  for (const length of [1, 31]) {
+    const bounded = {
+      ...batch,
+      from: "2096-01-01",
+      to: january[length - 1]!.serviceDay,
+      cells: january.slice(0, length),
+    };
+    const boundedReceipt = {
+      ...receipt,
+      request: bounded,
+      changed: bounded.cells.map(({ serviceDay, id, kind }) => ({
+        serviceDay,
+        id,
+        kind,
+      })),
+    };
+    setAvailabilityBatch.mockResolvedValueOnce(boundedReceipt);
+    await expect(
+      inventory.setAvailabilityBatch(profileId, revisionId, bounded),
+    ).resolves.toBe(boundedReceipt);
+    expect(setAvailabilityBatch).toHaveBeenLastCalledWith({
+      profileId,
+      scheduleRevisionId: revisionId,
+      batch: bounded,
+    });
+  }
+  const callsBeforeOversized = setAvailabilityBatch.mock.calls.length;
+  await expect(
+    inventory.setAvailabilityBatch(profileId, revisionId, {
+      ...batch,
+      from: "2096-01-01",
+      to: "2096-02-01",
+      cells: [...january, { ...january[0], serviceDay: "2096-02-01" }],
+    }),
+  ).resolves.toEqual({ status: "invalid", fields: ["batch"] });
+  expect(setAvailabilityBatch).toHaveBeenCalledTimes(callsBeforeOversized);
   for (const [code, status] of [
     ["22023", "invalid"],
     ["RC409", "conflict"],

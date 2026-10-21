@@ -1588,3 +1588,6 @@ GRANT EXECUTE ON FUNCTION public.record_administrator_booking_money_export(text,
 
 REVOKE ALL ON FUNCTION public.resolve_cottage_inventory_owner_calendar_span(uuid, uuid, date, date) FROM PUBLIC, anon, service_role;
 GRANT EXECUTE ON FUNCTION public.resolve_cottage_inventory_owner_calendar_span(uuid, uuid, date, date) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.set_cottage_inventory_availability_batch(uuid, uuid, jsonb) FROM PUBLIC, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.set_cottage_inventory_availability_batch(uuid, uuid, jsonb) TO authenticated;
