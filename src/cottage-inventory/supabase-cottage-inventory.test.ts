@@ -404,3 +404,334 @@ describe("Supabase Cottage Inventory adapter", () => {
     });
   });
 });
+
+it("returns a complete scoped owner calendar span and rejects corrupt cells", async () => {
+  const input = {
+    profileId,
+    scheduleRevisionId: revisionId,
+    from: "2099-08-20",
+    to: "2099-08-22",
+  };
+  const unitKeys = [
+    { id: shiftId, kind: "shift" },
+    { id: secondShiftId, kind: "shift" },
+    { id: bundleId, kind: "full_day_bundle" },
+  ];
+  const cell = (
+    index: number,
+    calendarState: string | null,
+    ownerState = "open",
+    temporarilyUnavailable = false,
+  ) => ({
+    ...unitKeys[index],
+    priceIqd: 125000,
+    ownerState,
+    calendarState,
+    temporarilyUnavailable,
+    available: calendarState === "open",
+    editable: ["open", "closed", "private_blocked"].includes(
+      calendarState ?? "",
+    ),
+    commitmentReference: ["pending_hold", "confirmed_booking"].includes(
+      calendarState ?? "",
+    )
+      ? "RC-BOOKING-2601"
+      : null,
+  });
+  const valid = {
+    ...input,
+    asOf: "2099-08-01T00:00:00+00:00",
+    unitKeys,
+    days: [
+      {
+        serviceDay: "2099-08-20",
+        units: [
+          cell(0, "open"),
+          cell(1, "closed", "closed"),
+          cell(2, "private_blocked", "private_blocked"),
+        ],
+      },
+      {
+        serviceDay: "2099-08-21",
+        units: [
+          cell(0, "pending_hold"),
+          cell(1, "confirmed_booking"),
+          cell(2, "component_unavailable"),
+        ],
+      },
+      {
+        serviceDay: "2099-08-22",
+        units: [
+          cell(0, null, "open", true),
+          cell(1, "closed", "closed"),
+          cell(2, null, "open", true),
+        ],
+      },
+    ],
+  };
+  const rpc = vi.fn().mockResolvedValue({ data: valid, error: null });
+  const repository = new SupabaseCottageInventoryRepository({
+    rpc,
+  } as unknown as SupabaseClient);
+  await expect(repository.resolveOwnerCalendarSpan(input)).resolves.toEqual(
+    valid,
+  );
+  expect(rpc).toHaveBeenCalledTimes(1);
+  expect(rpc).toHaveBeenCalledWith(
+    "resolve_cottage_inventory_owner_calendar_span",
+    {
+      target_profile_id: profileId,
+      target_schedule_revision_id: revisionId,
+      target_from: input.from,
+      target_to: input.to,
+    },
+  );
+  const corruptions: Array<(payload: typeof valid) => void> = [
+    (p) => {
+      Object.assign(p.days[0]!.units[0]!, { priceIqd: null });
+    },
+    (p) => {
+      p.profileId = secondShiftId;
+    },
+    (p) => {
+      p.scheduleRevisionId = secondShiftId;
+    },
+    (p) => {
+      p.from = "2099-08-19";
+    },
+    (p) => {
+      p.to = "2099-08-23";
+    },
+    (p) => {
+      p.asOf = "yesterday";
+    },
+    (p) => {
+      p.days.pop();
+    },
+    (p) => {
+      p.days.push(p.days[0]!);
+    },
+    (p) => {
+      p.days[1] = p.days[0]!;
+    },
+    (p) => {
+      p.days[0]!.units.pop();
+    },
+    (p) => {
+      p.days[0]!.units.push(p.days[0]!.units[0]!);
+    },
+    (p) => {
+      p.days[0]!.units[1] = p.days[0]!.units[0]!;
+    },
+    (p) => {
+      p.days[1]!.units[0]!.id = profileId;
+    },
+    (p) => {
+      p.unitKeys[0]!.id = profileId;
+    },
+    (p) => {
+      p.unitKeys[1] = p.unitKeys[0]!;
+    },
+    (p) => {
+      p.unitKeys.pop();
+    },
+    (p) => {
+      p.days[0]!.units[0]!.ownerState = "pending_hold";
+    },
+    (p) => {
+      p.days[0]!.units[0]!.ownerState = "closed";
+    },
+    (p) => {
+      p.days[0]!.units[0]!.calendarState = "unavailable";
+    },
+    (p) => {
+      p.days[2]!.units[0]!.temporarilyUnavailable = false;
+    },
+    (p) => {
+      p.days[2]!.units[0]!.calendarState = "open";
+    },
+    (p) => {
+      p.days[2]!.units[0]!.available = true;
+    },
+    (p) => {
+      p.days[2]!.units[0]!.editable = true;
+    },
+    (p) => {
+      p.days[2]!.units[0]!.commitmentReference = "borrowed";
+    },
+    (p) => {
+      p.days[1]!.units[0]!.commitmentReference = null;
+    },
+    (p) => {
+      p.days[1]!.units[2]!.commitmentReference = "borrowed";
+    },
+    (p) => {
+      Object.assign(p.days[0]!.units[0]!, { available: "true" });
+    },
+    (p) => {
+      Object.assign(p.days[0]!.units[0]!, { priceIqd: "125000" });
+    },
+    (p) => {
+      Object.assign(p, { privateAddress: "hostile" });
+    },
+  ];
+  for (const corrupt of corruptions) {
+    const payload = structuredClone(valid);
+    corrupt(payload);
+    rpc.mockResolvedValueOnce({ data: payload, error: null });
+    await expect(repository.resolveOwnerCalendarSpan(input)).rejects.toThrow(
+      "Cottage Inventory provider data is invalid",
+    );
+  }
+  rpc.mockResolvedValueOnce({ data: null, error: { code: "42501" } });
+  await expect(repository.resolveOwnerCalendarSpan(input)).rejects.toThrow(
+    "Cottage Inventory provider is unavailable",
+  );
+});
+
+it("rejects malformed batch receipts and preserves refusals", async () => {
+  const request = {
+    from: "2099-08-20",
+    to: "2099-08-21",
+    unitKeys: [{ id: shiftId, kind: "shift" as const }],
+    state: "closed" as const,
+    mode: "range" as const,
+    reviewConfirmed: false,
+    replacePrivateBlocks: [],
+    cells: [
+      {
+        serviceDay: "2099-08-20",
+        id: shiftId,
+        kind: "shift" as const,
+        expectedOwnerState: "open" as const,
+      },
+      {
+        serviceDay: "2099-08-21",
+        id: shiftId,
+        kind: "shift" as const,
+        expectedOwnerState: "closed" as const,
+      },
+    ],
+  };
+  const coordinates = request.cells.map(({ serviceDay, id, kind }) => ({
+    serviceDay,
+    id,
+    kind,
+  }));
+  const saved = {
+    status: "saved",
+    profileId,
+    scheduleRevisionId: revisionId,
+    request,
+    changed: [coordinates[0]],
+    unchanged: [coordinates[1]],
+  };
+  const unitKeys = [
+    { id: shiftId, kind: "shift" },
+    { id: secondShiftId, kind: "shift" },
+    { id: bundleId, kind: "full_day_bundle" },
+  ];
+  const calendar = {
+    profileId,
+    scheduleRevisionId: revisionId,
+    from: request.from,
+    to: request.to,
+    asOf: "2099-08-01T00:00:00Z",
+    unitKeys,
+    days: request.cells.map((cell, day) => ({
+      serviceDay: cell.serviceDay,
+      units: unitKeys.map((key, i) => ({
+        ...key,
+        ownerState: day === 0 && i === 0 ? "open" : "closed",
+        priceIqd: 125000,
+        available: false,
+        calendarState:
+          day === 0 && i === 0
+            ? "pending_hold"
+            : day === 0 && i === 2
+              ? "component_unavailable"
+              : "closed",
+        commitmentReference: day === 0 && i === 0 ? "RC-BATCH-HOLD" : null,
+        editable: !(day === 0 && (i === 0 || i === 2)),
+        temporarilyUnavailable: false,
+      })),
+    })),
+  };
+  const refused = {
+    status: "refused",
+    profileId,
+    scheduleRevisionId: revisionId,
+    request,
+    conflicts: [
+      {
+        ...coordinates[0],
+        reason: "pending_hold",
+        commitmentReference: "RC-BATCH-HOLD",
+      },
+    ],
+    eligible: [request.cells[1]],
+    calendar,
+  };
+  const rpc = vi.fn().mockResolvedValue({ data: saved, error: null });
+  const repository = new SupabaseCottageInventoryRepository({
+    rpc,
+  } as unknown as SupabaseClient);
+  const input = { profileId, scheduleRevisionId: revisionId, batch: request };
+  await expect(repository.setAvailabilityBatch(input)).resolves.toEqual(saved);
+  expect(rpc).toHaveBeenCalledExactlyOnceWith(
+    "set_cottage_inventory_availability_batch",
+    {
+      target_profile_id: profileId,
+      target_schedule_revision_id: revisionId,
+      requested_batch: request,
+    },
+  );
+  rpc.mockResolvedValueOnce({ data: refused, error: null });
+  await expect(repository.setAvailabilityBatch(input)).resolves.toEqual(
+    refused,
+  );
+  for (const data of [
+    { ...saved, status: "partial" },
+    { ...saved, profileId: shiftId },
+    { ...saved, extra: true },
+    { ...saved, request: { ...request, from: "2099-08-19" } },
+    {
+      ...saved,
+      request: {
+        ...request,
+        cells: [
+          { ...request.cells[0], expectedOwnerState: "closed" },
+          request.cells[1],
+        ],
+      },
+    },
+    { ...saved, request: { ...request, extra: true } },
+    { ...saved, changed: [] },
+    { ...saved, changed: coordinates, unchanged: [] },
+    { ...saved, changed: [coordinates[0], coordinates[0]] },
+    { ...saved, unchanged: [{ ...coordinates[1], id: secondShiftId }] },
+    { ...refused, conflicts: [] },
+    { ...refused, eligible: [] },
+    {
+      ...refused,
+      eligible: [{ ...request.cells[1], expectedOwnerState: "open" }],
+    },
+    { ...refused, eligible: [request.cells[0], request.cells[1]] },
+    { ...refused, conflicts: [{ ...refused.conflicts[0], reason: "unknown" }] },
+    {
+      ...refused,
+      conflicts: [{ ...refused.conflicts[0], commitmentReference: "forged" }],
+    },
+    {
+      ...refused,
+      conflicts: [{ ...refused.conflicts[0], reason: "stale_state" }],
+    },
+    { ...refused, calendar: { ...calendar, from: "2099-08-19" } },
+    { ...refused, calendar: { ...calendar, days: [] } },
+  ]) {
+    rpc.mockResolvedValueOnce({ data, error: null });
+    await expect(repository.setAvailabilityBatch(input)).rejects.toThrow(
+      "Cottage Inventory provider data is invalid",
+    );
+  }
+});

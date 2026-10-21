@@ -12,8 +12,10 @@ vi.mock("./request-cottage-inventory", () => ({
 
 import {
   loadCottageInventoryAvailabilityAction,
+  loadCottageInventoryCalendarSpanAction,
   saveCottageInventoryPricingAction,
   setCottageInventoryAvailabilityAction,
+  setCottageInventoryAvailabilityBatchAction,
 } from "./actions";
 
 describe("Cottage Inventory actions", () => {
@@ -370,4 +372,216 @@ describe("Cottage Inventory actions", () => {
       expect(createRequestCottageInventory).not.toHaveBeenCalled();
     },
   );
+
+  it("loads one authenticated calendar span without per-day calls", async () => {
+    const calendar = {
+      profileId: "70000000-0000-4000-8000-000000000001",
+      scheduleRevisionId: "71000000-0000-4000-8000-000000000001",
+      from: "2099-08-01",
+      to: "2099-08-31",
+      asOf: "2099-08-01T00:00:00Z",
+      unitKeys: [],
+      days: [],
+    };
+    const resolveOwnerCalendarSpan = vi
+      .fn()
+      .mockResolvedValue({ status: "resolved", calendar });
+    const resolveOwnerCalendar = vi.fn();
+    createRequestCottageInventory.mockResolvedValue({
+      resolveOwnerCalendarSpan,
+      resolveOwnerCalendar,
+    });
+    const form = new FormData();
+    for (const key of [
+      "profileId",
+      "scheduleRevisionId",
+      "from",
+      "to",
+    ] as const)
+      form.set(key, calendar[key]);
+    form.set("ownerUserId", "hostile-client-identity");
+    await expect(
+      loadCottageInventoryCalendarSpanAction({ status: "idle" }, form),
+    ).resolves.toEqual({ status: "loaded", calendar });
+    expect(createRequestCottageInventory).toHaveBeenCalledTimes(1);
+    expect(resolveOwnerCalendarSpan).toHaveBeenCalledExactlyOnceWith(
+      calendar.profileId,
+      calendar.scheduleRevisionId,
+      calendar.from,
+      calendar.to,
+    );
+    expect(resolveOwnerCalendar).not.toHaveBeenCalled();
+    for (const status of ["denied", "conflict", "invalid", "unavailable"]) {
+      resolveOwnerCalendarSpan.mockResolvedValueOnce({ status });
+      await expect(
+        loadCottageInventoryCalendarSpanAction({ status: "idle" }, form),
+      ).resolves.toEqual({ status });
+    }
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+  it("preserves saved batch evidence when refresh is unavailable", async () => {
+    const profileId = "70000000-0000-4000-8000-000000000001";
+    const scheduleRevisionId = "71000000-0000-4000-8000-000000000001";
+    const coordinate = {
+      serviceDay: "2099-08-20",
+      id: "72000000-0000-4000-8000-000000000001",
+      kind: "shift",
+    };
+    const batch = {
+      from: "2099-08-20",
+      to: "2099-08-20",
+      unitKeys: [{ id: coordinate.id, kind: coordinate.kind }],
+      state: "closed",
+      mode: "range",
+      cells: [{ ...coordinate, expectedOwnerState: "open" }],
+      replacePrivateBlocks: [],
+      reviewConfirmed: false,
+    };
+    const receipt = {
+      status: "saved",
+      profileId,
+      scheduleRevisionId,
+      request: batch,
+      changed: [coordinate],
+      unchanged: [],
+    };
+    const setAvailabilityBatch = vi.fn().mockResolvedValue(receipt);
+    const resolveOwnerCalendarSpan = vi.fn();
+    createRequestCottageInventory.mockResolvedValue({
+      setAvailabilityBatch,
+      resolveOwnerCalendarSpan,
+    });
+    const form = new FormData();
+    for (const [key, value] of Object.entries({
+      locale: "ar",
+      profileId,
+      scheduleRevisionId,
+      batch: JSON.stringify(batch),
+    }))
+      form.set(key, value);
+    form.set("ownerUserId", "hostile");
+    revalidatePath.mockImplementationOnce(() => {
+      throw new Error("refresh failed");
+    });
+    await expect(
+      setCottageInventoryAvailabilityBatchAction({ status: "idle" }, form),
+    ).resolves.toEqual({
+      status: "saved",
+      receipt,
+      refresh: { status: "unavailable" },
+    });
+    expect(setAvailabilityBatch).toHaveBeenCalledExactlyOnceWith(
+      profileId,
+      scheduleRevisionId,
+      batch,
+    );
+    expect(resolveOwnerCalendarSpan).not.toHaveBeenCalled();
+    await expect(
+      setCottageInventoryAvailabilityBatchAction({ status: "idle" }, form),
+    ).resolves.toEqual({
+      status: "saved",
+      receipt,
+      refresh: { status: "required" },
+    });
+    expect(revalidatePath).toHaveBeenLastCalledWith(
+      `/ar/owner/cottages/${profileId}`,
+    );
+    for (const status of ["refused", "denied", "conflict", "unavailable"]) {
+      const unitKeys = [
+        batch.unitKeys[0],
+        { id: "72000000-0000-4000-8000-000000000002", kind: "shift" },
+        { id: "73000000-0000-4000-8000-000000000001", kind: "full_day_bundle" },
+      ];
+      const failure =
+        status === "refused"
+          ? {
+              status,
+              profileId,
+              scheduleRevisionId,
+              request: batch,
+              conflicts: [
+                {
+                  ...coordinate,
+                  reason: "stale_state",
+                  commitmentReference: null,
+                },
+              ],
+              eligible: [],
+              calendar: {
+                profileId,
+                scheduleRevisionId,
+                from: batch.from,
+                to: batch.to,
+                asOf: "2099-08-19T12:00:00.000Z",
+                unitKeys,
+                days: [
+                  {
+                    serviceDay: batch.from,
+                    units: unitKeys.map((unit) => ({
+                      ...unit,
+                      ownerState: "closed",
+                      calendarState: "closed",
+                      priceIqd: null,
+                      commitmentReference: null,
+                      available: false,
+                      editable: true,
+                      temporarilyUnavailable: false,
+                    })),
+                  },
+                ],
+              },
+            }
+          : { status };
+      setAvailabilityBatch.mockResolvedValueOnce(failure);
+      revalidatePath.mockClear();
+      await expect(
+        setCottageInventoryAvailabilityBatchAction({ status: "idle" }, form),
+      ).resolves.toEqual(failure);
+      expect(revalidatePath).not.toHaveBeenCalled();
+    }
+    for (const field of [
+      "locale",
+      "profileId",
+      "scheduleRevisionId",
+      "batch",
+    ]) {
+      for (const variant of ["duplicate", "missing", "non-string"]) {
+        const invalid = new FormData();
+        for (const [key, value] of form.entries()) invalid.append(key, value);
+        if (variant === "duplicate")
+          invalid.append(field, field === "locale" ? "ar" : "duplicate");
+        else if (variant === "missing") invalid.delete(field);
+        else
+          invalid.set(
+            field,
+            new Blob(["invalid"], { type: "text/plain" }),
+            "invalid.txt",
+          );
+        setAvailabilityBatch.mockClear();
+        await expect(
+          setCottageInventoryAvailabilityBatchAction(
+            { status: "idle" },
+            invalid,
+          ),
+        ).resolves.toEqual({ status: "invalid", fields: [field] });
+        expect(setAvailabilityBatch).not.toHaveBeenCalled();
+      }
+    }
+    setAvailabilityBatch.mockRejectedValueOnce(
+      new Error("Unknown mutation outcome"),
+    );
+    revalidatePath.mockClear();
+    await expect(
+      setCottageInventoryAvailabilityBatchAction({ status: "idle" }, form),
+    ).rejects.toThrow("Unknown mutation outcome");
+    expect(revalidatePath).not.toHaveBeenCalled();
+    for (const invalid of ["{", "null", "[]", '"object"']) {
+      form.set("batch", invalid);
+      setAvailabilityBatch.mockClear();
+      await expect(
+        setCottageInventoryAvailabilityBatchAction({ status: "idle" }, form),
+      ).resolves.toEqual({ status: "invalid", fields: ["batch"] });
+      expect(setAvailabilityBatch).not.toHaveBeenCalled();
+    }
+  });
 });

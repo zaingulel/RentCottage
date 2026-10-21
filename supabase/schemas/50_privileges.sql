@@ -1585,3 +1585,9 @@ REVOKE ALL ON TABLE private.administrator_booking_money_exports FROM PUBLIC,anon
 REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE private.administrator_booking_money_exports FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION private.reject_administrator_booking_money_export_change(),public.record_administrator_booking_money_export(text,date,date) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.record_administrator_booking_money_export(text,date,date) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.resolve_cottage_inventory_owner_calendar_span(uuid, uuid, date, date) FROM PUBLIC, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.resolve_cottage_inventory_owner_calendar_span(uuid, uuid, date, date) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.set_cottage_inventory_availability_batch(uuid, uuid, jsonb) FROM PUBLIC, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.set_cottage_inventory_availability_batch(uuid, uuid, jsonb) TO authenticated;

@@ -246,6 +246,344 @@ try {
   `;
   }
 
+  async function verifyOwnerSpanSnapshot() {
+    runSql(`begin;
+      set local role authenticated;
+      select set_config('request.jwt.claims', '${ownerClaims}', true);
+      select public.set_cottage_inventory_availability(
+        '${profileId}', '${revisionId}', '2099-08-21',
+        '[{"unitId":"${firstShiftId}","unitKind":"shift","state":"open"}]');
+      commit;`);
+    const gateKey = `hashtextextended('rc_i27_owner_span_${randomUUID()}', 0)`;
+    const holder = startSession(`begin;
+      set application_name='rc_i27_span_snapshot_holder';
+      select pg_advisory_xact_lock(${gateKey});
+      select 'SPAN_SNAPSHOT_GATE_HELD';`);
+    let reader;
+    try {
+      await waitForMarker(holder, "SPAN_SNAPSHOT_GATE_HELD");
+      const readerName = "rc_i27_span_snapshot_reader";
+      reader = startSession(
+        `begin isolation level read committed;
+        set application_name='${readerName}';
+        set local role authenticated;
+        select set_config('request.jwt.claims', '${ownerClaims}', true);
+        with gate as materialized (
+          select pg_advisory_xact_lock(${gateKey}),
+            date '2099-08-20' as from_day, date '2099-08-21' as to_day
+        ), observation as materialized (
+          select public.resolve_cottage_inventory_owner_calendar_span(
+            '${profileId}', '${revisionId}', gate.from_day, gate.to_day) as calendar
+          from gate
+        ) select 'SPAN_SNAPSHOT=' || jsonb_build_object(
+          'calendar', calendar,
+          'matchesStatementTime', (calendar ->> 'asOf')::timestamptz = statement_timestamp()
+        )::text from observation;
+        commit;`,
+        true,
+      );
+      await waitForDatabaseLock(readerName, reader);
+      runSql(`${priceMutation("rc_i27_span_snapshot_writer", "SPAN_SNAPSHOT_PRICE_CHANGED")}
+        select public.set_cottage_inventory_availability(
+          '${profileId}', '${revisionId}', '2099-08-20',
+          '[{"unitId":"${firstShiftId}","unitKind":"shift","state":"private_blocked"}]');
+        select public.set_cottage_inventory_availability(
+          '${profileId}', '${revisionId}', '2099-08-21',
+          '[{"unitId":"${firstShiftId}","unitKind":"shift","state":"closed"}]');
+        commit;`);
+      await finishSession(holder, { action: "commit" });
+      await finishSession(reader);
+      const observed = JSON.parse(
+        reader.stdout
+          .split("\n")
+          .find((line) => line.startsWith("SPAN_SNAPSHOT="))
+          .slice("SPAN_SNAPSHOT=".length),
+      );
+      const fresh = JSON.parse(
+        runSql(`begin;
+        set local role authenticated;
+        select set_config('request.jwt.claims', '${ownerClaims}', true);
+        select public.resolve_cottage_inventory_owner_calendar_span(
+          '${profileId}', '${revisionId}', '2099-08-20', '2099-08-21');
+        rollback;`)
+          .split("\n")
+          .at(-1),
+      );
+      const firstShiftCells = (calendar) => {
+        assert.equal(calendar.profileId, profileId);
+        assert.equal(calendar.scheduleRevisionId, revisionId);
+        assert.equal(calendar.from, "2099-08-20");
+        assert.equal(calendar.to, "2099-08-21");
+        assert.deepEqual(calendar.unitKeys, [
+          { id: firstShiftId, kind: "shift" },
+          { id: secondShiftId, kind: "shift" },
+          { id: bundleId, kind: "full_day_bundle" },
+        ]);
+        assert.deepEqual(
+          calendar.days.map((day) => day.serviceDay),
+          ["2099-08-20", "2099-08-21"],
+        );
+        return calendar.days.map((day) => {
+          assert.equal(day.units.length, 3);
+          assert.deepEqual(
+            day.units.map(({ id, kind }) => ({ id, kind })),
+            calendar.unitKeys,
+          );
+          for (const unit of day.units) {
+            assert.equal(unit.commitmentReference, null);
+            assert.equal(unit.temporarilyUnavailable, false);
+          }
+          return day.units.find((unit) => unit.id === firstShiftId);
+        });
+      };
+      assert.equal(observed.matchesStatementTime, true);
+      assert.deepEqual(firstShiftCells(observed.calendar), [
+        {
+          id: firstShiftId,
+          kind: "shift",
+          ownerState: "open",
+          calendarState: "open",
+          priceIqd: 175000,
+          available: true,
+          editable: true,
+          temporarilyUnavailable: false,
+          commitmentReference: null,
+        },
+        {
+          id: firstShiftId,
+          kind: "shift",
+          ownerState: "open",
+          calendarState: "open",
+          priceIqd: 175000,
+          available: true,
+          editable: true,
+          temporarilyUnavailable: false,
+          commitmentReference: null,
+        },
+      ]);
+      assert.deepEqual(firstShiftCells(fresh), [
+        {
+          id: firstShiftId,
+          kind: "shift",
+          ownerState: "private_blocked",
+          calendarState: "private_blocked",
+          priceIqd: 185000,
+          available: false,
+          editable: true,
+          temporarilyUnavailable: false,
+          commitmentReference: null,
+        },
+        {
+          id: firstShiftId,
+          kind: "shift",
+          ownerState: "closed",
+          calendarState: "closed",
+          priceIqd: 175000,
+          available: false,
+          editable: true,
+          temporarilyUnavailable: false,
+          commitmentReference: null,
+        },
+      ]);
+      console.log(
+        "owner span keeps one statement snapshot across concurrent inventory changes: passed; gated read retained open/175000, fresh read observed private_blocked/185000 and closed/175000; exact cells and statement asOf.",
+      );
+    } catch (error) {
+      await cleanUpOwnedSession(holder, error);
+      if (reader) await cleanUpOwnedSession(reader, error);
+      throw error;
+    }
+  }
+
+  const batchRequest = {
+    from: serviceDay,
+    to: "2099-08-21",
+    unitKeys: [{ id: firstShiftId, kind: "shift" }],
+    state: "private_blocked",
+    mode: "range",
+    cells: [serviceDay, "2099-08-21"].map((day) => ({
+      serviceDay: day,
+      id: firstShiftId,
+      kind: "shift",
+      expectedOwnerState: "open",
+    })),
+    replacePrivateBlocks: [],
+    reviewConfirmed: false,
+  };
+
+  function prepareBatchDays() {
+    runSql(`begin;
+      set local role authenticated;
+      select set_config('request.jwt.claims', '${ownerClaims}', true);
+      select public.set_cottage_inventory_availability('${profileId}', '${revisionId}', '2099-08-21',
+        '[{"unitId":"${firstShiftId}","unitKind":"shift","state":"open"}]');
+      commit;`);
+  }
+
+  function batchMutation(applicationName, marker, holdLock = false) {
+    return `set application_name='${applicationName}';
+      begin;
+      ${holdLock ? "" : `select '${marker}';`}
+      set local role authenticated;
+      select set_config('request.jwt.claims', '${ownerClaims}', true);
+      select 'BATCH_RECEIPT=' || public.set_cottage_inventory_availability_batch(
+        '${profileId}', '${revisionId}', '${JSON.stringify(batchRequest)}')::text;
+      ${holdLock ? `select '${marker}';` : "commit;"}`;
+  }
+
+  function batchReceipt(session) {
+    const line = session.stdout
+      .split("\n")
+      .find((value) => value.startsWith("BATCH_RECEIPT="));
+    assert.ok(line, "Batch transaction returned its authoritative receipt");
+    return JSON.parse(line.slice("BATCH_RECEIPT=".length));
+  }
+
+  async function verifyBatchFirst() {
+    prepareBatchDays();
+    const batch = startSession(
+      batchMutation("rc_i27_batch_first_owner", "BATCH_FIRST_LOCKED", true),
+    );
+    let hold;
+    try {
+      await waitForMarker(batch, "BATCH_FIRST_LOCKED");
+      hold = startSession(
+        commitmentMutation(
+          "rc_i27_batch_first_hold",
+          "BATCH_FIRST_CONTENDER",
+          "RC-BATCH-FIRST-27",
+        ),
+        true,
+      );
+      await waitForMarker(hold, "BATCH_FIRST_CONTENDER");
+      await waitForDatabaseLock("rc_i27_batch_first_hold", hold);
+      await releaseSuccessfulSession(batch);
+      await expectSqlState(hold, "RC409");
+      assert.deepEqual(batchReceipt(batch), {
+        status: "saved",
+        profileId,
+        scheduleRevisionId: revisionId,
+        request: batchRequest,
+        changed: batchRequest.cells.map(({ serviceDay, id, kind }) => ({
+          serviceDay,
+          id,
+          kind,
+        })),
+        unchanged: [],
+      });
+      runSql(`do $$ begin
+        if (select count(*) from public.cottage_inventory_availability where schedule_revision_id='${revisionId}'
+          and unit_id='${firstShiftId}' and service_day in ('${serviceDay}', '2099-08-21') and state='private_blocked') <> 2
+          or exists (select 1 from public.cottage_booking_period_commitments where schedule_revision_id='${revisionId}') then
+          raise exception 'Batch-first did not commit both days while denying the conflicting hold';
+        end if;
+      end $$;`);
+      console.log("batch-first refuses a conflicting hold: pass");
+    } catch (error) {
+      await cleanUpOwnedSession(batch, error);
+      if (hold) await cleanUpOwnedSession(hold, error);
+      throw error;
+    }
+  }
+
+  async function verifyHoldFirstBatch() {
+    prepareBatchDays();
+    const hold = startSession(
+      commitmentMutation(
+        "rc_i27_hold_first_batch_hold",
+        "HOLD_FIRST_BATCH_LOCKED",
+        "RC-HOLD-FIRST-BATCH-27",
+        true,
+      ),
+    );
+    let batch;
+    try {
+      await waitForMarker(hold, "HOLD_FIRST_BATCH_LOCKED");
+      batch = startSession(
+        batchMutation(
+          "rc_i27_hold_first_batch_owner",
+          "HOLD_FIRST_BATCH_CONTENDER",
+        ),
+        true,
+      );
+      await waitForMarker(batch, "HOLD_FIRST_BATCH_CONTENDER");
+      await waitForDatabaseLock("rc_i27_hold_first_batch_owner", batch);
+      await releaseSuccessfulSession(hold);
+      await expectSuccessfulSession(batch);
+      const receipt = batchReceipt(batch);
+      assert.equal(receipt.status, "refused");
+      assert.deepEqual(receipt.request, batchRequest);
+      assert.deepEqual(receipt.eligible, [batchRequest.cells[1]]);
+      assert.deepEqual(receipt.conflicts, [
+        {
+          serviceDay,
+          id: firstShiftId,
+          kind: "shift",
+          reason: "pending_hold",
+          commitmentReference: "RC-HOLD-FIRST-BATCH-27",
+        },
+      ]);
+      assert.equal(
+        receipt.calendar.days[0].units[0].calendarState,
+        "pending_hold",
+      );
+      assert.equal(receipt.calendar.days[1].units[0].calendarState, "open");
+      runSql(`do $$ begin
+        if (select count(*) from public.cottage_inventory_availability where schedule_revision_id='${revisionId}'
+          and unit_id='${firstShiftId}' and service_day in ('${serviceDay}', '2099-08-21') and state='open') <> 2
+          or (select count(*) from public.cottage_booking_period_commitments where schedule_revision_id='${revisionId}'
+            and commitment_reference='RC-HOLD-FIRST-BATCH-27' and status='pending_hold') <> 1 then
+          raise exception 'Hold-first changed a batch day or lost the real hold';
+        end if;
+      end $$;`);
+      console.log("hold-first refuses every batch day: pass");
+    } catch (error) {
+      await cleanUpOwnedSession(hold, error);
+      if (batch) await cleanUpOwnedSession(batch, error);
+      throw error;
+    }
+  }
+
+  async function verifyScheduleReplacementBeforeBatch() {
+    prepareBatchDays();
+    const schedule = startSession(
+      scheduleMutation(
+        "rc_i27_schedule_before_batch_schedule",
+        "SCHEDULE_BEFORE_BATCH_LOCKED",
+      ),
+    );
+    let batch;
+    try {
+      await waitForMarker(schedule, "SCHEDULE_BEFORE_BATCH_LOCKED");
+      batch = startSession(
+        batchMutation(
+          "rc_i27_schedule_before_batch_owner",
+          "SCHEDULE_BEFORE_BATCH_CONTENDER",
+        ),
+        true,
+      );
+      await waitForMarker(batch, "SCHEDULE_BEFORE_BATCH_CONTENDER");
+      await waitForDatabaseLock("rc_i27_schedule_before_batch_owner", batch);
+      await releaseSuccessfulSession(schedule);
+      await expectSqlState(batch, "RC409");
+      runSql(`do $$ begin
+        if (select current_shift_schedule_id from public.owner_application_cottage_profiles where id='${profileId}') = '${revisionId}'
+          or (select count(*) from public.cottage_inventory_availability where schedule_revision_id='${revisionId}'
+            and unit_id='${firstShiftId}' and service_day in ('${serviceDay}', '2099-08-21') and state='open') <> 2
+          or (select price_iqd from public.cottage_inventory_standard_prices where schedule_revision_id='${revisionId}'
+            and unit_id='${firstShiftId}') <> 175000
+          or exists (select 1 from public.cottage_booking_period_commitments where profile_id='${profileId}') then
+          raise exception 'Schedule replacement did not fence the whole old-revision batch and preserve history';
+        end if;
+      end $$;`);
+      console.log("schedule replacement makes the whole batch stale: pass");
+    } catch (error) {
+      await cleanUpOwnedSession(schedule, error);
+      if (batch) await cleanUpOwnedSession(batch, error);
+      throw error;
+    }
+  }
+
   async function verifyOwnerFirst() {
     const owner = startSession(
       ownerMutation("rc_i27_owner_first_owner", "OWNER_FIRST_LOCKED"),
@@ -682,6 +1020,26 @@ try {
   const browserContinuationsBefore = browserContinuationIds("before");
   let failure;
   try {
+    markTimingPhase("setup");
+    runSql(cleanupSql);
+    runSql(setupSql);
+    markTimingPhase("execution");
+    await verifyOwnerSpanSnapshot();
+    markTimingPhase("setup");
+    runSql(cleanupSql);
+    runSql(setupSql);
+    markTimingPhase("execution");
+    await verifyBatchFirst();
+    markTimingPhase("setup");
+    runSql(cleanupSql);
+    runSql(setupSql);
+    markTimingPhase("execution");
+    await verifyHoldFirstBatch();
+    markTimingPhase("setup");
+    runSql(cleanupSql);
+    runSql(setupSql);
+    markTimingPhase("execution");
+    await verifyScheduleReplacementBeforeBatch();
     markTimingPhase("setup");
     runSql(cleanupSql);
     runSql(setupSql);

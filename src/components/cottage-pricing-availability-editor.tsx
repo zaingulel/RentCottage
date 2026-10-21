@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 
 import {
   loadCottageInventoryAvailabilityAction,
@@ -12,7 +12,6 @@ import {
 import type {
   CottageInventoryOwnerEditorState,
   CottageInventoryOwnerCalendarState,
-  CottageInventoryUnitKind,
 } from "@/cottage-inventory/cottage-inventory";
 import type { CottageShiftSchedule } from "@/cottage-shift-schedule/cottage-shift-schedule";
 import { cottagePricingAvailabilityMessages } from "@/i18n/cottage-pricing-availability-messages";
@@ -22,7 +21,12 @@ import {
 } from "@/i18n/cottage-shift-schedule-messages";
 import { directionFor, type Locale } from "@/i18n/routing";
 
-import { CottageAccessRange } from "./cottage-access-range";
+import {
+  CottageAvailabilityCalendar,
+  accessRange,
+  unitName,
+  type CottageAvailabilityCalendarUnit,
+} from "./cottage-availability-calendar";
 
 const idle: CottageInventoryActionState = { status: "idle" };
 const availabilityLoadIdle: CottageInventoryAvailabilityLoadActionState = {
@@ -33,16 +37,7 @@ function unreachableCalendarState(value: never): never {
   throw new Error(`Unsupported Cottage Inventory calendar state: ${value}`);
 }
 
-type InventoryUnit = {
-  id: string;
-  kind: CottageInventoryUnitKind;
-  label: string;
-  identity: string;
-  localName?: string;
-  startTime: string;
-  endTime: string;
-  crossesMidnight: boolean;
-};
+type InventoryUnit = CottageAvailabilityCalendarUnit;
 
 function unitsFor(
   schedule: CottageShiftSchedule | null,
@@ -80,32 +75,6 @@ function unitsFor(
   ];
 }
 
-function accessRange(copy: ScheduleCopy, unit: InventoryUnit) {
-  return (
-    <>
-      <CottageAccessRange
-        template={copy.accessRange}
-        start={unit.startTime}
-        end={unit.endTime}
-      />{" "}
-      ({unit.crossesMidnight ? copy.nextDay : copy.sameDay})
-    </>
-  );
-}
-
-function unitName(unit: InventoryUnit) {
-  return (
-    <>
-      {unit.identity}
-      {unit.localName !== undefined ? (
-        <>
-          : <bdi dir="auto">{unit.localName}</bdi>
-        </>
-      ) : null}
-    </>
-  );
-}
-
 function feedback(
   state: CottageInventoryActionState,
   copy: typeof cottagePricingAvailabilityMessages.en,
@@ -134,12 +103,27 @@ export function CottagePricingAvailabilityEditor({
   canOpen: boolean;
 }) {
   const copy = cottagePricingAvailabilityMessages[locale];
+  const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
   const [pricingState, pricingAction] = useActionState(
-    saveCottageInventoryPricingAction,
+    async (previous: CottageInventoryActionState, formData: FormData) => {
+      const result = await saveCottageInventoryPricingAction(
+        previous,
+        formData,
+      );
+      if (result.status === "saved") setCalendarRefreshKey((key) => key + 1);
+      return result;
+    },
     idle,
   );
   const [availabilityState, availabilityAction] = useActionState(
-    setCottageInventoryAvailabilityAction,
+    async (previous: CottageInventoryActionState, formData: FormData) => {
+      const result = await setCottageInventoryAvailabilityAction(
+        previous,
+        formData,
+      );
+      if (result.status === "saved") setCalendarRefreshKey((key) => key + 1);
+      return result;
+    },
     idle,
   );
   const [availabilityLoadState, availabilityLoadAction, availabilityPending] =
@@ -212,6 +196,15 @@ export function CottagePricingAvailabilityEditor({
         <p className="cottage-pricing-availability-notice">{copy.noSchedule}</p>
       ) : (
         <>
+          <CottageAvailabilityCalendar
+            locale={locale}
+            profileId={profileId}
+            scheduleRevisionId={schedule.scheduleRevisionId}
+            units={units}
+            refreshKey={calendarRefreshKey}
+            editable={editable}
+            canOpen={canOpen}
+          />
           <div className="cottage-pricing-availability-notice">
             <p>{scheduleCopy.iraqTimeZone}</p>
             <p>{scheduleCopy.clockFormat}</p>

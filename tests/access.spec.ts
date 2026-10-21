@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { accessMessages } from "../src/i18n/access-messages";
 import { cottageProfileMessages } from "../src/i18n/cottage-profile-messages";
 import { cottageShiftScheduleMessages } from "../src/i18n/cottage-shift-schedule-messages";
+import { cottagePricingAvailabilityMessages } from "../src/i18n/cottage-pricing-availability-messages";
 import { openHeaderPanel } from "./fixtures/site-header";
 import { writeFile } from "node:fs/promises";
 import { createHmac } from "node:crypto";
@@ -3697,6 +3698,7 @@ test("failed administrator sign-in gives no privileged access", async ({
 test("anonymous discovery uses live approved inventory and preserves its query", async ({
   page,
   baseURL,
+  browser,
 }, testInfo) => {
   assertIsolatedLocalAccessDatabase();
   const requestedOrigins = new Set<string>();
@@ -3917,12 +3919,12 @@ test("anonymous discovery uses live approved inventory and preserves its query",
         ...shifts.map((shift) => ({
           unitId: shift.id,
           unitKind: "shift",
-          state: "open",
+          state: "closed",
         })),
         {
           unitId: schedule.full_day_bundle_id,
           unitKind: "full_day_bundle",
-          state: "open",
+          state: "closed",
         },
       ],
     ],
@@ -3932,12 +3934,12 @@ test("anonymous discovery uses live approved inventory and preserves its query",
         ...shifts.map((shift) => ({
           unitId: shift.id,
           unitKind: "shift",
-          state: "open",
+          state: "closed",
         })),
         {
           unitId: schedule.full_day_bundle_id,
           unitKind: "full_day_bundle",
-          state: "open",
+          state: "closed",
         },
       ],
     ],
@@ -3952,6 +3954,541 @@ test("anonymous discovery uses live approved inventory and preserves its query",
       },
     );
     if (availabilityError) throw availabilityError;
+  }
+
+  type CalendarReadback = {
+    days: {
+      serviceDay: string;
+      units: {
+        id: string;
+        kind: string;
+        ownerState: string;
+        priceIqd: number | null;
+        available: boolean;
+      }[];
+    }[];
+  };
+  const { data: closedCalendarData, error: closedCalendarError } =
+    await fixtureOwner.rpc("resolve_cottage_inventory_owner_calendar_span", {
+      target_profile_id: fixture!.profileId,
+      target_schedule_revision_id: fixture!.scheduleId,
+      target_from: firstDay,
+      target_to: secondDay,
+    });
+  if (closedCalendarError) throw closedCalendarError;
+  const closedCalendar = closedCalendarData as CalendarReadback;
+  const originalPrices = closedCalendar.days.flatMap((day) =>
+    day.units.map((unit) => ({
+      serviceDay: day.serviceDay,
+      id: unit.id,
+      kind: unit.kind,
+      priceIqd: unit.priceIqd,
+    })),
+  );
+  const ownerContext = await browser.newContext({
+    baseURL,
+    viewport: page.viewportSize(),
+  });
+  try {
+    const ownerPage = await ownerContext.newPage();
+    const copy = cottagePricingAvailabilityMessages.en;
+    const scheduleCopy = cottageShiftScheduleMessages.en;
+    await ownerPage.goto("/en/owner/access");
+    await ownerPage.getByLabel("Iraqi phone number").fill(ownerPhone);
+    await ownerPage
+      .getByRole("button", { name: "Send verification code" })
+      .click();
+    await ownerPage.getByLabel("Verification code").fill("123456");
+    await ownerPage
+      .getByRole("button", { name: "Verify", exact: true })
+      .click();
+    await expect(ownerPage).toHaveURL(/\/en\/owner\/cottages$/);
+    await ownerPage.goto(`/en/owner/cottages/${fixture!.profileId}`);
+    const month = ownerPage.locator(".cottage-calendar");
+    const panel = ownerPage.getByRole("region", {
+      name: copy.batchHeading as string,
+      exact: true,
+    });
+    await expect(panel.getByLabel(copy.batchFrom as string)).toBeVisible();
+    await month.getByLabel(copy.calendarShowDate as string).fill(firstDay);
+    await expect(
+      month
+        .getByRole("status")
+        .filter({ hasText: copy.calendarLoaded as string }),
+    ).toBeVisible();
+    const unitOptions = panel.getByRole("group", {
+      name: copy.batchUnits as string,
+    });
+    await expect(unitOptions.getByRole("checkbox")).toHaveCount(
+      shifts.length + 1,
+    );
+    const shiftLabels = shifts.map(
+      (shift) =>
+        `${shifts.length === 3 ? `${scheduleCopy.shift} ${shift.position}` : shift.position === 1 ? scheduleCopy.morning : scheduleCopy.evening}: ${shift.name}`,
+    );
+    for (const label of [...shiftLabels, scheduleCopy.fullDay])
+      await unitOptions
+        .getByRole("checkbox", { name: label, exact: true })
+        .check();
+    await panel.getByLabel(copy.batchFrom as string).fill(firstDay);
+    await panel.getByLabel(copy.batchTo as string).fill(secondDay);
+    await panel.getByLabel(copy.batchState as string).selectOption("open");
+    await panel
+      .getByRole("button", { name: copy.batchReview as string, exact: true })
+      .click();
+    const included = panel.getByRole("list", {
+      name: copy.batchIncluded as string,
+      exact: true,
+    });
+    await expect(included.getByRole("listitem")).toHaveCount(
+      2 * (shifts.length + 1),
+    );
+    for (const row of await included.getByRole("listitem").all()) {
+      await expect(
+        row.getByText(`${copy.batchCurrent}: ${copy.closed}`, { exact: true }),
+      ).toBeVisible();
+      await expect(
+        row.getByText(`${copy.batchProposed}: ${copy.open}`, { exact: true }),
+      ).toBeVisible();
+    }
+    const { error: concurrentBlockError } = await fixtureOwner.rpc(
+      "set_cottage_inventory_availability",
+      {
+        target_profile_id: fixture!.profileId,
+        target_schedule_revision_id: fixture!.scheduleId,
+        target_service_day: firstDay,
+        requested_states: [
+          {
+            unitId: firstShift.id,
+            unitKind: "shift",
+            state: "private_blocked",
+          },
+        ],
+      },
+    );
+    if (concurrentBlockError) throw concurrentBlockError;
+    const apply = panel.getByRole("button", {
+      name: copy.batchApply as string,
+      exact: true,
+    });
+    await apply.focus();
+    await expect(apply).toBeFocused();
+    await apply.press("Enter");
+    await expect(
+      panel.getByRole("alert").filter({ hasText: copy.batchRefused as string }),
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("heading", {
+        name: copy.batchHeading as string,
+        exact: true,
+      }),
+    ).toBeFocused();
+    const excluded = panel.getByRole("list", {
+      name: copy.batchExcluded as string,
+      exact: true,
+    });
+    await expect(excluded.getByRole("listitem")).toHaveCount(2);
+    await expect(
+      excluded.getByRole("listitem").filter({ hasText: firstShift.name }),
+    ).toContainText(copy.reasonStale as string);
+    await expect(
+      excluded.getByRole("listitem").filter({ hasText: scheduleCopy.fullDay }),
+    ).toContainText(copy.reasonComponents as string);
+    await expect(
+      panel
+        .getByRole("list", { name: copy.batchEligible as string, exact: true })
+        .getByRole("listitem"),
+    ).toHaveCount(2 * (shifts.length + 1) - 2);
+    const { data: refusalData, error: refusalError } = await fixtureOwner.rpc(
+      "resolve_cottage_inventory_owner_calendar_span",
+      {
+        target_profile_id: fixture!.profileId,
+        target_schedule_revision_id: fixture!.scheduleId,
+        target_from: firstDay,
+        target_to: secondDay,
+      },
+    );
+    if (refusalError) throw refusalError;
+    const refusalReadback = refusalData as CalendarReadback;
+    for (const day of refusalReadback.days)
+      for (const unit of day.units)
+        expect(unit.ownerState).toBe(
+          day.serviceDay === firstDay && unit.id === firstShift.id
+            ? "private_blocked"
+            : "closed",
+        );
+    expect(
+      refusalReadback.days.flatMap((day) =>
+        day.units.map((unit) => ({
+          serviceDay: day.serviceDay,
+          id: unit.id,
+          kind: unit.kind,
+          priceIqd: unit.priceIqd,
+        })),
+      ),
+    ).toEqual(originalPrices);
+    const ownerViewport = ownerPage.viewportSize()!;
+    if (testInfo.project.name === "mobile") {
+      await ownerPage.setViewportSize({
+        width: 320,
+        height: ownerViewport.height,
+      });
+      await expect
+        .poll(() =>
+          ownerPage.evaluate(() => ({
+            width: innerWidth,
+            fits:
+              document.documentElement.scrollWidth <=
+              document.documentElement.clientWidth,
+          })),
+        )
+        .toEqual({ width: 320, fits: true });
+      for (const shift of shifts)
+        await expect(
+          panel
+            .getByRole("list", {
+              name: copy.batchRefusalCalendar as string,
+              exact: true,
+            })
+            .getByText(shift.name, { exact: true }),
+        ).toHaveCount(2);
+      const capturePath = testInfo.outputPath("calendar-refused-en-mobile.png");
+      await panel.screenshot({ path: capturePath });
+      await testInfo.attach("calendar-refused-en-mobile", {
+        path: capturePath,
+        contentType: "image/png",
+      });
+      const metrics = await ownerPage
+        .locator(".cottage-calendar")
+        .evaluate((calendar) => ({
+          viewport: {
+            width: innerWidth,
+            height: innerHeight,
+            scrollWidth: document.documentElement.scrollWidth,
+            clientWidth: document.documentElement.clientWidth,
+          },
+          elements: Array.from(
+            calendar.querySelectorAll(
+              "button, input, select, h3, h4, .cottage-calendar-review-cells > li:first-child, .cottage-calendar-units > li:first-child",
+            ),
+          )
+            .filter(
+              (element) =>
+                element instanceof HTMLElement &&
+                element.getClientRects().length > 0,
+            )
+            .map((element) => {
+              const node = element as HTMLElement;
+              const style = getComputedStyle(node);
+              const rect = node.getBoundingClientRect();
+              const target = node.matches('input[type="checkbox"]')
+                ? node.closest("label")!
+                : node;
+              const targetRect = target.getBoundingClientRect();
+              const backgrounds: string[] = [];
+              let ancestor: Element | null = node;
+              while (ancestor) {
+                backgrounds.push(getComputedStyle(ancestor).backgroundColor);
+                ancestor = ancestor.parentElement;
+              }
+              return {
+                tag: node.tagName,
+                label:
+                  node.getAttribute("aria-label") ??
+                  (node instanceof HTMLInputElement ||
+                  node instanceof HTMLSelectElement
+                    ? Array.from(node.labels ?? [])
+                        .map((label) => label.textContent)
+                        .join(" ")
+                    : node.textContent),
+                focused: node === document.activeElement,
+                rect: {
+                  x: rect.x,
+                  y: rect.y,
+                  width: rect.width,
+                  height: rect.height,
+                },
+                target: { width: targetRect.width, height: targetRect.height },
+                color: style.color,
+                backgroundColor: style.backgroundColor,
+                ancestorBackgrounds: backgrounds,
+                fontSize: style.fontSize,
+                fontWeight: style.fontWeight,
+                outlineStyle: style.outlineStyle,
+                outlineWidth: style.outlineWidth,
+                outlineColor: style.outlineColor,
+                outlineOffset: style.outlineOffset,
+                boxShadow: style.boxShadow,
+                direction: style.direction,
+              };
+            }),
+        }));
+      await testInfo.attach("calendar-refused-en-320-metrics", {
+        body: JSON.stringify(metrics),
+        contentType: "application/json",
+      });
+      await ownerPage.setViewportSize(ownerViewport);
+    }
+    await panel
+      .getByRole("button", {
+        name: copy.batchReviewEligible as string,
+        exact: true,
+      })
+      .click();
+    const smaller = panel.locator(".cottage-calendar-review");
+    await expect(smaller.locator(":scope > p").first()).toContainText(firstDay);
+    await expect(smaller.locator(":scope > p").first()).toContainText(
+      secondDay,
+    );
+    await expect(included.getByRole("listitem")).toHaveCount(
+      2 * (shifts.length + 1) - 2,
+    );
+    await expect(
+      included
+        .getByRole("listitem")
+        .filter({ hasText: firstDay })
+        .filter({ hasText: firstShift.name }),
+    ).toHaveCount(0);
+    await expect(
+      included
+        .getByRole("listitem")
+        .filter({ hasText: firstDay })
+        .filter({ hasText: scheduleCopy.fullDay }),
+    ).toHaveCount(0);
+    const confirmation = panel.getByRole("checkbox", {
+      name: copy.batchConfirm as string,
+      exact: true,
+    });
+    await expect(confirmation).not.toBeChecked();
+    await expect(
+      panel.getByRole("button", {
+        name: copy.batchApply as string,
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await confirmation.check();
+    await panel
+      .getByRole("button", { name: copy.batchApply as string, exact: true })
+      .click();
+    await expect(
+      panel.getByRole("status").filter({ hasText: copy.batchSaved as string }),
+    ).toBeVisible();
+    await expect(
+      panel.getByText(`${copy.batchChanged}: ${2 * (shifts.length + 1) - 2}`, {
+        exact: true,
+      }),
+    ).toBeVisible();
+    const { data: subsetData, error: subsetError } = await fixtureOwner.rpc(
+      "resolve_cottage_inventory_owner_calendar_span",
+      {
+        target_profile_id: fixture!.profileId,
+        target_schedule_revision_id: fixture!.scheduleId,
+        target_from: firstDay,
+        target_to: secondDay,
+      },
+    );
+    if (subsetError) throw subsetError;
+    const subsetReadback = subsetData as CalendarReadback;
+    for (const day of subsetReadback.days)
+      for (const unit of day.units)
+        expect(unit.ownerState).toBe(
+          day.serviceDay === firstDay && unit.id === firstShift.id
+            ? "private_blocked"
+            : day.serviceDay === firstDay &&
+                unit.id === schedule.full_day_bundle_id
+              ? "closed"
+              : "open",
+        );
+    await panel.getByLabel(copy.batchTo as string).fill(firstDay);
+    await panel
+      .getByRole("button", { name: copy.batchReview as string, exact: true })
+      .click();
+    await expect(included.getByRole("listitem")).toHaveCount(shifts.length + 1);
+    const privateConsentLabel = (copy.batchReplace as string)
+      .replace("{date}", firstDay)
+      .replace("{unit}", shiftLabels[0]!);
+    const privateConsent = panel.getByRole("checkbox", {
+      name: privateConsentLabel,
+      exact: true,
+    });
+    await expect(privateConsent).not.toBeChecked();
+    await expect(
+      panel.getByRole("button", {
+        name: copy.batchApply as string,
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await privateConsent.check();
+    await panel
+      .getByRole("button", { name: copy.batchApply as string, exact: true })
+      .click();
+    await expect(
+      panel.getByRole("status").filter({ hasText: copy.batchSaved as string }),
+    ).toBeVisible();
+    await expect(
+      month
+        .getByRole("status")
+        .filter({ hasText: copy.calendarLoaded as string }),
+    ).toBeVisible();
+    if (testInfo.project.name === "desktop") {
+      await expect
+        .poll(() =>
+          month
+            .locator(".cottage-calendar-days")
+            .first()
+            .evaluate(
+              (list) =>
+                getComputedStyle(list).gridTemplateColumns.split(" ").length,
+            ),
+        )
+        .toBe(7);
+      const capturePath = testInfo.outputPath("calendar-saved-en-desktop.png");
+      await month.screenshot({ path: capturePath });
+      await testInfo.attach("calendar-saved-en-desktop", {
+        path: capturePath,
+        contentType: "image/png",
+      });
+    }
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      const localized = cottagePricingAvailabilityMessages[locale];
+      if (locale !== "en")
+        await ownerPage.goto(`/${locale}/owner/cottages/${fixture!.profileId}`);
+      await expect(ownerPage.locator("html")).toHaveAttribute(
+        "dir",
+        locale === "en" ? "ltr" : "rtl",
+      );
+      const localizedPanel = ownerPage.getByRole("region", {
+        name: localized.batchHeading as string,
+        exact: true,
+      });
+      await expect(
+        localizedPanel.getByLabel(localized.batchFrom as string),
+      ).toBeVisible();
+      await expect(
+        localizedPanel.getByLabel(localized.batchTo as string),
+      ).toBeVisible();
+      await expect(
+        month
+          .getByRole("status")
+          .filter({ hasText: localized.calendarLoaded as string }),
+      ).toBeVisible();
+      await expect
+        .poll(() =>
+          ownerPage.evaluate(
+            () =>
+              document.documentElement.scrollWidth <=
+              document.documentElement.clientWidth,
+          ),
+        )
+        .toBe(true);
+      const reviewButton = localizedPanel.getByRole("button", {
+        name: localized.batchReview as string,
+        exact: true,
+      });
+      await reviewButton.focus();
+      await ownerPage.keyboard.press("Tab");
+      await ownerPage.keyboard.press("Shift+Tab");
+      await expect(reviewButton).toBeFocused();
+      await expect
+        .poll(() =>
+          reviewButton.evaluate((button) => {
+            const box = button.getBoundingClientRect();
+            const style = getComputedStyle(button);
+            return {
+              width: box.width >= 44,
+              height: box.height >= 44,
+              outline: style.outlineStyle !== "none",
+            };
+          }),
+        )
+        .toEqual({ width: true, height: true, outline: true });
+      for (const forcedColors of locale === "en"
+        ? (["none", "active"] as const)
+        : (["none"] as const)) {
+        await ownerPage.emulateMedia({ forcedColors });
+        const metrics = await month.evaluate((calendar) => ({
+          viewport: {
+            width: innerWidth,
+            height: innerHeight,
+            scrollWidth: document.documentElement.scrollWidth,
+            clientWidth: document.documentElement.clientWidth,
+          },
+          forcedColors: matchMedia("(forced-colors: active)").matches,
+          elements: Array.from(
+            calendar.querySelectorAll(
+              "button, input, select, h3, .cottage-calendar-units > li:first-child",
+            ),
+          )
+            .filter(
+              (element) =>
+                element instanceof HTMLElement &&
+                element.getClientRects().length > 0,
+            )
+            .map((element) => {
+              const node = element as HTMLElement;
+              const style = getComputedStyle(node);
+              const rect = node.getBoundingClientRect();
+              const target = node.matches('input[type="checkbox"]')
+                ? node.closest("label")!
+                : node;
+              const targetRect = target.getBoundingClientRect();
+              const backgrounds: string[] = [];
+              let ancestor: Element | null = node;
+              while (ancestor) {
+                backgrounds.push(getComputedStyle(ancestor).backgroundColor);
+                ancestor = ancestor.parentElement;
+              }
+              return {
+                tag: node.tagName,
+                label:
+                  node.getAttribute("aria-label") ??
+                  (node instanceof HTMLInputElement ||
+                  node instanceof HTMLSelectElement
+                    ? Array.from(node.labels ?? [])
+                        .map((label) => label.textContent)
+                        .join(" ")
+                    : node.textContent),
+                focused: node === document.activeElement,
+                rect: {
+                  x: rect.x,
+                  y: rect.y,
+                  width: rect.width,
+                  height: rect.height,
+                },
+                target: { width: targetRect.width, height: targetRect.height },
+                color: style.color,
+                backgroundColor: style.backgroundColor,
+                ancestorBackgrounds: backgrounds,
+                fontSize: style.fontSize,
+                fontWeight: style.fontWeight,
+                outlineStyle: style.outlineStyle,
+                outlineWidth: style.outlineWidth,
+                outlineColor: style.outlineColor,
+                outlineOffset: style.outlineOffset,
+                boxShadow: style.boxShadow,
+                direction: style.direction,
+              };
+            }),
+        }));
+        await testInfo.attach(
+          `calendar-${locale}-${testInfo.project.name}-${forcedColors}-metrics`,
+          { body: JSON.stringify(metrics), contentType: "application/json" },
+        );
+        if (forcedColors === "active") {
+          await expect(reviewButton).toBeFocused();
+          await expect
+            .poll(() =>
+              reviewButton.evaluate(
+                (button) => getComputedStyle(button).outlineStyle,
+              ),
+            )
+            .not.toBe("none");
+          await ownerPage.emulateMedia({ forcedColors: "none" });
+        }
+      }
+    }
+  } finally {
+    await ownerContext.close();
   }
 
   const dayOnlyQuery = {
