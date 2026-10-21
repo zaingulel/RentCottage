@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 
+import { createCottageInventory } from "./cottage-inventory";
 import { SupabaseCottageInventoryRepository } from "./supabase-cottage-inventory";
 
 const profileId = "70000000-0000-4000-8000-000000000001";
@@ -733,5 +734,192 @@ it("rejects malformed batch receipts and preserves refusals", async () => {
     await expect(repository.setAvailabilityBatch(input)).rejects.toThrow(
       "Cottage Inventory provider data is invalid",
     );
+  }
+});
+
+it("preserves inventory operation outcomes through the real adapter", async () => {
+  type Inventory = ReturnType<typeof createCottageInventory>;
+  const serviceDay = "2099-08-20";
+  const identity = {
+    target_profile_id: profileId,
+    target_schedule_revision_id: revisionId,
+  };
+  const datedIdentity = { ...identity, target_service_day: serviceDay };
+  const batch = {
+    from: serviceDay,
+    to: "2099-08-21",
+    unitKeys: [{ id: shiftId, kind: "shift" as const }],
+    state: "closed" as const,
+    mode: "range" as const,
+    reviewConfirmed: false,
+    replacePrivateBlocks: [],
+    cells: [
+      {
+        serviceDay,
+        id: shiftId,
+        kind: "shift" as const,
+        expectedOwnerState: "open" as const,
+      },
+      {
+        serviceDay: "2099-08-21",
+        id: shiftId,
+        kind: "shift" as const,
+        expectedOwnerState: "closed" as const,
+      },
+    ],
+  };
+  const operations = {
+    loadOwnerEditorState: {
+      run: (inventory: Inventory) =>
+        inventory.loadOwnerEditorState(profileId, revisionId, serviceDay),
+      rpc: "load_cottage_inventory_owner_editor_state",
+      parameters: datedIdentity,
+    },
+    savePricing: {
+      run: (inventory: Inventory) =>
+        inventory.savePricing(profileId, revisionId, {
+          units: [{ id: shiftId, kind: "shift", standardPriceIqd: 120000 }],
+        }),
+      rpc: "save_cottage_inventory_pricing",
+      parameters: {
+        ...identity,
+        requested_prices: {
+          units: [
+            { unitId: shiftId, unitKind: "shift", standardPriceIqd: 120000 },
+          ],
+        },
+      },
+    },
+    resolvePublicAvailability: {
+      run: (inventory: Inventory) =>
+        inventory.resolvePublicAvailability(profileId, revisionId, serviceDay),
+      rpc: "resolve_cottage_inventory_public_availability",
+      parameters: datedIdentity,
+    },
+    resolveOwnerCalendar: {
+      run: (inventory: Inventory) =>
+        inventory.resolveOwnerCalendar(profileId, revisionId, serviceDay),
+      rpc: "resolve_cottage_inventory_owner_calendar",
+      parameters: datedIdentity,
+    },
+    resolveOwnerCalendarSpan: {
+      run: (inventory: Inventory) =>
+        inventory.resolveOwnerCalendarSpan(
+          profileId,
+          revisionId,
+          serviceDay,
+          "2099-08-21",
+        ),
+      rpc: "resolve_cottage_inventory_owner_calendar_span",
+      parameters: {
+        ...identity,
+        target_from: serviceDay,
+        target_to: "2099-08-21",
+      },
+    },
+    setAvailability: {
+      run: (inventory: Inventory) =>
+        inventory.setAvailability(profileId, revisionId, serviceDay, {
+          units: [{ id: shiftId, kind: "shift", state: "private_blocked" }],
+        }),
+      rpc: "set_cottage_inventory_availability",
+      parameters: {
+        ...datedIdentity,
+        requested_states: [
+          { unitId: shiftId, unitKind: "shift", state: "private_blocked" },
+        ],
+      },
+    },
+    setAvailabilityBatch: {
+      run: (inventory: Inventory) =>
+        inventory.setAvailabilityBatch(profileId, revisionId, batch),
+      rpc: "set_cottage_inventory_availability_batch",
+      parameters: { ...identity, requested_batch: batch },
+    },
+  };
+  const cases = [
+    {
+      operation: "loadOwnerEditorState",
+      code: "42501",
+      expected: { status: "denied" },
+    },
+    { operation: "savePricing", code: "42501", expected: { status: "denied" } },
+    {
+      operation: "resolvePublicAvailability",
+      code: "42501",
+      expected: { status: "denied" },
+    },
+    {
+      operation: "resolveOwnerCalendar",
+      code: "42501",
+      expected: { status: "denied" },
+    },
+    {
+      operation: "resolveOwnerCalendarSpan",
+      code: "42501",
+      expected: { status: "denied" },
+    },
+    {
+      operation: "setAvailability",
+      code: "42501",
+      expected: { status: "denied" },
+    },
+    {
+      operation: "setAvailabilityBatch",
+      code: "42501",
+      expected: { status: "denied" },
+    },
+    {
+      operation: "savePricing",
+      code: "RC409",
+      expected: { status: "conflict" },
+    },
+    { operation: "savePricing", code: "RC202", expected: { status: "denied" } },
+    {
+      operation: "setAvailabilityBatch",
+      code: "22023",
+      expected: { status: "invalid", fields: ["batch"] },
+    },
+    {
+      operation: "setAvailabilityBatch",
+      code: "RC409",
+      expected: { status: "conflict" },
+    },
+    {
+      operation: "resolveOwnerCalendarSpan",
+      code: "22023",
+      expected: { status: "unavailable" },
+    },
+    {
+      operation: "savePricing",
+      code: "UNKNOWN",
+      expected: { status: "unavailable" },
+    },
+  ] as const;
+  for (const example of cases) {
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: example.code },
+    });
+    const from = vi.fn();
+    const storageFrom = vi.fn();
+    const inventory = createCottageInventory(
+      new SupabaseCottageInventoryRepository({
+        rpc,
+        from,
+        storage: { from: storageFrom },
+      } as unknown as SupabaseClient),
+    );
+    const operation = operations[example.operation];
+    const context = `${example.operation}: ${example.code}`;
+    await expect(operation.run(inventory), context).resolves.toEqual(
+      example.expected,
+    );
+    expect(rpc, context).toHaveBeenCalledExactlyOnceWith(
+      operation.rpc,
+      operation.parameters,
+    );
+    expect(from, context).not.toHaveBeenCalled();
+    expect(storageFrom, context).not.toHaveBeenCalled();
   }
 });
