@@ -1,7 +1,10 @@
+import { hostedDemoTarget } from "./hosted-demo-target";
+
 export type AppEnvironment = "development" | "test" | "preview" | "production";
 
 interface EnvironmentSource {
   APP_ENVIRONMENT?: string;
+  HOSTED_DEMO?: string;
   SUPABASE_PROJECT_REF?: string;
   SUPABASE_URL?: string;
   SUPABASE_PUBLISHABLE_KEY?: string;
@@ -14,6 +17,7 @@ interface EnvironmentSource {
 
 export interface ServerEnvironment {
   name: AppEnvironment;
+  hostedDemo?: true;
   deployment: {
     commit: string | null;
   };
@@ -58,9 +62,13 @@ export function readPublicSupabaseEnvironment(
     );
   }
 
+  if (source.HOSTED_DEMO !== undefined && source.HOSTED_DEMO !== "true") {
+    throw new Error('HOSTED_DEMO must be absent or exactly "true"');
+  }
+  const hostedDemo = source.HOSTED_DEMO === "true";
   const name = required(source, "APP_ENVIRONMENT");
   if (!environmentNames.has(name as AppEnvironment)) {
-    throw new Error(`Unsupported APP_ENVIRONMENT: ${name}`);
+    throw new Error("APP_ENVIRONMENT is unsupported");
   }
 
   const projectRef = required(source, "SUPABASE_PROJECT_REF");
@@ -81,8 +89,20 @@ export function readPublicSupabaseEnvironment(
     throw new Error("SUPABASE_URL does not match SUPABASE_PROJECT_REF");
   }
 
+  if (hostedDemo) {
+    if (name !== "preview" || !hostedDemoTarget) {
+      throw new Error("HOSTED_DEMO requires preview and an approved target");
+    }
+    if (url !== `https://${hostedDemoTarget.supabaseProjectRef}.supabase.co`) {
+      throw new Error(
+        "SUPABASE_URL must be the exact HOSTED_DEMO project origin",
+      );
+    }
+  }
+
   return {
     name: name as AppEnvironment,
+    ...(hostedDemo ? { hostedDemo: true as const } : {}),
     supabase: {
       projectRef,
       url,

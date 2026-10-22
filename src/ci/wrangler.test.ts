@@ -9,6 +9,30 @@ function config() {
 }
 
 describe("Worker schedule configuration", () => {
+  it("hosted demo routes every request through admission without schedules", () => {
+    const wrangler = config();
+    const demo = wrangler.env.demo;
+
+    expect(demo).toBeDefined();
+    expect(demo.main).toBe("hosted-demo-worker.ts");
+    expect(demo.name).toBe("halabeekom-demo");
+    expect(demo.preview_urls).toBe(false);
+    expect(demo.assets).toEqual({
+      directory: ".open-next/assets",
+      binding: "ASSETS",
+      run_worker_first: true,
+    });
+    expect(demo.vars).toEqual({
+      APP_ENVIRONMENT: "preview",
+      HOSTED_DEMO: "true",
+    });
+    expect(demo.triggers).toBeUndefined();
+    expect(demo.routes).toBeUndefined();
+    expect(wrangler.triggers).toBeUndefined();
+    const worker = readFileSync(join(process.cwd(), demo.main), "utf8");
+    expect(worker).not.toMatch(/\bscheduled\b/);
+  });
+
   it("routes through the custom Worker and schedules expiry only in test", () => {
     const wrangler = config();
 

@@ -1,9 +1,277 @@
-import { readFileSync } from "node:fs";
+import { generateKeyPairSync, sign } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { expect, test } from "@playwright/test";
+import { build } from "esbuild";
+import {
+  Miniflare,
+  Response as NativeResponse,
+  type MiniflareOptions,
+} from "miniflare";
 
 import { openHeaderPanel } from "./fixtures/site-header";
+
+test("hosted demo admission rejects unauthenticated asset and action requests", async () => {
+  const wrangler = JSON.parse(
+    readFileSync(join(process.cwd(), "wrangler.jsonc"), "utf8").replace(
+      /,\s*([}\]])/g,
+      "$1",
+    ),
+  );
+  const demo = wrangler.env.demo;
+  const assets = demo?.assets ?? wrangler.assets;
+  const target = {
+    workerOrigin: "https://invited-demo.example.workers.dev",
+    supabaseProjectRef: "demo-fixture",
+    accessIssuer: "https://fixture.cloudflareaccess.com",
+    accessAudience: "fixture-application-audience",
+  };
+  const bundled = await build({
+    entryPoints: [demo?.main ?? wrangler.main],
+    bundle: true,
+    write: false,
+    format: "esm",
+    platform: "browser",
+    external: ["node:*", "cloudflare:*"],
+    plugins: [
+      {
+        name: "hosted-demo-native-boundaries",
+        setup(builder) {
+          builder.onResolve({ filter: /\.open-next\/worker\.js$/ }, () => ({
+            path: "opennext-sentinel",
+            namespace: "admission-fixture",
+          }));
+          builder.onResolve({ filter: /hosted-demo-target$/ }, () => ({
+            path: "target",
+            namespace: "admission-fixture",
+          }));
+          builder.onLoad(
+            { filter: /.*/, namespace: "admission-fixture" },
+            ({ path }) => ({
+              contents:
+                path === "target"
+                  ? `export const hostedDemoTarget = ${JSON.stringify(target)};`
+                  : `export default { async fetch(request, env) {
+                if (new URL(request.url).pathname === "/admission-fixture.txt") return env.ASSETS.fetch(request);
+                return new Response("OpenNext forwarding sentinel", { headers: { "x-admission-forwarded": "true" } });
+              } };`,
+              loader: "js",
+            }),
+          );
+        },
+      },
+    ],
+  });
+  const keys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const forgedKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const jwk = {
+    ...keys.publicKey.export({ format: "jwk" }),
+    kid: "fixture-key",
+    alg: "RS256",
+    use: "sig",
+  };
+  const now = Math.floor(Date.now() / 1000);
+  const token = (
+    claims: Record<string, unknown> = {},
+    key = keys.privateKey,
+    header: Record<string, unknown> = {},
+  ) => {
+    const encode = (value: unknown) =>
+      Buffer.from(JSON.stringify(value)).toString("base64url");
+    const data = `${encode({ alg: "RS256", kid: "fixture-key", ...header })}.${encode(
+      {
+        iss: target.accessIssuer,
+        aud: target.accessAudience,
+        email: "invited@example.test",
+        iat: now,
+        exp: now + 3600,
+        ...claims,
+      },
+    )}`;
+    return `${data}.${sign("RSA-SHA256", Buffer.from(data), key).toString("base64url")}`;
+  };
+  const valid = token();
+  const directory = mkdtempSync(join(tmpdir(), "rentcottage-818-admission-"));
+  let runtime: Miniflare | undefined;
+  let jwksUnavailable = true;
+  const outboundUrls: string[] = [];
+  const bindings = {
+    APP_ENVIRONMENT: "preview",
+    HOSTED_DEMO: "true",
+    SUPABASE_PROJECT_REF: "demo-fixture",
+    SUPABASE_URL: "https://demo-fixture.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "fixture-publishable",
+    SUPABASE_SECRET_KEY: "fixture-secret",
+    PRIVILEGED_AUDIT_HMAC_KEY: "fixture-audit-key-with-at-least-32-characters",
+    DEPLOYMENT_COMMIT: "b".repeat(40),
+  };
+  const options = (
+    values: Record<string, string> = bindings,
+  ): MiniflareOptions => ({
+    host: "127.0.0.1",
+    telemetry: { enabled: false },
+    workers: [
+      {
+        config: {
+          name: "hosted-demo-admission-fixture",
+          compatibilityDate: wrangler.compatibility_date,
+          compatibilityFlags: wrangler.compatibility_flags,
+          manifest: {
+            mainModule: "worker.js",
+            modules: {
+              "worker.js": {
+                type: "esm",
+                contents: bundled.outputFiles[0].text,
+              },
+            },
+          },
+          env: {
+            ...Object.fromEntries(
+              Object.entries(values).map(([name, value]) => [
+                name,
+                { type: "text" as const, value },
+              ]),
+            ),
+            [assets.binding]: { type: "assets" },
+          },
+          assets: {
+            directory,
+            hasUserWorker: true,
+            runWorkerFirst: assets.run_worker_first ?? false,
+          },
+        },
+        dev: {
+          outboundService: {
+            type: "fetcher",
+            handler(request) {
+              outboundUrls.push(request.url);
+              if (
+                request.url !==
+                "https://fixture.cloudflareaccess.com/cdn-cgi/access/certs"
+              ) {
+                throw new Error("Unexpected fixture outbound request");
+              }
+              return jwksUnavailable
+                ? new NativeResponse("Unavailable", { status: 503 })
+                : NativeResponse.json({ keys: [jwk] });
+            },
+          },
+        },
+      },
+    ],
+  });
+  try {
+    writeFileSync(
+      join(directory, "admission-fixture.txt"),
+      "native protected asset",
+    );
+    runtime = new Miniflare(options());
+    const denied = async (
+      url: string,
+      assertion?: string,
+      headers: Record<string, string> = {},
+      method = "GET",
+    ) => {
+      const response = await runtime!.dispatchFetch(url, {
+        method,
+        headers: {
+          ...(assertion ? { "Cf-Access-Jwt-Assertion": assertion } : {}),
+          ...headers,
+        },
+      });
+      expect(response.status, `${method} ${url}`).toBe(403);
+      expect(response.headers.get("cache-control")).toContain("no-store");
+      expect(response.headers.get("x-admission-forwarded")).toBeNull();
+      expect(await response.text()).toBe("Access denied");
+    };
+    for (const [path, method] of [
+      ["/en", "GET"],
+      ["/admission-fixture.txt", "GET"],
+      ["/en/access", "POST"],
+    ]) {
+      await denied(
+        `${target.workerOrigin}${path}`,
+        undefined,
+        method === "POST" ? { "Next-Action": "fixture-action" } : {},
+        method,
+      );
+    }
+    await denied(`${target.workerOrigin}/en`, valid);
+    expect(outboundUrls).toEqual([
+      "https://fixture.cloudflareaccess.com/cdn-cgi/access/certs",
+    ]);
+    jwksUnavailable = false;
+    for (const [path, method, body] of [
+      ["/en", "GET", "OpenNext forwarding sentinel"],
+      ["/admission-fixture.txt", "GET", "native protected asset"],
+      ["/en/access", "POST", "OpenNext forwarding sentinel"],
+    ]) {
+      const response = await runtime.dispatchFetch(
+        `${target.workerOrigin}${path}`,
+        {
+          method,
+          headers: {
+            "Cf-Access-Jwt-Assertion": valid,
+            "Next-Action": "fixture-action",
+          },
+        },
+      );
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe(body);
+    }
+    for (const invalid of [
+      "malformed",
+      token({}, forgedKeys.privateKey),
+      token({ exp: now - 3600 }),
+      token({ exp: undefined }),
+      token({ iss: "https://attacker.cloudflareaccess.com" }),
+      token({ aud: "other-application" }),
+      token({ email: "  " }),
+      token({ email: undefined }),
+      token({}, keys.privateKey, { kid: "unknown-key" }),
+      token({}, keys.privateKey, { alg: "RS512" }),
+    ])
+      await denied(`${target.workerOrigin}/en`, invalid);
+    await denied("https://alternate.example.workers.dev/en", valid);
+    await denied("https://alternate.example.workers.dev/en", valid, {
+      "X-Forwarded-Host": "invited-demo.example.workers.dev",
+      Forwarded: "host=invited-demo.example.workers.dev",
+    });
+    for (const patch of [
+      { HOSTED_DEMO: "TRUE" },
+      { HOSTED_DEMO: "" },
+      { APP_ENVIRONMENT: "production" },
+      { SUPABASE_URL: "https://user:password@demo-fixture.supabase.co" },
+      {
+        SUPABASE_PROJECT_REF: "other-project",
+        SUPABASE_URL: "https://other-project.supabase.co",
+      },
+      { DEPLOYMENT_COMMIT: "bad-commit" },
+    ]) {
+      await runtime.setOptions(options({ ...bindings, ...patch }));
+      await denied(`${target.workerOrigin}/en`, valid);
+    }
+    await runtime.setOptions(
+      options(
+        Object.fromEntries(
+          Object.entries(bindings).filter(([name]) => name !== "HOSTED_DEMO"),
+        ),
+      ),
+    );
+    await denied(`${target.workerOrigin}/en`, valid);
+    expect(
+      outboundUrls.every(
+        (url) =>
+          url === "https://fixture.cloudflareaccess.com/cdn-cgi/access/certs",
+      ),
+    ).toBe(true);
+  } finally {
+    await runtime?.dispose();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test("serves the trilingual shell and health response from the Worker", async ({
   page,
