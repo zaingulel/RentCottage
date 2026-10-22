@@ -192,6 +192,7 @@ function inventoryFrom(
       !timePattern.test(item.startTime) ||
       typeof item.endTime !== "string" ||
       !timePattern.test(item.endTime) ||
+      (item.kind === "shift" && item.startTime === item.endTime) ||
       !(
         item.priceIqd === null ||
         (Number.isSafeInteger(item.priceIqd) && (item.priceIqd as number) > 0)

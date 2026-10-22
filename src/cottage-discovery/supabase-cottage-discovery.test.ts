@@ -456,7 +456,29 @@ describe("Supabase Cottage discovery", () => {
         clientReturning(pageOf([summary, summary])),
       ).search("en", rangedQuery, null),
     ).resolves.toEqual({ status: "unavailable" });
+    const equalBundleInventory = inventory.map((item) =>
+      item.kind === "full-day" ? { ...item, endTime: item.startTime } : item,
+    );
+    await expect(
+      new SupabaseCottageDiscovery(
+        clientReturning(
+          pageOf([{ ...summary, inventory: equalBundleInventory }]),
+        ),
+      ).search("en", rangedQuery, null),
+    ).resolves.toMatchObject({
+      status: "loaded",
+      cottages: [{ inventory: equalBundleInventory }],
+    });
+    const zeroLengthShiftInventory = inventory.map((item, index) =>
+      index === 0 ? { ...item, endTime: item.startTime } : item,
+    );
+    await expect(
+      new SupabaseCottageDiscovery(
+        clientReturning({ ...profile, inventory: zeroLengthShiftInventory }),
+      ).profile("en", publicSlug, rangedQuery),
+    ).resolves.toEqual({ status: "unavailable" });
     const corruptInventories = [
+      zeroLengthShiftInventory,
       [],
       inventory.slice(1),
       inventory.slice(0, 3),

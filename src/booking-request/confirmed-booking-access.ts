@@ -1,6 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
+  bookingPeriodPresentationFrom,
+  type BookingPeriodPresentation,
+} from "@/booking-quote/booking-period-presentation";
+
+import {
   validateQuotedItems,
   type BookingQuoteItem,
 } from "@/booking-quote/booking-quote";
@@ -41,6 +46,7 @@ const sharedKeys = new Set([
 ]);
 
 interface ConfirmedBookingAccessBase {
+  readonly periodPresentation?: BookingPeriodPresentation;
   readonly receiptId: string;
   readonly bookingRequestReference: string;
   readonly bookingReference: string;
@@ -173,8 +179,11 @@ function confirmedBookingAccessFrom(
   if (!access) return;
   const actualKeys = Object.keys(access);
   if (
-    actualKeys.length !== sharedKeys.size ||
-    actualKeys.some((key) => !sharedKeys.has(key)) ||
+    actualKeys.length !==
+      sharedKeys.size + (Object.hasOwn(access, "periodPresentation") ? 1 : 0) ||
+    actualKeys.some(
+      (key) => !sharedKeys.has(key) && key !== "periodPresentation",
+    ) ||
     typeof access.receiptId !== "string" ||
     !uuidPattern.test(access.receiptId) ||
     typeof access.bookingRequestReference !== "string" ||
@@ -217,7 +226,13 @@ function confirmedBookingAccessFrom(
     return;
   }
 
+  const periodPresentation = bookingPeriodPresentationFrom(
+    access.periodPresentation,
+    access.bookingPeriod as BookingQuoteItem[],
+  );
+  if (periodPresentation === undefined) return;
   const base = {
+    periodPresentation,
     receiptId: access.receiptId,
     bookingRequestReference: access.bookingRequestReference,
     bookingReference: access.bookingReference,
@@ -270,9 +285,12 @@ export async function getConfirmedBookingAccess(
   reference: string,
 ): Promise<ConfirmedBookingAccess | null> {
   if (!requestReferencePattern.test(reference)) return null;
-  const { data, error } = await client.rpc("get_confirmed_booking_access", {
-    target_reference: reference,
-  });
+  const { data, error } = await client.rpc(
+    "get_confirmed_booking_access_presentation",
+    {
+      target_reference: reference,
+    },
+  );
   if (error) throw new Error("Confirmed Booking access is unavailable");
   if (data === null) return null;
   const access = confirmedBookingAccessFrom(data);

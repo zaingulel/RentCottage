@@ -5,6 +5,7 @@ import { getConfirmedBookingAccess } from "./confirmed-booking-access";
 
 const requestReference = "RC-REQ-AAAAAAAAAAAAAAAA";
 const shared = {
+  periodPresentation: "original-names",
   receiptId: "00000000-0000-4000-8000-000000000035",
   bookingRequestReference: requestReference,
   bookingReference: "CONFIRMED-BOOKING-35",
@@ -45,6 +46,111 @@ function clientReturning(data: unknown, error: unknown = null) {
 }
 
 describe("Confirmed Booking access repository", () => {
+  it("retains historical identity without relaxing exact private response shape", async () => {
+    const raw = {
+      ...rawShared,
+      actorRole: "customer",
+      pricing: {
+        bookingPriceIqd: 100_003,
+        serviceFeeIqd: 5_000,
+        customerTotalIqd: 105_003,
+      },
+    };
+    for (const actor of [
+      { actorRole: "customer", pricing: raw.pricing },
+      {
+        actorRole: "cottage_owner",
+        pricing: {
+          bookingPriceIqd: 100_003,
+          marketplaceCommissionFils: 10_000_300,
+          ownerNetFils: 90_002_700,
+        },
+      },
+    ]) {
+      for (const periodPresentation of [
+        undefined,
+        null,
+        "original-names",
+        "morning-evening-v1",
+      ]) {
+        const client = clientReturning({
+          ...raw,
+          ...actor,
+          periodPresentation,
+        });
+        const result = await getConfirmedBookingAccess(
+          client,
+          requestReference,
+        );
+        expect(result).toEqual({
+          ...expectedShared,
+          ...actor,
+          periodPresentation: periodPresentation ?? "original-names",
+        });
+        expect(result?.bookingPeriod).toEqual(shared.bookingPeriod);
+        expect(result?.bookingPeriod[0]).not.toBe(raw.bookingPeriod[0]);
+        expect(client.rpc).toHaveBeenCalledWith(
+          "get_confirmed_booking_access_presentation",
+          { target_reference: requestReference },
+        );
+      }
+    }
+    const missingMarker: Record<string, unknown> = { ...raw };
+    delete missingMarker.periodPresentation;
+    await expect(
+      getConfirmedBookingAccess(
+        clientReturning(missingMarker),
+        requestReference,
+      ),
+    ).resolves.toEqual({
+      ...expectedShared,
+      actorRole: "customer",
+      pricing: raw.pricing,
+    });
+    const historical = [
+      {
+        ...shared.bookingPeriod[0],
+        position: 3,
+        displayName: "Original third shift",
+      },
+    ];
+    for (const periodPresentation of [undefined, null, "original-names"]) {
+      await expect(
+        getConfirmedBookingAccess(
+          clientReturning({
+            ...raw,
+            periodPresentation,
+            bookingPeriod: historical,
+          }),
+          requestReference,
+        ),
+      ).resolves.toMatchObject({
+        periodPresentation: "original-names",
+        bookingPeriod: historical,
+      });
+    }
+    const missingReceipt: Record<string, unknown> = { ...raw };
+    delete missingReceipt.receiptId;
+    for (const data of [
+      missingReceipt,
+      ...["", "morning-evening-v2", true, false, 1, {}, []].map(
+        (periodPresentation) => ({ ...raw, periodPresentation }),
+      ),
+      {
+        ...raw,
+        periodPresentation: "morning-evening-v1",
+        bookingPeriod: historical,
+      },
+      { ...raw, providerReference: "private" },
+      { ...missingMarker, providerReference: "private" },
+      { ...raw, pricing: { ...raw.pricing, providerReference: "private" } },
+    ]) {
+      await expect(
+        getConfirmedBookingAccess(clientReturning(data), requestReference),
+      ).rejects.toThrow("Confirmed Booking access data is invalid");
+    }
+  });
+
   it("parses the Customer's paid confirmation and Customer pricing", async () => {
     const client = clientReturning({
       ...rawShared,
@@ -67,9 +173,12 @@ describe("Confirmed Booking access repository", () => {
         customerTotalIqd: 105_003,
       },
     });
-    expect(client.rpc).toHaveBeenCalledWith("get_confirmed_booking_access", {
-      target_reference: requestReference,
-    });
+    expect(client.rpc).toHaveBeenCalledWith(
+      "get_confirmed_booking_access_presentation",
+      {
+        target_reference: requestReference,
+      },
+    );
   });
 
   it("drops an unexpected field from a Booking Period item before release", async () => {

@@ -19,7 +19,10 @@ import {
   validateQuotedItems,
 } from "./booking-quote";
 
+import { bookingPeriodPresentationFrom } from "./booking-period-presentation";
+
 const quoteKeys = new Set([
+  "periodPresentation",
   "status",
   "slug",
   "quoteFingerprint",
@@ -127,7 +130,7 @@ export class SupabaseBookingQuote implements BookingQuotePort {
       return { status: "selection-unavailable" };
     }
     const { data, error } = await this.client.rpc(
-      "get_public_booking_quote_with_fingerprint",
+      "get_public_booking_quote_presentation",
       {
         target_locale: locale,
         target_slug: publicSlug,
@@ -150,6 +153,12 @@ export class SupabaseBookingQuote implements BookingQuotePort {
       return unavailable("invalid-provider-data");
     }
     const quotedItems = items as BookingQuoteItem[];
+    const periodPresentation = bookingPeriodPresentationFrom(
+      data.periodPresentation,
+      quotedItems,
+    );
+    if (data.periodPresentation == null || periodPresentation === undefined)
+      return unavailable("invalid-provider-data");
     let totals;
     try {
       totals = bookingQuoteTotals(quotedItems.map((item) => item.priceIqd));
@@ -184,6 +193,7 @@ export class SupabaseBookingQuote implements BookingQuotePort {
     return {
       status: "quoted",
       quote: {
+        periodPresentation,
         slug: data.slug,
         quoteFingerprint: data.quoteFingerprint,
         cottageName: data.cottageName,

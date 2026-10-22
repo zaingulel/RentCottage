@@ -82,7 +82,11 @@ export function formatFilsAsIqd(
   return `IQD ${formattedWhole}${decimal}${localizedFraction}`;
 }
 
-function formatSoraniIraqDateTime(value: string, seconds: boolean): string {
+function formatSoraniIraqDateTime(
+  value: string,
+  seconds: boolean,
+  hourCycle?: "h23",
+): string {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-US", {
       timeZone: "Asia/Baghdad",
@@ -92,27 +96,33 @@ function formatSoraniIraqDateTime(value: string, seconds: boolean): string {
       hour: "numeric",
       minute: "2-digit",
       ...(seconds ? { second: "2-digit" } : {}),
-      hourCycle: "h12",
+      hourCycle: hourCycle ?? "h12",
     })
       .formatToParts(new Date(value))
       .map((part) => [part.type, part.value]),
   );
   const month = soraniMonths[Number(parts.month) - 1];
-  const period = parts.dayPeriod === "AM" ? "ب.ن" : "د.ن";
+  const period =
+    hourCycle === "h23" ? "" : parts.dayPeriod === "AM" ? " ب.ن" : " د.ن";
   const second = seconds ? `:${toSoraniNumerals(parts.second)}` : "";
-  return `${toSoraniNumerals(parts.year)} ${month} ${toSoraniNumerals(parts.day)} ${toSoraniNumerals(parts.hour)}:${toSoraniNumerals(parts.minute)}${second} ${period}`;
+  return `${toSoraniNumerals(parts.year)} ${month} ${toSoraniNumerals(parts.day)} ${toSoraniNumerals(parts.hour)}:${toSoraniNumerals(parts.minute)}${second}${period}`;
 }
 
 export function formatIraqDateTime(
   value: string,
   locale: Locale,
-  options: { seconds?: boolean } = {},
+  options: { seconds?: boolean; hourCycle?: "h23" } = {},
 ): string {
   if (locale === "ckb")
-    return formatSoraniIraqDateTime(value, options.seconds ?? false);
+    return formatSoraniIraqDateTime(
+      value,
+      options.seconds ?? false,
+      options.hourCycle,
+    );
   return new Intl.DateTimeFormat(iraqIntlLocales[locale], {
     dateStyle: "medium",
     timeStyle: options.seconds ? "medium" : "short",
+    ...(options.hourCycle ? { hourCycle: options.hourCycle } : {}),
     timeZone: "Asia/Baghdad",
   }).format(new Date(value));
 }
