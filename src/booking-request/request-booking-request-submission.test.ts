@@ -1,3 +1,4 @@
+import { setImmediate } from "node:timers/promises";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPaymentLifecycle } from "@/payment/payment-lifecycle";
 import { PaymentSimulator } from "@/payment/payment-simulator";
@@ -243,9 +244,22 @@ it("continues both unresolved recoveries and ordinary submission", async () => {
       paymentProviderIdentity: durablePaymentProvider.identity,
     });
   }
+  let releaseRecovery!: () => void;
+  let recoveryStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    recoveryStarted = resolve;
+  });
+  const released = new Promise<void>((resolve) => {
+    releaseRecovery = resolve;
+  });
   const recoverAuthorized = vi
     .fn()
-    .mockResolvedValue({ status: "reconciliation-required" });
+    .mockResolvedValue({ status: "reconciliation-required" })
+    .mockImplementationOnce(async () => {
+      recoveryStarted();
+      await released;
+      return { status: "reconciliation-required" };
+    });
   const submit = vi.fn().mockResolvedValue({ status: "pending" });
   createSubmission.mockReturnValue({ recoverAuthorized, submit });
   const rpc = vi.fn(async (name: string) => ({
@@ -258,7 +272,21 @@ it("continues both unresolved recoveries and ordinary submission", async () => {
     error: null,
   }));
   createClient.mockReturnValue({ rpc });
-  const service = await createRequestBookingRequestSubmission();
+  let completed = false;
+  const running = createRequestBookingRequestSubmission().then((service) => {
+    completed = true;
+    return service;
+  });
+  try {
+    await started;
+    await setImmediate();
+    expect(recoverAuthorized.mock.calls).toEqual([[candidates[0]]]);
+    expect(completed).toBe(false);
+  } finally {
+    releaseRecovery();
+    await running;
+  }
+  const service = await running;
   expect(recoverAuthorized.mock.calls).toEqual([
     [candidates[0]],
     [candidates[1]],
