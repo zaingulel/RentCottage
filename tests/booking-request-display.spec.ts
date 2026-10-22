@@ -2369,7 +2369,7 @@ test("customer period rows retain exact access in all locales", async ({
       await page.evaluate((state) => window.renderPublicCottageDisplay(state), {
         screen,
         locale,
-        photoCount: 0,
+        photoCount: 0 as const,
         longContent: true,
       });
       const rows = page.locator(
