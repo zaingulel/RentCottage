@@ -4618,9 +4618,37 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     for (const [shiftIndex, shift] of shifts.entries()) {
       const option = rows.nth(index * (shifts.length + 1) + shiftIndex);
       await expect(option).toContainText(shift.name);
-      await expect(option).toContainText(
-        `${shift.start_time.slice(0, 5)}–${shift.end_time.slice(0, 5)}`,
+      const departureDate = new Date(`${day}T00:00:00Z`);
+      if (shift.end_time < shift.start_time) {
+        departureDate.setUTCDate(departureDate.getUTCDate() + 1);
+      }
+      const departureDay = departureDate.toISOString().slice(0, 10);
+      const arrivalAt = `${day}T${shift.start_time.slice(0, 5)}:00+03:00`;
+      const departureAt = `${departureDay}T${shift.end_time.slice(0, 5)}:00+03:00`;
+      const endpoints = option.locator("time");
+      await expect(endpoints).toHaveCount(2);
+      await expect(option.getByText(/^Arrival:/)).toBeVisible();
+      await expect(option.getByText(/^Departure:/)).toBeVisible();
+      await expect(endpoints.nth(0)).toHaveAttribute("datetime", arrivalAt);
+      await expect(endpoints.nth(1)).toHaveAttribute("datetime", departureAt);
+      await expect(endpoints.nth(0)).toHaveText(
+        formatEnglishIraqDateTime(arrivalAt),
       );
+      await expect(endpoints.nth(1)).toHaveText(
+        formatEnglishIraqDateTime(departureAt),
+      );
+      await expect(endpoints.nth(0)).toContainText(
+        shift.start_time.slice(0, 5),
+      );
+      await expect(endpoints.nth(1)).toContainText(shift.end_time.slice(0, 5));
+      await expect(option).toContainText(
+        "All times are Iraq local time (UTC+3).",
+      );
+      if (departureDay !== day) {
+        await expect(option.getByText(/next day/)).toBeVisible();
+      } else {
+        await expect(option.getByText(/next day/)).toHaveCount(0);
+      }
       await expect(option).toContainText(
         ({ 1: "IQD 180,000", 2: "IQD 190,000", 3: "IQD 200,000" } as const)[
           shift.position as 1 | 2 | 3
