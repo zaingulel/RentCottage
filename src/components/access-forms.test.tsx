@@ -50,6 +50,8 @@ describe("access forms", () => {
         locale: "en",
         phone: "Invited demo number",
         hint: "Use the synthetic number supplied privately with your invitation.",
+        unavailable:
+          "Demo sign-in is unavailable. Check the number and code supplied privately with your invitation. If access is still unavailable, contact the person who invited you.",
         request: "Use simulated code",
         code: "Simulated invitation code",
         codeHint: "Use your private invitation code. No text message is sent.",
@@ -65,6 +67,8 @@ describe("access forms", () => {
         locale: "ar",
         phone: "رقم العرض المدعو",
         hint: "استخدم الرقم الاصطناعي المقدم لك بشكل خاص مع دعوتك.",
+        unavailable:
+          "الدخول إلى العرض غير متاح. تأكد من الرقم والرمز المرسلين لك بشكل خاص مع الدعوة. إذا ظل الدخول غير متاح، تواصل مع الشخص الذي دعاك.",
         request: "استخدم الرمز المحاكى",
         code: "رمز الدعوة المحاكى",
         codeHint: "استخدم رمز دعوتك الخاص. لا تُرسل رسالة نصية.",
@@ -78,6 +82,8 @@ describe("access forms", () => {
         locale: "ckb",
         phone: "ژمارەی بانگهێشتی پیشاندان",
         hint: "ئەو ژمارە دەستکردە بەکاربهێنە کە بە تایبەتی لەگەڵ بانگهێشتەکەت دراوە.",
+        unavailable:
+          "چوونەژوورەوە بۆ پیشاندان بەردەست نییە. ئەو ژمارە و کۆدە بپشکنە کە بە تایبەتی لەگەڵ بانگهێشتەکەت بۆت نێردراون. ئەگەر هێشتا نەتوانی بچیتە ژوورەوە، پەیوەندی بەو کەسەوە بکە کە بانگهێشتی کردوویت.",
         request: "کۆدی هاوشێوەکراو بەکاربهێنە",
         code: "کۆدی بانگهێشتی هاوشێوەکراو",
         codeHint:
@@ -92,7 +98,9 @@ describe("access forms", () => {
       },
     ] as const;
     for (const copy of variants) {
-      requestPhone.mockResolvedValue({ status: "demo_code_ready" });
+      requestPhone
+        .mockResolvedValueOnce({ status: "unavailable" })
+        .mockResolvedValue({ status: "demo_code_ready" });
       const user = userEvent.setup();
       const view = render(
         <PhoneAccessForm locale={copy.locale} phoneAccessMode="hosted-demo" />,
@@ -102,6 +110,10 @@ describe("access forms", () => {
       fireEvent.change(screen.getByLabelText(copy.phone), {
         target: { value: "+9647500000000" },
       });
+      await user.click(screen.getByRole("button", { name: copy.request }));
+      expect(screen.getByRole("alert")).toHaveTextContent(copy.unavailable);
+      expect(screen.getByLabelText(copy.phone)).toBeVisible();
+      expect(screen.queryByLabelText(copy.code)).not.toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: copy.request }));
       expect(screen.getByLabelText(copy.code)).toHaveFocus();
       expect(screen.getByText(copy.codeHint)).toBeVisible();
@@ -145,7 +157,9 @@ describe("access forms", () => {
         }),
       );
       expect(screen.getByRole("alert")).toHaveTextContent(
-        "Verification is unavailable. Try again.",
+        mode === "hosted-demo"
+          ? "Demo sign-in is unavailable. Check the number and code supplied privately with your invitation. If access is still unavailable, contact the person who invited you."
+          : "Verification is unavailable. Try again.",
       );
       view.unmount();
     }

@@ -298,6 +298,7 @@ export const hostedDemoAccessMessages: Record<
     | "invalidCode"
     | "expiredCode"
     | "verified"
+    | "unavailable"
     | "invalidPhone"
     | "editNumber"
   > & { codeHint: string; notice: string }
@@ -319,6 +320,8 @@ export const hostedDemoAccessMessages: Record<
       "The simulated invitation code expired. Ask for a renewed invitation.",
     verified:
       "Signed into the synthetic demo identity. Phone verification is simulated.",
+    unavailable:
+      "Demo sign-in is unavailable. Check the number and code supplied privately with your invitation. If access is still unavailable, contact the person who invited you.",
     invalidPhone: "Enter the synthetic number supplied with your invitation.",
     editNumber: "Change demo number",
     notice:
@@ -337,6 +340,8 @@ export const hostedDemoAccessMessages: Record<
     invalidCode: "رمز الدعوة المحاكى غير صحيح.",
     expiredCode: "انتهت صلاحية رمز الدعوة المحاكى. اطلب تجديد الدعوة.",
     verified: "تم الدخول بهوية عرض اصطناعية. التحقق من الهاتف محاكاة.",
+    unavailable:
+      "الدخول إلى العرض غير متاح. تأكد من الرقم والرمز المرسلين لك بشكل خاص مع الدعوة. إذا ظل الدخول غير متاح، تواصل مع الشخص الذي دعاك.",
     invalidPhone: "أدخل الرقم الاصطناعي المقدم مع دعوتك.",
     editNumber: "غيّر رقم العرض",
     notice:
@@ -360,6 +365,8 @@ export const hostedDemoAccessMessages: Record<
       "کۆدی بانگهێشتی هاوشێوەکراو بەسەرچووە. داوای نوێکردنەوەی بانگهێشت بکە.",
     verified:
       "بە ناسنامەی دەستکردی پیشاندان چوویتە ژوورەوە. پشتڕاستکردنەوەی تەلەفۆن هاوشێوەکراوە.",
+    unavailable:
+      "چوونەژوورەوە بۆ پیشاندان بەردەست نییە. ئەو ژمارە و کۆدە بپشکنە کە بە تایبەتی لەگەڵ بانگهێشتەکەت بۆت نێردراون. ئەگەر هێشتا نەتوانی بچیتە ژوورەوە، پەیوەندی بەو کەسەوە بکە کە بانگهێشتی کردوویت.",
     invalidPhone: "ژمارە دەستکردەکەی لەگەڵ بانگهێشتەکەت بنووسە.",
     editNumber: "ژمارەی پیشاندان بگۆڕە",
     notice:
