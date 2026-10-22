@@ -132,7 +132,11 @@ export async function observeInterruptedAccessVerification(
       join(stateRoot, "unrelated-inspection-command"),
       oversizedCommand,
     );
-    expect(Buffer.byteLength(oversizedCommand)).toBeGreaterThan(1_048_576);
+    expect(
+      Buffer.byteLength(
+        readFileSync(join(stateRoot, "unrelated-inspection-command")),
+      ),
+    ).toBeGreaterThan(1_048_576);
   }
   const fakeBin = join(stateRoot, "bin");
   mkdirSync(fakeBin);
@@ -660,6 +664,7 @@ if (args[1] === "status") {
       "stop invoked\n",
     );
     expect(processIsAlive(unrelatedIdentity.pid)).toBe(true);
+    expect(stderr.join("")).toBe("");
     if (observeTiming) {
       await waitForCondition(
         () =>
