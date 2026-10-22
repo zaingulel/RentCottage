@@ -119,12 +119,21 @@ export async function observeInterruptedAccessVerification(
     interruptStartup = false,
     cleanupStage,
     observeTiming,
+    unrelatedInspectionOutput = false,
   } = {},
 ) {
   assertProcessObserverReady();
   const stateRoot = mkdtempSync(
     join(tmpdir(), "rentcottage-access-interruption-"),
   );
+  if (unrelatedInspectionOutput) {
+    const oversizedCommand = "x".repeat(1_048_577);
+    writeFileSync(
+      join(stateRoot, "unrelated-inspection-command"),
+      oversizedCommand,
+    );
+    expect(Buffer.byteLength(oversizedCommand)).toBeGreaterThan(1_048_576);
+  }
   const fakeBin = join(stateRoot, "bin");
   mkdirSync(fakeBin);
   const token = basename(stateRoot);
@@ -191,10 +200,17 @@ childProcess.spawn = (command, args, options) => {
     if (process.env.ACCESS_INSPECTION_FAILURE === "initial-timeout") {
       return originalSpawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], options);
     }
-    if (existsSync(root + "/fail-inspection")) {
+    if (existsSync(root + "/fail-inspection") && process.env.ACCESS_INSPECTION_FAILURE !== "malformed-inspection") {
       return originalSpawn(process.execPath, ["-e", "process.stderr.write('controlled inspection unavailable'); process.exit(1)"], options);
     }
-    const child = originalSpawn(command, args, options);
+    const child = process.env.ACCESS_UNRELATED_INSPECTION_OUTPUT === "1" || (process.env.ACCESS_INSPECTION_FAILURE === "malformed-inspection" && existsSync(root + "/fail-inspection"))
+      ? originalSpawn(process.execPath, ["-e",
+        "const { spawnSync } = require('node:child_process'); const { readFileSync } = require('node:fs'); const result = spawnSync('/bin/ps', " + JSON.stringify(args) + ", { encoding: 'utf8' }); process.stdout.write(result.stdout); process.stderr.write(result.stderr); if (result.status !== 0) process.exit(result.status ?? 1); " +
+        (process.env.ACCESS_UNRELATED_INSPECTION_OUTPUT === "1"
+          ? "const root = process.env.ACCESS_INTERRUPTION_ROOT; const unrelated = JSON.parse(readFileSync(root + '/unrelated.ready', 'utf8')); const row = result.stdout.split('\\\\n').find((line) => Number(line.trim().split(/\\\\s+/)[0]) === unrelated.pid); if (row) { const prefix = row.match(/^(\\\\s*\\\\d+\\\\s+\\\\d+\\\\s+\\\\S+\\\\s+.{24}\\\\s+)/)[1]; process.stdout.write(prefix + readFileSync(root + '/unrelated-inspection-command', 'utf8') + '\\\\n'); }"
+          : "const root = process.env.ACCESS_INTERRUPTION_ROOT; const command = JSON.parse(readFileSync(root + '/command.ready', 'utf8')); process.stdout.write(command.pid + ' ' + command.pid + ' S invalid\\\\n');")
+      ], options)
+      : originalSpawn(command, args, options);
     child.once("close", () => writeFileSync(root + "/identity.ready", "inspected"));
     return child;
   }
@@ -359,6 +375,7 @@ if (args[1] === "status") {
       [
         ...(exitedGroupState ||
         inspectionFailure ||
+        unrelatedInspectionOutput ||
         groupPermissionFailure ||
         cleanupStage ||
         completedCommandStatus !== undefined
@@ -382,6 +399,9 @@ if (args[1] === "status") {
           ACCESS_INTERRUPTION_ROOT: stateRoot,
           ACCESS_INTERRUPTION_TOKEN: token,
           ACCESS_INSPECTION_FAILURE: inspectionFailure ?? "",
+          ACCESS_UNRELATED_INSPECTION_OUTPUT: unrelatedInspectionOutput
+            ? "1"
+            : "0",
           ACCESS_GROUP_PERMISSION_FAILURE: groupPermissionFailure ? "1" : "0",
           ACCESS_COMPLETED_COMMAND_STATUS:
             completedCommandStatus === undefined
@@ -482,7 +502,8 @@ if (args[1] === "status") {
     if (inspectionFailure) {
       if (
         inspectionFailure === "reidentify" ||
-        inspectionFailure === "reidentify-permission"
+        inspectionFailure === "reidentify-permission" ||
+        inspectionFailure === "malformed-inspection"
       ) {
         await waitForCondition(
           () => existsSync(join(stateRoot, "identity.ready")),
@@ -505,7 +526,9 @@ if (args[1] === "status") {
           ? "Timed out inspecting owned process group"
           : inspectionFailure === "reidentify-permission"
             ? "Exact termination could not be confirmed: kill EPERM"
-            : "controlled inspection unavailable",
+            : inspectionFailure === "malformed-inspection"
+              ? "Unable to parse owned process group"
+              : "controlled inspection unavailable",
       );
       if (inspectionFailure === "overflow")
         expect(stderr.join("")).toContain("spawn output exceeded maxBuffer");
@@ -519,6 +542,14 @@ if (args[1] === "status") {
       expect(processIsAlive(service.pid)).toBe(true);
       expect(processIsAlive(unrelatedIdentity.pid)).toBe(true);
       expect(existsSync(join(stateRoot, "stop.log"))).toBe(false);
+      if (inspectionFailure === "malformed-inspection") {
+        expect(existsSync(join(stateRoot, "termination-attempt"))).toBe(false);
+        const retainedState = stderr
+          .join("")
+          .match(/temporary state ([^\n]+)\./)?.[1];
+        expect(retainedState).toBeTruthy();
+        expect(existsSync(retainedState)).toBe(true);
+      }
       return;
     }
 
@@ -610,6 +641,7 @@ if (args[1] === "status") {
       expect(existsSync(join(stateRoot, "stop.log"))).toBe(false);
       return;
     }
+    expect(stderr.join("")).toBe("");
     await waitForCondition(
       () =>
         !processIsAlive(command.pid) &&
@@ -628,7 +660,6 @@ if (args[1] === "status") {
       "stop invoked\n",
     );
     expect(processIsAlive(unrelatedIdentity.pid)).toBe(true);
-    expect(stderr.join("")).toBe("");
     if (observeTiming) {
       await waitForCondition(
         () =>

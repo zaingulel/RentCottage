@@ -15,6 +15,12 @@ describe("access verification command", () => {
     });
   }, 15_000);
 
+  it("retains owned resources when selected process inspection contains a malformed row", async () => {
+    await observeInterruptedAccessVerification("SIGTERM", {
+      inspectionFailure: "malformed-inspection",
+    });
+  }, 15_000);
+
   it("retains uncertain processes when process inspection and its group probe both fail", async () => {
     await observeInterruptedAccessVerification("SIGTERM", {
       inspectionFailure: "reidentify-permission",
