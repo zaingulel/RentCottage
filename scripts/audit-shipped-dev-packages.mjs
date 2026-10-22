@@ -12,7 +12,7 @@ const SHIPPED_DEV_PACKAGE_PATHS = [
   "node_modules/@opennextjs/cloudflare",
   "node_modules/path-to-regexp",
 ];
-const SHIPPED_LIST_ADAPTER_VERSION = "1.20.2";
+const SHIPPED_LIST_ADAPTER_VERSION = "1.20.12";
 
 const SEVERITY_RANK = { info: 0, low: 1, moderate: 2, high: 3, critical: 4 };
 
