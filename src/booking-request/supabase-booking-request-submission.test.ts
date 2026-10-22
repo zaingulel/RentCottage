@@ -1,3 +1,4 @@
+import { withRecordedProviderResults } from "../../tests/fixtures/payment-operation-execution.fixtures";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 
@@ -11,6 +12,7 @@ import type { PaymentLifecycleSnapshot } from "@/payment/payment-contract";
 import {
   BookingRequestAuthorizationClaimNotPersisted,
   BookingRequestPreAuthorizationRejected,
+  createBookingRequestSubmission,
   type SubmissionInput,
 } from "./booking-request-submission";
 import { bookingRequestAcceptanceEvidence } from "./booking-request-policy";
@@ -233,6 +235,95 @@ describe("Supabase Booking Request submission repository", () => {
       }),
     );
     expect(provider.requests).toHaveLength(0);
+  });
+
+  it("preserves authorization persistence classification after an indeterminate provider execution", async () => {
+    const provider = new PaymentSimulator({
+      now: () => "2099-08-21T17:00:00.000Z",
+    });
+    const execute = vi
+      .spyOn(provider, "execute")
+      .mockRejectedValue(new Error("provider response unavailable"));
+    const query = vi.spyOn(provider, "query");
+    const executionPermit = {
+      purpose: "booking-request-authorization",
+      claimId: "44444444-4444-4444-8444-444444444444",
+      generation: 1,
+      idempotencyKey:
+        "booking-request:44444444-4444-4444-8444-444444444444:1",
+      notAfter: "2099-08-22T00:00:00.000Z",
+    };
+    let authorizationClaims = 0;
+    const rpc = vi.fn(async (name: string) => {
+      if (name === "prepare_booking_request_submission") {
+        return {
+          data: {
+            status: "ready",
+            attemptId: "22222222-2222-4222-8222-222222222222",
+            paymentLifecycleId: "33333333-3333-4333-8333-333333333333",
+            paymentSnapshot: null,
+            providerIdentity: null,
+          },
+          error: null,
+        };
+      }
+      if (name === "begin_booking_request_authorization_claim") {
+        authorizationClaims += 1;
+        return {
+          data:
+            authorizationClaims === 1
+              ? { status: "ready", executionPermit }
+              : { status: "invalid" },
+          error: null,
+        };
+      }
+      if (name === "save_booking_request_payment_snapshot") {
+        return {
+          data: null,
+          error: {
+            code: "22023",
+            message: "Pending Payment Authorization evidence is invalid",
+          },
+        };
+      }
+      return { data: null, error: { message: "unexpected RPC" } };
+    });
+    const repository = new SupabaseBookingRequestSubmissionRepository({
+      rpc,
+    } as unknown as SupabaseClient);
+
+    await expect(
+      createBookingRequestSubmission(
+        withRecordedProviderResults({ repository, paymentProvider: provider }),
+      ).submit(input),
+    ).resolves.toEqual({ status: "invalid" });
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      "prepare_booking_request_submission",
+      "begin_booking_request_authorization_claim",
+      "begin_booking_request_authorization_claim",
+    ]);
+    expect(rpc).toHaveBeenNthCalledWith(
+      3,
+      "begin_booking_request_authorization_claim",
+      expect.objectContaining({
+        target_attempt_id: "22222222-2222-4222-8222-222222222222",
+        target_payment_snapshot: expect.objectContaining({
+          authorization: expect.objectContaining({
+            status: "pending",
+            providerRequestId: null,
+            providerReference: null,
+            movementReference: null,
+            reconciliationRequired: true,
+          }),
+          release: null,
+        }),
+        target_provider_identity: provider.identity,
+      }),
+    );
+    expect(execute).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ kind: "authorization", executionPermit }),
+    );
+    expect(query).not.toHaveBeenCalled();
   });
 
   it("rejects an exact customer-suspended authorization claim before provider execution", async () => {
