@@ -540,6 +540,116 @@ describe("Supabase Booking Request submission repository", () => {
     );
   });
 
+  it("passes the exact cleanup permit through submission after authoritative absence", async () => {
+    const provider = new PaymentSimulator({
+      now: () => "2099-08-21T17:00:00.000Z",
+      outcomes: ["succeeded", "succeeded"],
+    });
+    const authorizationPermit = {
+      purpose: "booking-request-authorization",
+      claimId: "44444444-4444-4444-8444-444444444444",
+      generation: 1,
+      idempotencyKey:
+        "booking-request:44444444-4444-4444-8444-444444444444:1",
+      notAfter: "2099-08-22T00:00:00.000Z",
+    };
+    const cleanupPermit = {
+      purpose: "booking-request-submission-cleanup",
+      attemptId: "22222222-2222-4222-8222-222222222222",
+      claimId: "44444444-4444-4444-8444-444444444444",
+      generation: 1,
+      stateRevision: 4,
+      idempotencyKey:
+        "booking-request-submission-cleanup:22222222-2222-4222-8222-222222222222:4",
+      requestFingerprint: "b".repeat(64),
+      notAfter: "2099-08-21T17:00:30.000Z",
+    };
+    const rpc = vi.fn(async (name: string) => {
+      if (name === "prepare_booking_request_submission") {
+        return {
+          data: {
+            status: "ready",
+            attemptId: "22222222-2222-4222-8222-222222222222",
+            paymentLifecycleId: "33333333-3333-4333-8333-333333333333",
+            paymentSnapshot: null,
+            providerIdentity: null,
+          },
+          error: null,
+        };
+      }
+      if (name === "begin_booking_request_authorization_claim") {
+        return {
+          data: { status: "ready", executionPermit: authorizationPermit },
+          error: null,
+        };
+      }
+      if (name === "save_booking_request_payment_snapshot") {
+        return { data: null, error: null };
+      }
+      if (name === "finalize_booking_request_submission") {
+        return { data: null, error: { message: "finalization unavailable" } };
+      }
+      if (name === "lookup_booking_request_submission") {
+        return { data: { status: "absent" }, error: null };
+      }
+      if (name === "begin_booking_request_submission_cleanup_release") {
+        expect(provider.requests.map((request) => request.kind)).toEqual([
+          "authorization",
+        ]);
+        return {
+          data: { status: "ready", executionPermit: cleanupPermit },
+          error: null,
+        };
+      }
+      return { data: null, error: { message: "unexpected RPC" } };
+    });
+    const repository = new SupabaseBookingRequestSubmissionRepository({
+      rpc,
+    } as unknown as SupabaseClient);
+
+    await expect(
+      createBookingRequestSubmission(
+        withRecordedProviderResults({ repository, paymentProvider: provider }),
+      ).submit(input),
+    ).resolves.toEqual({ status: "unavailable" });
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      "prepare_booking_request_submission",
+      "begin_booking_request_authorization_claim",
+      "save_booking_request_payment_snapshot",
+      "finalize_booking_request_submission",
+      "lookup_booking_request_submission",
+      "begin_booking_request_submission_cleanup_release",
+      "save_booking_request_payment_snapshot",
+    ]);
+    expect(rpc).toHaveBeenNthCalledWith(
+      6,
+      "begin_booking_request_submission_cleanup_release",
+      expect.objectContaining({
+        target_attempt_id: cleanupPermit.attemptId,
+        target_payment_snapshot: expect.objectContaining({
+          paymentLifecycleId: "33333333-3333-4333-8333-333333333333",
+          authorization: expect.objectContaining({ status: "succeeded" }),
+          release: expect.objectContaining({
+            kind: "release",
+            status: "pending",
+            amountFils: 105_003_000,
+            providerRequestId: null,
+            providerReference: null,
+            movementReference: null,
+          }),
+        }),
+        target_provider_identity: provider.identity,
+      }),
+    );
+    expect(provider.requests.map((request) => request.kind)).toEqual([
+      "authorization",
+      "release",
+    ]);
+    expect(provider.requests[1]?.amountFils).toBe(105_003_000);
+    expect(provider.requests[1]?.executionPermit).toEqual(cleanupPermit);
+    expect(provider.queries).toHaveLength(0);
+  });
+
   it("claims a customer-scoped attempt with separate quote and intent bindings", async () => {
     const client = clientWith({
       data: {
