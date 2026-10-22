@@ -52,7 +52,6 @@ const localJourneyCommands = [
       "test",
       "tests/booking-history.spec.ts",
       "tests/messaging.spec.ts",
-      "tests/customer-reviews.spec.ts",
       "--project=mobile",
       "--project=desktop",
       "--config=playwright.next-prebuilt.config.ts",
@@ -70,6 +69,7 @@ const localJourneyCommands = [
       "tests/booking-request-access.spec.ts",
       "tests/administrator-payment-history.spec.ts",
       "tests/administrator-records.spec.ts",
+      "tests/customer-reviews.spec.ts",
       "--project=mobile",
       "--project=desktop",
       "--config=playwright.next-prebuilt.config.ts",
@@ -85,7 +85,6 @@ const localJourneyCommands = [
       "test",
       "tests/access.spec.ts",
       "tests/messaging.spec.ts",
-      "tests/customer-reviews.spec.ts",
       "--project=worker",
       "--config=playwright.worker-prebuilt.config.ts",
       "--workers=2",
@@ -102,6 +101,7 @@ const localJourneyCommands = [
       "tests/administrator-payment-history.spec.ts",
       "tests/administrator-records.spec.ts",
       "tests/booking-cancellation-refund.spec.ts",
+      "tests/customer-reviews.spec.ts",
       "--project=worker",
       "--config=playwright.worker-prebuilt.config.ts",
       "--workers=1",
@@ -157,8 +157,12 @@ it("local browser groups parallelize owned files and isolate global mutations", 
         parallel.length + exclusive.length,
       );
       for (const file of exclusive) expect(parallel).not.toContain(file);
+      expect(parallel).not.toContain("tests/customer-reviews.spec.ts");
+      expect(exclusive).toContain("tests/customer-reviews.spec.ts");
+      expect(
+        journeys[offset + 1][1].filter((arg) => arg.startsWith("--workers=")),
+      ).toEqual(["--workers=1"]);
       expect(journeys[offset][1]).toContain("--workers=2");
-      expect(journeys[offset + 1][1]).toContain("--workers=1");
       expect(journeys[offset][1]).toContain("--retries=0");
       expect(journeys[offset + 1][1]).toContain("--retries=0");
     }
