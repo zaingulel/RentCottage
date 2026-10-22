@@ -77,14 +77,22 @@ async function processGroupExists(group) {
 
 function inspectProcessGroup(group) {
   return new Promise((resolveInspection, rejectInspection) => {
-    const child = spawn(
-      "/bin/ps",
-      ["-axo", "pid=,pgid=,stat=,lstart=,command="],
-      {
-        env: { ...process.env, LANG: "C", LC_ALL: "C" },
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
+    // Bound Linux output before capture; the verifier row keeps empty-group queries successful.
+    // procps consumes trailing selectors after a negative PGID, so that selector must be last.
+    const args =
+      process.platform === "linux"
+        ? [
+            "-p",
+            String(process.pid),
+            "-o",
+            "pid=,pgid=,stat=,lstart=,command=",
+            "-" + String(group),
+          ]
+        : ["-axo", "pid=,pgid=,stat=,lstart=,command="];
+    const child = spawn("/bin/ps", args, {
+      env: { ...process.env, LANG: "C", LC_ALL: "C" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = "";
     let stderr = "";
     let outputBytes = 0;
