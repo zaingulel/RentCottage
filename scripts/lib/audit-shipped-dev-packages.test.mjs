@@ -23,7 +23,7 @@ const ADAPTER_ADVISORY = {
   range: "<1.17.1",
 };
 
-function lockfile({ adapterVersion = "1.20.2", omit = undefined } = {}) {
+function lockfile({ adapterVersion = "1.20.12", omit = undefined } = {}) {
   const packages = {
     "": { name: "rentcottage" },
     "node_modules/@opennextjs/aws": { version: "4.1.0", dev: true },
@@ -200,7 +200,7 @@ describe("shipped development-package audit", () => {
     assert.deepEqual(result.calls, []);
     assert.equal(result.stderr.length, 1);
     assert.match(result.stderr[0], /1\.21\.0/);
-    assert.match(result.stderr[0], /1\.20\.2/);
+    assert.match(result.stderr[0], /1\.20\.12/);
   });
 
   test("incomplete evidence exits 2", async (t) => {
