@@ -1,5 +1,9 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+
+const { requestPhone } = vi.hoisted(() => ({ requestPhone: vi.fn() }));
+vi.mock("@/access/actions", () => ({ requestPhoneAccess: requestPhone }));
 
 vi.mock("@/booking-request/actions", () => ({
   submitBookingRequest: vi.fn(),
@@ -63,6 +67,64 @@ const bookingRequestProps = {
 };
 
 describe("Booking Quote view", () => {
+  it("hosted demo passes simulation mode to inline phone access", async () => {
+    requestPhone.mockResolvedValue({ status: "demo_code_ready" });
+    const view = render(
+      <BookingQuoteView
+        locale="en"
+        slug={result.quote.slug}
+        queryString="guests=4"
+        result={result}
+        {...bookingRequestProps}
+        customerReady={false}
+        phoneAccessMode="hosted-demo"
+      />,
+    );
+    expect(
+      screen.getByRole("heading", {
+        name: "Continue with your invited demo identity",
+      }),
+    ).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Invited demo number"), {
+      target: { value: "+9647500000000" },
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Use simulated code" }),
+    );
+    expect(screen.getByLabelText("Simulated invitation code")).toBeVisible();
+    expect(requestPhone).toHaveBeenLastCalledWith("+9647500000000");
+    view.unmount();
+    const standard = render(
+      <BookingQuoteView
+        locale="en"
+        slug={result.quote.slug}
+        queryString="guests=4"
+        result={result}
+        {...bookingRequestProps}
+        customerReady={false}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Send verification code" }),
+    ).toBeVisible();
+    standard.unmount();
+    const unavailable = render(
+      <BookingQuoteView
+        locale="en"
+        slug={result.quote.slug}
+        queryString="guests=4"
+        result={{ status: "unavailable" }}
+        {...bookingRequestProps}
+        customerReady={false}
+        phoneAccessMode="hosted-demo"
+      />,
+    );
+    expect(screen.getByRole("alert")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Use simulated code" }),
+    ).not.toBeInTheDocument();
+    unavailable.unmount();
+  });
   it("renders the complete terms body before acceptance", () => {
     render(
       <BookingQuoteView

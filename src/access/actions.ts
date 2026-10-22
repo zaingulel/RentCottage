@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { getServerEnvironment } from "@/config/server-runtime";
 import { isLocale } from "@/i18n/routing";
 import { parseAccountName } from "./account-name";
 import {
@@ -59,6 +60,7 @@ export async function requestPhoneAccess(phone: unknown) {
   try {
     const access = createSupabaseAccountAccess(
       await createRequestSupabaseClient(),
+      getServerEnvironment().hostedDemo ? "hosted-demo" : "standard",
     );
     return await access.requestPhoneAccess({ phone });
   } catch {

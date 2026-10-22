@@ -1,3 +1,4 @@
+import type { PhoneAccessMode } from "@/access/account-access";
 import {
   BookingPeriodIdentity,
   BookingPeriodEndpoints,
@@ -19,6 +20,7 @@ import { ActionFocusTarget, ActionLink } from "./interaction-controls";
 
 export function BookingQuoteView({
   locale,
+  phoneAccessMode = "standard",
   slug,
   queryString,
   result,
@@ -32,6 +34,7 @@ export function BookingQuoteView({
   selectedConversationId,
 }: {
   locale: Locale;
+  phoneAccessMode?: PhoneAccessMode;
   slug: string;
   queryString: string;
   result: PublicBookingQuoteResult;
@@ -154,6 +157,7 @@ export function BookingQuoteView({
         </aside>
         <BookingRequestForm
           locale={locale}
+          phoneAccessMode={phoneAccessMode}
           quote={quote}
           discoveryQuery={discoveryQuery}
           idempotencyKey={idempotencyKey}

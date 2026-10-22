@@ -282,3 +282,87 @@ export const accessMessages: Record<
     saveAndContinue: "Save and continue",
   },
 };
+
+export const hostedDemoAccessMessages: Record<
+  Locale,
+  Pick<
+    (typeof accessMessages)[Locale],
+    | "accessTitle"
+    | "accessIntro"
+    | "phone"
+    | "phoneHint"
+    | "sendCode"
+    | "code"
+    | "verify"
+    | "resend"
+    | "invalidCode"
+    | "expiredCode"
+    | "verified"
+    | "invalidPhone"
+    | "editNumber"
+  > & { codeHint: string; notice: string }
+> = {
+  en: {
+    accessTitle: "Invited demo access",
+    accessIntro:
+      "Sign into your invited synthetic identity using a simulated phone code.",
+    phone: "Invited demo number",
+    phoneHint:
+      "Use the synthetic number supplied privately with your invitation.",
+    sendCode: "Use simulated code",
+    code: "Simulated invitation code",
+    codeHint: "Use your private invitation code. No text message is sent.",
+    verify: "Continue demo",
+    resend: "Use simulated code again",
+    invalidCode: "The simulated invitation code is invalid.",
+    expiredCode:
+      "The simulated invitation code expired. Ask for a renewed invitation.",
+    verified:
+      "Signed into the synthetic demo identity. Phone verification is simulated.",
+    invalidPhone: "Enter the synthetic number supplied with your invitation.",
+    editNumber: "Change demo number",
+    notice:
+      "Invited synthetic demo. Phone identity and verification are simulated. Real suppliers are unavailable.",
+  },
+  ar: {
+    accessTitle: "دخول العرض بالدعوة",
+    accessIntro: "ادخل بهويتك الاصطناعية المدعوة باستخدام رمز هاتف محاكى.",
+    phone: "رقم العرض المدعو",
+    phoneHint: "استخدم الرقم الاصطناعي المقدم لك بشكل خاص مع دعوتك.",
+    sendCode: "استخدم الرمز المحاكى",
+    code: "رمز الدعوة المحاكى",
+    codeHint: "استخدم رمز دعوتك الخاص. لا تُرسل رسالة نصية.",
+    verify: "تابع العرض",
+    resend: "استخدم الرمز المحاكى مجددًا",
+    invalidCode: "رمز الدعوة المحاكى غير صحيح.",
+    expiredCode: "انتهت صلاحية رمز الدعوة المحاكى. اطلب تجديد الدعوة.",
+    verified: "تم الدخول بهوية عرض اصطناعية. التحقق من الهاتف محاكاة.",
+    invalidPhone: "أدخل الرقم الاصطناعي المقدم مع دعوتك.",
+    editNumber: "غيّر رقم العرض",
+    notice:
+      "عرض اصطناعي بالدعوة. هوية الهاتف والتحقق منه محاكاة. الموردون الحقيقيون غير متاحين.",
+  },
+  ckb: {
+    accessTitle: "دەستگەیشتنی پیشاندان بە بانگهێشت",
+    accessIntro:
+      "بە کۆدی تەلەفۆنی هاوشێوەکراو بچۆ ناو ناسنامە دەستکردە بانگهێشتکراوەکەت.",
+    phone: "ژمارەی بانگهێشتی پیشاندان",
+    phoneHint:
+      "ئەو ژمارە دەستکردە بەکاربهێنە کە بە تایبەتی لەگەڵ بانگهێشتەکەت دراوە.",
+    sendCode: "کۆدی هاوشێوەکراو بەکاربهێنە",
+    code: "کۆدی بانگهێشتی هاوشێوەکراو",
+    codeHint:
+      "کۆدی تایبەتی بانگهێشتەکەت بەکاربهێنە. هیچ نامەیەکی دەقی نانێردرێت.",
+    verify: "پیشاندان بەردەوام بکە",
+    resend: "کۆدی هاوشێوەکراو دووبارە بەکاربهێنە",
+    invalidCode: "کۆدی بانگهێشتی هاوشێوەکراو نادروستە.",
+    expiredCode:
+      "کۆدی بانگهێشتی هاوشێوەکراو بەسەرچووە. داوای نوێکردنەوەی بانگهێشت بکە.",
+    verified:
+      "بە ناسنامەی دەستکردی پیشاندان چوویتە ژوورەوە. پشتڕاستکردنەوەی تەلەفۆن هاوشێوەکراوە.",
+    invalidPhone: "ژمارە دەستکردەکەی لەگەڵ بانگهێشتەکەت بنووسە.",
+    editNumber: "ژمارەی پیشاندان بگۆڕە",
+    notice:
+      "پیشاندانی دەستکرد بە بانگهێشت. ناسنامە و پشتڕاستکردنەوەی تەلەفۆن هاوشێوەکراون. دابینکەرە ڕاستەقینەکان بەردەست نین.",
+  },
+};

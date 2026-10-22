@@ -6,6 +6,7 @@ import {
   type AccountContextStore,
   type IdentityProvider,
   type MarketplaceRole,
+  type PhoneAccessMode,
 } from "./account-access";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -44,17 +45,26 @@ export function parseAccountContext(value: unknown): AccountContext {
 }
 
 export class SupabaseIdentityProvider implements IdentityProvider {
-  constructor(private readonly client: SupabaseClient) {}
+  constructor(
+    private readonly client: SupabaseClient,
+    private readonly mode: PhoneAccessMode = "standard",
+  ) {}
 
   async requestPhoneCode(phone: string) {
-    const { error } = await this.client.auth.signInWithOtp({ phone });
+    const { error } = await this.client.auth.signInWithOtp(
+      this.mode === "hosted-demo"
+        ? { phone, options: { shouldCreateUser: false } }
+        : { phone },
+    );
     if (
       error?.code === "over_request_rate_limit" ||
       error?.code === "over_sms_send_rate_limit"
     )
       return { status: "rate_limited" as const };
     if (error) throw error;
-    return { status: "code_sent" as const };
+    return this.mode === "hosted-demo"
+      ? { status: "demo_code_ready" as const }
+      : { status: "code_sent" as const };
   }
 
   async verifyPhoneCode(phone: string, code: string) {
@@ -221,9 +231,12 @@ export class SupabaseAccountContextStore implements AccountContextStore {
   }
 }
 
-export function createSupabaseAccountAccess(client: SupabaseClient) {
+export function createSupabaseAccountAccess(
+  client: SupabaseClient,
+  mode: PhoneAccessMode = "standard",
+) {
   return createAccountAccess({
-    identityProvider: new SupabaseIdentityProvider(client),
+    identityProvider: new SupabaseIdentityProvider(client, mode),
     accountContexts: new SupabaseAccountContextStore(client),
   });
 }

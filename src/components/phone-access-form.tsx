@@ -8,7 +8,11 @@ import {
   requestPhoneAccess,
   verifyPhoneAccess,
 } from "@/access/actions";
-import { accessMessages } from "@/i18n/access-messages";
+import type { PhoneAccessMode } from "@/access/account-access";
+import {
+  accessMessages,
+  hostedDemoAccessMessages,
+} from "@/i18n/access-messages";
 import type { Locale } from "@/i18n/routing";
 
 import {
@@ -22,16 +26,22 @@ import { useExclusiveAction } from "./use-exclusive-action";
 
 export function PhoneAccessForm({
   locale,
+  phoneAccessMode = "standard",
   returnTo,
   onVerified,
   verifiedFocusTargetId,
 }: {
   locale: Locale;
+  phoneAccessMode?: PhoneAccessMode;
   returnTo?: string;
   onVerified?: () => void;
   verifiedFocusTargetId?: string;
 }) {
-  const copy = accessMessages[locale];
+  const hostedDemo = phoneAccessMode === "hosted-demo";
+  const copy = {
+    ...accessMessages[locale],
+    ...(hostedDemo ? hostedDemoAccessMessages[locale] : {}),
+  };
   const verifyButtonId = useId();
   const codeInputId = useId();
   const verifiedFeedbackId = useId();
@@ -51,7 +61,11 @@ export function PhoneAccessForm({
       return;
     }
     if (!result) return;
-    if (result.status === "code_sent") setStage("code");
+    if (
+      (result.status === "code_sent" && !hostedDemo) ||
+      (result.status === "demo_code_ready" && hostedDemo)
+    )
+      setStage("code");
     else
       setMessage(
         result.status === "invalid_phone"
@@ -133,12 +147,13 @@ export function PhoneAccessForm({
               dir="ltr"
               autoComplete="tel"
               value={phone}
-              placeholder="+9647501234567"
+              placeholder={hostedDemo ? undefined : "+9647501234567"}
               onChange={(event) => setPhone(event.target.value)}
             />
           </label>
           <small>
-            {copy.phoneHint} <bdi dir="ltr">+9647501234567</bdi>
+            {copy.phoneHint}{" "}
+            {!hostedDemo && <bdi dir="ltr">+9647501234567</bdi>}
           </small>
           <ActionButton
             kind="primary"
@@ -154,6 +169,9 @@ export function PhoneAccessForm({
       )}
       {stage === "code" && (
         <>
+          {hostedDemo && (
+            <small>{hostedDemoAccessMessages[locale].codeHint}</small>
+          )}
           <label>
             <span>{copy.code}</span>
             <FormControl

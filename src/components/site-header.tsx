@@ -112,9 +112,11 @@ function PanelToggle({
 export function SiteHeader({
   locale: initialLocale,
   account,
+  hostedDemo = false,
 }: {
   locale: Locale;
   account: NavigationAccount;
+  hostedDemo?: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -124,6 +126,7 @@ export function SiteHeader({
   const landing =
     pathname === `/${locale}` &&
     !(account.status === "authenticated" && account.name?.status === "missing");
+  const overlayLanding = landing && !hostedDemo;
   const accessPage = pathname === `/${locale}/access`;
   const administratorAccessPage =
     pathname === `/${locale}/administrator/access`;
@@ -132,12 +135,12 @@ export function SiteHeader({
     returnToValues.length === 1 ? returnToValues[0] : returnToValues;
   const [condensed, setCondensed] = useState(false);
   useEffect(() => {
-    if (!landing) return;
+    if (!overlayLanding) return;
     const update = () => setCondensed(window.scrollY > condenseAfterScroll);
     update();
     window.addEventListener("scroll", update, { passive: true });
     return () => window.removeEventListener("scroll", update);
-  }, [landing]);
+  }, [overlayLanding]);
   const [openPanel, setOpenPanel] = useState<HeaderPanel | null>(null);
   const header = useRef<HTMLElement>(null);
   const accountMenu = useRef<HTMLDivElement>(null);
@@ -217,8 +220,8 @@ export function SiteHeader({
   const enrollHref = accountAccessHref(locale, `/${locale}/owner/application`);
   return (
     <header
-      className={`site-header${landing ? " site-header-landing" : ""}${
-        !landing || condensed ? " site-header-solid" : ""
+      className={`site-header${overlayLanding ? " site-header-landing" : ""}${
+        !overlayLanding || condensed ? " site-header-solid" : ""
       }`}
       ref={header}
       onClick={closeOnChoice}
