@@ -236,16 +236,17 @@ The journey names below identify files under `tests/` with the `.spec.ts` suffix
 
 | Runtime and portion | Journeys | Workers |
 |---|---|---|
-| Next.js parallel | `booking-history`, `messaging`, `customer-reviews` | 2 |
-| Next.js exclusive | `access`, `booking-request-access`, `administrator-payment-history`, `administrator-records` | 1 |
-| Worker parallel | `access`, `messaging`, `customer-reviews` | 2 |
-| Worker exclusive | `booking-request-access`, `administrator-payment-history`, `administrator-records`, `booking-cancellation-refund` | 1 |
+| Next.js parallel | `booking-history`, `messaging` | 2 |
+| Next.js exclusive | `access`, `booking-request-access`, `administrator-payment-history`, `administrator-records`, `customer-reviews` | 1 |
+| Worker parallel | `access`, `messaging` | 2 |
+| Worker exclusive | `booking-request-access`, `administrator-payment-history`, `administrator-records`, `booking-cancellation-refund`, `customer-reviews` | 1 |
 | Worker scheduled | `worker-scheduled-expiry`, `worker-scheduled-capture`, `worker-scheduled-refund`, `worker-scheduled-completion`, `worker-scheduled-reminder`, `worker-scheduled-request-notification` | 1 |
 
 Local Playwright runs tests within each file sequentially; `access.spec.ts` keeps its explicit serial declaration.
 Next.js access is exclusive across mobile and desktop because they share translation controls and administrator
-selectors. Hosted runs keep full parallelism within files and the existing shard selections; the owned-journey
-proof modes keep their existing worker and retry settings.
+selectors. Customer reviews run exclusively in both runtimes because their unavailable-state test temporarily
+changes public review function privileges shared by every fixture. Hosted runs keep full parallelism within files
+and the existing shard selections; the owned-journey proof modes keep their existing worker and retry settings.
 
 A TypeScript product change selects the baseline route; a database object the database group; a booking or payment
 Integrity Core object or concurrency program adds the booking and payment concurrency programs; presentation,

@@ -300,11 +300,7 @@ function browserJourneys({ ownedJourneys, phase, partition, shard }) {
       ? localJourneyInvocations(
           [
             [
-              [
-                "tests/booking-history.spec.ts",
-                "tests/messaging.spec.ts",
-                "tests/customer-reviews.spec.ts",
-              ],
+              ["tests/booking-history.spec.ts", "tests/messaging.spec.ts"],
               2,
               "parallel",
             ],
@@ -314,6 +310,7 @@ function browserJourneys({ ownedJourneys, phase, partition, shard }) {
                 "tests/booking-request-access.spec.ts",
                 "tests/administrator-payment-history.spec.ts",
                 "tests/administrator-records.spec.ts",
+                "tests/customer-reviews.spec.ts",
               ],
               1,
               "exclusive",
@@ -404,11 +401,7 @@ function browserJourneys({ ownedJourneys, phase, partition, shard }) {
       ? localJourneyInvocations(
           [
             [
-              [
-                "tests/access.spec.ts",
-                "tests/messaging.spec.ts",
-                "tests/customer-reviews.spec.ts",
-              ],
+              ["tests/access.spec.ts", "tests/messaging.spec.ts"],
               2,
               "parallel",
             ],
@@ -418,6 +411,7 @@ function browserJourneys({ ownedJourneys, phase, partition, shard }) {
                 "tests/administrator-payment-history.spec.ts",
                 "tests/administrator-records.spec.ts",
                 "tests/booking-cancellation-refund.spec.ts",
+                "tests/customer-reviews.spec.ts",
               ],
               1,
               "exclusive",
