@@ -244,6 +244,24 @@ export interface CottageProfileStorage {
   ): Promise<string>;
 }
 
+export type CottageProfileOperationOutcome =
+  | "capacity_limit"
+  | "conflict"
+  | "denied"
+  | "incomplete"
+  | "invalid_reason"
+  | "last_photo"
+  | "rate_limit";
+
+export class CottageProfileOperationError extends Error {
+  constructor(
+    readonly outcome: CottageProfileOperationOutcome,
+    options?: ErrorOptions,
+  ) {
+    super("Cottage Profile operation outcome: " + outcome, options);
+  }
+}
+
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const knownAmenities = new Set<string>(cottageProfileAmenities);
@@ -373,15 +391,12 @@ function parseDraftValues(
   };
 }
 
-function providerErrorCode(error: unknown): string | undefined {
-  let candidate = error;
-  for (let depth = 0; depth <= 8; depth += 1) {
-    if (!candidate || typeof candidate !== "object") return undefined;
-    const providerError = candidate as { code?: unknown; cause?: unknown };
-    if (typeof providerError.code === "string") return providerError.code;
-    candidate = providerError.cause;
-  }
-  return undefined;
+function operationOutcome(
+  error: unknown,
+): CottageProfileOperationOutcome | undefined {
+  return error instanceof CottageProfileOperationError
+    ? error.outcome
+    : undefined;
 }
 
 async function administratorLifecycle(
@@ -417,11 +432,11 @@ async function administratorLifecycle(
         }
       : { status: "unavailable" as const };
   } catch (error) {
-    const code = providerErrorCode(error);
-    if (code === "RC420") return { status: "capacity_limit" as const };
-    if (code === "RC409") return { status: "conflict" as const };
-    if (code === "RC202" || code === "42501")
-      return { status: "denied" as const };
+    const outcome = operationOutcome(error);
+    if (outcome === "capacity_limit")
+      return { status: "capacity_limit" as const };
+    if (outcome === "conflict") return { status: "conflict" as const };
+    if (outcome === "denied") return { status: "denied" as const };
     return { status: "unavailable" as const };
   }
 }
@@ -457,12 +472,12 @@ async function changeContentVisibility(
     });
     return { status: "saved" as const, visibility };
   } catch (error) {
-    const code = providerErrorCode(error);
-    if (code === "22023")
+    const outcome = operationOutcome(error);
+    if (outcome === "invalid_reason")
       return { status: "invalid" as const, fields: ["reason"] };
-    if (code === "42501") return { status: "denied" as const };
-    if (code === "RC409") return { status: "conflict" as const };
-    if (code === "RC203") return { status: "last_photo" as const };
+    if (outcome === "denied") return { status: "denied" as const };
+    if (outcome === "conflict") return { status: "conflict" as const };
+    if (outcome === "last_photo") return { status: "last_photo" as const };
     return { status: "unavailable" as const };
   }
 }
@@ -557,9 +572,9 @@ export function createCottageProfile({
         });
         return { status: "saved" as const, profile };
       } catch (error) {
-        const code = providerErrorCode(error);
-        if (code === "RC409") return { status: "conflict" as const };
-        if (code === "RC202" || code === "42501") {
+        const outcome = operationOutcome(error);
+        if (outcome === "conflict") return { status: "conflict" as const };
+        if (outcome === "denied") {
           return { status: "denied" as const };
         }
         return { status: "unavailable" as const };
@@ -598,12 +613,12 @@ export function createCottageProfile({
         });
         return { status: "saved" as const, profile };
       } catch (error) {
-        const code = providerErrorCode(error);
-        if (code === "22023")
+        const outcome = operationOutcome(error);
+        if (outcome === "invalid_reason")
           return { status: "invalid" as const, fields: ["reason"] };
-        if (code === "RC203") return { status: "incomplete" as const };
-        if (code === "RC409") return { status: "conflict" as const };
-        if (code === "42501") return { status: "denied" as const };
+        if (outcome === "incomplete") return { status: "incomplete" as const };
+        if (outcome === "conflict") return { status: "conflict" as const };
+        if (outcome === "denied") return { status: "denied" as const };
         return { status: "unavailable" as const };
       }
     },
@@ -613,14 +628,14 @@ export function createCottageProfile({
         const profile = await repository.createDraft();
         return { status: "created" as const, profile };
       } catch (error) {
-        const code = providerErrorCode(error);
+        const outcome = operationOutcome(error);
         return {
           status:
-            code === "RC420"
+            outcome === "capacity_limit"
               ? ("capacity_limit" as const)
-              : code === "RC429"
+              : outcome === "rate_limit"
                 ? ("rate_limit" as const)
-                : code === "42501"
+                : outcome === "denied"
                   ? ("denied" as const)
                   : ("unavailable" as const),
         };
@@ -644,10 +659,9 @@ export function createCottageProfile({
           ? { status: "abandoned" as const, profile }
           : { status: "unavailable" as const };
       } catch (error) {
-        const code = providerErrorCode(error);
-        if (code === "RC409") return { status: "conflict" as const };
-        if (code === "RC202" || code === "42501")
-          return { status: "denied" as const };
+        const outcome = operationOutcome(error);
+        if (outcome === "conflict") return { status: "conflict" as const };
+        if (outcome === "denied") return { status: "denied" as const };
         return { status: "unavailable" as const };
       }
     },
@@ -716,9 +730,9 @@ export function createCottageProfile({
           ...(reason === undefined ? {} : { reason }),
         });
       } catch (error) {
-        if (providerErrorCode(error) === "22023")
+        if (operationOutcome(error) === "invalid_reason")
           return { status: "invalid" as const, fields: ["reason"] };
-        if (providerErrorCode(error) === "42501")
+        if (operationOutcome(error) === "denied")
           return { status: "denied" as const };
         return { status: "unavailable" as const };
       }
@@ -754,7 +768,7 @@ export function createCottageProfile({
       } catch (error) {
         return {
           status:
-            providerErrorCode(error) === "42501"
+            operationOutcome(error) === "denied"
               ? ("denied" as const)
               : ("unavailable" as const),
         };
@@ -781,14 +795,14 @@ export function createCottageProfile({
             ? await repository.preparePhotoDeletion(photoId)
             : await repository.preparePhotoDeletion(photoId, reason);
       } catch (error) {
-        if (providerErrorCode(error) === "22023")
+        if (operationOutcome(error) === "invalid_reason")
           return { status: "invalid" as const, fields: ["reason"] };
-        if (providerErrorCode(error) === "RC203") {
+        if (operationOutcome(error) === "incomplete") {
           return { status: "incomplete" as const };
         }
         return {
           status:
-            providerErrorCode(error) === "42501"
+            operationOutcome(error) === "denied"
               ? ("denied" as const)
               : ("unavailable" as const),
         };
@@ -817,10 +831,10 @@ export function createCottageProfile({
       try {
         profile = await repository.submit(profileId, expectedVersion);
       } catch (error) {
-        const code = providerErrorCode(error);
-        if (code === "RC203") return { status: "incomplete" as const };
-        if (code === "RC409") return { status: "conflict" as const };
-        if (code === "42501") return { status: "denied" as const };
+        const outcome = operationOutcome(error);
+        if (outcome === "incomplete") return { status: "incomplete" as const };
+        if (outcome === "conflict") return { status: "conflict" as const };
+        if (outcome === "denied") return { status: "denied" as const };
         return { status: "unavailable" as const };
       }
       if (

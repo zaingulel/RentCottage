@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 
+import {
+  createCottageInventory,
+  CottageInventoryOperationError,
+} from "./cottage-inventory";
 import { SupabaseCottageInventoryRepository } from "./supabase-cottage-inventory";
 
 const profileId = "70000000-0000-4000-8000-000000000001";
@@ -584,9 +588,12 @@ it("returns a complete scoped owner calendar span and rejects corrupt cells", as
     );
   }
   rpc.mockResolvedValueOnce({ data: null, error: { code: "42501" } });
-  await expect(repository.resolveOwnerCalendarSpan(input)).rejects.toThrow(
-    "Cottage Inventory provider is unavailable",
-  );
+  const denied = repository.resolveOwnerCalendarSpan(input);
+  await expect(denied).rejects.toBeInstanceOf(CottageInventoryOperationError);
+  await expect(denied).rejects.toMatchObject({
+    outcome: "denied",
+    cause: { code: "42501" },
+  });
 });
 
 it("rejects malformed batch receipts and preserves refusals", async () => {
@@ -732,6 +739,261 @@ it("rejects malformed batch receipts and preserves refusals", async () => {
     rpc.mockResolvedValueOnce({ data, error: null });
     await expect(repository.setAvailabilityBatch(input)).rejects.toThrow(
       "Cottage Inventory provider data is invalid",
+    );
+  }
+});
+
+it("preserves inventory operation outcomes through the real adapter", async () => {
+  type Inventory = ReturnType<typeof createCottageInventory>;
+  const serviceDay = "2099-08-20";
+  const identity = {
+    target_profile_id: profileId,
+    target_schedule_revision_id: revisionId,
+  };
+  const datedIdentity = { ...identity, target_service_day: serviceDay };
+  const batch = {
+    from: serviceDay,
+    to: "2099-08-21",
+    unitKeys: [{ id: shiftId, kind: "shift" as const }],
+    state: "closed" as const,
+    mode: "range" as const,
+    reviewConfirmed: false,
+    replacePrivateBlocks: [],
+    cells: [
+      {
+        serviceDay,
+        id: shiftId,
+        kind: "shift" as const,
+        expectedOwnerState: "open" as const,
+      },
+      {
+        serviceDay: "2099-08-21",
+        id: shiftId,
+        kind: "shift" as const,
+        expectedOwnerState: "closed" as const,
+      },
+    ],
+  };
+  const operations = {
+    loadOwnerEditorState: {
+      run: (inventory: Inventory) =>
+        inventory.loadOwnerEditorState(profileId, revisionId, serviceDay),
+      rpc: "load_cottage_inventory_owner_editor_state",
+      parameters: datedIdentity,
+    },
+    savePricing: {
+      run: (inventory: Inventory) =>
+        inventory.savePricing(profileId, revisionId, {
+          units: [{ id: shiftId, kind: "shift", standardPriceIqd: 120000 }],
+        }),
+      rpc: "save_cottage_inventory_pricing",
+      parameters: {
+        ...identity,
+        requested_prices: {
+          units: [
+            { unitId: shiftId, unitKind: "shift", standardPriceIqd: 120000 },
+          ],
+        },
+      },
+    },
+    resolvePublicAvailability: {
+      run: (inventory: Inventory) =>
+        inventory.resolvePublicAvailability(profileId, revisionId, serviceDay),
+      rpc: "resolve_cottage_inventory_public_availability",
+      parameters: datedIdentity,
+    },
+    resolveOwnerCalendar: {
+      run: (inventory: Inventory) =>
+        inventory.resolveOwnerCalendar(profileId, revisionId, serviceDay),
+      rpc: "resolve_cottage_inventory_owner_calendar",
+      parameters: datedIdentity,
+    },
+    resolveOwnerCalendarSpan: {
+      run: (inventory: Inventory) =>
+        inventory.resolveOwnerCalendarSpan(
+          profileId,
+          revisionId,
+          serviceDay,
+          "2099-08-21",
+        ),
+      rpc: "resolve_cottage_inventory_owner_calendar_span",
+      parameters: {
+        ...identity,
+        target_from: serviceDay,
+        target_to: "2099-08-21",
+      },
+    },
+    setAvailability: {
+      run: (inventory: Inventory) =>
+        inventory.setAvailability(profileId, revisionId, serviceDay, {
+          units: [{ id: shiftId, kind: "shift", state: "private_blocked" }],
+        }),
+      rpc: "set_cottage_inventory_availability",
+      parameters: {
+        ...datedIdentity,
+        requested_states: [
+          { unitId: shiftId, unitKind: "shift", state: "private_blocked" },
+        ],
+      },
+    },
+    setAvailabilityBatch: {
+      run: (inventory: Inventory) =>
+        inventory.setAvailabilityBatch(profileId, revisionId, batch),
+      rpc: "set_cottage_inventory_availability_batch",
+      parameters: { ...identity, requested_batch: batch },
+    },
+  };
+  const cases = [
+    {
+      operation: "loadOwnerEditorState",
+      code: "42501",
+      expected: { status: "denied" },
+    },
+    { operation: "savePricing", code: "42501", expected: { status: "denied" } },
+    {
+      operation: "resolvePublicAvailability",
+      code: "42501",
+      expected: { status: "denied" },
+    },
+    {
+      operation: "resolveOwnerCalendar",
+      code: "42501",
+      expected: { status: "denied" },
+    },
+    {
+      operation: "resolveOwnerCalendarSpan",
+      code: "42501",
+      expected: { status: "denied" },
+    },
+    {
+      operation: "setAvailability",
+      code: "42501",
+      expected: { status: "denied" },
+    },
+    {
+      operation: "setAvailabilityBatch",
+      code: "42501",
+      expected: { status: "denied" },
+    },
+    {
+      operation: "savePricing",
+      code: "RC409",
+      expected: { status: "conflict" },
+    },
+    { operation: "savePricing", code: "RC202", expected: { status: "denied" } },
+    {
+      operation: "setAvailabilityBatch",
+      code: "22023",
+      expected: { status: "invalid", fields: ["batch"] },
+    },
+    {
+      operation: "setAvailabilityBatch",
+      code: "RC409",
+      expected: { status: "conflict" },
+    },
+    {
+      operation: "resolveOwnerCalendarSpan",
+      code: "22023",
+      expected: { status: "unavailable" },
+    },
+    {
+      operation: "savePricing",
+      code: "UNKNOWN",
+      expected: { status: "unavailable" },
+    },
+  ] as const;
+  for (const example of cases) {
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: example.code },
+    });
+    const from = vi.fn();
+    const storageFrom = vi.fn();
+    const inventory = createCottageInventory(
+      new SupabaseCottageInventoryRepository({
+        rpc,
+        from,
+        storage: { from: storageFrom },
+      } as unknown as SupabaseClient),
+    );
+    const operation = operations[example.operation];
+    const context = `${example.operation}: ${example.code}`;
+    await expect(operation.run(inventory), context).resolves.toEqual(
+      example.expected,
+    );
+    expect(rpc, context).toHaveBeenCalledExactlyOnceWith(
+      operation.rpc,
+      operation.parameters,
+    );
+    expect(from, context).not.toHaveBeenCalled();
+    expect(storageFrom, context).not.toHaveBeenCalled();
+  }
+});
+
+it("preserves inventory provider cause depth and first-code precedence", async () => {
+  const knownCodeAtDepth = (depth: number): unknown => {
+    let error: unknown = { code: "RC409" };
+    for (let level = 0; level < depth; level += 1) {
+      error = { cause: error };
+    }
+    return error;
+  };
+  const cases = [
+    {
+      name: "immediate nested known code",
+      error: { cause: { code: "RC409" } },
+      expected: { status: "conflict" },
+    },
+    {
+      name: "known code at raw depth six",
+      error: knownCodeAtDepth(6),
+      expected: { status: "conflict" },
+    },
+    {
+      name: "known code at raw depth seven",
+      error: knownCodeAtDepth(7),
+      expected: { status: "unavailable" },
+    },
+    {
+      name: "outer unknown string masks a known cause",
+      error: { code: "UNKNOWN", cause: { code: "RC409" } },
+      expected: { status: "unavailable" },
+    },
+    {
+      name: "outer numeric code permits a known cause",
+      error: { code: 409, cause: { code: "RC409" } },
+      expected: { status: "conflict" },
+    },
+    {
+      name: "constructor string is unknown",
+      error: { code: "constructor" },
+      expected: { status: "unavailable" },
+    },
+  ];
+  for (const example of cases) {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: example.error });
+    const inventory = createCottageInventory(
+      new SupabaseCottageInventoryRepository({
+        rpc,
+      } as unknown as SupabaseClient),
+    );
+    await expect(
+      inventory.savePricing(profileId, revisionId, {
+        units: [{ id: shiftId, kind: "shift", standardPriceIqd: 120000 }],
+      }),
+      example.name,
+    ).resolves.toEqual(example.expected);
+    expect(rpc, example.name).toHaveBeenCalledExactlyOnceWith(
+      "save_cottage_inventory_pricing",
+      {
+        target_profile_id: profileId,
+        target_schedule_revision_id: revisionId,
+        requested_prices: {
+          units: [
+            { unitId: shiftId, unitKind: "shift", standardPriceIqd: 120000 },
+          ],
+        },
+      },
     );
   }
 });

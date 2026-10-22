@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { CottageShiftScheduleOperationError } from "./cottage-shift-schedule";
+
 import type {
+  CottageShiftScheduleOperationOutcome,
   CottageShift,
   CottageShiftScheduleRepository,
 } from "./cottage-shift-schedule";
@@ -120,83 +123,136 @@ function assertSuccess(error: unknown): void {
   }
 }
 
+type OperationOutcomes = Readonly<
+  Record<string, CottageShiftScheduleOperationOutcome>
+>;
+
+const loadOperationOutcomes: OperationOutcomes = {
+  RC202: "denied",
+  "42501": "denied",
+};
+const saveOperationOutcomes: OperationOutcomes = {
+  RC204: "committed",
+  RC409: "conflict",
+  RC202: "denied",
+  "42501": "denied",
+};
+
+function providerCode(error: unknown): string | undefined {
+  let candidate = error;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (!candidate || typeof candidate !== "object") return undefined;
+    const value = candidate as { code?: unknown; cause?: unknown };
+    if (typeof value.code === "string") return value.code;
+    candidate = value.cause;
+  }
+  return undefined;
+}
+
+async function withOperationOutcomes<T>(
+  outcomes: OperationOutcomes,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    const code = providerCode(error);
+    const outcome =
+      code !== undefined && Object.hasOwn(outcomes, code)
+        ? outcomes[code]
+        : undefined;
+    if (outcome === undefined) throw error;
+    const cause =
+      error instanceof Error && Object.hasOwn(error, "cause")
+        ? error.cause
+        : error;
+    throw new CottageShiftScheduleOperationError(outcome, { cause });
+  }
+}
+
 export class SupabaseCottageShiftScheduleRepository implements CottageShiftScheduleRepository {
   constructor(private readonly client: SupabaseClient) {}
 
   async loadCurrent(profileId: string) {
-    const profileResult = await this.client
-      .from("owner_application_cottage_profiles")
-      .select("current_shift_schedule_id")
-      .eq("id", profileId)
-      .maybeSingle();
-    assertSuccess(profileResult.error);
-    const pointer = profileResult.data?.current_shift_schedule_id;
-    if (!pointer) return null;
+    return withOperationOutcomes(loadOperationOutcomes, async () => {
+      const profileResult = await this.client
+        .from("owner_application_cottage_profiles")
+        .select("current_shift_schedule_id")
+        .eq("id", profileId)
+        .maybeSingle();
+      assertSuccess(profileResult.error);
+      const pointer = profileResult.data?.current_shift_schedule_id;
+      if (!pointer) return null;
 
-    const [revisionResult, shiftsResult] = await Promise.all([
-      this.client
-        .from("cottage_shift_schedule_revisions")
-        .select("id, profile_id, revision, full_day_bundle_id")
-        .eq("id", pointer)
-        .maybeSingle(),
-      this.client
-        .from("cottage_shifts")
-        .select(
-          "id, schedule_revision_id, position, name, start_time, end_time",
-        )
-        .eq("schedule_revision_id", pointer)
-        .order("position"),
-    ]);
-    assertSuccess(revisionResult.error);
-    assertSuccess(shiftsResult.error);
-    const revision = revisionResult.data;
-    if (!revision || revision.id !== pointer) {
-      throw new Error("Shift Schedule provider data is invalid");
-    }
-    return parseSchedule(
-      {
-        profileId: revision.profile_id,
-        scheduleRevisionId: revision.id,
-        revision: revision.revision,
-        fullDayBundleId: revision.full_day_bundle_id,
-        shifts: (shiftsResult.data ?? []).map((shift) => {
-          if (shift.schedule_revision_id !== revision.id) {
-            throw new Error("Shift Schedule provider data is invalid");
-          }
-          const startTime = databaseTime(shift.start_time);
-          const endTime = databaseTime(shift.end_time);
-          return {
-            id: shift.id,
-            name: shift.name,
-            startTime,
-            endTime,
-            position: shift.position,
-            crossesMidnight: endTime < startTime,
-          };
-        }),
-      },
-      profileId,
-    );
+      const [revisionResult, shiftsResult] = await Promise.all([
+        this.client
+          .from("cottage_shift_schedule_revisions")
+          .select("id, profile_id, revision, full_day_bundle_id")
+          .eq("id", pointer)
+          .maybeSingle(),
+        this.client
+          .from("cottage_shifts")
+          .select(
+            "id, schedule_revision_id, position, name, start_time, end_time",
+          )
+          .eq("schedule_revision_id", pointer)
+          .order("position"),
+      ]);
+      assertSuccess(revisionResult.error);
+      assertSuccess(shiftsResult.error);
+      const revision = revisionResult.data;
+      if (!revision || revision.id !== pointer) {
+        throw new Error("Shift Schedule provider data is invalid");
+      }
+      return parseSchedule(
+        {
+          profileId: revision.profile_id,
+          scheduleRevisionId: revision.id,
+          revision: revision.revision,
+          fullDayBundleId: revision.full_day_bundle_id,
+          shifts: (shiftsResult.data ?? []).map((shift) => {
+            if (shift.schedule_revision_id !== revision.id) {
+              throw new Error("Shift Schedule provider data is invalid");
+            }
+            const startTime = databaseTime(shift.start_time);
+            const endTime = databaseTime(shift.end_time);
+            return {
+              id: shift.id,
+              name: shift.name,
+              startTime,
+              endTime,
+              position: shift.position,
+              crossesMidnight: endTime < startTime,
+            };
+          }),
+        },
+        profileId,
+      );
+    });
   }
 
   async save(input: Parameters<CottageShiftScheduleRepository["save"]>[0]) {
-    const { data, error } = await this.client.rpc(
-      "replace_cottage_shift_schedule",
-      {
-        target_profile_id: input.profileId,
-        target_expected_revision: input.expectedRevision,
-        requested_shifts: input.shifts.map(({ name, startTime, endTime }) => ({
-          name,
-          startTime,
-          endTime,
-        })),
-      },
-    );
-    assertSuccess(error);
-    const schedule = parseSchedule(data, input.profileId);
-    if (schedule.shifts.length !== 2) {
-      throw new Error("Shift Schedule provider data is invalid");
-    }
-    return schedule;
+    return withOperationOutcomes(saveOperationOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "replace_cottage_shift_schedule",
+        {
+          target_profile_id: input.profileId,
+          target_expected_revision: input.expectedRevision,
+          requested_shifts: input.shifts.map(
+            ({ name, startTime, endTime }) => ({
+              name,
+              startTime,
+              endTime,
+            }),
+          ),
+        },
+      );
+      assertSuccess(error);
+      const schedule = parseSchedule(data, input.profileId);
+      if (schedule.shifts.length !== 2) {
+        throw new Error("Shift Schedule provider data is invalid");
+      }
+      return schedule;
+    });
   }
 }

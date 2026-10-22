@@ -189,6 +189,28 @@ describe("Supabase Cottage Shift Schedule adapter", () => {
     await expect(service.loadCurrent(profileId)).resolves.toEqual({
       status: "unavailable",
     });
+    await expect(
+      repository.save({
+        profileId,
+        expectedRevision: 0,
+        shifts: [
+          {
+            name: "Morning",
+            startTime: "09:00",
+            endTime: "15:00",
+            position: 1,
+            crossesMidnight: false,
+          },
+          {
+            name: "Evening",
+            startTime: "17:00",
+            endTime: "02:00",
+            position: 2,
+            crossesMidnight: true,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ outcome: "committed", cause: error });
   });
 
   it("rejects a three-shift save response", async () => {
@@ -414,4 +436,203 @@ describe("Supabase Cottage Shift Schedule adapter", () => {
       }),
     ).rejects.toThrow("Shift Schedule provider data is invalid");
   });
+});
+
+it("preserves schedule operation outcomes across all repository reads", async () => {
+  const shifts = [
+    { name: "Morning", startTime: "08:00", endTime: "12:00" },
+    { name: "Evening", startTime: "18:00", endTime: "02:00" },
+  ];
+  for (const [code, status] of [
+    ["RC409", "conflict"],
+    ["42501", "denied"],
+    ["RC202", "denied"],
+    ["UNKNOWN", "unavailable"],
+  ]) {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { code } });
+    const from = vi.fn();
+    const service = createCottageShiftSchedule(
+      new SupabaseCottageShiftScheduleRepository({
+        rpc,
+        from,
+      } as unknown as SupabaseClient),
+    );
+    await expect(service.save(profileId, 1, { shifts }), code).resolves.toEqual(
+      {
+        status,
+      },
+    );
+    expect(rpc, code).toHaveBeenCalledExactlyOnceWith(
+      "replace_cottage_shift_schedule",
+      {
+        target_profile_id: profileId,
+        target_expected_revision: 1,
+        requested_shifts: shifts,
+      },
+    );
+    expect(from, code).not.toHaveBeenCalled();
+  }
+
+  const revisionId = "91000000-0000-4000-8000-000000000001";
+  const revision = {
+    id: revisionId,
+    profile_id: profileId,
+    revision: 3,
+    full_day_bundle_id: "90000000-0000-4000-8000-000000000001",
+  };
+  const storedShifts = [
+    {
+      id: "80000000-0000-4000-8000-000000000001",
+      schedule_revision_id: revisionId,
+      position: 1,
+      name: "Morning",
+      start_time: "08:00:00",
+      end_time: "12:00:00",
+    },
+    {
+      id: "80000000-0000-4000-8000-000000000002",
+      schedule_revision_id: revisionId,
+      position: 2,
+      name: "Evening",
+      start_time: "18:00:00",
+      end_time: "02:00:00",
+    },
+  ];
+  const cases = [
+    { read: "pointer", code: "RC202", status: "denied" },
+    { read: "pointer", code: "RC409", status: "unavailable" },
+    { read: "pointer", code: "42501", status: "denied" },
+    { read: "revision", code: "42501", status: "denied" },
+    { read: "shifts", code: "42501", status: "denied" },
+  ];
+  for (const example of cases) {
+    const failure = { data: null, error: { code: example.code } };
+    const maybeSingleProfile = vi
+      .fn()
+      .mockResolvedValue(
+        example.read === "pointer"
+          ? failure
+          : { data: { current_shift_schedule_id: revisionId }, error: null },
+      );
+    const maybeSingleRevision = vi
+      .fn()
+      .mockResolvedValue(
+        example.read === "revision" ? failure : { data: revision, error: null },
+      );
+    const order = vi
+      .fn()
+      .mockResolvedValue(
+        example.read === "shifts"
+          ? failure
+          : { data: storedShifts, error: null },
+      );
+    const from = vi.fn((table: string) => ({
+      select: vi.fn().mockReturnValue({
+        eq: vi
+          .fn()
+          .mockReturnValue(
+            table === "owner_application_cottage_profiles"
+              ? { maybeSingle: maybeSingleProfile }
+              : table === "cottage_shift_schedule_revisions"
+                ? { maybeSingle: maybeSingleRevision }
+                : { order },
+          ),
+      }),
+    }));
+    const rpc = vi.fn();
+    const service = createCottageShiftSchedule(
+      new SupabaseCottageShiftScheduleRepository({
+        from,
+        rpc,
+      } as unknown as SupabaseClient),
+    );
+    const context = `${example.read}: ${example.code}`;
+    await expect(service.loadCurrent(profileId), context).resolves.toEqual({
+      status: example.status,
+    });
+    expect(rpc, context).not.toHaveBeenCalled();
+    expect(maybeSingleProfile, context).toHaveBeenCalledTimes(1);
+    expect(from, context).toHaveBeenCalledWith(
+      "owner_application_cottage_profiles",
+    );
+    if (example.read === "pointer") {
+      expect(from, context).toHaveBeenCalledTimes(1);
+      expect(maybeSingleRevision, context).not.toHaveBeenCalled();
+      expect(order, context).not.toHaveBeenCalled();
+    } else {
+      expect(from, context).toHaveBeenCalledTimes(3);
+      expect(from, context).toHaveBeenCalledWith(
+        "cottage_shift_schedule_revisions",
+      );
+      expect(from, context).toHaveBeenCalledWith("cottage_shifts");
+      expect(maybeSingleRevision, context).toHaveBeenCalledTimes(1);
+      expect(order, context).toHaveBeenCalledExactlyOnceWith("position");
+    }
+  }
+});
+
+it("preserves schedule provider cause depth and first-code precedence", async () => {
+  const knownCodeAtDepth = (depth: number): unknown => {
+    let error: unknown = { code: "RC409" };
+    for (let level = 0; level < depth; level += 1) {
+      error = { cause: error };
+    }
+    return error;
+  };
+  const cases = [
+    {
+      name: "immediate nested known code",
+      error: { cause: { code: "RC409" } },
+      expected: { status: "conflict" },
+    },
+    {
+      name: "known code at raw depth six",
+      error: knownCodeAtDepth(6),
+      expected: { status: "conflict" },
+    },
+    {
+      name: "known code at raw depth seven",
+      error: knownCodeAtDepth(7),
+      expected: { status: "unavailable" },
+    },
+    {
+      name: "outer unknown string masks a known cause",
+      error: { code: "UNKNOWN", cause: { code: "RC409" } },
+      expected: { status: "unavailable" },
+    },
+    {
+      name: "outer numeric code permits a known cause",
+      error: { code: 409, cause: { code: "RC409" } },
+      expected: { status: "conflict" },
+    },
+    {
+      name: "constructor string is unknown",
+      error: { code: "constructor" },
+      expected: { status: "unavailable" },
+    },
+  ];
+  const shifts = [
+    { name: "Morning", startTime: "08:00", endTime: "12:00" },
+    { name: "Evening", startTime: "18:00", endTime: "02:00" },
+  ];
+  for (const example of cases) {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: example.error });
+    const service = createCottageShiftSchedule(
+      new SupabaseCottageShiftScheduleRepository({
+        rpc,
+      } as unknown as SupabaseClient),
+    );
+    await expect(
+      service.save(profileId, 1, { shifts }),
+      example.name,
+    ).resolves.toEqual(example.expected);
+    expect(rpc, example.name).toHaveBeenCalledExactlyOnceWith(
+      "replace_cottage_shift_schedule",
+      {
+        target_profile_id: profileId,
+        target_expected_revision: 1,
+        requested_shifts: shifts,
+      },
+    );
+  }
 });

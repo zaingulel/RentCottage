@@ -1,8 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { cottageInventoryBatchConflictReasons } from "./cottage-inventory";
+import {
+  cottageInventoryBatchConflictReasons,
+  CottageInventoryOperationError,
+} from "./cottage-inventory";
 
 import type {
+  CottageInventoryOperationOutcome,
   CottageInventoryBatchReceipt,
   CottageInventoryCoordinate,
   CottageInventoryReviewedCell,
@@ -663,58 +667,108 @@ function assertSuccess(error: unknown): void {
   }
 }
 
+type OperationOutcomes = Readonly<
+  Record<string, CottageInventoryOperationOutcome>
+>;
+
+const commonOperationOutcomes: OperationOutcomes = {
+  RC409: "conflict",
+  RC202: "denied",
+  "42501": "denied",
+};
+const batchOperationOutcomes: OperationOutcomes = {
+  ...commonOperationOutcomes,
+  "22023": "invalid_batch",
+};
+
+function providerCode(error: unknown): string | undefined {
+  let candidate = error;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (!candidate || typeof candidate !== "object") return undefined;
+    const value = candidate as { code?: unknown; cause?: unknown };
+    if (typeof value.code === "string") return value.code;
+    candidate = value.cause;
+  }
+  return undefined;
+}
+
+async function withOperationOutcomes<T>(
+  outcomes: OperationOutcomes,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    const code = providerCode(error);
+    const outcome =
+      code !== undefined && Object.hasOwn(outcomes, code)
+        ? outcomes[code]
+        : undefined;
+    if (outcome === undefined) throw error;
+    const cause =
+      error instanceof Error && Object.hasOwn(error, "cause")
+        ? error.cause
+        : error;
+    throw new CottageInventoryOperationError(outcome, { cause });
+  }
+}
+
 export class SupabaseCottageInventoryRepository implements CottageInventoryRepository {
   constructor(private readonly client: SupabaseClient) {}
 
   async loadOwnerEditorState(
     input: Parameters<CottageInventoryRepository["loadOwnerEditorState"]>[0],
   ): Promise<CottageInventoryOwnerEditorState> {
-    const { data, error } = await this.client.rpc(
-      "load_cottage_inventory_owner_editor_state",
-      {
-        target_profile_id: input.profileId,
-        target_schedule_revision_id: input.scheduleRevisionId,
-        target_service_day: input.serviceDay ?? null,
-      },
-    );
-    assertSuccess(error);
-    return parseOwnerEditorState(data, input);
+    return withOperationOutcomes(commonOperationOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "load_cottage_inventory_owner_editor_state",
+        {
+          target_profile_id: input.profileId,
+          target_schedule_revision_id: input.scheduleRevisionId,
+          target_service_day: input.serviceDay ?? null,
+        },
+      );
+      assertSuccess(error);
+      return parseOwnerEditorState(data, input);
+    });
   }
 
   async savePricing(
     input: Parameters<CottageInventoryRepository["savePricing"]>[0],
   ) {
-    const { data, error } = await this.client.rpc(
-      "save_cottage_inventory_pricing",
-      {
-        target_profile_id: input.profileId,
-        target_schedule_revision_id: input.scheduleRevisionId,
-        requested_prices: {
-          units: input.pricing.units.map((unit) => ({
-            unitId: unit.id,
-            unitKind: unit.kind,
-            standardPriceIqd: unit.standardPriceIqd,
-            ...(unit.weekdayOverrides
-              ? { weekdayOverrides: unit.weekdayOverrides }
-              : {}),
-            ...(unit.dateOverrides
-              ? { dateOverrides: unit.dateOverrides }
-              : {}),
-          })),
+    return withOperationOutcomes(commonOperationOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "save_cottage_inventory_pricing",
+        {
+          target_profile_id: input.profileId,
+          target_schedule_revision_id: input.scheduleRevisionId,
+          requested_prices: {
+            units: input.pricing.units.map((unit) => ({
+              unitId: unit.id,
+              unitKind: unit.kind,
+              standardPriceIqd: unit.standardPriceIqd,
+              ...(unit.weekdayOverrides
+                ? { weekdayOverrides: unit.weekdayOverrides }
+                : {}),
+              ...(unit.dateOverrides
+                ? { dateOverrides: unit.dateOverrides }
+                : {}),
+            })),
+          },
         },
-      },
-    );
-    assertSuccess(error);
-    const result = record(data);
-    const profileId = requiredUuid(result.profileId);
-    const scheduleRevisionId = requiredUuid(result.scheduleRevisionId);
-    if (
-      profileId !== input.profileId ||
-      scheduleRevisionId !== input.scheduleRevisionId
-    ) {
-      throw new Error("Cottage Inventory provider data is invalid");
-    }
-    return { profileId, scheduleRevisionId };
+      );
+      assertSuccess(error);
+      const result = record(data);
+      const profileId = requiredUuid(result.profileId);
+      const scheduleRevisionId = requiredUuid(result.scheduleRevisionId);
+      if (
+        profileId !== input.profileId ||
+        scheduleRevisionId !== input.scheduleRevisionId
+      ) {
+        throw new Error("Cottage Inventory provider data is invalid");
+      }
+      return { profileId, scheduleRevisionId };
+    });
   }
 
   async resolvePublicAvailability(
@@ -722,16 +776,18 @@ export class SupabaseCottageInventoryRepository implements CottageInventoryRepos
       CottageInventoryRepository["resolvePublicAvailability"]
     >[0],
   ): Promise<CottageInventoryPublicAvailability> {
-    const { data, error } = await this.client.rpc(
-      "resolve_cottage_inventory_public_availability",
-      {
-        target_profile_id: input.profileId,
-        target_schedule_revision_id: input.scheduleRevisionId,
-        target_service_day: input.serviceDay,
-      },
-    );
-    assertSuccess(error);
-    return parsePublicAvailability(data, input);
+    return withOperationOutcomes(commonOperationOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "resolve_cottage_inventory_public_availability",
+        {
+          target_profile_id: input.profileId,
+          target_schedule_revision_id: input.scheduleRevisionId,
+          target_service_day: input.serviceDay,
+        },
+      );
+      assertSuccess(error);
+      return parsePublicAvailability(data, input);
+    });
   }
 
   async resolveOwnerCalendarSpan(
@@ -739,77 +795,85 @@ export class SupabaseCottageInventoryRepository implements CottageInventoryRepos
       CottageInventoryRepository["resolveOwnerCalendarSpan"]
     >[0],
   ): Promise<CottageInventoryOwnerCalendarSpan> {
-    const { data, error } = await this.client.rpc(
-      "resolve_cottage_inventory_owner_calendar_span",
-      {
-        target_profile_id: input.profileId,
-        target_schedule_revision_id: input.scheduleRevisionId,
-        target_from: input.from,
-        target_to: input.to,
-      },
-    );
-    assertSuccess(error);
-    return parseOwnerCalendarSpan(data, input);
+    return withOperationOutcomes(commonOperationOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "resolve_cottage_inventory_owner_calendar_span",
+        {
+          target_profile_id: input.profileId,
+          target_schedule_revision_id: input.scheduleRevisionId,
+          target_from: input.from,
+          target_to: input.to,
+        },
+      );
+      assertSuccess(error);
+      return parseOwnerCalendarSpan(data, input);
+    });
   }
 
   async resolveOwnerCalendar(
     input: Parameters<CottageInventoryRepository["resolveOwnerCalendar"]>[0],
   ): Promise<CottageInventoryOwnerCalendar> {
-    const { data, error } = await this.client.rpc(
-      "resolve_cottage_inventory_owner_calendar",
-      {
-        target_profile_id: input.profileId,
-        target_schedule_revision_id: input.scheduleRevisionId,
-        target_service_day: input.serviceDay,
-      },
-    );
-    assertSuccess(error);
-    return parseOwnerCalendar(data, input);
+    return withOperationOutcomes(commonOperationOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "resolve_cottage_inventory_owner_calendar",
+        {
+          target_profile_id: input.profileId,
+          target_schedule_revision_id: input.scheduleRevisionId,
+          target_service_day: input.serviceDay,
+        },
+      );
+      assertSuccess(error);
+      return parseOwnerCalendar(data, input);
+    });
   }
 
   async setAvailabilityBatch(
     input: Parameters<CottageInventoryRepository["setAvailabilityBatch"]>[0],
   ): Promise<CottageInventoryBatchReceipt> {
-    const { data, error } = await this.client.rpc(
-      "set_cottage_inventory_availability_batch",
-      {
-        target_profile_id: input.profileId,
-        target_schedule_revision_id: input.scheduleRevisionId,
-        requested_batch: input.batch,
-      },
-    );
-    assertSuccess(error);
-    return parseBatchReceipt(data, input);
+    return withOperationOutcomes(batchOperationOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "set_cottage_inventory_availability_batch",
+        {
+          target_profile_id: input.profileId,
+          target_schedule_revision_id: input.scheduleRevisionId,
+          requested_batch: input.batch,
+        },
+      );
+      assertSuccess(error);
+      return parseBatchReceipt(data, input);
+    });
   }
 
   async setAvailability(
     input: Parameters<CottageInventoryRepository["setAvailability"]>[0],
   ) {
-    const { data, error } = await this.client.rpc(
-      "set_cottage_inventory_availability",
-      {
-        target_profile_id: input.profileId,
-        target_schedule_revision_id: input.scheduleRevisionId,
-        target_service_day: input.serviceDay,
-        requested_states: input.availability.units.map((unit) => ({
-          unitId: unit.id,
-          unitKind: unit.kind,
-          state: unit.state,
-        })),
-      },
-    );
-    assertSuccess(error);
-    const result = record(data);
-    const profileId = requiredUuid(result.profileId);
-    const scheduleRevisionId = requiredUuid(result.scheduleRevisionId);
-    const serviceDay = requiredServiceDay(result.serviceDay);
-    if (
-      profileId !== input.profileId ||
-      scheduleRevisionId !== input.scheduleRevisionId ||
-      serviceDay !== input.serviceDay
-    ) {
-      throw new Error("Cottage Inventory provider data is invalid");
-    }
-    return { profileId, scheduleRevisionId, serviceDay };
+    return withOperationOutcomes(commonOperationOutcomes, async () => {
+      const { data, error } = await this.client.rpc(
+        "set_cottage_inventory_availability",
+        {
+          target_profile_id: input.profileId,
+          target_schedule_revision_id: input.scheduleRevisionId,
+          target_service_day: input.serviceDay,
+          requested_states: input.availability.units.map((unit) => ({
+            unitId: unit.id,
+            unitKind: unit.kind,
+            state: unit.state,
+          })),
+        },
+      );
+      assertSuccess(error);
+      const result = record(data);
+      const profileId = requiredUuid(result.profileId);
+      const scheduleRevisionId = requiredUuid(result.scheduleRevisionId);
+      const serviceDay = requiredServiceDay(result.serviceDay);
+      if (
+        profileId !== input.profileId ||
+        scheduleRevisionId !== input.scheduleRevisionId ||
+        serviceDay !== input.serviceDay
+      ) {
+        throw new Error("Cottage Inventory provider data is invalid");
+      }
+      return { profileId, scheduleRevisionId, serviceDay };
+    });
   }
 }

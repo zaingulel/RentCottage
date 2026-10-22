@@ -222,6 +222,20 @@ export interface CottageInventoryRepository {
   }): Promise<CottageInventoryOwnerCalendar>;
 }
 
+export type CottageInventoryOperationOutcome =
+  | "conflict"
+  | "denied"
+  | "invalid_batch";
+
+export class CottageInventoryOperationError extends Error {
+  constructor(
+    readonly outcome: CottageInventoryOperationOutcome,
+    options?: ErrorOptions,
+  ) {
+    super("Cottage Inventory operation outcome: " + outcome, options);
+  }
+}
+
 export type CottageInventoryPricingSaveResult =
   | { status: "saved"; value: unknown }
   | { status: "invalid"; fields: string[] }
@@ -583,21 +597,13 @@ function parseAvailabilityBatch(
   };
 }
 
-function providerCode(error: unknown): string | undefined {
-  let candidate = error;
-  for (let depth = 0; depth < 8; depth += 1) {
-    if (!candidate || typeof candidate !== "object") return undefined;
-    const value = candidate as { code?: unknown; cause?: unknown };
-    if (typeof value.code === "string") return value.code;
-    candidate = value.cause;
-  }
-  return undefined;
-}
-
 function mapFailure(error: unknown): "conflict" | "denied" | "unavailable" {
-  const code = providerCode(error);
-  if (code === "RC409") return "conflict";
-  if (code === "42501" || code === "RC202") return "denied";
+  if (
+    error instanceof CottageInventoryOperationError &&
+    (error.outcome === "conflict" || error.outcome === "denied")
+  ) {
+    return error.outcome;
+  }
   return "unavailable";
 }
 
@@ -758,7 +764,8 @@ export function createCottageInventory(repository: CottageInventoryRepository) {
           batch,
         });
       } catch (error) {
-        return providerCode(error) === "22023"
+        return error instanceof CottageInventoryOperationError &&
+          error.outcome === "invalid_batch"
           ? { status: "invalid", fields: ["batch"] }
           : { status: mapFailure(error) };
       }

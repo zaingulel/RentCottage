@@ -1,9 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 
+import { createCottageProfile } from "./cottage-profile";
 import {
   parseAdministratorCottageProfileCursor,
   SupabaseCottageProfileRepository,
+  SupabaseCottageProfileStorage,
 } from "./supabase-cottage-profile";
 
 function result<T>(data: T, error: unknown = null) {
@@ -1593,4 +1595,510 @@ describe("Supabase Cottage Profile adapter", () => {
       ).canAdministratorManageLifecycle("70000000-0000-4000-8000-000000000001"),
     ).rejects.toThrow("Cottage Profile lifecycle eligibility is invalid");
   });
+});
+
+it("preserves profile operation outcomes through the real adapter", async () => {
+  type ProfileService = ReturnType<typeof createCottageProfile>;
+  const profileId = "70000000-0000-4000-8000-000000000001";
+  const publicationId = "72000000-0000-4000-8000-000000000001";
+  const reason = "Correct content";
+  const version = { target_profile_id: profileId, target_expected_version: 2 };
+  const lifecycle = { ...version, requested_reason: reason };
+  const visibility = {
+    target_profile_id: profileId,
+    target_publication_id: publicationId,
+    requested_hidden: true,
+    requested_reason: reason,
+  };
+  const values = {
+    name: "Cottage",
+    governorate: "Erbil",
+    approximateLocation: "Shaqlawa",
+    exactAddress: "",
+    exactLatitude: null,
+    exactLongitude: null,
+    privateDirections: "",
+    capacity: 8,
+    bedrooms: 3,
+    bathrooms: 2,
+    amenities: ["garden"],
+    sourceLanguage: "en",
+    description: "Description",
+    houseRules: "Rules",
+  };
+  const requestedValues = {
+    requested_name: "Cottage",
+    requested_governorate: "Erbil",
+    requested_approximate_location: "Shaqlawa",
+    requested_exact_address: "",
+    requested_exact_latitude: null,
+    requested_exact_longitude: null,
+    requested_private_directions: "",
+    requested_capacity: 8,
+    requested_bedrooms: 3,
+    requested_bathrooms: 2,
+    requested_amenities: ["garden"],
+    requested_source_language: "en",
+    requested_description: "Description",
+    requested_house_rules: "Rules",
+  };
+  const file = {
+    name: "cottage.webp",
+    type: "image/webp",
+    size: 12,
+    bytes: new Uint8Array([
+      0x52, 0x49, 0x46, 0x46, 4, 0, 0, 0, 0x57, 0x45, 0x42, 0x50,
+    ]),
+  };
+  const operations = {
+    abandonAdministrator: {
+      run: (service: ProfileService) =>
+        service.abandonAdministrator(profileId, 2, reason),
+      call: ["abandon_administrator_cottage_profile_draft", lifecycle],
+    },
+    restoreAdministrator: {
+      run: (service: ProfileService) =>
+        service.restoreAdministrator(profileId, 2, reason),
+      call: ["restore_administrator_cottage_profile_draft", lifecycle],
+    },
+    setAdministratorDescriptionHidden: {
+      run: (service: ProfileService) =>
+        service.setAdministratorDescriptionHidden(
+          profileId,
+          publicationId,
+          true,
+          reason,
+        ),
+      call: ["set_administrator_cottage_description_hidden", visibility],
+    },
+    setAdministratorPhotoHidden: {
+      run: (service: ProfileService) =>
+        service.setAdministratorPhotoHidden(
+          profileId,
+          publicationId,
+          readyPhotoId,
+          true,
+          reason,
+        ),
+      call: [
+        "set_administrator_cottage_photo_hidden",
+        { ...visibility, target_photo_id: readyPhotoId },
+      ],
+    },
+    updateOwner: {
+      run: (service: ProfileService) =>
+        service.saveOwnerDraft(profileId, 2, values),
+      call: [
+        "update_owner_cottage_profile_draft",
+        { ...version, ...requestedValues },
+      ],
+    },
+    abandonOwner: {
+      run: (service: ProfileService) => service.abandonOwner(profileId, 2),
+      call: ["abandon_owner_cottage_profile_draft", version],
+    },
+    updateAdministrator: {
+      run: (service: ProfileService) =>
+        service.saveAdministratorDraft(profileId, 2, values, reason),
+      call: [
+        "update_administrator_cottage_profile",
+        { ...lifecycle, ...requestedValues },
+      ],
+    },
+    createDraft: {
+      run: (service: ProfileService) => service.createDraft(),
+      call: ["create_owner_cottage_profile_draft"],
+    },
+    submit: {
+      run: (service: ProfileService) => service.submit(profileId, 2),
+      call: ["submit_cottage_profile_for_content_approval", version],
+    },
+    preparePhotoUpload: {
+      run: (service: ProfileService) =>
+        service.uploadPhoto(profileId, file, reason),
+      call: [
+        "prepare_cottage_profile_photo_upload",
+        {
+          target_profile_id: profileId,
+          requested_original_filename: "cottage.webp",
+          requested_media_type: "image/webp",
+          requested_size_bytes: 12,
+          requested_reason: reason,
+        },
+      ],
+    },
+    preparePhotoPreview: {
+      run: (service: ProfileService) => service.previewPhoto(readyPhotoId),
+      call: [
+        "prepare_cottage_profile_photo_preview",
+        { target_photo_id: readyPhotoId },
+      ],
+    },
+    preparePhotoDeletion: {
+      run: (service: ProfileService) =>
+        service.deletePhoto(readyPhotoId, reason),
+      call: [
+        "prepare_cottage_profile_photo_deletion",
+        { target_photo_id: readyPhotoId, requested_reason: reason },
+      ],
+    },
+  };
+  const cases = [
+    ["abandonAdministrator", "RC420", { status: "capacity_limit" }],
+    ["abandonAdministrator", "RC409", { status: "conflict" }],
+    ["abandonAdministrator", "RC202", { status: "denied" }],
+    ["abandonAdministrator", "42501", { status: "denied" }],
+    ["restoreAdministrator", "42501", { status: "denied" }],
+    [
+      "setAdministratorDescriptionHidden",
+      "22023",
+      { status: "invalid", fields: ["reason"] },
+    ],
+    ["setAdministratorDescriptionHidden", "42501", { status: "denied" }],
+    ["setAdministratorDescriptionHidden", "RC409", { status: "conflict" }],
+    ["setAdministratorDescriptionHidden", "RC203", { status: "last_photo" }],
+    ["setAdministratorPhotoHidden", "42501", { status: "denied" }],
+    ["updateOwner", "RC409", { status: "conflict" }],
+    ["updateOwner", "RC202", { status: "denied" }],
+    ["updateOwner", "42501", { status: "denied" }],
+    ["abandonOwner", "42501", { status: "denied" }],
+    ["updateAdministrator", "22023", { status: "invalid", fields: ["reason"] }],
+    ["updateAdministrator", "RC203", { status: "incomplete" }],
+    ["updateAdministrator", "RC409", { status: "conflict" }],
+    ["updateAdministrator", "42501", { status: "denied" }],
+    ["createDraft", "RC420", { status: "capacity_limit" }],
+    ["createDraft", "RC429", { status: "rate_limit" }],
+    ["createDraft", "42501", { status: "denied" }],
+    ["submit", "RC203", { status: "incomplete" }],
+    ["submit", "RC409", { status: "conflict" }],
+    ["submit", "42501", { status: "denied" }],
+    ["preparePhotoUpload", "22023", { status: "invalid", fields: ["reason"] }],
+    ["preparePhotoUpload", "42501", { status: "denied" }],
+    ["preparePhotoPreview", "42501", { status: "denied" }],
+    [
+      "preparePhotoDeletion",
+      "22023",
+      { status: "invalid", fields: ["reason"] },
+    ],
+    ["preparePhotoDeletion", "RC203", { status: "incomplete" }],
+    ["preparePhotoDeletion", "42501", { status: "denied" }],
+    ["updateAdministrator", "RC202", { status: "unavailable" }],
+    ["createDraft", "RC409", { status: "unavailable" }],
+  ] as const;
+  for (const [method, code, expected] of cases) {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { code } });
+    const from = vi.fn();
+    const privilegedRpc = vi.fn();
+    const privilegedFrom = vi.fn();
+    const storageFrom = vi.fn();
+    const client = { rpc, from } as unknown as SupabaseClient;
+    const privilegedClient = {
+      rpc: privilegedRpc,
+      from: privilegedFrom,
+      storage: { from: storageFrom },
+    } as unknown as SupabaseClient;
+    const service = createCottageProfile({
+      repository: new SupabaseCottageProfileRepository(
+        client,
+        privilegedClient,
+      ),
+      storage: new SupabaseCottageProfileStorage(privilegedClient),
+    });
+    const operation = operations[method];
+    const context = `${method}: ${code}`;
+    await expect(operation.run(service), context).resolves.toEqual(expected);
+    expect(rpc, context).toHaveBeenCalledExactlyOnceWith(...operation.call);
+    expect(from, context).not.toHaveBeenCalled();
+    expect(privilegedRpc, context).not.toHaveBeenCalled();
+    expect(privilegedFrom, context).not.toHaveBeenCalled();
+    expect(storageFrom, context).not.toHaveBeenCalled();
+  }
+});
+
+it("preserves profile provider cause depth and first-code precedence", async () => {
+  const profileId = "70000000-0000-4000-8000-000000000001";
+  const knownCodeAtDepth = (depth: number): unknown => {
+    let error: unknown = { code: "RC409" };
+    for (let level = 0; level < depth; level += 1) {
+      error = { cause: error };
+    }
+    return error;
+  };
+  const cases = [
+    {
+      name: "immediate nested known code",
+      error: { cause: { code: "RC409" } },
+      expected: { status: "conflict" },
+    },
+    {
+      name: "known code at raw depth seven",
+      error: knownCodeAtDepth(7),
+      expected: { status: "conflict" },
+    },
+    {
+      name: "known code at raw depth eight",
+      error: knownCodeAtDepth(8),
+      expected: { status: "unavailable" },
+    },
+    {
+      name: "outer unknown string masks a known cause",
+      error: { code: "UNKNOWN", cause: { code: "RC409" } },
+      expected: { status: "unavailable" },
+    },
+    {
+      name: "outer numeric code permits a known cause",
+      error: { code: 409, cause: { code: "RC409" } },
+      expected: { status: "conflict" },
+    },
+    {
+      name: "constructor string is unknown",
+      error: { code: "constructor" },
+      expected: { status: "unavailable" },
+    },
+  ];
+  const values = {
+    name: "Cottage",
+    governorate: "Erbil",
+    approximateLocation: "Shaqlawa",
+    exactAddress: "",
+    exactLatitude: null,
+    exactLongitude: null,
+    privateDirections: "",
+    capacity: 8,
+    bedrooms: 3,
+    bathrooms: 2,
+    amenities: ["garden"],
+    sourceLanguage: "en",
+    description: "Description",
+    houseRules: "Rules",
+  };
+  for (const example of cases) {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: example.error });
+    const client = { rpc } as unknown as SupabaseClient;
+    const service = createCottageProfile({
+      repository: new SupabaseCottageProfileRepository(client, client),
+      storage: new SupabaseCottageProfileStorage(client),
+    });
+    await expect(
+      service.saveOwnerDraft(profileId, 2, values),
+      example.name,
+    ).resolves.toEqual(example.expected);
+    expect(rpc, example.name).toHaveBeenCalledExactlyOnceWith(
+      "update_owner_cottage_profile_draft",
+      {
+        target_profile_id: profileId,
+        target_expected_version: 2,
+        requested_name: "Cottage",
+        requested_governorate: "Erbil",
+        requested_approximate_location: "Shaqlawa",
+        requested_exact_address: "",
+        requested_exact_latitude: null,
+        requested_exact_longitude: null,
+        requested_private_directions: "",
+        requested_capacity: 8,
+        requested_bedrooms: 3,
+        requested_bathrooms: 2,
+        requested_amenities: ["garden"],
+        requested_source_language: "en",
+        requested_description: "Description",
+        requested_house_rules: "Rules",
+      },
+    );
+  }
+});
+
+it("preserves operation-specific failures after a successful profile write", async () => {
+  const profileId = "70000000-0000-4000-8000-000000000001";
+  const sourceRevisionId = "73000000-0000-4000-8000-000000000001";
+  const values = {
+    name: "Cottage",
+    governorate: "Erbil",
+    approximateLocation: "Shaqlawa",
+    exactAddress: "Private address",
+    exactLatitude: 36.408333,
+    exactLongitude: 44.385834,
+    privateDirections: "Past the orchard gate",
+    capacity: 10,
+    bedrooms: 4,
+    bathrooms: 3,
+    amenities: ["garden"],
+    sourceLanguage: "en",
+    description: "Description",
+    houseRules: "Rules",
+  };
+  const profile = {
+    id: profileId,
+    owner_user_id: "10000000-0000-4000-8000-000000000701",
+    application_id: null,
+    current_publication_id: null,
+    status: "draft",
+    version: 3,
+    name: "Cottage",
+    governorate: "Erbil",
+    approximate_location: "Shaqlawa",
+    exact_address: "Private address",
+    exact_latitude: 36.408333,
+    exact_longitude: 44.385834,
+    private_directions: "Past the orchard gate",
+    capacity: 10,
+    bedrooms: 4,
+    bathrooms: 3,
+    amenities: ["garden"],
+    source_language: "en",
+    description: "Description",
+    house_rules: "Rules",
+    submitted_source_revision_id: null,
+    updated_at: "2026-08-17T09:15:00.000Z",
+  };
+  const cases = [
+    { operation: "owner", failure: "photos", expected: { status: "denied" } },
+    {
+      operation: "administrator",
+      failure: "source",
+      expected: { status: "denied" },
+    },
+    {
+      operation: "administrator",
+      failure: "unpublished",
+      expected: { status: "invalid", fields: ["reason"] },
+    },
+    {
+      operation: "owner",
+      failure: "unpublished",
+      expected: { status: "unavailable" },
+    },
+    {
+      operation: "owner",
+      failure: "malformed",
+      expected: { status: "unavailable" },
+    },
+  ];
+  for (const example of cases) {
+    const mutation =
+      example.operation === "owner"
+        ? "update_owner_cottage_profile_draft"
+        : "update_administrator_cottage_profile";
+    const data =
+      example.failure === "malformed"
+        ? {}
+        : {
+            ...profile,
+            ...(example.failure === "source"
+              ? {
+                  status: "submitted_for_content_approval",
+                  submitted_source_revision_id: sourceRevisionId,
+                }
+              : {}),
+            ...(example.failure === "unpublished"
+              ? {
+                  current_publication_id:
+                    "74000000-0000-4000-8000-000000000001",
+                }
+              : {}),
+          };
+    const rpc = vi.fn((name: string) =>
+      name === mutation ? result(data) : result(null, { code: "22023" }),
+    );
+    const photos = vi.fn(() =>
+      example.failure === "photos"
+        ? result(null, { code: "42501" })
+        : result([]),
+    );
+    const submittedSource = vi.fn(() => result(null, { code: "42501" }));
+    const from = vi.fn((table: string) => ({
+      select: vi.fn().mockReturnValue({
+        eq: vi
+          .fn()
+          .mockReturnValue(
+            table === "cottage_profile_photos"
+              ? { eq: vi.fn().mockReturnValue({ order: photos }) }
+              : { maybeSingle: submittedSource },
+          ),
+      }),
+    }));
+    const privilegedRpc = vi.fn();
+    const storageFrom = vi.fn();
+    const privilegedFrom = vi.fn();
+    const client = { rpc, from } as unknown as SupabaseClient;
+    const privilegedClient = {
+      rpc: privilegedRpc,
+      from: privilegedFrom,
+      storage: { from: storageFrom },
+    } as unknown as SupabaseClient;
+    const service = createCottageProfile({
+      repository: new SupabaseCottageProfileRepository(
+        client,
+        privilegedClient,
+      ),
+      storage: new SupabaseCottageProfileStorage(privilegedClient),
+    });
+    const context = `${example.operation}: ${example.failure}`;
+    await expect(
+      example.operation === "owner"
+        ? service.saveOwnerDraft(profileId, 2, values)
+        : service.saveAdministratorDraft(
+            profileId,
+            2,
+            values,
+            "Correct content",
+          ),
+      context,
+    ).resolves.toEqual(example.expected);
+    expect(
+      rpc.mock.calls.filter(([name]) => name === mutation),
+      context,
+    ).toHaveLength(1);
+    expect(rpc, context).toHaveBeenCalledWith(mutation, {
+      target_profile_id: profileId,
+      target_expected_version: 2,
+      requested_name: "Cottage",
+      requested_governorate: "Erbil",
+      requested_approximate_location: "Shaqlawa",
+      requested_exact_address: "Private address",
+      requested_exact_latitude: 36.408333,
+      requested_exact_longitude: 44.385834,
+      requested_private_directions: "Past the orchard gate",
+      requested_capacity: 10,
+      requested_bedrooms: 4,
+      requested_bathrooms: 3,
+      requested_amenities: ["garden"],
+      requested_source_language: "en",
+      requested_description: "Description",
+      requested_house_rules: "Rules",
+      ...(example.operation === "administrator"
+        ? { requested_reason: "Correct content" }
+        : {}),
+    });
+    expect(rpc, context).toHaveBeenCalledTimes(
+      example.failure === "unpublished" ? 2 : 1,
+    );
+    if (example.failure === "unpublished") {
+      expect(rpc, context).toHaveBeenCalledWith(
+        "list_cottage_profile_unpublished_content_changes",
+        { target_profile_ids: [profileId] },
+      );
+    }
+    if (example.failure === "malformed") {
+      expect(from, context).not.toHaveBeenCalled();
+      expect(photos, context).not.toHaveBeenCalled();
+    } else {
+      expect(from, context).toHaveBeenCalledWith("cottage_profile_photos");
+      expect(photos, context).toHaveBeenCalledExactlyOnceWith("created_at");
+    }
+    if (example.failure === "source") {
+      expect(from, context).toHaveBeenCalledTimes(2);
+      expect(from, context).toHaveBeenCalledWith(
+        "cottage_profile_source_revisions",
+      );
+      expect(submittedSource, context).toHaveBeenCalledTimes(1);
+    } else {
+      expect(from, context).toHaveBeenCalledTimes(
+        example.failure === "malformed" ? 0 : 1,
+      );
+      expect(submittedSource, context).not.toHaveBeenCalled();
+    }
+    expect(privilegedRpc, context).not.toHaveBeenCalled();
+    expect(privilegedFrom, context).not.toHaveBeenCalled();
+    expect(storageFrom, context).not.toHaveBeenCalled();
+  }
 });
