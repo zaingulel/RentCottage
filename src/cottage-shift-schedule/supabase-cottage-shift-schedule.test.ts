@@ -189,6 +189,28 @@ describe("Supabase Cottage Shift Schedule adapter", () => {
     await expect(service.loadCurrent(profileId)).resolves.toEqual({
       status: "unavailable",
     });
+    await expect(
+      repository.save({
+        profileId,
+        expectedRevision: 0,
+        shifts: [
+          {
+            name: "Morning",
+            startTime: "09:00",
+            endTime: "15:00",
+            position: 1,
+            crossesMidnight: false,
+          },
+          {
+            name: "Evening",
+            startTime: "17:00",
+            endTime: "02:00",
+            position: 2,
+            crossesMidnight: true,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ outcome: "committed", cause: error });
   });
 
   it("rejects a three-shift save response", async () => {
