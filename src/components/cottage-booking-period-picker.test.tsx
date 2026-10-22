@@ -202,8 +202,23 @@ describe("CottageBookingPeriodPicker", () => {
     expect(within(rows[0]).queryByText("Unavailable")).toBeNull();
     expect(within(rows[1]).getByText("Unavailable")).toBeVisible();
     expect(within(rows[2]).getByText("Unavailable")).toBeVisible();
+    expect(
+      within(rows[0]).getByRole("button", { name: "Morning" }),
+    ).toHaveAccessibleDescription(
+      "Arrival: Jan 12, 2030, 08:00 Departure: Jan 12, 2030, 14:00 All times are Iraq local time (UTC+3). IQD 60,000",
+    );
+    expect(
+      within(rows[1]).getByRole("button", { name: "Evening" }),
+    ).toHaveAccessibleDescription(
+      "Arrival: Jan 12, 2030, 18:00 Departure: Jan 12, 2030, 23:00 All times are Iraq local time (UTC+3). IQD 80,000 Unavailable",
+    );
     await user.click(within(rows[0]).getByRole("button", { name: "Morning" }));
     expect(within(rows[0]).getByText("Selected")).toBeVisible();
+    expect(
+      within(rows[0]).getByRole("button", { name: "Morning" }),
+    ).toHaveAccessibleDescription(
+      "Arrival: Jan 12, 2030, 08:00 Departure: Jan 12, 2030, 14:00 All times are Iraq local time (UTC+3). IQD 60,000 Selected",
+    );
     expect(
       within(rows[0]).getByRole("button", { name: "Morning" }),
     ).toHaveAttribute("aria-pressed", "true");
