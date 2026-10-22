@@ -1409,24 +1409,33 @@ test.describe("retained cancellation and refund controls", () => {
           async () => {
             await expect
               .poll(() =>
-                period.locator("dd > span").evaluateAll((entries) =>
-                  entries.flatMap((entry) =>
-                    Array.from(entry.querySelectorAll("bdi"))
-                      .slice(1)
-                      .map((timestamp) => timestamp.getClientRects().length),
+                period
+                  .locator("dd > .booking-period-record")
+                  .evaluateAll((entries) =>
+                    entries.flatMap((entry) =>
+                      Array.from(
+                        entry.querySelectorAll(
+                          ":scope > .booking-period-endpoints .booking-period-timestamp",
+                        ),
+                      ).map((timestamp) => timestamp.getClientRects().length),
+                    ),
                   ),
-                ),
               )
               .toEqual([1, 1, 1, 1, 1, 1]);
             return period
-              .locator("dd > span")
+              .locator("dd > .booking-period-record")
               .evaluateAll((entries) =>
-                entries.map((entry) =>
-                  Array.from(
-                    entry.querySelectorAll("bdi"),
+                entries.map((entry) => [
+                  entry
+                    .querySelector(":scope > .booking-period-identity")!
+                    .textContent!.trim(),
+                  ...Array.from(
+                    entry.querySelectorAll(
+                      ":scope > .booking-period-endpoints .booking-period-timestamp",
+                    ),
                     (value) => value.textContent ?? "",
                   ),
-                ),
+                ]),
               );
           },
         );
@@ -1434,13 +1443,11 @@ test.describe("retained cancellation and refund controls", () => {
           expect(
             observation.values,
             `${observation.viewport} booking period boundaries`,
-          ).toEqual(
-            ["Morning", "Night", "Full day"].map((name) => [
-              name,
-              expect.stringMatching(/\S.*[:：]/),
-              expect.stringMatching(/\S.*[:：]/),
-            ]),
-          );
+          ).toEqual([
+            ["Morning", "Jan 1, 2101, 08:00", "Jan 1, 2101, 12:00"],
+            ["Night", "Jan 1, 2101, 20:00", "Jan 2, 2101, 02:00"],
+            ["Full day", "Jan 2, 2101, 08:00", "Jan 3, 2101, 02:00"],
+          ]);
       }
       const open = page.getByRole("button", {
         name: messaging.open,
