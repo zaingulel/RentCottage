@@ -271,6 +271,7 @@ Anything else is a token.
   button, a rule and the account navigation (`nav.account-navigation`). Its items are the header's own pattern,
   pills and circles that do not use `ActionButton`, `ActionLink` or `Disclosure`. The brand link
   (`.site-brand`) is at least `2.75rem` tall at every width.
+  In the hosted demo, the header uses the existing solid, in-flow presentation on every route, followed by the persistent simulation notice outside the required first-name gate.
   - Language button: `.site-header-language-toggle` is a pill at least `2.75rem` tall, showing the globe icon and
     the current language's own name. It shows at every width and opens the language selector
     (`nav.language-links`), a card of one row per language, each at least `2.75rem` tall, with the current

@@ -1,12 +1,150 @@
-# Local Minimum Viable Product (MVP) demonstration
+# Demonstrations
 
-This guide prepares a fresh, isolated synthetic demo and records one continuous 1920 x 1080 WebM of the
-English Platform Administrator, Cottage Owner and Customer journey through a paid Confirmed Booking.
-All cottages, identities, verification evidence and private details are fictional. Payment and supplier
-responses are simulated; Booking Terms are fictional and non-operative. This is local demonstration evidence,
-not approval to activate suppliers, publish a hosted preview or launch the marketplace.
+Choose the [invited hosted demo](#invited-hosted-demo) for isolated online access or the
+[local rehearsal](#local-rehearsal-and-recording) for the optional continuous Minimum Viable Product (MVP)
+recording. Online access does not require a video. All identities, cottages, verification evidence and private
+details are synthetic; neither route approves live suppliers or marketplace launch. Local payment simulation
+and fixture credentials belong only to the local route.
 
-## Fresh operator setup
+## Invited hosted demo
+
+Hosted activation requires the approvals and observed evidence below. A prepared manual, passing local tests
+or an empty native settings field does not establish hosted success. Keep actual resource receipts and
+invitation identities in private deployment evidence, never account identifiers, emails, passwords, test codes
+or keys in this tracked guide. Missing invitation identities and sending authorization remain activation gates.
+
+### Approve the isolated targets
+
+Before provider writes, present the exact new Supabase project, region and cost; dedicated Worker name and
+origin; Access application and exact-email allow policy; invited emails; lifetime and revocation policy; and
+private credential handoff for owner approval. Reuse the existing provider account and Zero Trust team, while
+keeping the preview project and all unrelated resources separate. Confirm current provider pricing as part of
+that decision. Invitations require explicit sending authorization as well as approved recipients.
+
+Propose a seven-day native test-phone map validity window, five-minute Supabase access JSON Web Token (JWT)
+lifetime and one-hour Access session. Record different owner-approved durations before setup. Capture existing
+settings and rollback values privately before changing them: a Git revert cannot restore provider settings.
+
+### Prepare native admission and identities after approval
+
+1. Create the approved fresh Supabase database, storage and keys. Verify the exact target before applying the
+   existing migration chain and retain migration-history evidence. Import neither production data nor shared
+   local authentication fixtures. The local commands, public codes and fixtures later in this guide never
+   prepare the managed project.
+2. Bootstrap only a deny-all dedicated Worker until native Access and approved target pins exist. Use the
+   `demo` configuration in `wrangler.jsonc`, `APP_ENVIRONMENT=preview` and `HOSTED_DEMO=true`; populate
+   `src/config/hosted-demo-target.ts` only from the approved resource receipt. Its null value deliberately
+   refuses hosted access. Bind only that project's settings, fresh server-only secrets and the deployed commit.
+   Keep real supplier/production keys, custom domains and scheduled triggers absent; use no ordinary preview
+   deployment workflow.
+3. Configure [Worker-wide Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)
+   with a self-hosted `worker` destination, the exact approved Worker identity and native email one-time password
+   (OTP) sign-in. Allow only the approved individual emails, with no domain-wide allow, bypass or account-wide
+   policy. Pin the exact Worker origin, Supabase project reference, Access issuer and application audience.
+   `hosted-demo-worker.ts` validates admission before forwarding pages, assets and actions; retain Worker-first
+   asset routing, disabled preview URLs and no scheduled handler. Regenerate and verify the app/Worker after
+   code or actual pin changes before activation.
+4. Close signup and anonymous sign-in. Privately configure two synthetic phone numbers with independent random
+   codes and finite native test-map expiry, retaining native phone/request verification rate limits and their
+   actual settings. Keep Short Message Service (SMS) supplier credentials and hooks absent. The
+   [managed Auth configuration](https://supabase.com/docs/reference/api/v1-update-auth-service-config) names
+   `disable_signup`, `sms_test_otp` and `sms_test_otp_valid_until`; these are managed settings, distinct from
+   [local phone configuration](https://supabase.com/docs/guides/auth/phone-login). Prefer the signed-in dashboard.
+   If expiry requires the Management API, use a narrowly scoped operator token after approval, never an
+   application binding.
+5. Pre-create only approved native users through server-only administrator authority. Each tester signs into
+   their marketplace identity, explicitly enrolls as Cottage Owner and receives approval through the current
+   application/review transitions with minimum synthetic evidence. Customer capability, Owner approval and
+   PostgreSQL role/Row Level Security (RLS) contracts stay intact. This prepares minimum personas; scenario and
+   catalog preparation are separate work.
+6. Establish possession of each tester's separate personal administrator email before explicitly provisioning
+   that identity. Privately hand off its password and have that person enroll their own authenticator for
+   Multi-Factor Authentication (MFA). Access admission grants no marketplace role. There is no shared
+   administrator, code-derived administrator or automatic grant from Access.
+
+The hosted phone flow is invitation-only simulated identity and verification. A provider accepting an OTP
+request is not proof of SMS delivery. Preserve the persistent disclosure and unavailable real-supplier states;
+the local paid-booking recording does not establish hosted payment availability.
+
+Before the final hosted build and deployment, require the reviewed committed tree, approved dedicated target
+and inspected matching demo Supabase bindings and secrets. Supply the approved preview/demo settings and that
+project's credentials to the build environment through the existing private setup. Confirm the existing remote
+settings belong to that exact dedicated project before retaining them; never borrow preview or production
+settings. Only after the required provider approvals, run:
+
+```sh
+export DEPLOYMENT_COMMIT="$(git rev-parse HEAD)"
+node scripts/run-log.mjs demo hosted build -- npm run build:worker -- --env demo
+node scripts/run-log.mjs demo hosted client secrets -- npm run scan:client-secrets
+node scripts/run-log.mjs demo hosted deploy -- npx wrangler deploy --env demo --keep-vars --var "DEPLOYMENT_COMMIT:$DEPLOYMENT_COMMIT"
+```
+
+Build and deployment both select `demo`, so OpenNext embeds the demo Worker-first asset setting.
+`DEPLOYMENT_COMMIT` identifies the same reviewed source used for the build. Regenerate the build and repeat the
+client-secret scan after any source or target-pin change before deployment. `--keep-vars` preserves existing
+remote non-secret variables while configured and command-line values are applied; it does not validate the
+retained values. Deployment retains secrets independently. The default build used for the local admission-test
+startup fixture stays unchanged; it is not the final hosted artifact.
+
+### Prove activation before invitations
+
+Require actual managed OTP request/verification success without SMS and observed denial of wrong codes,
+expired codes, public local-fixture codes and unknown numbers. Verify signup stays closed. A dashboard value
+alone is insufficient. If native enablement requires a live supplier, cannot enforce finite expiry or fails
+these observations, stop and return the native password alternative to the owner. Build no custom OTP proxy.
+
+The coordinating session records these independent evidence classes:
+
+- Disposable real PostgreSQL preservation evidence, including account-access and owner-application security
+  tests, through `node scripts/run-log.mjs demo hosted database preservation -- npm run verify:access:database`.
+- Existing authenticator and Owner browser journeys, after browser permission, through
+  `node scripts/run-log.mjs demo hosted browser preservation -- npm run verify:access:browser`.
+- After the approved demo-specific build and deployment, actual hosted authenticated health and deployed
+  commit; native Access admitted and denied sessions; and an admitted native browser receiving successful
+  same-origin script and stylesheet responses, rendering the styled app and completing an interaction. Record
+  the actual deployed commit with that observation. Require no-cookie denial of those assets and actions,
+  exposed alternate Worker URL checks, wrong-host denial and managed phone outcomes. Use native
+  dashboard/read-only requests, with no new probe script or Access bypass token.
+- Direct demo Auth, Representational State Transfer (REST) and storage requests using the publishable key with
+  no session, each tester's session and administrator assurance level 1/2. Require own-scope access,
+  cross-person/private-file denial and administrator denial before MFA. Public catalog reads may remain public
+  under current policies. A [publishable key](https://supabase.com/docs/guides/getting-started/api-keys) is public;
+  RLS and actual native responses establish the boundary. Capture policy/settings snapshots without secrets.
+
+The native Miniflare sentinel proves admission while substituting OpenNext. It cannot prove OpenNext asset
+delivery. App-build and Worker dry-run success establish compilation and bundling only. The demo-specific build
+and admitted-browser asset and interaction observations remain pending activation gates.
+
+Existing role, storage and MFA contracts remain preservation claims, with no new mutation for unchanged
+behavior. Mocks and local tests cannot replace managed provider observations. Before activation, complete
+`node scripts/run-log.mjs demo hosted full verification -- npm run verify -- --full`, the existing client-secret scan,
+documentation lint, fresh independent/security review and explicit authentication sign-off. Hosted activation
+remains incomplete until actual-resource receipts, no-send/expiry proof, direct-access denial evidence,
+required identities and approvals are available.
+
+### Revoke, recover and roll back
+
+Remove the person's Access email allow rule and revoke their Access sessions. Remove or rotate their native
+test code, revoke Supabase refresh sessions and disable the native user as appropriate. Existing access JWTs
+can remain valid until expiry: record the configured bound and prove later denial. Do not promise immediate
+global revocation.
+
+Recover an administrator only after re-establishing personal email ownership, rotating credentials and
+resetting/re-enrolling their authenticator through native administrator controls. Preserve evidence needed to
+review the incident and recovery.
+
+Roll deployment back to a known deny-all version, keep Access in place and remove demo secrets from active
+bindings. Restore captured provider settings where appropriate and preserve needed synthetic evidence. Project
+deletion or reset requires separate exact-target approval.
+
+## Local rehearsal and recording
+
+The optional local route prepares a fresh, isolated synthetic demo and records one continuous 1920 x 1080 WebM
+of the English Platform Administrator, Cottage Owner and Customer journey through a paid Confirmed Booking.
+Payment and supplier responses are simulated; Booking Terms are fictional and non-operative. This is local
+demonstration evidence, not hosted activation evidence.
+
+### Fresh operator setup
 
 Use the selected checkout with dependencies installed by `npm ci`, Docker running, Python 3, Bash and the
 existing Playwright Chromium installation. The locked Supabase command-line interface (CLI) is `node_modules/.bin/supabase`,
@@ -140,7 +278,7 @@ PY
 node_modules/.bin/supabase status --workdir "$SUPABASE_LOCAL_WORKDIR" --output json > "$SUPABASE_LOCAL_WORKDIR/status-private.json"
 ```
 
-## Verify ownership before privileged preparation
+### Verify ownership before privileged preparation
 
 Do not print the status file, keys or private startup logs. Before fixture or Administrator preparation,
 require the exact API origin and Docker labels connecting that endpoint to the workdir just created. A
@@ -220,7 +358,7 @@ node scripts/run-log.mjs demo worker build -- npm run build:worker
 records. Neither command repairs an existing partial fixture. Failure requires inspection and a fresh owned
 project for another attempt, not deletion or a database reset.
 
-## Start the Worker and record
+### Start the Worker and record
 
 Stay in the dedicated shell. Keep Wrangler logs and registry inside the owned workdir, and check the Worker
 ports again immediately before preview. Docker published ports must also remain free at 8792 and 9232.
@@ -285,7 +423,7 @@ Review the entire canonical video before sharing, including its exact ending, re
 journey, synthetic/simulator disclosure, masked credentials and absence of premature private information.
 Preserve the recording and representative results screenshots with the evidence needed for review.
 
-## Fictional cottages and availability
+### Fictional cottages and availability
 
 Shared names and approximate locations are English in every locale. Descriptions and House Rules have synthetic
 English, Arabic and Sorani localizations; these fixtures do not certify translation-supplier or human quality.
@@ -316,7 +454,7 @@ The English video displays only Palm Garden's Owner calendar, first open and the
 Confirmed Booking. It does not display the other cottages' private calendar reasons or sign in their owners.
 Its Confirmed Booking is produced by Customer request, Owner acceptance and simulated Worker capture, not seeded.
 
-## Click-by-click presenter script
+### Click-by-click presenter script
 
 Give the driver only the printed reserved meeting Service Day. Use separate Customer and Cottage Owner browser
 profiles or private windows; browser tabs in one profile share a session. The manual Customer is
@@ -357,7 +495,7 @@ curl --fail --silent --show-error 'http://127.0.0.1:8792/__scheduled?cron=%2A%20
 For a shorter presentation, show language choice and comparison, then use the reviewed recording. Never improvise
 credentials, an unreserved Service Day, payment status or database edits on stage.
 
-## Built so far
+### Built so far
 
 These are built application capabilities. “Recorded” describes the English main path, not every failure path or
 real supplier operation. Separate multilingual results checks establish layout evidence, not certification of
@@ -377,7 +515,7 @@ all translated journeys or readiness for release.
 | Private messaging | Enquiry and paid conversations, fictional local-test translations, pre-payment contact protection and moderation/reporting | Paid conversation recorded; enquiry/moderation paths unshown |
 | Administration and finance | Customer/Owner/Cottage status controls, payment history, refunds, disputes, payout holds, settlements and audited actions | Available but unshown beyond Administrator access |
 
-## Still left
+### Still left
 
 The issue tracker remains authoritative. These open demo-relevant items are a subset of the full board.
 
@@ -387,7 +525,7 @@ The issue tracker remains authoritative. These open demo-relevant items are a su
 | #269 | Owner setup and booking-management presentation refinements | Describe current screens as the shipped baseline |
 | #220 | Readable Booking Period summaries across languages and screen sizes | Use the one-day Morning example without implying longer summaries are finished |
 
-## Evidence and teardown
+### Evidence and teardown
 
 Keep a current receipt of checkout commit, exact project/workdir creation, endpoint/container ownership,
 migration history, command exits, both selected test results, printed Service Days, complete video review and

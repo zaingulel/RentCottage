@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useId, useState, type FormEvent } from "react";
 
+import type { PhoneAccessMode } from "@/access/account-access";
 import { submitBookingRequest } from "@/booking-request/actions";
 import type { SubmissionResult } from "@/booking-request/booking-request-submission";
 import type {
@@ -18,6 +19,7 @@ import { bookingQuoteMessages } from "@/i18n/booking-quote-messages";
 import {
   bookingRequestErrorMessage,
   bookingRequestMessages,
+  hostedDemoBookingRequestMessages,
 } from "@/i18n/booking-request-messages";
 import { formatIraqDateTime } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
@@ -37,6 +39,7 @@ import { useExclusiveAction } from "./use-exclusive-action";
 
 export function BookingRequestForm({
   locale,
+  phoneAccessMode = "standard",
   quote,
   discoveryQuery,
   idempotencyKey,
@@ -49,6 +52,7 @@ export function BookingRequestForm({
   returnTo,
 }: {
   locale: Locale;
+  phoneAccessMode?: PhoneAccessMode;
   quote: PublicBookingQuote;
   discoveryQuery: CottageDiscoveryQuery;
   idempotencyKey: string;
@@ -60,7 +64,11 @@ export function BookingRequestForm({
   selectedConversationId?: string;
   returnTo?: string;
 }) {
-  const copy = bookingRequestMessages[locale];
+  const hostedDemo = phoneAccessMode === "hosted-demo";
+  const copy = {
+    ...bookingRequestMessages[locale],
+    ...(hostedDemo ? hostedDemoBookingRequestMessages[locale] : {}),
+  };
   const receiptStatusLinkId = useId();
   const quoteNotice = bookingQuoteMessages[locale].notice;
   const firstStartsAt = quote.items[0]?.startsAt ?? "";
@@ -139,6 +147,7 @@ export function BookingRequestForm({
         <p className="quote-notice">{quoteNotice}</p>
         <PhoneAccessForm
           locale={locale}
+          phoneAccessMode={phoneAccessMode}
           onVerified={() => setVerified(true)}
           returnTo={returnTo}
           verifiedFocusTargetId="booking-request-content"
@@ -312,7 +321,9 @@ export function BookingRequestForm({
           ) : null}
           {result ? (
             <ActionFeedback kind="error">
-              {bookingRequestErrorMessage(locale, result.status)}
+              {hostedDemo && result.status === "access-required"
+                ? hostedDemoBookingRequestMessages[locale].accessRequired
+                : bookingRequestErrorMessage(locale, result.status)}
             </ActionFeedback>
           ) : null}
           <ActionButton

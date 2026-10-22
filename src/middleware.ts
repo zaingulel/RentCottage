@@ -8,6 +8,7 @@ export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
   const { supabase } = readPublicSupabaseEnvironment({
     APP_ENVIRONMENT: process.env.APP_ENVIRONMENT,
+    HOSTED_DEMO: process.env.HOSTED_DEMO,
     SUPABASE_PROJECT_REF: process.env.SUPABASE_PROJECT_REF,
     SUPABASE_URL: process.env.SUPABASE_URL,
     SUPABASE_PUBLISHABLE_KEY: process.env.SUPABASE_PUBLISHABLE_KEY,

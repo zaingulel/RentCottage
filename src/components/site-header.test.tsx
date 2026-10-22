@@ -28,6 +28,45 @@ describe("shared site header", () => {
     location.query = "";
     scrollTo(0);
   });
+  it("hosted demo keeps the landing header in flow while preserving its sign in destination", () => {
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      location.pathname = `/${locale}`;
+      const view = render(
+        <SiteHeader
+          locale={locale}
+          account={{ status: "signed_out" }}
+          hostedDemo
+        />,
+      );
+      const header = screen.getByRole("banner");
+      expect(header).toHaveClass("site-header-solid");
+      expect(header).not.toHaveClass("site-header-landing");
+      const signIn = { en: "Sign in", ar: "تسجيل الدخول", ckb: "چوونەژوورەوە" }[
+        locale
+      ];
+      expect(screen.getByRole("link", { name: signIn })).toHaveAttribute(
+        "href",
+        `/${locale}/access?returnTo=${encodeURIComponent(`/${locale}/bookings`)}`,
+      );
+      scrollTo(200);
+      expect(header).toHaveClass("site-header-solid");
+      expect(header).not.toHaveClass("site-header-landing");
+      scrollTo(0);
+      expect(header).toHaveClass("site-header-solid");
+      view.unmount();
+    }
+    location.pathname = "/en";
+    const standard = render(
+      <SiteHeader locale="en" account={{ status: "signed_out" }} />,
+    );
+    expect(screen.getByRole("banner")).toHaveClass("site-header-landing");
+    expect(screen.getByRole("banner")).not.toHaveClass("site-header-solid");
+    scrollTo(200);
+    expect(screen.getByRole("banner")).toHaveClass("site-header-solid");
+    expect(screen.getByRole("banner")).toHaveClass("site-header-landing");
+    standard.unmount();
+  });
+
   it.each(["en", "ar", "ckb"] as const)(
     "keeps permitted search and booking context in %s sign-in",
     (locale) => {

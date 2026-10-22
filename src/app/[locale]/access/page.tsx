@@ -7,7 +7,11 @@ import {
 import { PhoneAccessForm } from "@/components/phone-access-form";
 import { OwnerEnrollmentForm } from "@/components/owner-enrollment-form";
 import { AccountAccessRecovery } from "@/components/account-access-recovery";
-import { accessMessages } from "@/i18n/access-messages";
+import { getServerEnvironment } from "@/config/server-runtime";
+import {
+  accessMessages,
+  hostedDemoAccessMessages,
+} from "@/i18n/access-messages";
 import { isLocale } from "@/i18n/routing";
 export default async function AccountAccessPage({
   params,
@@ -20,7 +24,13 @@ export default async function AccountAccessPage({
   if (!isLocale(locale)) notFound();
   const returnTo = safeReturnDestination(locale, (await searchParams).returnTo);
   const account = await resolveRequestAccount();
-  const copy = accessMessages[locale];
+  const phoneAccessMode = getServerEnvironment().hostedDemo
+    ? "hosted-demo"
+    : "standard";
+  const copy =
+    phoneAccessMode === "hosted-demo"
+      ? hostedDemoAccessMessages[locale]
+      : accessMessages[locale];
   if (account.status === "unavailable")
     return (
       <AccountAccessRecovery
@@ -70,7 +80,11 @@ export default async function AccountAccessPage({
     <main className="standalone-access">
       <h1>{copy.accessTitle}</h1>
       <p>{copy.accessIntro}</p>
-      <PhoneAccessForm locale={locale} returnTo={returnTo} />
+      <PhoneAccessForm
+        locale={locale}
+        phoneAccessMode={phoneAccessMode}
+        returnTo={returnTo}
+      />
     </main>
   );
 }

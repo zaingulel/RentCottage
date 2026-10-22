@@ -127,6 +127,91 @@ async function enterAndVerify(user: ReturnType<typeof userEvent.setup>) {
 describe("Booking Request form", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("hosted demo inline access keeps simulation wording and errors", async () => {
+    requestPhone.mockResolvedValue({ status: "demo_code_ready" });
+    completePhone.mockResolvedValue({ status: "completed" });
+    submitBookingRequest.mockResolvedValue({ status: "access-required" });
+    for (const [
+      locale,
+      title,
+      intro,
+      request,
+      code,
+      verify,
+      invalid,
+      required,
+    ] of [
+      [
+        "en",
+        "Continue with your invited demo identity",
+        "Phone access is simulated for invited synthetic identities. Real payment suppliers are unavailable.",
+        "Use simulated code",
+        "Simulated invitation code",
+        "Continue demo",
+        "The simulated invitation code is invalid.",
+        "Use your invited synthetic demo identity before continuing. Phone verification is simulated.",
+      ],
+      [
+        "ar",
+        "تابع بهوية العرض المدعوة",
+        "دخول الهاتف محاكاة للهويات الاصطناعية المدعوة. موردو الدفع الحقيقيون غير متاحين.",
+        "استخدم الرمز المحاكى",
+        "رمز الدعوة المحاكى",
+        "تابع العرض",
+        "رمز الدعوة المحاكى غير صحيح.",
+        "استخدم هوية العرض الاصطناعية المدعوة قبل المتابعة. التحقق من الهاتف محاكاة.",
+      ],
+      [
+        "ckb",
+        "بە ناسنامەی بانگهێشتی پیشاندان بەردەوام بە",
+        "دەستگەیشتنی تەلەفۆن بۆ ناسنامە دەستکردە بانگهێشتکراوەکان هاوشێوەکراوە. دابینکەرە ڕاستەقینەکانی پارەدان بەردەست نین.",
+        "کۆدی هاوشێوەکراو بەکاربهێنە",
+        "کۆدی بانگهێشتی هاوشێوەکراو",
+        "پیشاندان بەردەوام بکە",
+        "کۆدی بانگهێشتی هاوشێوەکراو نادروستە.",
+        "پێش بەردەوامبوون ناسنامەی دەستکردی بانگهێشتی پیشاندان بەکاربهێنە. پشتڕاستکردنەوەی تەلەفۆن هاوشێوەکراوە.",
+      ],
+    ] as const) {
+      const view = render(
+        <BookingRequestForm
+          locale={locale}
+          phoneAccessMode="hosted-demo"
+          customerReady={false}
+          discoveryQuery={discoveryQuery}
+          idempotencyKey="11111111-1111-4111-8111-111111111111"
+          quote={quote}
+          {...policyProps(locale)}
+        />,
+      );
+      expect(screen.getByRole("heading", { name: title })).toBeVisible();
+      expect(screen.getByText(intro)).toBeVisible();
+      fireEvent.change(screen.getByRole("textbox"), {
+        target: { value: "+9647500000000" },
+      });
+      await userEvent.click(screen.getByRole("button", { name: request }));
+      fireEvent.change(screen.getByLabelText(code), {
+        target: { value: "654321" },
+      });
+      verifyPhone.mockResolvedValue({ status: "invalid_code" });
+      await userEvent.click(screen.getByRole("button", { name: verify }));
+      expect(screen.getByRole("alert")).toHaveTextContent(invalid);
+      verifyPhone.mockResolvedValue({
+        status: "authenticated",
+        context: { userId: "demo-customer", role: "customer" },
+      });
+      await userEvent.click(screen.getByRole("button", { name: verify }));
+      const form = screen.getByRole("form", {
+        name: bookingRequestMessages[locale].formTitle,
+      });
+      await act(async () => fireEvent.submit(form));
+      expect(screen.getByRole("alert")).toHaveTextContent(required);
+      expect(view.container).not.toHaveTextContent(
+        bookingRequestMessages[locale].errors["access-required"],
+      );
+      view.unmount();
+    }
+  });
+
   it.each([false, true])(
     "focuses the inline verification successor when insideCutoff is %s",
     async (insideCutoff) => {

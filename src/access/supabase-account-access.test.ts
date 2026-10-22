@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createSupabaseAccountAccess,
   parseAccountContext,
   SupabaseAccountContextStore,
   SupabaseIdentityProvider,
@@ -244,6 +245,43 @@ describe("Supabase administrator primary adapter", () => {
 });
 
 describe("Supabase phone verification adapter", () => {
+  it("hosted demo phone access never creates users or claims SMS delivery", async () => {
+    const signInWithOtp = vi.fn().mockResolvedValue({ error: null });
+    const client = { auth: { signInWithOtp } } as unknown as SupabaseClient;
+    const demo = new SupabaseIdentityProvider(client, "hosted-demo");
+    await expect(demo.requestPhoneCode("+9647500000000")).resolves.toEqual({
+      status: "demo_code_ready",
+    });
+    expect(signInWithOtp).toHaveBeenLastCalledWith({
+      phone: "+9647500000000",
+      options: { shouldCreateUser: false },
+    });
+    await expect(
+      createSupabaseAccountAccess(client, "hosted-demo").requestPhoneAccess({
+        phone: "+9647500000000",
+      }),
+    ).resolves.toEqual({ status: "demo_code_ready" });
+    expect(signInWithOtp).toHaveBeenLastCalledWith({
+      phone: "+9647500000000",
+      options: { shouldCreateUser: false },
+    });
+    await expect(
+      new SupabaseIdentityProvider(client).requestPhoneCode("+9647500000000"),
+    ).resolves.toEqual({ status: "code_sent" });
+    expect(signInWithOtp).toHaveBeenLastCalledWith({ phone: "+9647500000000" });
+    for (const code of [
+      "over_request_rate_limit",
+      "over_sms_send_rate_limit",
+    ]) {
+      signInWithOtp.mockResolvedValue({ error: { code } });
+      await expect(demo.requestPhoneCode("+9647500000000")).resolves.toEqual({
+        status: "rate_limited",
+      });
+    }
+    const outage = new Error("provider unavailable");
+    signInWithOtp.mockResolvedValue({ error: outage });
+    await expect(demo.requestPhoneCode("+9647500000000")).rejects.toBe(outage);
+  });
   it("maps an expired one-time code to an actionable expiry result", async () => {
     const client = {
       auth: {

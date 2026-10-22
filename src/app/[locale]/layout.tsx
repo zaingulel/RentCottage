@@ -7,6 +7,8 @@ import { resolveRequestAccount } from "@/access/request-account-context";
 import { resolveRequestAccountName } from "@/access/request-account-name";
 import type { ReactNode } from "react";
 
+import { getServerEnvironment } from "@/config/server-runtime";
+import { hostedDemoAccessMessages } from "@/i18n/access-messages";
 import { defaultLocale, directionFor, isLocale, locales } from "@/i18n/routing";
 
 import "../globals.css";
@@ -30,6 +32,7 @@ export default async function LocaleLayout({
   const { locale: requested } = await params;
   const locale = isLocale(requested) ? requested : defaultLocale;
 
+  const hostedDemo = getServerEnvironment().hostedDemo === true;
   const account = await resolveRequestAccount();
   const name =
     account.status === "authenticated" && account.context
@@ -39,7 +42,16 @@ export default async function LocaleLayout({
   return (
     <html lang={locale} dir={directionFor(locale)}>
       <body>
-        <SiteHeader locale={locale} account={navigationAccount} />
+        <SiteHeader
+          locale={locale}
+          account={navigationAccount}
+          hostedDemo={hostedDemo}
+        />
+        {hostedDemo && (
+          <aside className="access-panel" role="status">
+            {hostedDemoAccessMessages[locale].notice}
+          </aside>
+        )}
         {name?.status === "named" && (
           <ActionFocusTarget targetId="site-header-account-button" />
         )}

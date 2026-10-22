@@ -1,3 +1,5 @@
+export type PhoneAccessMode = "standard" | "hosted-demo";
+
 export type MarketplaceRole = "customer" | "cottage_owner";
 
 export type AccountContext =
@@ -12,7 +14,9 @@ export type AccountContext =
 export interface IdentityProvider {
   requestPhoneCode(
     phone: string,
-  ): Promise<{ status: "code_sent" } | { status: "rate_limited" }>;
+  ): Promise<
+    { status: "code_sent" | "demo_code_ready" } | { status: "rate_limited" }
+  >;
   verifyPhoneCode(
     phone: string,
     code: string,

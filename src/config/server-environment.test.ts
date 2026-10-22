@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   readPublicSupabaseEnvironment,
@@ -6,6 +6,104 @@ import {
 } from "./server-environment";
 
 describe("server environment", () => {
+  it("hosted demo refuses unpinned malformed and mismatched configuration", async () => {
+    const target = {
+      workerOrigin: "https://invited-demo.example.workers.dev",
+      supabaseProjectRef: "demo-fixture",
+      accessIssuer: "https://fixture.cloudflareaccess.com",
+      accessAudience: "fixture-application-audience",
+    };
+    const source = {
+      APP_ENVIRONMENT: "preview",
+      HOSTED_DEMO: "true",
+      SUPABASE_PROJECT_REF: "demo-fixture",
+      SUPABASE_URL: "https://demo-fixture.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "fixture-publishable",
+      SUPABASE_SECRET_KEY: "fixture-secret",
+      PRIVILEGED_AUDIT_HMAC_KEY:
+        "fixture-audit-key-with-at-least-32-characters",
+      DEPLOYMENT_COMMIT: "b".repeat(40),
+    };
+    const rejects = (
+      read: typeof readPublicSupabaseEnvironment,
+      input: typeof source,
+    ) => {
+      let failure: unknown;
+      try {
+        read(input);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(Error);
+      const message = (failure as Error).message;
+      expect(message).toMatch(
+        /HOSTED_DEMO|APP_ENVIRONMENT|SUPABASE_URL|SUPABASE_PROJECT_REF/,
+      );
+      for (const value of Object.values(input)) {
+        if (value.length > 15) expect(message).not.toContain(value);
+      }
+    };
+
+    try {
+      vi.doMock("./hosted-demo-target", () => ({ hostedDemoTarget: null }));
+      vi.resetModules();
+      const unconfigured = await import("./server-environment");
+      rejects(unconfigured.readPublicSupabaseEnvironment, source);
+
+      vi.doMock("./hosted-demo-target", () => ({ hostedDemoTarget: target }));
+      vi.resetModules();
+      const configured = await import("./server-environment");
+      expect(configured.readPublicSupabaseEnvironment(source)).toMatchObject({
+        name: "preview",
+        hostedDemo: true,
+      });
+      expect(configured.readServerEnvironment(source).hostedDemo).toBe(true);
+      for (const patch of [
+        { HOSTED_DEMO: "false" },
+        { HOSTED_DEMO: "TRUE" },
+        { HOSTED_DEMO: "" },
+        { HOSTED_DEMO: "secret-like-invalid-marker" },
+        { APP_ENVIRONMENT: "production" },
+        { APP_ENVIRONMENT: "test" },
+        { APP_ENVIRONMENT: "secret-like-invalid-environment" },
+        { SUPABASE_URL: "secret-like-invalid-url" },
+        { SUPABASE_URL: "http://127.0.0.1:54331" },
+        { SUPABASE_URL: "http://demo-fixture.supabase.co" },
+        { SUPABASE_URL: "https://demo-fixture.supabase.co.attacker.example" },
+        {
+          SUPABASE_URL:
+            "https://user:secret-like-password@demo-fixture.supabase.co",
+        },
+        { SUPABASE_URL: "https://demo-fixture.supabase.co/path" },
+        {
+          SUPABASE_URL:
+            "https://demo-fixture.supabase.co?key=secret-like-query",
+        },
+        {
+          SUPABASE_URL: "https://demo-fixture.supabase.co#secret-like-fragment",
+        },
+        {
+          SUPABASE_PROJECT_REF: "other-project",
+          SUPABASE_URL: "https://other-project.supabase.co",
+        },
+      ]) {
+        rejects(configured.readPublicSupabaseEnvironment, {
+          ...source,
+          ...patch,
+        });
+      }
+      expect(
+        configured.readPublicSupabaseEnvironment({
+          ...source,
+          HOSTED_DEMO: undefined,
+        }),
+      ).not.toHaveProperty("hostedDemo");
+    } finally {
+      vi.doUnmock("./hosted-demo-target");
+      vi.resetModules();
+    }
+  });
+
   it("provides the publishable connection without requiring the server secret", () => {
     expect(
       readPublicSupabaseEnvironment({

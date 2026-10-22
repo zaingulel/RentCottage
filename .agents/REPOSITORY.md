@@ -7,8 +7,8 @@ and seats read the Conventions table below by row name.
 
 `src/` contains the Next.js application and product logic;
 `supabase/` owns declared database objects, migrations and Row Level Security; `scripts/` contains product,
-provider, deployment and verification tooling; `custom-worker.ts` and `wrangler.jsonc` define the Cloudflare
-Worker boundary. [GLOSSARY.md](../GLOSSARY.md) owns product meaning and canonical language.
+provider, deployment and verification tooling; `custom-worker.ts`, `hosted-demo-worker.ts` and `wrangler.jsonc`
+define the Cloudflare Worker boundary. [GLOSSARY.md](../GLOSSARY.md) owns product meaning and canonical language.
 
 The optional gates under `scripts/gates/` are a seam a repository may fill. This repository fills one,
 `scripts/gates/pre-push-main` with `scripts/lib/docs-route.mjs`, both outside the manifest; it has no turn-end gate

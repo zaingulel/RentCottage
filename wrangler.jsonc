@@ -33,6 +33,20 @@
         "APP_ENVIRONMENT": "preview",
       },
     },
+    "demo": {
+      "name": "halabeekom-demo",
+      "main": "hosted-demo-worker.ts",
+      "preview_urls": false,
+      "assets": {
+        "directory": ".open-next/assets",
+        "binding": "ASSETS",
+        "run_worker_first": true,
+      },
+      "vars": {
+        "APP_ENVIRONMENT": "preview",
+        "HOSTED_DEMO": "true",
+      },
+    },
     "production": {
       "name": "muntajaa-production",
       "keep_vars": true,

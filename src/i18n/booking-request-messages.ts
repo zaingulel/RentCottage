@@ -206,3 +206,30 @@ export function bookingRequestErrorMessage(
   }
   return errors[status];
 }
+
+export const hostedDemoBookingRequestMessages: Record<
+  Locale,
+  { verifyTitle: string; verifyIntro: string; accessRequired: string }
+> = {
+  en: {
+    verifyTitle: "Continue with your invited demo identity",
+    verifyIntro:
+      "Phone access is simulated for invited synthetic identities. Real payment suppliers are unavailable.",
+    accessRequired:
+      "Use your invited synthetic demo identity before continuing. Phone verification is simulated.",
+  },
+  ar: {
+    verifyTitle: "تابع بهوية العرض المدعوة",
+    verifyIntro:
+      "دخول الهاتف محاكاة للهويات الاصطناعية المدعوة. موردو الدفع الحقيقيون غير متاحين.",
+    accessRequired:
+      "استخدم هوية العرض الاصطناعية المدعوة قبل المتابعة. التحقق من الهاتف محاكاة.",
+  },
+  ckb: {
+    verifyTitle: "بە ناسنامەی بانگهێشتی پیشاندان بەردەوام بە",
+    verifyIntro:
+      "دەستگەیشتنی تەلەفۆن بۆ ناسنامە دەستکردە بانگهێشتکراوەکان هاوشێوەکراوە. دابینکەرە ڕاستەقینەکانی پارەدان بەردەست نین.",
+    accessRequired:
+      "پێش بەردەوامبوون ناسنامەی دەستکردی بانگهێشتی پیشاندان بەکاربهێنە. پشتڕاستکردنەوەی تەلەفۆن هاوشێوەکراوە.",
+  },
+};

@@ -18,6 +18,7 @@ import {
   parseCottageDiscoveryQuery,
   serializeCottageDiscoveryQuery,
 } from "@/cottage-discovery/discovery-query";
+import { getServerEnvironment } from "@/config/server-runtime";
 import { isLocale } from "@/i18n/routing";
 import { bookingRequestMessages } from "@/i18n/booking-request-messages";
 import { messagingEnquiryLabel } from "@/messaging/messaging-enquiry-label";
@@ -153,6 +154,9 @@ export default async function RequestPage({
   return (
     <BookingQuoteView
       locale={locale}
+      phoneAccessMode={
+        getServerEnvironment().hostedDemo ? "hosted-demo" : "standard"
+      }
       slug={slug}
       queryString={serializeCottageDiscoveryQuery(parsed.query)}
       result={result}

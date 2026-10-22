@@ -5,7 +5,10 @@ import { createClient } from "@supabase/supabase-js";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { getServerEnvironment } from "@/config/server-runtime";
 import { createCottagePublicationTranslator } from "@/translation/cottage-publication-translator";
-import { readTranslationConfiguration } from "@/translation/configuration";
+import {
+  readTranslationConfiguration,
+  type TranslationRuntimeConfiguration,
+} from "@/translation/configuration";
 import { createOpenAIResponsesTranslationAdapter } from "@/translation/openai-responses";
 import { SupabaseTranslationStore } from "@/translation/supabase-translation-store";
 import { createTranslationService } from "@/translation/translation";
@@ -50,7 +53,10 @@ export async function createRequestCottagePublication() {
 
 export async function createRequestCottageTranslation() {
   const repository = await createRequestCottagePublication();
-  const configuration = readTranslationConfiguration(process.env);
+  const configuration: TranslationRuntimeConfiguration = getServerEnvironment()
+    .hostedDemo
+    ? { enabled: false, code: "configuration_unavailable" }
+    : readTranslationConfiguration(process.env);
   const translator = configuration.enabled
     ? createCottagePublicationTranslator(
         createTranslationService({

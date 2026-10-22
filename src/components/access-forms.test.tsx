@@ -44,6 +44,134 @@ import { PhoneAccessForm } from "./phone-access-form";
 describe("access forms", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("hosted demo phone flow stays explicitly simulated in every locale", async () => {
+    const variants = [
+      {
+        locale: "en",
+        phone: "Invited demo number",
+        hint: "Use the synthetic number supplied privately with your invitation.",
+        unavailable:
+          "Demo sign-in is unavailable. Check the number and code supplied privately with your invitation. If access is still unavailable, contact the person who invited you.",
+        request: "Use simulated code",
+        code: "Simulated invitation code",
+        codeHint: "Use your private invitation code. No text message is sent.",
+        verify: "Continue demo",
+        resend: "Use simulated code again",
+        invalid: "The simulated invitation code is invalid.",
+        expired:
+          "The simulated invitation code expired. Ask for a renewed invitation.",
+        success:
+          "Signed into the synthetic demo identity. Phone verification is simulated.",
+      },
+      {
+        locale: "ar",
+        phone: "رقم العرض المدعو",
+        hint: "استخدم الرقم الاصطناعي المقدم لك بشكل خاص مع دعوتك.",
+        unavailable:
+          "الدخول إلى العرض غير متاح. تأكد من الرقم والرمز المرسلين لك بشكل خاص مع الدعوة. إذا ظل الدخول غير متاح، تواصل مع الشخص الذي دعاك.",
+        request: "استخدم الرمز المحاكى",
+        code: "رمز الدعوة المحاكى",
+        codeHint: "استخدم رمز دعوتك الخاص. لا تُرسل رسالة نصية.",
+        verify: "تابع العرض",
+        resend: "استخدم الرمز المحاكى مجددًا",
+        invalid: "رمز الدعوة المحاكى غير صحيح.",
+        expired: "انتهت صلاحية رمز الدعوة المحاكى. اطلب تجديد الدعوة.",
+        success: "تم الدخول بهوية عرض اصطناعية. التحقق من الهاتف محاكاة.",
+      },
+      {
+        locale: "ckb",
+        phone: "ژمارەی بانگهێشتی پیشاندان",
+        hint: "ئەو ژمارە دەستکردە بەکاربهێنە کە بە تایبەتی لەگەڵ بانگهێشتەکەت دراوە.",
+        unavailable:
+          "چوونەژوورەوە بۆ پیشاندان بەردەست نییە. ئەو ژمارە و کۆدە بپشکنە کە بە تایبەتی لەگەڵ بانگهێشتەکەت بۆت نێردراون. ئەگەر هێشتا نەتوانی بچیتە ژوورەوە، پەیوەندی بەو کەسەوە بکە کە بانگهێشتی کردوویت.",
+        request: "کۆدی هاوشێوەکراو بەکاربهێنە",
+        code: "کۆدی بانگهێشتی هاوشێوەکراو",
+        codeHint:
+          "کۆدی تایبەتی بانگهێشتەکەت بەکاربهێنە. هیچ نامەیەکی دەقی نانێردرێت.",
+        verify: "پیشاندان بەردەوام بکە",
+        resend: "کۆدی هاوشێوەکراو دووبارە بەکاربهێنە",
+        invalid: "کۆدی بانگهێشتی هاوشێوەکراو نادروستە.",
+        expired:
+          "کۆدی بانگهێشتی هاوشێوەکراو بەسەرچووە. داوای نوێکردنەوەی بانگهێشت بکە.",
+        success:
+          "بە ناسنامەی دەستکردی پیشاندان چوویتە ژوورەوە. پشتڕاستکردنەوەی تەلەفۆن هاوشێوەکراوە.",
+      },
+    ] as const;
+    for (const copy of variants) {
+      requestPhone
+        .mockResolvedValueOnce({ status: "unavailable" })
+        .mockResolvedValue({ status: "demo_code_ready" });
+      const user = userEvent.setup();
+      const view = render(
+        <PhoneAccessForm locale={copy.locale} phoneAccessMode="hosted-demo" />,
+      );
+      expect(screen.getByText(copy.hint)).toBeVisible();
+      expect(view.container).not.toHaveTextContent("+9647501234567");
+      fireEvent.change(screen.getByLabelText(copy.phone), {
+        target: { value: "+9647500000000" },
+      });
+      await user.click(screen.getByRole("button", { name: copy.request }));
+      expect(screen.getByRole("alert")).toHaveTextContent(copy.unavailable);
+      expect(screen.getByLabelText(copy.phone)).toBeVisible();
+      expect(screen.queryByLabelText(copy.code)).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: copy.request }));
+      expect(screen.getByLabelText(copy.code)).toHaveFocus();
+      expect(screen.getByText(copy.codeHint)).toBeVisible();
+      fireEvent.change(screen.getByLabelText(copy.code), {
+        target: { value: "654321" },
+      });
+      for (const [status, message] of [
+        ["invalid_code", copy.invalid],
+        ["expired_code", copy.expired],
+      ] as const) {
+        verifyPhone.mockResolvedValue({ status });
+        await user.click(screen.getByRole("button", { name: copy.verify }));
+        expect(screen.getByRole("alert")).toHaveTextContent(message);
+      }
+      requestPhone.mockClear();
+      await user.click(screen.getByRole("button", { name: copy.resend }));
+      expect(requestPhone).toHaveBeenCalledExactlyOnceWith("+9647500000000");
+      verifyPhone.mockResolvedValue({
+        status: "authenticated",
+        context: { role: "customer", userId: "synthetic-user" },
+      });
+      await user.click(screen.getByRole("button", { name: copy.verify }));
+      expect(screen.getByText(copy.success)).toBeVisible();
+      expect(view.container).not.toHaveTextContent(/654321|123456/);
+      view.unmount();
+    }
+    for (const [mode, response] of [
+      ["hosted-demo", "code_sent"],
+      ["standard", "demo_code_ready"],
+    ] as const) {
+      requestPhone.mockResolvedValue({ status: response });
+      const view = render(
+        <PhoneAccessForm locale="en" phoneAccessMode={mode} />,
+      );
+      await userEvent.click(
+        screen.getByRole("button", {
+          name:
+            mode === "hosted-demo"
+              ? "Use simulated code"
+              : "Send verification code",
+        }),
+      );
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        mode === "hosted-demo"
+          ? "Demo sign-in is unavailable. Check the number and code supplied privately with your invitation. If access is still unavailable, contact the person who invited you."
+          : "Verification is unavailable. Try again.",
+      );
+      view.unmount();
+    }
+    requestPhone.mockResolvedValue({ status: "code_sent" });
+    const standard = render(<PhoneAccessForm locale="en" />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Send verification code" }),
+    );
+    expect(screen.getByLabelText("Verification code")).toBeVisible();
+    standard.unmount();
+  });
+
   it("restores owned focus to the next local access step without reclaiming departed focus", async () => {
     let resolveRequest!: (value: {
       status: "code_sent" | "invalid_phone";

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
+  getEnvironment,
   recordAudit,
   createClient,
   clearSession,
@@ -10,6 +11,7 @@ const {
   resolveRequestAccount,
   saveRequestAccountName,
 } = vi.hoisted(() => ({
+  getEnvironment: vi.fn(),
   resolveRequestAccount: vi.fn(),
   saveRequestAccountName: vi.fn(),
   recordAudit: vi.fn(),
@@ -22,6 +24,10 @@ const {
 
 vi.mock("./request-account-context", () => ({ resolveRequestAccount }));
 vi.mock("./request-account-name", () => ({ saveRequestAccountName }));
+
+vi.mock("@/config/server-runtime", () => ({
+  getServerEnvironment: getEnvironment,
+}));
 
 vi.mock("next/cache", () => ({ revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect }));
@@ -50,8 +56,49 @@ import {
 describe("account action HTTP boundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getEnvironment.mockReturnValue({ hostedDemo: false });
     recordAudit.mockResolvedValue(undefined);
     clearSession.mockResolvedValue(undefined);
+  });
+
+  it("hosted demo phone mode comes only from validated server configuration", async () => {
+    const client = {};
+    const request = vi.fn().mockResolvedValue({ status: "demo_code_ready" });
+    createClient.mockResolvedValue(client);
+    createAccess.mockReturnValue({ requestPhoneAccess: request });
+    getEnvironment.mockReturnValue({ hostedDemo: true });
+    await expect(
+      Reflect.apply(requestPhoneAccess, undefined, [
+        "+9647500000000",
+        "standard",
+      ]),
+    ).resolves.toEqual({ status: "demo_code_ready" });
+    expect(createAccess).toHaveBeenLastCalledWith(client, "hosted-demo");
+    getEnvironment.mockReturnValue({ hostedDemo: undefined });
+    request.mockResolvedValue({ status: "code_sent" });
+    await expect(
+      Reflect.apply(requestPhoneAccess, undefined, [
+        "+9647500000000",
+        "hosted-demo",
+      ]),
+    ).resolves.toEqual({ status: "code_sent" });
+    expect(createAccess).toHaveBeenLastCalledWith(client, "standard");
+    request.mockResolvedValue({ status: "rate_limited" });
+    await expect(requestPhoneAccess("+9647500000000")).resolves.toEqual({
+      status: "rate_limited",
+    });
+    request.mockRejectedValue(new Error("offline"));
+    await expect(requestPhoneAccess("+9647500000000")).resolves.toEqual({
+      status: "unavailable",
+    });
+    getEnvironment.mockImplementation(() => {
+      throw new Error("invalid configuration");
+    });
+    createAccess.mockClear();
+    await expect(requestPhoneAccess("+9647500000000")).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(createAccess).not.toHaveBeenCalled();
   });
 
   it("rejects malformed public phone inputs before reaching Supabase", async () => {
