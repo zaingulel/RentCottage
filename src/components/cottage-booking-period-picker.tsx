@@ -1,5 +1,16 @@
 "use client";
 
+import {
+  BookingPeriodIdentity,
+  BookingPeriodEndpoints,
+  BookingPeriodAccessSummary,
+} from "./booking-period-details";
+import { bookingPeriodMessages } from "@/i18n/booking-period-messages";
+import {
+  inventoryAccessBounds,
+  inventoryDayPresentation,
+} from "@/booking-quote/booking-period-presentation";
+import type { BookingQuoteItem } from "@/booking-quote/booking-quote";
 import { useRouter } from "next/navigation";
 import { useId, useTransition } from "react";
 
@@ -23,8 +34,6 @@ import {
 const copy = {
   en: {
     title: "Choose your Booking Period",
-    fullDay: "Full-day bundle",
-    nextDay: "next day",
     unavailable: "Unavailable",
     noPrice: "Price unavailable",
     prices:
@@ -39,8 +48,6 @@ const copy = {
   },
   ar: {
     title: "اختر فترة الحجز",
-    fullDay: "اليوم الكامل",
-    nextDay: "اليوم التالي",
     unavailable: "غير متاح",
     noPrice: "السعر غير متاح",
     prices: "الأسعار لكل خيار. يشمل عرض السعر الدقيق رسوم خدمة الحجز.",
@@ -53,8 +60,6 @@ const copy = {
   },
   ckb: {
     title: "ماوەی حجزەکەت هەڵبژێرە",
-    fullDay: "پاکێجی ڕۆژی تەواو",
-    nextDay: "ڕۆژی دواتر",
     unavailable: "بەردەست نییە",
     noPrice: "نرخ بەردەست نییە",
     prices:
@@ -95,12 +100,31 @@ export function CottageBookingPeriodPicker({
   const headingId = useId();
   const [pending, startTransition] = useTransition();
   const messages = copy[locale];
+  const periodCopy = bookingPeriodMessages[locale];
   const complete = hasCompleteCottageBookingSelection(query);
   const available = query.selections.every((selection) =>
     inventory.some((unit) => matches(selection, unit) && unit.available),
   );
   const queryString = serializeCottageDiscoveryQuery(query);
   const days = [...new Set(inventory.map((unit) => unit.serviceDay))];
+
+  const selectedItems = inventory
+    .filter(
+      (unit) =>
+        unit.available &&
+        query.selections.some((selection) => matches(selection, unit)),
+    )
+    .map(
+      (unit): BookingQuoteItem => ({
+        serviceDay: unit.serviceDay,
+        displayName: unit.name,
+        ...inventoryAccessBounds(unit),
+        priceIqd: unit.priceIqd!,
+        ...(unit.kind === "full-day"
+          ? { kind: "full-day" }
+          : { kind: "shift", position: unit.position as 1 | 2 | 3 }),
+      }),
+    );
 
   function replaceSelection(selections: CottageDiscoverySelection[]) {
     startTransition(() =>
@@ -150,6 +174,9 @@ export function CottageBookingPeriodPicker({
       </h2>
       {!pending && <ActionFocusTarget targetId={headingId} />}
       <p>{messages.prices}</p>
+      <p>{periodCopy.choose}</p>
+      <p>{periodCopy.fullDaySchedule}</p>
+      <p>{periodCopy.fullDayPrice}</p>
       {!available && (
         <ActionFeedback kind="error">{messages.changed}</ActionFeedback>
       )}
@@ -203,34 +230,55 @@ export function CottageBookingPeriodPicker({
                       disabled={pending || (!unit.available && !selected)}
                       focusSuccessorId={headingId}
                       aria-labelledby={`${optionId}-name`}
-                      aria-describedby={`${optionId}-time ${optionId}-price${unit.available ? "" : ` ${optionId}-unavailable`}`}
+                      aria-describedby={`${optionId}-time ${optionId}-price${selected ? ` ${optionId}-selected` : ""}${unit.available ? "" : ` ${optionId}-unavailable`}`}
                       onClick={() => toggle(unit)}
                     >
                       <span className="booking-period-label">
                         <span id={`${optionId}-name`}>
-                          {unit.kind === "full-day"
-                            ? messages.fullDay
-                            : unit.name}
+                          <BookingPeriodIdentity
+                            locale={locale}
+                            kind={unit.kind}
+                            position={unit.position}
+                            originalName={unit.name}
+                            presentation={inventoryDayPresentation(
+                              inventory.filter(
+                                (option) => option.serviceDay === day,
+                              ),
+                            )}
+                          />
                         </span>
+                        <b id={`${optionId}-price`}>
+                          <bdi dir="auto">
+                            {unit.priceIqd === null
+                              ? messages.noPrice
+                              : formatIqd(unit.priceIqd, locale)}
+                          </bdi>
+                        </b>
                         <span
                           className="booking-period-time"
                           id={`${optionId}-time`}
                         >
-                          <bdi dir="ltr">
-                            {unit.startTime}–{unit.endTime}
-                          </bdi>
-                          {(unit.endTime < unit.startTime ||
-                            (unit.kind === "full-day" &&
-                              unit.endTime === unit.startTime)) && (
-                            <> {messages.nextDay}</>
-                          )}
+                          <BookingPeriodEndpoints
+                            locale={locale}
+                            {...inventoryAccessBounds(unit)}
+                          />
+                          {unit.kind === "full-day" &&
+                          inventoryDayPresentation(
+                            inventory.filter(
+                              (option) => option.serviceDay === day,
+                            ),
+                          ) === "morning-evening-v1" ? (
+                            <span className="booking-period-explanation">
+                              {periodCopy.fullDayIncludes}
+                            </span>
+                          ) : null}
                         </span>
+                        {selected ? (
+                          <span id={`${optionId}-selected`}>
+                            {periodCopy.selected}
+                          </span>
+                        ) : null}
                       </span>
-                      <b id={`${optionId}-price`}>
-                        {unit.priceIqd === null
-                          ? messages.noPrice
-                          : formatIqd(unit.priceIqd, locale)}
-                      </b>
                     </ActionButton>
                     {!unit.available && (
                       <span
@@ -246,6 +294,9 @@ export function CottageBookingPeriodPicker({
           </ul>
         </fieldset>
       ))}
+      {available && !pending ? (
+        <BookingPeriodAccessSummary locale={locale} items={selectedItems} />
+      ) : null}
       {!complete && <p>{messages.choose}</p>}
       {complete && available && !pending ? (
         <ActionLink

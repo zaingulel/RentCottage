@@ -103,6 +103,12 @@ describe("Customer Booking Request status", () => {
     const view = render(
       <CustomerBookingRequestStatus locale="en" request={request} />,
     );
+    const period = screen.getByText("Booking Period").nextElementSibling!;
+    expect(period).toHaveTextContent("Evening");
+    expect(period).toHaveTextContent("Arrival: Aug 21, 2099, 20:00");
+    expect(period).toHaveTextContent("Departure: Aug 21, 2099, 23:00");
+    expect(period).toHaveTextContent("All times are Iraq local time (UTC+3).");
+    expect(period.querySelector("bdi")).toHaveAttribute("dir", "auto");
     const label = screen.getByText("Cottage");
     expect(label.closest("dl")).toHaveClass("fact-list");
     expect(label.nextSibling).toHaveTextContent("Quiet Garden");
@@ -121,6 +127,24 @@ describe("Customer Booking Request status", () => {
       screen.getByText("Cottage Owner note").nextSibling,
     ).toHaveTextContent(declineNote);
     expect(view.container.querySelector("img, script")).toBeNull();
+    view.rerender(
+      <CustomerBookingRequestStatus
+        locale="en"
+        request={{
+          ...request,
+          periodPresentation: "morning-evening-v1",
+          bookingPeriod: [
+            { ...request.bookingPeriod[0], displayName: "Garden night" },
+          ],
+        }}
+      />,
+    );
+    const knownPeriod = screen.getByText("Booking Period").nextElementSibling!;
+    expect(knownPeriod).toHaveTextContent("Evening Garden night");
+    expect(
+      within(knownPeriod as HTMLElement).getByText("Garden night"),
+    ).toHaveAttribute("dir", "auto");
+
     for (const fact of view.container.querySelectorAll("dl.fact-list > div")) {
       expect(fact.firstElementChild?.tagName).toBe("DT");
       expect(fact.firstElementChild?.nextElementSibling?.tagName).toBe("DD");

@@ -3882,13 +3882,14 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     new Intl.DateTimeFormat("en-IQ", {
       dateStyle: "medium",
       timeStyle: "short",
+      hourCycle: "h23",
       timeZone: "Asia/Baghdad",
     }).format(new Date(value));
-  const expectedFullDayAccessRange = `${formatEnglishIraqDateTime(
+  const expectedFullDayAccessRange = `Arrival: ${formatEnglishIraqDateTime(
     `${firstDay}T${firstShift.start_time}+03:00`,
-  )} – ${formatEnglishIraqDateTime(
+  )} Departure: ${formatEnglishIraqDateTime(
     `${fullDayEndDay}T${lastShift!.end_time}+03:00`,
-  )}`;
+  )} All times are Iraq local time (UTC+3).`;
   const { error: priceError } = await fixtureOwner.rpc(
     "save_cottage_inventory_pricing",
     {
@@ -4950,12 +4951,17 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     page.getByRole("heading", { name: "پێشنیاری نرخی وردی حجزکردن" }),
   ).toBeVisible();
   await expect(
-    page.getByText(`شەفتی ${firstShift.position}`).first(),
+    page
+      .getByRole("listitem", {
+        name: `ماوەی بەیانی ${firstShift.name}`,
+        exact: true,
+      })
+      .first(),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "داواکاری حجز بنێرە" }),
   ).toBeVisible();
-  await expect(page.locator("body")).not.toContainText(/Morning|Evening/);
+  await expect(page.locator(".quote-items")).toContainText(firstShift.name);
   await expectPrivateValuesAbsent();
   await openHeaderPanel(page, "language");
   await page.getByRole("banner").getByRole("link", { name: "العربية" }).click();
@@ -4965,12 +4971,17 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     page.getByRole("heading", { name: "عرض سعر الحجز الدقيق" }),
   ).toBeVisible();
   await expect(
-    page.getByText(`الوردية ${firstShift.position}`).first(),
+    page
+      .getByRole("listitem", {
+        name: `الفترة الصباحية ${firstShift.name}`,
+        exact: true,
+      })
+      .first(),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "أرسل طلب الحجز" }),
   ).toBeVisible();
-  await expect(page.locator("body")).not.toContainText(/Morning|Evening/);
+  await expect(page.locator(".quote-items")).toContainText(firstShift.name);
   await expectPrivateValuesAbsent();
 
   await page.goto("/en");
@@ -5008,7 +5019,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await fullDayResult.getByRole("link", { name: "View cottage" }).click();
   await expect(
     picker.getByRole("button", {
-      name: "Full-day bundle",
+      name: "Full-day Full-day bundle",
       pressed: true,
       exact: true,
     }),
@@ -5016,7 +5027,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(picker.getByText("Total price", { exact: true })).toHaveCount(0);
   await page.getByRole("link", { name: "Get exact quote" }).click();
   const fullDayItems = page.getByRole("listitem", {
-    name: /Full-Day Bundle/,
+    name: "Full-day Full-day bundle",
   });
   await expect(fullDayItems).toHaveCount(2);
   await expect(fullDayItems.nth(0)).toContainText("IQD 250,000");
@@ -5025,7 +5036,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(page.getByText("IQD 5,000", { exact: true })).toBeVisible();
   await expect(page.getByText("IQD 515,000", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Continuous full-day access" }),
+    page.getByRole("heading", { name: "Your selected access" }),
   ).toBeVisible();
   await expect(page.locator(".quote-access li")).toHaveCount(1);
   await expect(page.locator(".quote-access li")).toHaveText(

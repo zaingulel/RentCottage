@@ -1,3 +1,4 @@
+import { bookingPeriodMessages } from "../src/i18n/booking-period-messages";
 import { cottageProfileMessages } from "../src/i18n/cottage-profile-messages";
 import { bookingRequestPaymentRecoveryMessages } from "../src/i18n/booking-request-status-messages";
 import { ownerBookingRequestMessages } from "../src/i18n/owner-booking-request-messages";
@@ -2353,5 +2354,103 @@ test("Cottage editor keeps the approved raised groups and usable controls across
       await expect(
         editor.getByRole("status").filter({ hasText: copy.abandonedReadOnly }),
       ).toBeVisible();
+  }
+});
+
+test("customer period rows retain exact access in all locales", async ({
+  page,
+}, testInfo) => {
+  await mountBookingRequestDisplay(page, testInfo);
+  const originalName =
+    "هەڵبژاردەی درێژی بەیانی Garden <script>original</script> بۆ پشوودانی خێزان لە باخچەکە";
+  for (const locale of ["en", "ar", "ckb"] as const) {
+    const copy = bookingPeriodMessages[locale];
+    for (const screen of ["results", "profile"] as const) {
+      await page.evaluate((state) => window.renderPublicCottageDisplay(state), {
+        screen,
+        locale,
+        photoCount: 0,
+        longContent: true,
+      });
+      const rows = page.locator(
+        screen === "results"
+          ? ".result-shifts > li"
+          : ".booking-period-list > li",
+      );
+      await expect(rows).toHaveCount(7);
+      const morning = rows.nth(0);
+      await expect(morning.locator(".booking-period-identity")).toContainText(
+        copy.morning,
+      );
+      await expect(
+        morning.locator('bdi[dir="auto"]').filter({ hasText: originalName }),
+      ).toHaveText(originalName);
+      await expect(morning.locator("script")).toHaveCount(0);
+      const evening = rows.nth(1);
+      await expect(evening.locator(".booking-period-identity")).toContainText(
+        copy.evening,
+      );
+      await expect(evening).toContainText(copy.arrival);
+      await expect(evening).toContainText(copy.departure);
+      await expect(evening).toContainText(copy.nextDay);
+      await expect(evening).toContainText(copy.iraqTimeZone);
+      await expect(evening.locator("time").nth(0)).toHaveAttribute(
+        "datetime",
+        "2099-08-21T17:00:00+03:00",
+      );
+      await expect(evening.locator("time").nth(1)).toHaveAttribute(
+        "datetime",
+        "2099-08-22T02:00:00+03:00",
+      );
+      await expect(evening).not.toContainText(/AM|PM|ب\.ن|د\.ن/);
+      const fullDay = rows.nth(2);
+      await expect(fullDay).toContainText(copy.fullDayIncludes);
+      if (screen === "results") {
+        await expect(fullDay).toContainText(copy.fullDayPrice);
+        await expect(fullDay).toContainText(copy.fullDaySchedule);
+      } else {
+        await expect(morning.getByRole("button")).toHaveAccessibleName(
+          `${copy.morning} ${originalName}`,
+        );
+        await expect(morning.getByRole("button")).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await expect(morning).toContainText(copy.selected);
+        await expect(evening.getByRole("button")).toBeDisabled();
+        await expect(evening.getByRole("button")).toHaveAccessibleDescription(
+          new RegExp(copy.nextDay),
+        );
+        await expect(
+          page.locator(".booking-period-access-summary"),
+        ).toContainText(copy.selectedAccess);
+        await morning.getByRole("button").focus();
+        await expect(morning.getByRole("button")).toBeFocused();
+      }
+      // The retained three-shift day uses original identity even beside a known day.
+      await expect(rows.nth(4).locator(".booking-period-identity")).toHaveText(
+        "Afternoon",
+      );
+      for (const width of [
+        testInfo.project.name === "mobile" ? 390 : 1440,
+        320,
+      ]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () =>
+                document.documentElement.scrollWidth <=
+                  document.documentElement.clientWidth &&
+                [
+                  ...document.querySelectorAll(
+                    ".booking-period-identity, .booking-period-endpoints, .result-shifts > li, .booking-period-list button",
+                  ),
+                ].every((node) => node.scrollWidth <= node.clientWidth + 1),
+            ),
+          )
+          .toBe(true);
+      }
+    }
   }
 });

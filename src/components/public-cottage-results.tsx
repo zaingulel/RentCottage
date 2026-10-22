@@ -1,3 +1,12 @@
+import {
+  BookingPeriodIdentity,
+  BookingPeriodEndpoints,
+} from "./booking-period-details";
+import { bookingPeriodMessages } from "@/i18n/booking-period-messages";
+import {
+  inventoryAccessBounds,
+  inventoryDayPresentation,
+} from "@/booking-quote/booking-period-presentation";
 import Image from "next/image";
 
 import {
@@ -25,7 +34,6 @@ const copy = {
     back: "تعديل البحث",
     changeSearch: "غيّر البحث",
     fullDay: "اليوم الكامل",
-    nextDay: "اليوم التالي",
     available: "متاح",
     unavailableOption: "غير متاح",
     noPrice: "السعر غير متاح",
@@ -61,7 +69,6 @@ const copy = {
     back: "گەڕانەکە بگۆڕە",
     changeSearch: "گەڕان بگۆڕە",
     fullDay: "پاکێجی ڕۆژی تەواو",
-    nextDay: "ڕۆژی دواتر",
     available: "بەردەستە",
     unavailableOption: "بەردەست نییە",
     noPrice: "نرخ بەردەست نییە",
@@ -98,7 +105,6 @@ const copy = {
     back: "Change search",
     changeSearch: "Change search",
     fullDay: "Full-day bundle",
-    nextDay: "next day",
     available: "Available",
     unavailableOption: "Unavailable",
     noPrice: "Price unavailable",
@@ -316,26 +322,56 @@ export function PublicCottageResults({
                               <li
                                 key={`${unit.kind}-${unit.position ?? "full"}`}
                               >
-                                <span>
-                                  {unit.kind === "full-day"
-                                    ? messages.fullDay
-                                    : unit.name}
-                                </span>
-                                <span>
-                                  <bdi dir="ltr">
-                                    {unit.startTime}–{unit.endTime}
-                                  </bdi>
-                                  {(unit.endTime < unit.startTime ||
-                                    (unit.kind === "full-day" &&
-                                      unit.endTime === unit.startTime)) && (
-                                    <> {messages.nextDay}</>
+                                <BookingPeriodIdentity
+                                  locale={locale}
+                                  kind={unit.kind}
+                                  position={unit.position}
+                                  originalName={unit.name}
+                                  presentation={inventoryDayPresentation(
+                                    cottage.inventory.filter(
+                                      (option) => option.serviceDay === day,
+                                    ),
                                   )}
-                                </span>
+                                />
                                 <b>
-                                  {unit.priceIqd === null
-                                    ? messages.noPrice
-                                    : formatIqd(unit.priceIqd, locale)}
+                                  <bdi dir="auto">
+                                    {unit.priceIqd === null
+                                      ? messages.noPrice
+                                      : formatIqd(unit.priceIqd, locale)}
+                                  </bdi>
                                 </b>
+                                <BookingPeriodEndpoints
+                                  locale={locale}
+                                  {...inventoryAccessBounds(unit)}
+                                />
+                                {unit.kind === "full-day" ? (
+                                  <span className="booking-period-explanation">
+                                    {inventoryDayPresentation(
+                                      cottage.inventory.filter(
+                                        (option) => option.serviceDay === day,
+                                      ),
+                                    ) === "morning-evening-v1" ? (
+                                      <span>
+                                        {
+                                          bookingPeriodMessages[locale]
+                                            .fullDayIncludes
+                                        }
+                                      </span>
+                                    ) : null}
+                                    <span>
+                                      {
+                                        bookingPeriodMessages[locale]
+                                          .fullDaySchedule
+                                      }
+                                    </span>
+                                    <span>
+                                      {
+                                        bookingPeriodMessages[locale]
+                                          .fullDayPrice
+                                      }
+                                    </span>
+                                  </span>
+                                ) : null}
                                 <span
                                   className={`result-availability${unit.available ? " result-availability-available" : ""}`}
                                 >

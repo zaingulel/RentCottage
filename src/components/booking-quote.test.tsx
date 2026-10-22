@@ -15,6 +15,7 @@ const result = {
     slug: "cottage-00000000000040008000000000000029",
     cottageName: "Quiet Garden",
     contentVersion: 2,
+    periodPresentation: "morning-evening-v1" as const,
     houseRules: "No smoking",
     termsVersion: "fictional-local-test-2026-08-22-v1" as const,
     marketplaceTerms: bookingTermsFixture("en"),
@@ -143,9 +144,12 @@ describe("Booking Quote view", () => {
     expect(
       screen.getByRole("heading", { name: "Your exact Booking Quote" }),
     ).toBeInTheDocument();
-    const item = screen.getByRole("listitem", { name: /Shift 2/ });
-    expect(item).toHaveTextContent("Shift 2");
-    expect(item).not.toHaveTextContent("Night");
+    const item = screen.getByRole("listitem", { name: "Evening Night" });
+    expect(item).toHaveTextContent("Evening Night");
+    expect(item).toHaveTextContent("Arrival: Aug 21, 2099, 20:00");
+    expect(item).toHaveTextContent("Departure: Aug 22, 2099, 02:00");
+    expect(item).toHaveTextContent("All times are Iraq local time (UTC+3).");
+    expect(within(item).getByText("Night")).toHaveAttribute("dir", "auto");
     expect(item).toHaveTextContent("IQD 100,003");
     expect(item).toHaveTextContent("next day");
     expect(screen.getByText("IQD 105,003")).toBeInTheDocument();
@@ -240,12 +244,14 @@ describe("Booking Quote view", () => {
     expect(
       screen.getByRole("heading", { name: "عرض سعر الحجز الدقيق" }),
     ).toBeInTheDocument();
-    const item = screen.getByRole("listitem", { name: /الوردية 2/ });
-    expect(item).toHaveTextContent("الوردية 2");
-    expect(item).not.toHaveTextContent("Night");
+    const item = screen.getByRole("listitem", {
+      name: "الفترة المسائية Night",
+    });
+    expect(item).toHaveTextContent("الفترة المسائية Night");
+    expect(within(item).getByText("Night")).toHaveAttribute("dir", "auto");
   });
 
-  it("uses localized Sorani shift positions without exposing owner names", () => {
+  it("shows Sorani semantic labels beside original owner names", () => {
     render(
       <BookingQuoteView
         locale="ckb"
@@ -255,9 +261,9 @@ describe("Booking Quote view", () => {
         {...bookingRequestProps}
       />,
     );
-    const item = screen.getByRole("listitem", { name: /شەفتی 2/ });
-    expect(item).toHaveTextContent("شەفتی 2");
-    expect(item).not.toHaveTextContent("Night");
+    const item = screen.getByRole("listitem", { name: "ماوەی ئێوارە Night" });
+    expect(item).toHaveTextContent("ماوەی ئێوارە Night");
+    expect(within(item).getByText("Night")).toHaveAttribute("dir", "auto");
   });
 
   it("itemizes consecutive separately priced Full-Day Bundles and merged access", () => {
@@ -313,18 +319,30 @@ describe("Booking Quote view", () => {
     );
 
     const bundles = screen.getAllByRole("listitem", {
-      name: /Full-Day Bundle/,
+      name: "Full-day Owner full-day name",
     });
     expect(bundles).toHaveLength(2);
     expect(bundles[0]).toHaveTextContent("IQD 250,000");
     expect(bundles[1]).toHaveTextContent("IQD 260,000");
+    expect(bundles[0]).toHaveTextContent(
+      "Includes Morning and Evening with continuous access, including the time between them.",
+    );
+    const summary = screen.getByRole("heading", {
+      name: "Your selected access",
+    }).parentElement!;
+    expect(summary.querySelectorAll("li")).toHaveLength(1);
+    expect(summary).toHaveTextContent("Arrival: Aug 21, 2099, 08:00");
+    expect(summary).toHaveTextContent("Departure: Aug 22, 2099, 23:00");
+    expect(summary.querySelector(".booking-period-gap")).toBeNull();
     expect(screen.getByText("IQD 510,000")).toBeInTheDocument();
     expect(screen.getByText("IQD 515,000")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Continuous full-day access" }),
+      screen.getByRole("heading", { name: "Your selected access" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Aug 21, 2099, 8:00 AM.*Aug 22, 2099, 11:00 PM/),
+      screen.getByText(
+        "Continuous access includes the overnight time between these Full-day dates.",
+      ),
     ).toBeInTheDocument();
   });
 

@@ -132,23 +132,27 @@ describe("PublicCottageProfileView", () => {
     ).toBeVisible();
     expect(rows[0]).toHaveTextContent('<script>alert("period")</script>');
     expect(rows[0].querySelector("script")).toBeNull();
-    expect(rows[0]).toHaveTextContent("09:00–15:00");
-    expect(rows[0].querySelector("bdi")).toHaveAttribute("dir", "ltr");
+    expect(rows[0]).toHaveTextContent("Arrival: Sep 22, 2026, 09:00");
+    expect(rows[0].querySelector("bdi")).toHaveAttribute("dir", "auto");
     expect(within(rows[0]).getByText("IQD 60,000")).toBeVisible();
     expect(
       within(rows[0]).getByRole("button", {
         name: '<script>alert("period")</script>',
       }),
-    ).toHaveAccessibleDescription("09:00–15:00 IQD 60,000");
+    ).toHaveAccessibleDescription(
+      "Arrival: Sep 22, 2026, 09:00 Departure: Sep 22, 2026, 15:00 All times are Iraq local time (UTC+3). IQD 60,000",
+    );
     expect(
       within(sidebar).getByRole("group", { name: "Wed, Sep 23" }),
     ).toBeVisible();
     expect(rows[1]).toHaveTextContent(
-      "Full-day bundle09:00–23:00Price unavailableUnavailable",
+      "Full day Price unavailableArrival: Sep 23, 2026, 09:00 Departure: Sep 23, 2026, 23:00 All times are Iraq local time (UTC+3).Unavailable",
     );
     expect(
-      within(rows[1]).getByRole("button", { name: "Full-day bundle" }),
-    ).toHaveAccessibleDescription("09:00–23:00 Price unavailable Unavailable");
+      within(rows[1]).getByRole("button", { name: "Full day" }),
+    ).toHaveAccessibleDescription(
+      "Arrival: Sep 23, 2026, 09:00 Departure: Sep 23, 2026, 23:00 All times are Iraq local time (UTC+3). Price unavailable Unavailable",
+    );
     expect(within(sidebar).queryByText("Total price")).toBeNull();
     expect(
       within(sidebar).getByRole("button", { name: "Get exact quote" }),
