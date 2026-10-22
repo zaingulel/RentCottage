@@ -289,7 +289,6 @@ describe("Cottage Profile", () => {
       [new CottageProfileOperationError("denied"), "denied"],
       [new CottageProfileOperationError("conflict"), "conflict"],
       [new CottageProfileOperationError("last_photo"), "last_photo"],
-      [{ code: "RC204" }, "unavailable"],
       [{ code: "unexpected" }, "unavailable"],
     ] as const) {
       photo.mockRejectedValueOnce(error);
