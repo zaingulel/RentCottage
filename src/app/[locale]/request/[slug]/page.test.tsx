@@ -45,6 +45,12 @@ describe("public Booking Quote page", () => {
     vi.stubEnv("APP_ENVIRONMENT", "test");
     vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
     vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
+    vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "818-synthetic-publishable");
+    vi.stubEnv("SUPABASE_SECRET_KEY", "818-synthetic-secret");
+    vi.stubEnv(
+      "PRIVILEGED_AUDIT_HMAC_KEY",
+      "818-synthetic-audit-key-with-more-than-32-characters",
+    );
     resolveAccountContext.mockResolvedValue(null);
   });
 
