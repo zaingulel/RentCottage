@@ -187,6 +187,8 @@ const nodeTestScripts = ["scripts/lib/*.test.mjs"];
 export default defineConfig({
   resolve: { tsconfigPaths: true },
   test: {
+    // Leave headroom for two local suites to meet the existing component test deadlines.
+    maxWorkers: "25%",
     projects: [
       {
         extends: true,
