@@ -250,8 +250,7 @@ describe("Supabase Booking Request submission repository", () => {
       purpose: "booking-request-authorization",
       claimId: "44444444-4444-4444-8444-444444444444",
       generation: 1,
-      idempotencyKey:
-        "booking-request:44444444-4444-4444-8444-444444444444:1",
+      idempotencyKey: "booking-request:44444444-4444-4444-8444-444444444444:1",
       notAfter: "2099-08-22T00:00:00.000Z",
     };
     let authorizationClaims = 0;
@@ -554,8 +553,7 @@ describe("Supabase Booking Request submission repository", () => {
       purpose: "booking-request-authorization",
       claimId: "44444444-4444-4444-8444-444444444444",
       generation: 1,
-      idempotencyKey:
-        "booking-request:44444444-4444-4444-8444-444444444444:1",
+      idempotencyKey: "booking-request:44444444-4444-4444-8444-444444444444:1",
       notAfter: "2099-08-22T00:00:00.000Z",
     };
     const cleanupPermit = {

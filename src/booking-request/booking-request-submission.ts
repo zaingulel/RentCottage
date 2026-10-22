@@ -236,7 +236,10 @@ export function createBookingRequestSubmission({
     save: (snapshot, context) => {
       let purpose: SubmissionPaymentPersistencePurpose = "snapshot";
       // Uncertain authorization execution keeps the claim write and its refusal classification.
-      if (context.phase !== "snapshot" && context.operation === "authorization") {
+      if (
+        context.phase !== "snapshot" &&
+        context.operation === "authorization"
+      ) {
         purpose = "authorization-claim";
       } else if (
         context.phase === "before-execution" &&
