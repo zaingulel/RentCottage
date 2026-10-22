@@ -291,10 +291,18 @@ export function isAuthorizationPhasePaymentSnapshot(
   });
 }
 
+export type PaymentPersistenceContext =
+  | {
+      readonly phase: "before-execution" | "execution-uncertain";
+      readonly operation: PaymentOperationKind;
+    }
+  | { readonly phase: "snapshot" };
+
 export interface PaymentLifecyclePersistence {
   readonly operations?: PaymentOperationExecution;
   save(
     snapshot: PaymentLifecycleSnapshot,
+    context: PaymentPersistenceContext,
   ): Promise<ProviderExecutionPermit | void>;
 }
 
@@ -907,7 +915,10 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
       this.#refunds.push(Object.freeze({ ...pending }));
     }
 
-    const executionPermit = await this.#persist();
+    const executionPermit = await this.#persist({
+      phase: "before-execution",
+      operation: kind,
+    });
 
     let result: ProviderOperationResult;
     try {
@@ -938,7 +949,7 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
         );
         if (refundIndex >= 0) this.#refunds[refundIndex] = indeterminate;
       }
-      await this.#persist();
+      await this.#persist({ phase: "execution-uncertain", operation: kind });
       return indeterminate;
     }
     if (result.outcome === "not-executed") {
@@ -966,8 +977,10 @@ class ProviderNeutralPaymentLifecycle implements PaymentLifecycle {
     return settled;
   }
 
-  async #persist(): Promise<ProviderExecutionPermit | undefined> {
-    const result = await this.#persistence?.save(this.snapshot());
+  async #persist(
+    context: PaymentPersistenceContext = { phase: "snapshot" },
+  ): Promise<ProviderExecutionPermit | undefined> {
+    const result = await this.#persistence?.save(this.snapshot(), context);
     return result ?? undefined;
   }
 

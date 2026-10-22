@@ -14,6 +14,7 @@ import {
   ProviderExecutionNotStartedError,
   rehydratePaymentAuthorizationLifecycle,
   type PaymentLifecycle,
+  type PaymentLifecyclePersistence,
 } from "@/payment/payment-lifecycle";
 
 import { isContactSafeBookingRequestText } from "./booking-request-content";
@@ -99,12 +100,18 @@ export type SubmissionLookupResult =
   | { readonly status: "absent" }
   | { readonly status: "unknown" };
 
+export type SubmissionPaymentPersistencePurpose =
+  | "authorization-claim"
+  | "cleanup-release"
+  | "snapshot";
+
 export interface BookingRequestSubmissionRepository {
   prepare(input: SubmissionInput): Promise<PrepareSubmissionResult>;
   savePaymentSnapshot(
     attemptId: string,
     snapshot: PaymentLifecycleSnapshot,
     providerIdentity: PaymentProviderIdentity,
+    purpose: SubmissionPaymentPersistencePurpose,
   ): Promise<ProviderExecutionPermit | void>;
   finalize(
     attemptId: string,
@@ -224,6 +231,27 @@ export function createBookingRequestSubmission({
   operations: PaymentOperationExecution;
   diagnostics?: BookingRequestDiagnostics;
 }): BookingRequestSubmission {
+  const persistenceFor = (attemptId: string): PaymentLifecyclePersistence => ({
+    operations,
+    save: (snapshot, context) => {
+      let purpose: SubmissionPaymentPersistencePurpose = "snapshot";
+      // Uncertain authorization execution keeps the claim write and its refusal classification.
+      if (context.phase !== "snapshot" && context.operation === "authorization") {
+        purpose = "authorization-claim";
+      } else if (
+        context.phase === "before-execution" &&
+        context.operation === "release"
+      ) {
+        purpose = "cleanup-release";
+      }
+      return repository.savePaymentSnapshot(
+        attemptId,
+        snapshot,
+        paymentProvider.identity,
+        purpose,
+      );
+    },
+  });
   const record = (code: BookingRequestDiagnosticCode, attemptId?: string) => {
     diagnostics?.record({ code, ...(attemptId ? { attemptId } : {}) });
   };
@@ -299,15 +327,7 @@ export function createBookingRequestSubmission({
           attempt,
           paymentProvider,
           attempt.paymentSnapshot,
-          {
-            operations,
-            save: (snapshot) =>
-              repository.savePaymentSnapshot(
-                attempt.id,
-                snapshot,
-                paymentProvider.identity,
-              ),
-          },
+          persistenceFor(attempt.id),
         );
         const releaseResult = await storedReleaseResult(attempt.id, payment);
         if (releaseResult) return releaseResult;
@@ -352,15 +372,7 @@ export function createBookingRequestSubmission({
         await markReconciliationRequired(prepared.attempt.id);
         return { status: "reconciliation-required" };
       }
-      const persistence = {
-        operations,
-        save: (snapshot: PaymentLifecycleSnapshot) =>
-          repository.savePaymentSnapshot(
-            prepared.attempt.id,
-            snapshot,
-            paymentProvider.identity,
-          ),
-      };
+      const persistence = persistenceFor(prepared.attempt.id);
       let payment;
       try {
         payment = prepared.attempt.paymentSnapshot

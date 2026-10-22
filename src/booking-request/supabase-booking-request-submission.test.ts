@@ -225,6 +225,7 @@ describe("Supabase Booking Request submission repository", () => {
         "22222222-2222-4222-8222-222222222222",
         pendingSnapshot!,
         provider.identity,
+        "authorization-claim",
       ),
     ).resolves.toEqual(data.executionPermit);
     expect(client.rpc).toHaveBeenCalledWith(
@@ -359,6 +360,7 @@ describe("Supabase Booking Request submission repository", () => {
       "22222222-2222-4222-8222-222222222222",
       pendingSnapshot!,
       provider.identity,
+      "authorization-claim",
     );
 
     await expect(result).rejects.toBeInstanceOf(
@@ -411,6 +413,7 @@ describe("Supabase Booking Request submission repository", () => {
       "22222222-2222-4222-8222-222222222222",
       pendingSnapshot!,
       provider.identity,
+      "authorization-claim",
     );
 
     await expect(result).rejects.toThrow(
@@ -469,6 +472,7 @@ describe("Supabase Booking Request submission repository", () => {
         "22222222-2222-4222-8222-222222222222",
         pendingSnapshot!,
         provider.identity,
+        "authorization-claim",
       ),
     ).rejects.toBeInstanceOf(BookingRequestAuthorizationClaimNotPersisted);
     expect(rpc).toHaveBeenNthCalledWith(
@@ -528,6 +532,7 @@ describe("Supabase Booking Request submission repository", () => {
         permit.attemptId,
         pendingSnapshot!,
         provider.identity,
+        "cleanup-release",
       ),
     ).resolves.toEqual(permit);
     expect(client.rpc).toHaveBeenCalledWith(

@@ -16,6 +16,7 @@ import {
   type SubmissionFailureStatus,
   type PrepareSubmissionResult,
   type SubmissionInput,
+  type SubmissionPaymentPersistencePurpose,
   type SubmissionLookupResult,
 } from "./booking-request-submission";
 import type { BookingRequestSubmissionRecoveryRepository } from "./booking-request-submission-recovery";
@@ -380,27 +381,12 @@ export class SupabaseBookingRequestSubmissionRepository
     attemptId: string,
     snapshot: PaymentLifecycleSnapshot,
     providerIdentity: PaymentProviderIdentity,
+    purpose: SubmissionPaymentPersistencePurpose,
   ): Promise<ProviderExecutionPermit | void> {
-    const authorization = snapshot.authorization;
-    const startsAuthorization =
-      authorization?.status === "pending" &&
-      authorization.providerRequestId === null &&
-      authorization.providerReference === null &&
-      authorization.movementReference === null &&
-      snapshot.release === null;
-    const startsCleanupRelease =
-      authorization?.status === "succeeded" &&
-      snapshot.capture === null &&
-      snapshot.release?.status === "pending" &&
-      snapshot.release.providerRequestId === null &&
-      snapshot.release.providerReference === null &&
-      snapshot.release.movementReference === null &&
-      snapshot.release.reconciliationRequired === false &&
-      snapshot.release.retrySafe === false;
     const { data, error } = await this.client.rpc(
-      startsAuthorization
+      purpose === "authorization-claim"
         ? "begin_booking_request_authorization_claim"
-        : startsCleanupRelease
+        : purpose === "cleanup-release"
           ? "begin_booking_request_submission_cleanup_release"
           : "save_booking_request_payment_snapshot",
       {
@@ -410,7 +396,7 @@ export class SupabaseBookingRequestSubmissionRepository
       },
     );
     if (error) {
-      if (startsAuthorization) {
+      if (purpose === "authorization-claim") {
         const classification = await this.client.rpc(
           "classify_booking_request_authorization_claim_persistence",
           { target_attempt_id: attemptId },
@@ -427,8 +413,8 @@ export class SupabaseBookingRequestSubmissionRepository
       }
       throw new Error("Payment evidence could not be persisted");
     }
-    if (startsCleanupRelease) return cleanupExecutionPermitFrom(data);
-    if (!startsAuthorization) return;
+    if (purpose === "cleanup-release") return cleanupExecutionPermitFrom(data);
+    if (purpose !== "authorization-claim") return;
     const result = rowObject(data);
     if (
       result &&
