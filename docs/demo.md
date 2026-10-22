@@ -66,6 +66,26 @@ The hosted phone flow is invitation-only simulated identity and verification. A 
 request is not proof of SMS delivery. Preserve the persistent disclosure and unavailable real-supplier states;
 the local paid-booking recording does not establish hosted payment availability.
 
+Before the final hosted build and deployment, require the reviewed committed tree, approved dedicated target
+and inspected matching demo Supabase bindings and secrets. Supply the approved preview/demo settings and that
+project's credentials to the build environment through the existing private setup. Confirm the existing remote
+settings belong to that exact dedicated project before retaining them; never borrow preview or production
+settings. Only after the required provider approvals, run:
+
+```sh
+export DEPLOYMENT_COMMIT="$(git rev-parse HEAD)"
+node scripts/run-log.mjs demo hosted build -- npm run build:worker -- --env demo
+node scripts/run-log.mjs demo hosted client secrets -- npm run scan:client-secrets
+node scripts/run-log.mjs demo hosted deploy -- npx wrangler deploy --env demo --keep-vars --var "DEPLOYMENT_COMMIT:$DEPLOYMENT_COMMIT"
+```
+
+Build and deployment both select `demo`, so OpenNext embeds the demo Worker-first asset setting.
+`DEPLOYMENT_COMMIT` identifies the same reviewed source used for the build. Regenerate the build and repeat the
+client-secret scan after any source or target-pin change before deployment. `--keep-vars` preserves existing
+remote non-secret variables while configured and command-line values are applied; it does not validate the
+retained values. Deployment retains secrets independently. The default build used for the local admission-test
+startup fixture stays unchanged; it is not the final hosted artifact.
+
 ### Prove activation before invitations
 
 Require actual managed OTP request/verification success without SMS and observed denial of wrong codes,
@@ -76,21 +96,28 @@ these observations, stop and return the native password alternative to the owner
 The coordinating session records these independent evidence classes:
 
 - Disposable real PostgreSQL preservation evidence, including account-access and owner-application security
-  tests, through `node scripts/run-log.mjs 818 database preservation -- npm run verify:access:database`.
+  tests, through `node scripts/run-log.mjs demo hosted database preservation -- npm run verify:access:database`.
 - Existing authenticator and Owner browser journeys, after browser permission, through
-  `node scripts/run-log.mjs 818 browser preservation -- npm run verify:access:browser`.
-- Actual hosted authenticated health and deployed commit; native Access admitted and denied sessions;
-  no-cookie asset/action denial; exposed alternate Worker URLs; wrong-host denial; and managed phone outcomes.
-  Use native dashboard/read-only requests, with no new probe script or Access bypass token.
+  `node scripts/run-log.mjs demo hosted browser preservation -- npm run verify:access:browser`.
+- After the approved demo-specific build and deployment, actual hosted authenticated health and deployed
+  commit; native Access admitted and denied sessions; and an admitted native browser receiving successful
+  same-origin script and stylesheet responses, rendering the styled app and completing an interaction. Record
+  the actual deployed commit with that observation. Require no-cookie denial of those assets and actions,
+  exposed alternate Worker URL checks, wrong-host denial and managed phone outcomes. Use native
+  dashboard/read-only requests, with no new probe script or Access bypass token.
 - Direct demo Auth, Representational State Transfer (REST) and storage requests using the publishable key with
   no session, each tester's session and administrator assurance level 1/2. Require own-scope access,
   cross-person/private-file denial and administrator denial before MFA. Public catalog reads may remain public
   under current policies. A [publishable key](https://supabase.com/docs/guides/getting-started/api-keys) is public;
   RLS and actual native responses establish the boundary. Capture policy/settings snapshots without secrets.
 
+The native Miniflare sentinel proves admission while substituting OpenNext. It cannot prove OpenNext asset
+delivery. App-build and Worker dry-run success establish compilation and bundling only. The demo-specific build
+and admitted-browser asset and interaction observations remain pending activation gates.
+
 Existing role, storage and MFA contracts remain preservation claims, with no new mutation for unchanged
 behavior. Mocks and local tests cannot replace managed provider observations. Before activation, complete
-`node scripts/run-log.mjs 818 full verification -- npm run verify -- --full`, the existing client-secret scan,
+`node scripts/run-log.mjs demo hosted full verification -- npm run verify -- --full`, the existing client-secret scan,
 documentation lint, fresh independent/security review and explicit authentication sign-off. Hosted activation
 remains incomplete until actual-resource receipts, no-send/expiry proof, direct-access denial evidence,
 required identities and approvals are available.
@@ -117,7 +144,7 @@ of the English Platform Administrator, Cottage Owner and Customer journey throug
 Payment and supplier responses are simulated; Booking Terms are fictional and non-operative. This is local
 demonstration evidence, not hosted activation evidence.
 
-## Fresh operator setup
+### Fresh operator setup
 
 Use the selected checkout with dependencies installed by `npm ci`, Docker running, Python 3, Bash and the
 existing Playwright Chromium installation. The locked Supabase command-line interface (CLI) is `node_modules/.bin/supabase`,
@@ -251,7 +278,7 @@ PY
 node_modules/.bin/supabase status --workdir "$SUPABASE_LOCAL_WORKDIR" --output json > "$SUPABASE_LOCAL_WORKDIR/status-private.json"
 ```
 
-## Verify ownership before privileged preparation
+### Verify ownership before privileged preparation
 
 Do not print the status file, keys or private startup logs. Before fixture or Administrator preparation,
 require the exact API origin and Docker labels connecting that endpoint to the workdir just created. A
@@ -331,7 +358,7 @@ node scripts/run-log.mjs demo worker build -- npm run build:worker
 records. Neither command repairs an existing partial fixture. Failure requires inspection and a fresh owned
 project for another attempt, not deletion or a database reset.
 
-## Start the Worker and record
+### Start the Worker and record
 
 Stay in the dedicated shell. Keep Wrangler logs and registry inside the owned workdir, and check the Worker
 ports again immediately before preview. Docker published ports must also remain free at 8792 and 9232.
@@ -396,7 +423,7 @@ Review the entire canonical video before sharing, including its exact ending, re
 journey, synthetic/simulator disclosure, masked credentials and absence of premature private information.
 Preserve the recording and representative results screenshots with the evidence needed for review.
 
-## Fictional cottages and availability
+### Fictional cottages and availability
 
 Shared names and approximate locations are English in every locale. Descriptions and House Rules have synthetic
 English, Arabic and Sorani localizations; these fixtures do not certify translation-supplier or human quality.
@@ -427,7 +454,7 @@ The English video displays only Palm Garden's Owner calendar, first open and the
 Confirmed Booking. It does not display the other cottages' private calendar reasons or sign in their owners.
 Its Confirmed Booking is produced by Customer request, Owner acceptance and simulated Worker capture, not seeded.
 
-## Click-by-click presenter script
+### Click-by-click presenter script
 
 Give the driver only the printed reserved meeting Service Day. Use separate Customer and Cottage Owner browser
 profiles or private windows; browser tabs in one profile share a session. The manual Customer is
@@ -468,7 +495,7 @@ curl --fail --silent --show-error 'http://127.0.0.1:8792/__scheduled?cron=%2A%20
 For a shorter presentation, show language choice and comparison, then use the reviewed recording. Never improvise
 credentials, an unreserved Service Day, payment status or database edits on stage.
 
-## Built so far
+### Built so far
 
 These are built application capabilities. “Recorded” describes the English main path, not every failure path or
 real supplier operation. Separate multilingual results checks establish layout evidence, not certification of
@@ -488,7 +515,7 @@ all translated journeys or readiness for release.
 | Private messaging | Enquiry and paid conversations, fictional local-test translations, pre-payment contact protection and moderation/reporting | Paid conversation recorded; enquiry/moderation paths unshown |
 | Administration and finance | Customer/Owner/Cottage status controls, payment history, refunds, disputes, payout holds, settlements and audited actions | Available but unshown beyond Administrator access |
 
-## Still left
+### Still left
 
 The issue tracker remains authoritative. These open demo-relevant items are a subset of the full board.
 
@@ -498,7 +525,7 @@ The issue tracker remains authoritative. These open demo-relevant items are a su
 | #269 | Owner setup and booking-management presentation refinements | Describe current screens as the shipped baseline |
 | #220 | Readable Booking Period summaries across languages and screen sizes | Use the one-day Morning example without implying longer summaries are finished |
 
-## Evidence and teardown
+### Evidence and teardown
 
 Keep a current receipt of checkout commit, exact project/workdir creation, endpoint/container ownership,
 migration history, command exits, both selected test results, printed Service Days, complete video review and
