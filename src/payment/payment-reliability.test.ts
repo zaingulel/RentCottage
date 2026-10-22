@@ -33,9 +33,10 @@ describe("payment lifecycle reliability", () => {
       },
       simulator,
       {
-        save: async (snapshot) => {
+        save: async (snapshot, context) => {
           saved.push(snapshot);
-          return snapshot.authorization?.status === "pending"
+          return context.phase === "before-execution" &&
+            context.operation === "authorization"
             ? permit
             : undefined;
         },
@@ -78,8 +79,11 @@ describe("payment lifecycle reliability", () => {
         },
         simulator,
         {
-          save: async (snapshot) =>
-            snapshot.authorization?.status === "pending" ? permit : undefined,
+          save: async (_snapshot, context) =>
+            context.phase === "before-execution" &&
+            context.operation === "authorization"
+              ? permit
+              : undefined,
         },
       );
 
@@ -121,9 +125,14 @@ describe("payment lifecycle reliability", () => {
       provider,
       authorized.snapshot(),
       {
-        save: async (snapshot) => {
+        save: async (snapshot, context) => {
           saved.push(snapshot);
-          if (snapshot.release?.status !== "pending") return;
+          if (
+            context.phase !== "before-execution" ||
+            context.operation !== "release"
+          ) {
+            return;
+          }
           return {
             purpose: "booking-request-release",
             workId: "97000000-0000-4000-8000-000000000034",
