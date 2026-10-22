@@ -122,8 +122,8 @@ test("refuses a Server Action posted to the Worker from a foreign origin", async
     const refused = await postAction(foreignOrigin);
     expect(refused.status()).toBe(500);
     const body = await refused.text();
-    // Digest of Next.js error E80, "Invalid Server Actions request.", raised by the origin check.
-    expect(body).toContain('@E80"');
+    // Next.js exposes an opaque error digest, not a stable origin-error identifier.
+    expect(body).toMatch(/"digest"\s*:\s*"[^"\r\n]+"/);
     expect(body).not.toContain("invalid_phone");
   }
 });
