@@ -3558,89 +3558,25 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
     await expect(
       review.getByRole("button", { name: "Hide review" }),
     ).toBeVisible();
-    const replyHideCount = countReviewRows("customer_review_reply_hides");
-    const reviewHideCount = countReviewRows("customer_review_hides");
-    expect(replyHideCount).toBe("1");
-    expect(reviewHideCount).toBe("0");
+    expect(countReviewRows("customer_review_reply_hides")).toBe("1");
+    expect(countReviewRows("customer_review_hides")).toBe("0");
 
-    const debug833Count = (value: string) =>
-      /^[0-9]+$/.exec(value)?.[0] === value &&
-      Number.isSafeInteger(Number(value))
-        ? Number(value)
-        : "probe-unavailable";
-    if (testInfo.project.name === "desktop") {
-      console.error("[DEBUG-833]", {
-        fixture: "desktop-owner-reply",
-        stage: "browser",
-        category: "before-en",
-        replyHides: debug833Count(replyHideCount),
-        reviewHides: debug833Count(reviewHideCount),
-      });
-    }
     await visitor.goto(publicPath("en"));
-    if (testInfo.project.name === "desktop") {
-      console.error("[DEBUG-833]", {
-        fixture: "desktop-owner-reply",
-        stage: "browser",
-        category: "after-en",
-      });
-    }
     await expect(publicReview.getByText(reviewBody)).toBeVisible();
     await expect(visitor.getByText("Cottage Owner reply")).toHaveCount(0);
     await expect(visitor.getByText(replyBody)).toHaveCount(0);
 
-    try {
-      await test.step("a hidden reply takes its stored translation off the public page", async () => {
-        if (testInfo.project.name === "desktop") {
-          console.error("[DEBUG-833]", {
-            fixture: "desktop-owner-reply",
-            stage: "browser",
-            category: "before-ar",
-          });
-        }
-        await visitor.goto(publicPath("ar"));
-        if (testInfo.project.name === "desktop") {
-          console.error("[DEBUG-833]", {
-            fixture: "desktop-owner-reply",
-            stage: "browser",
-            category: "after-ar",
-          });
-        }
-        const card = visitor.getByRole("article");
-        await expectText(card.getByText(arabic.review), "ar", "rtl");
-        await expect(card.getByText(arabic.label)).toHaveCount(1);
-        await expect(visitor.getByText(arabic.replyGroup)).toHaveCount(0);
-        await expect(visitor.getByText(arabic.reply)).toHaveCount(0);
-        await expect(visitor.getByText(replyBody)).toHaveCount(0);
-        // The stored translation is not deleted; the page stops showing it with its hidden parent.
-        expect(countReplyTranslations()).toBe("1");
-      });
-    } catch (error) {
-      if (testInfo.project.name === "desktop") {
-        try {
-          console.error("[DEBUG-833]", {
-            fixture: "desktop-owner-reply",
-            stage: "browser",
-            category: "after-ar-failure",
-            replies: debug833Count(countReviewRows("customer_review_replies")),
-            replyHides: debug833Count(
-              countReviewRows("customer_review_reply_hides"),
-            ),
-            reviewHides: debug833Count(
-              countReviewRows("customer_review_hides"),
-            ),
-            replyTranslations: debug833Count(countReplyTranslations()),
-          });
-        } catch {
-          console.error("[DEBUG-833]", {
-            fixture: "desktop-owner-reply",
-            stage: "browser",
-            category: "probe-unavailable",
-          });
-        }
-      }
-      throw error;
-    }
+    await test.step("a hidden reply takes its stored translation off the public page", async () => {
+      await visitor.goto(publicPath("ar"));
+      const card = visitor.getByRole("article");
+      await expectText(card.getByText(arabic.review), "ar", "rtl");
+      await expect(card.getByText(arabic.label)).toHaveCount(1);
+      await expect(visitor.getByText(arabic.replyGroup)).toHaveCount(0);
+      await expect(visitor.getByText(arabic.reply)).toHaveCount(0);
+      await expect(visitor.getByText(replyBody)).toHaveCount(0);
+      // The stored translation is not deleted; the page stops showing it with its hidden parent.
+      expect(countReplyTranslations()).toBe("1");
+    });
 
     await page.goto(ownerPath("en"));
     await expect(ownerReview.getByRole("status")).toHaveText(
