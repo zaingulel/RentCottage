@@ -163,7 +163,6 @@ it("local browser groups parallelize owned files and isolate global mutations", 
         journeys[offset + 1][1].filter((arg) => arg.startsWith("--workers=")),
       ).toEqual(["--workers=1"]);
       expect(journeys[offset][1]).toContain("--workers=2");
-      expect(journeys[offset + 1][1]).toContain("--workers=1");
       expect(journeys[offset][1]).toContain("--retries=0");
       expect(journeys[offset + 1][1]).toContain("--retries=0");
     }
