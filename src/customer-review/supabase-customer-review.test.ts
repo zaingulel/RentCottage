@@ -1759,3 +1759,178 @@ describe("Supabase Customer review repository", () => {
     );
   });
 });
+
+it("DEBUG833 classifies the public reader without exposing payloads", async () => {
+  const secret = "DEBUG833_SENTINEL_SECRET\nprivate-address-cookie";
+  const input = {
+    publicSlug: "cottage-20000000000040008000000000007701",
+    beforeAt: null,
+    beforeId: null,
+    limit: 20,
+  };
+  const translation = {
+    translationId,
+    targetLanguage: "ar",
+    translatedBody: "إقامة هادئة",
+  };
+  const reply = {
+    originalLanguage: "en",
+    originalBody: "Thank you for staying with us.",
+    submittedAt: "2026-09-21T12:00:00.000Z",
+    translations: [translation],
+  };
+  const review = {
+    reviewId,
+    rating: 5,
+    originalLanguage: "en",
+    originalBody: "A calm stay.",
+    submittedAt: "2026-09-21T11:00:00.000Z",
+    ownerReply: reply,
+    translations: [translation],
+  };
+  const page = (item: unknown) => ({
+    status: "success",
+    items: [item],
+    nextCursor: null,
+  });
+  const hiddenReplyPage = page({ ...review, ownerReply: null });
+  const cases: readonly [unknown, string, unknown][] = [
+    [page(review), "success", page(review)],
+    [hiddenReplyPage, "success", hiddenReplyPage],
+    [{ status: "not-found" }, "not-found", { status: "not-found" }],
+    [null, "envelope", { status: "unavailable" }],
+    [
+      { ...page(review), privateAddress: secret },
+      "envelope",
+      { status: "unavailable" },
+    ],
+    [
+      { status: "success", items: secret, nextCursor: null },
+      "envelope",
+      { status: "unavailable" },
+    ],
+    [
+      page({ ...review, privateAddress: secret }),
+      "review-shape",
+      { status: "unavailable" },
+    ],
+    [
+      page({ ...review, translations: [{ ...translation, cookie: secret }] }),
+      "review-translations",
+      { status: "unavailable" },
+    ],
+    [
+      page({ ...review, ownerReply: { ...reply, privateReason: secret } }),
+      "reply-shape",
+      { status: "unavailable" },
+    ],
+    [
+      page({ ...review, ownerReply: { ...reply, originalLanguage: secret } }),
+      "reply-facts",
+      { status: "unavailable" },
+    ],
+    [
+      page({
+        ...review,
+        ownerReply: { ...reply, translations: [{ ...translation, secret }] },
+      }),
+      "reply-translations",
+      { status: "unavailable" },
+    ],
+    [
+      { ...page(review), nextCursor: { privateAddress: secret } },
+      "cursor",
+      { status: "unavailable" },
+    ],
+    [
+      {
+        status: "success",
+        items: [
+          {
+            ...review,
+            ownerReply: { ...reply, privateReason: secret },
+            translations: secret,
+          },
+          { ...review, privateAddress: secret },
+        ],
+        nextCursor: secret,
+      },
+      "reply-shape",
+      { status: "unavailable" },
+    ],
+  ];
+  for (const [data, category, expected] of cases) {
+    const client = clientWith(data);
+    const diagnostic = vi.fn();
+    const repository = new SupabaseCustomerReviewRepository(client as never);
+    await expect(repository.listPublic(input, diagnostic)).resolves.toEqual(
+      expected,
+    );
+    expect(diagnostic.mock.calls).toEqual([[category]]);
+    expect(client.rpc).toHaveBeenCalledExactlyOnceWith(
+      "list_public_customer_reviews",
+      {
+        target_slug: input.publicSlug,
+        target_before_at: null,
+        target_before_id: null,
+        target_limit: 20,
+      },
+    );
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(
+      "DEBUG833_SENTINEL_SECRET",
+    );
+    const silentClient = clientWith(data);
+    await expect(
+      new SupabaseCustomerReviewRepository(silentClient as never).listPublic(
+        input,
+      ),
+    ).resolves.toEqual(expected);
+    expect(silentClient.rpc).toHaveBeenCalledTimes(1);
+  }
+  for (const [code, emittedCode, status] of [
+    ["22023", "22023", "invalid"],
+    ["57014", "57014", "unavailable"],
+    ["XX000", "XX000", "unavailable"],
+    ["PGRST123", "PGRST123", "unavailable"],
+    ["pgrst123", "unclassified", "unavailable"],
+    ["XX000\n", "unclassified", "unavailable"],
+    [secret, "unclassified", "unavailable"],
+    [undefined, "unclassified", "unavailable"],
+  ]) {
+    const diagnostic = vi.fn();
+    const client = clientWith(null, {
+      code,
+      message: secret,
+      details: secret,
+      hint: secret,
+    });
+    await expect(
+      new SupabaseCustomerReviewRepository(client as never).listPublic(
+        input,
+        diagnostic,
+      ),
+    ).resolves.toEqual({ status });
+    expect(diagnostic.mock.calls).toEqual([["rpc-error", emittedCode]]);
+    expect(client.rpc).toHaveBeenCalledTimes(1);
+  }
+  const diagnostic = vi.fn();
+  const rejectedClient = { rpc: vi.fn().mockRejectedValue(new Error(secret)) };
+  await expect(
+    new SupabaseCustomerReviewRepository(rejectedClient as never).listPublic(
+      input,
+      diagnostic,
+    ),
+  ).resolves.toEqual({ status: "unavailable" });
+  expect(diagnostic.mock.calls).toEqual([["rpc-threw"]]);
+  expect(rejectedClient.rpc).toHaveBeenCalledTimes(1);
+  diagnostic.mockClear();
+  const invalidClient = clientWith(null);
+  await expect(
+    new SupabaseCustomerReviewRepository(invalidClient as never).listPublic(
+      { ...input, limit: 0 },
+      diagnostic,
+    ),
+  ).resolves.toEqual({ status: "invalid" });
+  expect(diagnostic.mock.calls).toEqual([["input-invalid"]]);
+  expect(invalidClient.rpc).not.toHaveBeenCalled();
+});

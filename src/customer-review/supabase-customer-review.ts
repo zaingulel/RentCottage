@@ -47,6 +47,20 @@ import type {
   SubmitCustomerReviewResult,
 } from "./customer-review";
 
+export type Debug833Category =
+  | "input-invalid"
+  | "rpc-threw"
+  | "rpc-error"
+  | "envelope"
+  | "review-shape"
+  | "review-translations"
+  | "reply-shape"
+  | "reply-facts"
+  | "reply-translations"
+  | "cursor"
+  | "success"
+  | "not-found";
+
 function parseCursor(value: unknown): CustomerReviewCursor | null | undefined {
   if (value === null) {
     return null;
@@ -117,6 +131,7 @@ function parseTranslations(
 
 function parsePublicReply(
   value: unknown,
+  diagnostic?: (category: Debug833Category, code?: string) => void,
 ): PublicCustomerReviewReply | null | undefined {
   if (value === null) {
     return null;
@@ -130,10 +145,13 @@ function parsePublicReply(
       "translations",
     ])
   ) {
+    diagnostic?.("reply-shape");
     return undefined;
   }
   const facts = parseReplyFacts(value);
   const translations = parseTranslations(value.translations);
+  if (!facts) diagnostic?.("reply-facts");
+  else if (!translations) diagnostic?.("reply-translations");
   return facts && translations && { ...facts, translations };
 }
 
@@ -159,7 +177,10 @@ function parseOwnerReply(
   return facts && { ...facts, moderationState: value.moderationState };
 }
 
-function parsePublicReview(value: unknown): PublicCustomerReview | undefined {
+function parsePublicReview(
+  value: unknown,
+  diagnostic?: (category: Debug833Category, code?: string) => void,
+): PublicCustomerReview | undefined {
   if (
     !isRecord(value) ||
     !hasExactKeys(value, [
@@ -182,11 +203,13 @@ function parsePublicReview(value: unknown): PublicCustomerReview | undefined {
         !isCustomerReviewBodyWithinLimit(value.originalBody))) ||
     !isCustomerReviewTimestamp(value.submittedAt)
   ) {
+    diagnostic?.("review-shape");
     return undefined;
   }
-  const ownerReply = parsePublicReply(value.ownerReply);
+  const ownerReply = parsePublicReply(value.ownerReply, diagnostic);
   const translations = parseTranslations(value.translations);
   if (ownerReply === undefined || translations === undefined) {
+    if (ownerReply !== undefined) diagnostic?.("review-translations");
     return undefined;
   }
   return {
@@ -200,11 +223,16 @@ function parsePublicReview(value: unknown): PublicCustomerReview | undefined {
   };
 }
 
-function parsePublicListResult(value: unknown): PublicCustomerReviewListResult {
+function parsePublicListResult(
+  value: unknown,
+  diagnostic?: (category: Debug833Category, code?: string) => void,
+): PublicCustomerReviewListResult {
   if (!isRecord(value) || typeof value.status !== "string") {
+    diagnostic?.("envelope");
     return { status: "unavailable" };
   }
   if (value.status === "not-found" && hasExactKeys(value, ["status"])) {
+    diagnostic?.("not-found");
     return { status: "not-found" };
   }
   if (
@@ -212,14 +240,17 @@ function parsePublicListResult(value: unknown): PublicCustomerReviewListResult {
     !hasExactKeys(value, ["status", "items", "nextCursor"]) ||
     !Array.isArray(value.items)
   ) {
+    diagnostic?.("envelope");
     return { status: "unavailable" };
   }
 
-  const items = value.items.map(parsePublicReview);
+  const items = value.items.map((item) => parsePublicReview(item, diagnostic));
   const nextCursor = parseCursor(value.nextCursor);
   if (items.some((item) => item === undefined) || nextCursor === undefined) {
+    if (nextCursor === undefined) diagnostic?.("cursor");
     return { status: "unavailable" };
   }
+  diagnostic?.("success");
   return {
     status: "success",
     items: items as PublicCustomerReview[],
@@ -827,8 +858,17 @@ export class SupabaseCustomerReviewRepository {
 
   async listPublic(
     input: PublicCustomerReviewListInput,
+    diagnostic?: (category: Debug833Category, code?: string) => void,
   ): Promise<PublicCustomerReviewListResult> {
+    let reported = false;
+    const report = (category: Debug833Category, code?: string) => {
+      if (reported) return;
+      reported = true;
+      if (code === undefined) diagnostic?.(category);
+      else diagnostic?.(category, code);
+    };
     if (!isPublicCustomerReviewListInput(input)) {
+      report("input-invalid");
       return { status: "invalid" };
     }
     const response = await callRpc(
@@ -842,16 +882,27 @@ export class SupabaseCustomerReviewRepository {
       },
     );
     if (!response) {
+      report("rpc-threw");
       return { status: "unavailable" };
     }
     const { data, error } = response;
+    if (error !== null) {
+      const code = errorCode(error);
+      report(
+        "rpc-error",
+        code !== undefined &&
+          /^(?:[0-9A-Z]{5}|PGRST[0-9]{3})$/.exec(code)?.[0] === code
+          ? code
+          : "unclassified",
+      );
+    }
     if (errorCode(error) === "22023") {
       return { status: "invalid" };
     }
     if (error !== null) {
       return { status: "unavailable" };
     }
-    return parsePublicListResult(data);
+    return parsePublicListResult(data, report);
   }
 
   async getOwn(
