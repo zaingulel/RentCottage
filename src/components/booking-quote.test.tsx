@@ -319,7 +319,7 @@ describe("Booking Quote view", () => {
     );
 
     const bundles = screen.getAllByRole("listitem", {
-      name: "Full-day Owner full-day name",
+      name: "Full-day",
     });
     expect(bundles).toHaveLength(2);
     expect(bundles[0]).toHaveTextContent("IQD 250,000");

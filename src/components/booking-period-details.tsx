@@ -25,6 +25,8 @@ export function BookingPeriodIdentity({
   presentation?: BookingPeriodPresentation;
 }) {
   const copy = bookingPeriodMessages[locale];
+  const knownFullDay =
+    presentation === "morning-evening-v1" && kind === "full-day";
   const identity =
     presentation === "morning-evening-v1"
       ? kind === "full-day"
@@ -36,13 +38,16 @@ export function BookingPeriodIdentity({
   return (
     <span className="booking-period-identity">
       <strong>
-        {identity === originalName ? (
+        {!knownFullDay && identity === originalName ? (
           <bdi dir="auto">{originalName}</bdi>
         ) : (
           identity
         )}
-      </strong>{" "}
-      {identity !== originalName ? <bdi dir="auto">{originalName}</bdi> : null}
+      </strong>
+      {!knownFullDay ? " " : null}
+      {!knownFullDay && identity !== originalName ? (
+        <bdi dir="auto">{originalName}</bdi>
+      ) : null}
     </span>
   );
 }

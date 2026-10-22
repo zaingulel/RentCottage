@@ -5042,12 +5042,14 @@ test("anonymous discovery uses live approved inventory and preserves its query",
     fullDayResult.getByText("IQD 510,000", { exact: true }),
   ).toHaveCount(0);
   await expect(
-    fullDayResult.getByText("Full-day bundle", { exact: false }),
+    fullDayResult.locator(".booking-period-identity > strong").filter({
+      hasText: /^Full-day$/,
+    }),
   ).toHaveCount(2);
   await fullDayResult.getByRole("link", { name: "View cottage" }).click();
   await expect(
     picker.getByRole("button", {
-      name: "Full-day Full-day bundle",
+      name: "Full-day",
       pressed: true,
       exact: true,
     }),
@@ -5055,7 +5057,7 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(picker.getByText("Total price", { exact: true })).toHaveCount(0);
   await page.getByRole("link", { name: "Get exact quote" }).click();
   const fullDayItems = page.getByRole("listitem", {
-    name: "Full-day Full-day bundle",
+    name: "Full-day",
   });
   await expect(fullDayItems).toHaveCount(2);
   await expect(fullDayItems.nth(0)).toContainText("IQD 250,000");

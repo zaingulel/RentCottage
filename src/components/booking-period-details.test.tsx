@@ -38,15 +38,14 @@ const bundle: BookingQuoteItem = {
 
 describe("Booking period details", () => {
   it("presents known identities beside escaped original names", () => {
-    for (const [locale, morningLabel, eveningLabel, fullDayLabel] of [
-      ["en", "Morning", "Evening", "Full-day"],
-      ["ar", "الفترة الصباحية", "الفترة المسائية", "حجز اليوم الكامل"],
-      ["ckb", "ماوەی بەیانی", "ماوەی ئێوارە", "حجزکردنی تەواوی ڕۆژ"],
+    for (const [locale, morningLabel, eveningLabel] of [
+      ["en", "Morning", "Evening"],
+      ["ar", "الفترة الصباحية", "الفترة المسائية"],
+      ["ckb", "ماوەی بەیانی", "ماوەی ئێوارە"],
     ] as const) {
       for (const [item, label] of [
         [morning, morningLabel],
         [evening, eveningLabel],
-        [bundle, fullDayLabel],
       ] as const) {
         const originalName = '<img src=x onerror="alert(1)"> ناوی خاوەن';
         const view = render(
@@ -71,6 +70,44 @@ describe("Booking period details", () => {
         expect(screen.getAllByText(label)).toHaveLength(1);
         view.unmount();
       }
+    }
+  });
+
+  it("shows only translated current Full-day identity in every locale while preserving historical names", () => {
+    for (const [locale, label] of [
+      ["en", "Full-day"],
+      ["ar", "حجز اليوم الكامل"],
+      ["ckb", "حجزکردنی تەواوی ڕۆژ"],
+    ] as const) {
+      const view = render(
+        <BookingPeriodIdentity
+          locale={locale}
+          kind="full-day"
+          originalName="Full-day bundle"
+          presentation="morning-evening-v1"
+        />,
+      );
+      expect(screen.getByText(label, { exact: true })).toBeVisible();
+      expect(view.container.textContent).toBe(label);
+      expect(screen.queryByText("Full-day bundle")).toBeNull();
+
+      const originalName = '<img src=x onerror="alert(1)"> ناوی کۆن';
+      for (const presentation of [undefined, "original-names"] as const) {
+        view.rerender(
+          <BookingPeriodIdentity
+            locale={locale}
+            kind="full-day"
+            originalName={originalName}
+            presentation={presentation}
+          />,
+        );
+        expect(view.container.querySelector("bdi")?.textContent).toBe(
+          originalName,
+        );
+        expect(screen.getByText(originalName)).toHaveAttribute("dir", "auto");
+        expect(view.container.querySelector("img, script")).toBeNull();
+      }
+      view.unmount();
     }
   });
 

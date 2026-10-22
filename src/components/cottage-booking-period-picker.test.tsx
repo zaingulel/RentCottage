@@ -334,9 +334,9 @@ describe("CottageBookingPeriodPicker", () => {
     );
     const day = screen.getByRole("group", { name: "Sun, Jan 13" });
     const fullDay = within(day).getByRole("button", {
-      name: "Full-day Full day",
+      name: "Full-day",
     });
-    expect(fullDay).toHaveAccessibleName("Full-day Full day");
+    expect(fullDay).toHaveAccessibleName("Full-day");
     await user.click(within(fullDay).getByText("Jan 13, 2030, 08:00"));
     expect(replace).toHaveBeenLastCalledWith(
       "/en/cottages/garden-house?from=2030-01-12&to=2030-01-13&selection=2030-01-12%3Ashift%3A1&selection=2030-01-13%3Afull-day" +
@@ -347,7 +347,7 @@ describe("CottageBookingPeriodPicker", () => {
       within(day).getByRole("button", { name: "Morning" }),
     ).toHaveAttribute("aria-pressed", "false");
     expect(
-      within(day).getByRole("button", { name: "Full-day Full day" }),
+      within(day).getByRole("button", { name: "Full-day" }),
     ).toHaveAttribute("aria-pressed", "true");
     const evening = within(day).getByRole("button", { name: "Evening" });
     expect(evening).toHaveAccessibleName("Evening");
@@ -358,7 +358,7 @@ describe("CottageBookingPeriodPicker", () => {
       { scroll: false },
     );
     expect(
-      within(day).getByRole("button", { name: "Full-day Full day" }),
+      within(day).getByRole("button", { name: "Full-day" }),
     ).toHaveAttribute("aria-pressed", "false");
     const morningControl = within(day).getByRole("button", { name: "Morning" });
     morningControl.focus();
@@ -426,11 +426,9 @@ describe("CottageBookingPeriodPicker", () => {
       within(first).getByRole("button", { name: "Evening" }),
     ).toBeEnabled();
     expect(
-      within(first).getByRole("button", { name: "Full-day Full day" }),
+      within(first).getByRole("button", { name: "Full-day" }),
     ).toBeDisabled();
-    await user.click(
-      within(first).getByRole("button", { name: "Full-day Full day" }),
-    );
+    await user.click(within(first).getByRole("button", { name: "Full-day" }));
     expect(replace).not.toHaveBeenCalled();
     await user.click(within(first).getByRole("button", { name: "Evening" }));
     expect(

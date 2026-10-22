@@ -373,15 +373,16 @@ Anything else is a token.
   edit, confirms it before the form submits.
 - Optional Booking Period filters retain their existing Disclosure and toggle pattern. Expanded customer period
   rows reuse `BookingPeriodIdentity` and `BookingPeriodEndpoints`: translated Morning/Evening/Full-day for a
-  known two-shift schedule, then a distinct original owner name in `bdi dir="auto"`. Unversioned historical
-  records show only their stored names, including bundles. Exact duplicate names appear once.
+  known two-shift schedule, then a distinct original owner name for shifts in `bdi dir="auto"`. Known-schedule
+  Full-day shows only its translated identity because its producer name is system text. Historical records show
+  only their stored names, including bundles. Exact duplicate names appear once.
   Arrival and Departure each label a complete Iraq date and 24-hour time, isolated in `bdi dir="auto"` with a
   `time` datetime value. A next-day label and Iraq time-zone explanation stay visible. Prices use isolated runs.
   Supporting text uses `--font-size-2`, internal gaps `--space-2`, row padding `--space-3` block and
   `--space-4` inline, and selectable rows use `--radius-control`. All content wraps without ellipsis or fixed heights.
   Results retain three `.result-shifts` option columns above `tablet` and one below. Picker rows remain full width.
   Native date fieldsets and regular `ActionButton` toggles retain pressed, pending, disabled and focus semantics.
-  Their accessible name includes translated identity and distinct original name; the description retains exact
+  Their accessible name includes translated identity and, for shifts, a distinct original name; the description retains exact
   endpoints, price, selected text and unavailability. Selected and unavailable states are visible words.
   Missing choices keep explicit clearing and changed availability keeps `ActionFeedback`; never silently replace them.
   `BookingPeriodAccessSummary` is an unboxed, ruled read-back after date groups, with a heading, exact selected
