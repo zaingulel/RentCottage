@@ -3225,6 +3225,8 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
 .quote-items > li > div {
   display: grid;
   gap: var(--space-2);
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
 }
 
 .quote-items .booking-period-endpoints,
@@ -5014,11 +5016,6 @@ a:focus-visible,
 .quote-items > li {
   flex-wrap: wrap;
   min-inline-size: 0;
-}
-
-.quote-items > li > div {
-  min-inline-size: 0;
-  overflow-wrap: anywhere;
 }
 
 .booking-period-record,

@@ -4,6 +4,7 @@ import {
   BookingPeriodIdentity,
   BookingPeriodEndpoints,
   BookingPeriodAccessSummary,
+  BookingPeriodFullDayExplanation,
 } from "./booking-period-details";
 import { bookingPeriodMessages } from "@/i18n/booking-period-messages";
 import {
@@ -180,42 +181,45 @@ export function CottageBookingPeriodPicker({
       {!available && (
         <ActionFeedback kind="error">{messages.changed}</ActionFeedback>
       )}
-      {days.map((day) => (
-        <fieldset
-          className="booking-period-options"
-          key={day}
-          disabled={pending}
-        >
-          <legend>{formatServiceDay(day, locale, { weekday: true })}</legend>
-          {query.selections.some(
-            (selection) =>
-              selection.serviceDay === day &&
-              !inventory.some((unit) => matches(selection, unit)),
-          ) && (
-            <>
-              <p className="field-error">{messages.missing}</p>
-              <ActionButton
-                kind="secondary"
-                size="regular"
-                type="button"
-                disabled={pending}
-                focusSuccessorId={headingId}
-                onClick={() =>
-                  replaceSelection(
-                    query.selections.filter(
-                      (selection) => selection.serviceDay !== day,
-                    ),
-                  )
-                }
-              >
-                {messages.clear}
-              </ActionButton>
-            </>
-          )}
-          <ul className="booking-period-list">
-            {inventory
-              .filter((unit) => unit.serviceDay === day)
-              .map((unit) => {
+      {days.map((day) => {
+        const dayInventory = inventory.filter(
+          (unit) => unit.serviceDay === day,
+        );
+        const presentation = inventoryDayPresentation(dayInventory);
+        return (
+          <fieldset
+            className="booking-period-options"
+            key={day}
+            disabled={pending}
+          >
+            <legend>{formatServiceDay(day, locale, { weekday: true })}</legend>
+            {query.selections.some(
+              (selection) =>
+                selection.serviceDay === day &&
+                !inventory.some((unit) => matches(selection, unit)),
+            ) && (
+              <>
+                <p className="field-error">{messages.missing}</p>
+                <ActionButton
+                  kind="secondary"
+                  size="regular"
+                  type="button"
+                  disabled={pending}
+                  focusSuccessorId={headingId}
+                  onClick={() =>
+                    replaceSelection(
+                      query.selections.filter(
+                        (selection) => selection.serviceDay !== day,
+                      ),
+                    )
+                  }
+                >
+                  {messages.clear}
+                </ActionButton>
+              </>
+            )}
+            <ul className="booking-period-list">
+              {dayInventory.map((unit) => {
                 const selected = query.selections.some((selection) =>
                   matches(selection, unit),
                 );
@@ -240,11 +244,7 @@ export function CottageBookingPeriodPicker({
                             kind={unit.kind}
                             position={unit.position}
                             originalName={unit.name}
-                            presentation={inventoryDayPresentation(
-                              inventory.filter(
-                                (option) => option.serviceDay === day,
-                              ),
-                            )}
+                            presentation={presentation}
                           />
                         </span>
                         <b id={`${optionId}-price`}>
@@ -262,16 +262,11 @@ export function CottageBookingPeriodPicker({
                             locale={locale}
                             {...inventoryAccessBounds(unit)}
                           />
-                          {unit.kind === "full-day" &&
-                          inventoryDayPresentation(
-                            inventory.filter(
-                              (option) => option.serviceDay === day,
-                            ),
-                          ) === "morning-evening-v1" ? (
-                            <span className="booking-period-explanation">
-                              {periodCopy.fullDayIncludes}
-                            </span>
-                          ) : null}
+                          <BookingPeriodFullDayExplanation
+                            locale={locale}
+                            kind={unit.kind}
+                            presentation={presentation}
+                          />
                         </span>
                         {selected ? (
                           <span id={`${optionId}-selected`}>
@@ -291,9 +286,10 @@ export function CottageBookingPeriodPicker({
                   </li>
                 );
               })}
-          </ul>
-        </fieldset>
-      ))}
+            </ul>
+          </fieldset>
+        );
+      })}
       {available && !pending ? (
         <BookingPeriodAccessSummary locale={locale} items={selectedItems} />
       ) : null}

@@ -1,6 +1,7 @@
 import {
   BookingPeriodIdentity,
   BookingPeriodEndpoints,
+  BookingPeriodFullDayExplanation,
 } from "./booking-period-details";
 import { bookingPeriodMessages } from "@/i18n/booking-period-messages";
 import {
@@ -308,17 +309,21 @@ export function PublicCottageResults({
                       ...new Set(
                         cottage.inventory.map((unit) => unit.serviceDay),
                       ),
-                    ].map((day) => (
-                      <section
-                        className="result-service-day"
-                        key={day}
-                        aria-label={formatServiceDay(day, locale)}
-                      >
-                        <h3>{formatServiceDay(day, locale)}</h3>
-                        <ul className="result-shifts">
-                          {cottage.inventory
-                            .filter((unit) => unit.serviceDay === day)
-                            .map((unit) => (
+                    ].map((day) => {
+                      const dayInventory = cottage.inventory.filter(
+                        (unit) => unit.serviceDay === day,
+                      );
+                      const presentation =
+                        inventoryDayPresentation(dayInventory);
+                      return (
+                        <section
+                          className="result-service-day"
+                          key={day}
+                          aria-label={formatServiceDay(day, locale)}
+                        >
+                          <h3>{formatServiceDay(day, locale)}</h3>
+                          <ul className="result-shifts">
+                            {dayInventory.map((unit) => (
                               <li
                                 key={`${unit.kind}-${unit.position ?? "full"}`}
                               >
@@ -327,11 +332,7 @@ export function PublicCottageResults({
                                   kind={unit.kind}
                                   position={unit.position}
                                   originalName={unit.name}
-                                  presentation={inventoryDayPresentation(
-                                    cottage.inventory.filter(
-                                      (option) => option.serviceDay === day,
-                                    ),
-                                  )}
+                                  presentation={presentation}
                                 />
                                 <b>
                                   <bdi dir="auto">
@@ -346,18 +347,11 @@ export function PublicCottageResults({
                                 />
                                 {unit.kind === "full-day" ? (
                                   <span className="booking-period-explanation">
-                                    {inventoryDayPresentation(
-                                      cottage.inventory.filter(
-                                        (option) => option.serviceDay === day,
-                                      ),
-                                    ) === "morning-evening-v1" ? (
-                                      <span>
-                                        {
-                                          bookingPeriodMessages[locale]
-                                            .fullDayIncludes
-                                        }
-                                      </span>
-                                    ) : null}
+                                    <BookingPeriodFullDayExplanation
+                                      locale={locale}
+                                      kind="full-day"
+                                      presentation={presentation}
+                                    />
                                     <span>
                                       {
                                         bookingPeriodMessages[locale]
@@ -392,9 +386,10 @@ export function PublicCottageResults({
                                 )}
                               </li>
                             ))}
-                        </ul>
-                      </section>
-                    ))}
+                          </ul>
+                        </section>
+                      );
+                    })}
                   </div>
                   <div className="result-footer">
                     <p>{messages.prices}</p>

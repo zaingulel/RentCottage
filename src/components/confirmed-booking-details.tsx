@@ -2,8 +2,8 @@ import {
   BookingPeriodIdentity,
   BookingPeriodEndpoints,
   BookingPeriodAccessSummary,
+  BookingPeriodFullDayExplanation,
 } from "./booking-period-details";
-import { bookingPeriodMessages } from "@/i18n/booking-period-messages";
 import type { BookingLifecycleStatus } from "@/booking-request/booking-lifecycle";
 import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
 import { accessMessages } from "@/i18n/access-messages";
@@ -212,12 +212,11 @@ export function ConfirmedBookingDetails({
                     />
                     <bdi dir="auto">{formatIqd(item.priceIqd, locale)}</bdi>
                     <BookingPeriodEndpoints locale={locale} {...item} />
-                    {item.kind === "full-day" &&
-                    access.periodPresentation === "morning-evening-v1" ? (
-                      <span className="booking-period-explanation">
-                        {bookingPeriodMessages[locale].fullDayIncludes}
-                      </span>
-                    ) : null}
+                    <BookingPeriodFullDayExplanation
+                      locale={locale}
+                      kind={item.kind}
+                      presentation={access.periodPresentation}
+                    />
                   </span>
                 ))}
                 <BookingPeriodAccessSummary

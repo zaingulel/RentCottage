@@ -5068,8 +5068,10 @@ test("anonymous discovery uses live approved inventory and preserves its query",
   await expect(
     page.getByRole("heading", { name: "Your selected access" }),
   ).toBeVisible();
-  await expect(page.locator(".quote-access li")).toHaveCount(1);
-  await expect(page.locator(".quote-access li")).toHaveText(
+  await expect(page.locator(".booking-period-access-summary li")).toHaveCount(
+    1,
+  );
+  await expect(page.locator(".booking-period-access-summary li")).toHaveText(
     expectedFullDayAccessRange,
   );
   await expectPrivateValuesAbsent();

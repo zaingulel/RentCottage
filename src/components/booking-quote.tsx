@@ -2,8 +2,8 @@ import {
   BookingPeriodIdentity,
   BookingPeriodEndpoints,
   BookingPeriodAccessSummary,
+  BookingPeriodFullDayExplanation,
 } from "./booking-period-details";
-import { bookingPeriodMessages } from "@/i18n/booking-period-messages";
 import { type PublicBookingQuoteResult } from "@/booking-quote/booking-quote";
 import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
 import type {
@@ -73,7 +73,6 @@ export function BookingQuoteView({
   if (!bookingRequestUiPolicy || !bookingRequestAcceptanceEvidence) {
     throw new Error("Quoted Booking Request requires policy evidence");
   }
-  const periodCopy = bookingPeriodMessages[locale];
   return (
     <main className="results-page page" dir={directionFor(locale)}>
       <header className="page-heading">
@@ -118,12 +117,11 @@ export function BookingQuoteView({
                     <bdi dir="auto">{formatIqd(item.priceIqd, locale)}</bdi>
                   </strong>
                   <BookingPeriodEndpoints locale={locale} {...item} />
-                  {item.kind === "full-day" &&
-                  quote.periodPresentation === "morning-evening-v1" ? (
-                    <span className="booking-period-explanation">
-                      {periodCopy.fullDayIncludes}
-                    </span>
-                  ) : null}
+                  <BookingPeriodFullDayExplanation
+                    locale={locale}
+                    kind={item.kind}
+                    presentation={quote.periodPresentation}
+                  />
                 </div>
               </li>
             ))}

@@ -1,10 +1,8 @@
 import { Fragment } from "react";
-import {
-  continuousFullDayAccess,
-  type BookingQuoteItem,
-} from "@/booking-quote/booking-quote";
+import type { BookingQuoteItem } from "@/booking-quote/booking-quote";
 import {
   bookingPeriodAccessGaps,
+  bookingPeriodAccessRanges,
   type BookingPeriodPresentation,
 } from "@/booking-quote/booking-period-presentation";
 import { bookingPeriodMessages } from "@/i18n/booking-period-messages";
@@ -52,6 +50,22 @@ export function BookingPeriodIdentity({
   );
 }
 
+export function BookingPeriodFullDayExplanation({
+  locale,
+  kind,
+  presentation,
+}: {
+  locale: Locale;
+  kind: "shift" | "full-day";
+  presentation?: BookingPeriodPresentation;
+}) {
+  return kind === "full-day" && presentation === "morning-evening-v1" ? (
+    <span className="booking-period-explanation">
+      {bookingPeriodMessages[locale].fullDayIncludes}
+    </span>
+  ) : null;
+}
+
 function EndpointTime({ value, locale }: { value: string; locale: Locale }) {
   return (
     <bdi className="booking-period-timestamp" dir="auto">
@@ -96,15 +110,12 @@ export function BookingPeriodAccessSummary({
   items: readonly BookingQuoteItem[];
 }) {
   const copy = bookingPeriodMessages[locale];
-  const bundles = continuousFullDayAccess([...items]);
-  const ranges = [
-    ...bundles,
-    ...items.filter((item) => item.kind === "shift"),
-  ].sort((left, right) => left.startsAt.localeCompare(right.startsAt));
+  const ranges = bookingPeriodAccessRanges(items);
+  const bundles = ranges.filter((range) => "fromServiceDay" in range);
   const gaps = bookingPeriodAccessGaps(items);
   if (items.length === 0) return null;
   return (
-    <div className="booking-period-access-summary quote-access">
+    <div className="booking-period-access-summary">
       <h3>{copy.selectedAccess}</h3>
       {bundles.length > 0 ? (
         <>

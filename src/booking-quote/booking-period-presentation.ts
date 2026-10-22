@@ -58,13 +58,17 @@ export function inventoryAccessBounds(unit: PublicCottageInventoryUnit): {
   };
 }
 
-export function bookingPeriodAccessGaps(
-  items: readonly BookingQuoteItem[],
-): Array<{ startsAt: string; endsAt: string }> {
-  const ranges = [
+export function bookingPeriodAccessRanges(items: readonly BookingQuoteItem[]) {
+  return [
     ...continuousFullDayAccess([...items]),
     ...items.filter((item) => item.kind === "shift"),
   ].sort((left, right) => left.startsAt.localeCompare(right.startsAt));
+}
+
+export function bookingPeriodAccessGaps(
+  items: readonly BookingQuoteItem[],
+): Array<{ startsAt: string; endsAt: string }> {
+  const ranges = bookingPeriodAccessRanges(items);
   const gaps: Array<{ startsAt: string; endsAt: string }> = [];
   let coveredUntil: string | undefined;
   for (const range of ranges) {

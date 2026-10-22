@@ -4,8 +4,8 @@ import {
   BookingPeriodIdentity,
   BookingPeriodEndpoints,
   BookingPeriodAccessSummary,
+  BookingPeriodFullDayExplanation,
 } from "./booking-period-details";
-import { bookingPeriodMessages } from "@/i18n/booking-period-messages";
 import { useState } from "react";
 import { useBookingRequestRefresh } from "@/booking-request/use-booking-request-refresh";
 import { BookingRequestStatusContent } from "./booking-request-status-content";
@@ -294,12 +294,11 @@ function CustomerBookingRequestStatusView({
                   />
                   <bdi dir="auto">{formatIqd(item.priceIqd, locale)}</bdi>
                   <BookingPeriodEndpoints locale={locale} {...item} />
-                  {item.kind === "full-day" &&
-                  request.periodPresentation === "morning-evening-v1" ? (
-                    <span className="booking-period-explanation">
-                      {bookingPeriodMessages[locale].fullDayIncludes}
-                    </span>
-                  ) : null}
+                  <BookingPeriodFullDayExplanation
+                    locale={locale}
+                    kind={item.kind}
+                    presentation={request.periodPresentation}
+                  />
                 </span>
               ))}
               <BookingPeriodAccessSummary
