@@ -1,10 +1,10 @@
 {
   "canonical": "zaingulel/fabraik",
   "release": {
-    "tag": "v0.3.3",
-    "id": 419841747,
-    "assetId": 663247302,
-    "digest": "sha256:44b31325ab0cdd4cba573cb81ea609f483d48cbf5d9a373bfe560cec3e3f814e"
+    "tag": "v0.3.4",
+    "id": 420486879,
+    "assetId": 665223427,
+    "digest": "sha256:822c25cf1d3669f66ff008dcf96782e74f0c151a6dfd7361b2eda7ebbf2d2f0d"
   },
   "entries": [
     {
@@ -145,7 +145,7 @@
     },
     {
       "path": ".agents/skills/resume/SKILL.md",
-      "sha256": "a27d8327221a6927e1a119d94c41fec4b90d4d87f77dfb760efab915e2e4fe7f"
+      "sha256": "4ab158cd4ba40e3cac35d4d0a7a5ca9efb5ef7f8a78387b98bce9c18bcd0bc29"
     },
     {
       "path": ".agents/skills/retro/SKILL.md",
@@ -565,7 +565,7 @@
     },
     {
       "path": ".claude/skills/resume/SKILL.md",
-      "sha256": "a27d8327221a6927e1a119d94c41fec4b90d4d87f77dfb760efab915e2e4fe7f"
+      "sha256": "4ab158cd4ba40e3cac35d4d0a7a5ca9efb5ef7f8a78387b98bce9c18bcd0bc29"
     },
     {
       "path": ".claude/skills/retro/SKILL.md",
@@ -938,11 +938,11 @@
     },
     {
       "path": "scripts/lib/prepush.test.mjs",
-      "sha256": "4598237c7a1d955aeeaae4facc88ca88f3ef397ccdd655f7046e83d3d78545fd"
+      "sha256": "6de8226c06e41df3bc59056a38550280324095144e08f23ac0aeff08e5971a33"
     },
     {
       "path": "scripts/lib/run-log.test.mjs",
-      "sha256": "0e6ce2ffdb2a675581b39e96778968ffde50ed5200f89740abf95875a474474f"
+      "sha256": "4fc53bd42aadc1ca94b934dd9b1009c8e619cf01eb59844cdcb28c511212570d"
     },
     {
       "path": "scripts/lib/runtimes.mjs",
@@ -1010,7 +1010,7 @@
     },
     {
       "path": "scripts/run-log.mjs",
-      "sha256": "e46adc03797e979679efa2b2996c5047e42943827e12c3619d1deefb854df35c"
+      "sha256": "5ceefa255cf935a8059fdbe009a4ec916a4ea6c58c8bb268e20c92ddc895b20c"
     },
     {
       "path": "scripts/sweep-scope-check.mjs",

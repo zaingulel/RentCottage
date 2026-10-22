@@ -608,9 +608,9 @@ branch. Two issues may run in parallel only when their files are disjoint.
 
 Move the card to `Awaiting push`: `node scripts/board-move.mjs <issue> "Awaiting push"`. Write the pull request
 body with the vendored `pr` skill: read `.agents/skills/pr/SKILL.md`, fill `.github/pull_request_template.md` as
-the body under the Which template wins rule below, and show it to the owner with the screenshot.
-The owner still sees that same filled body in chat, with the review line at tier `document`; on the direct
-route section 8 describes, that shown body becomes the squash commit's message, since there is no pull request
+the body under the Which template wins rule below, and show its chat presentation to the owner with the screenshot.
+The owner still sees that same filled body's information in chat, with the review line at tier `document`; on the direct
+route section 8 describes, the filled body becomes the squash commit's message, since there is no pull request
 to hold it. The job's own `Closes #<issue>` line is the only closing word in a pull request body or a
 direct-route commit message: GitHub closes, as completed, any issue whose link follows close, fix or resolve in any
 tense, another repository's `owner/repo#N` included. Every other mention, such as the
@@ -619,6 +619,8 @@ from directly before its link. The owner's yes, or any instruction to push, cove
 push, the draft pull request, the comments that request the external review where the add-on is on, repairs on the same
 branch, rebasing onto `main`, marking ready, and the auto-merge. Nothing in section 8 stops to ask again; a public comment there is delivery, not a new
 action. Push only after it.
+
+**Chat presentation.** Use the filled body's sections, labels and order, with each disclosure summary as an ordinary Markdown heading followed by its complete contents. Omit HTML disclosure tags and template comments. Keep every required approval detail, review outcome and screenshot; copy test receipts verbatim into fenced `text` blocks. Put the approval question after the body, outside every code fence. Keep the GitHub body in the repository template's format.
 
 **Which template wins.** The `pr` skill carries a template of its own and never reads the repository's. Wherever
 the two differ, `.github/pull_request_template.md` wins: it decides which sections and lines the body has, their
@@ -644,7 +646,7 @@ On the direct route: settle the convergence checks exactly as step 1 names on `<
 that receipt ran on, and those receipts replace any the approved body quoted for an earlier head; fill that body's
 `Carried from:`, `Changed paths:` and `Carried receipts:` lines as that rule says, and nothing else in that body
 changes. Then squash the job with `git reset --soft <origin-main>` and `git commit` into one commit whose
-message is the pull-request title, a blank line, the same filled body shown to the owner with its review line and
+message is the pull-request title, a blank line, the same filled body the owner approved with its review line and
 receipts so replaced, a blank line, `Closes #<issue>`, and the attribution lines. Before pushing, confirm `git
 rev-parse HEAD^{tree}` equals `git rev-parse <head>^{tree}`, so the pushed commit carries exactly the content the
 receipts checked; a mismatch stops the route and the checks are settled again. Then push with `git push origin
