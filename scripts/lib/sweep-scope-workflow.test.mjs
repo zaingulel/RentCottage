@@ -29,7 +29,6 @@ const PARSER_PINS = {
   'micromark-extension-gfm': '3.0.0',
 };
 const BASELINE_SCRIPT_PACKAGES = [
-  ['node_modules/@opennextjs/aws/node_modules/esbuild', true, false],
   ['node_modules/esbuild', true, false],
   ['node_modules/fsevents', false, true],
   ['node_modules/unrs-resolver', true, false],
