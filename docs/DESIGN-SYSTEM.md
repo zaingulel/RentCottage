@@ -371,25 +371,26 @@ Anything else is a token.
   `.field-error` message there and `aria-invalid` on the fields; a correction is offered as an `ActionButton` and
   never applied unasked; and a native `required` checkbox, shown only for a valid reading and unticked by any
   edit, confirms it before the form submits.
-- Optional Booking Period filters sit inside a `Disclosure`. Filter controls keep their existing `ActionButton`
-  toggle pattern. Actual profile options use one native
-  `fieldset`/`legend` per Service Day with `.booking-period-options` and regular `ActionButton` toggles;
-  `aria-pressed` exposes the selection. Inside `.booking-summary`, the date fieldsets have no border or
-  padding, with `--space-5` between days and `--space-3` after each legend; their legends, disabled state and
-  error semantics remain. The profile's
-  `.booking-period-list` holds full-width outlined toggle rows with `--space-3` block padding, `--space-4` inline
-  padding and line height `1.5`: name over time at the inline start, price at the inline end, with the name, time
-  and price inside the same control. `aria-labelledby` retains the existing name-only accessible name; `aria-describedby` associates
-  time, price and explicit unavailability text. Unavailability remains in the same list item, shown only for an
-  option that cannot be chosen. Pressed rows retain the shared tint, inset edge and focused pressed rings.
-  Disable the fieldset and onward actions during URL navigation. Missing choices are corrected only through an
-  explicit `ActionButton`; changed availability uses `ActionFeedback`. Results reuse `.result-shifts` inside
-  named `.result-service-day` groups. Each option there is a row of two aligned lines: its name over its time at
-  the start edge, and its price over its availability text at the end edge, with a selected filter's
-  `span.status-badge` on its own line under the row. Results show a decorative availability dot beside the
-  explicit word, in `--success-text` when available and `--muted` otherwise; it never carries the state alone.
-  Times use `<bdi dir="ltr">` in every locale. Loading, stale selection, missing periods, disabled actions,
-  cross-midnight times and unavailable prices retain their existing meanings.
+- Optional Booking Period filters retain their existing Disclosure and toggle pattern. Expanded customer period
+  rows reuse `BookingPeriodIdentity` and `BookingPeriodEndpoints`: translated Morning/Evening/Full-day for a
+  known two-shift schedule, then a distinct original owner name for shifts in `bdi dir="auto"`. Known-schedule
+  Full-day shows only its translated identity because its producer name is system text. Historical records show
+  only their stored names, including bundles. Exact duplicate names appear once.
+  Arrival and Departure each label a complete Iraq date and 24-hour time, isolated in `bdi dir="auto"` with a
+  `time` datetime value. A next-day label and Iraq time-zone explanation stay visible. Prices use isolated runs.
+  Supporting text uses `--font-size-2`, internal gaps `--space-2`, row padding `--space-3` block and
+  `--space-4` inline, and selectable rows use `--radius-control`. All content wraps without ellipsis or fixed heights.
+  Results retain three `.result-shifts` option columns above `tablet` and one below. Picker rows remain full width.
+  Native date fieldsets and regular `ActionButton` toggles retain pressed, pending, disabled and focus semantics.
+  Their accessible name includes translated identity and, for shifts, a distinct original name; the description retains exact
+  endpoints, price, selected text and unavailability. Selected and unavailable states are visible words.
+  Missing choices keep explicit clearing and changed availability keeps `ActionFeedback`; never silently replace them.
+  `BookingPeriodAccessSummary` is an unboxed, ruled read-back after date groups, with a heading, exact selected
+  endpoints and visible positive gaps. It derives only from matched available inventory and disappears while
+  navigation is pending or a selection is stale. Quote, pending request and confirmation reuse this summary with
+  their retained periods. Full-day explanations stay expanded, including its own price, schedule-dependent length
+  and, for known schedules, both component identities. Consecutive bundles explain overnight continuity.
+  Loading, stale selection, missing periods and unavailable prices retain their existing meanings.
 - Progress steps: `BookingRequestProgress` in
   [booking-request-progress.tsx](../src/components/booking-request-progress.tsx) renders an
   `ol.booking-request-progress` with `role="list"`, named by `aria-label`, with one `li` per step carrying
@@ -488,10 +489,9 @@ its own; the block it sits in sets the space around it.
   and `--space-5` top padding. Reuse fact-list columns and phone stacking. The final money label and value are
   bold; its value uses body type at `--font-size-4`. Original owner share retains that meaning.
   The conditional incomplete-details status paragraph precedes the practical-access list, using `--ink` on
-  `--surface-notice`, `--radius-card` and `--space-4` padding and bottom separation. Booking Period entries put
-  the bold original name on one block line and both unchanged Iraq timestamps with their range dash on the next,
-  retaining name/start/end direction isolation and `--space-3` between entries. Each complete timestamp retains its existing
-  inline-block boundary; the range can wrap between those timestamp boxes. Cross-midnight endpoints remain complete. Terms Disclosure follows every fact inside the card, with `--space-5` above it.
+  `--surface-notice`, `--radius-card` and `--space-4` padding and bottom separation. Booking Period entries reuse the expanded customer period identity, labelled endpoints and access-summary
+  pattern above, using only the retained presentation marker and original names/times. Terms Disclosure follows
+  every fact inside the card, with `--space-5` above it.
   Children shrink and text wraps down to 320 CSS pixels without clipping, ellipses or fixed heights. Customer
   progress, shared chrome and following review panels retain their own patterns.
 - Search result: each result uses the card surface with an `18rem` photo beside its details, moving above them at

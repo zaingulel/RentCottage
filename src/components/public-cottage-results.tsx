@@ -1,3 +1,13 @@
+import {
+  BookingPeriodIdentity,
+  BookingPeriodEndpoints,
+  BookingPeriodFullDayExplanation,
+} from "./booking-period-details";
+import { bookingPeriodMessages } from "@/i18n/booking-period-messages";
+import {
+  inventoryAccessBounds,
+  inventoryDayPresentation,
+} from "@/booking-quote/booking-period-presentation";
 import Image from "next/image";
 
 import {
@@ -25,7 +35,6 @@ const copy = {
     back: "تعديل البحث",
     changeSearch: "غيّر البحث",
     fullDay: "اليوم الكامل",
-    nextDay: "اليوم التالي",
     available: "متاح",
     unavailableOption: "غير متاح",
     noPrice: "السعر غير متاح",
@@ -61,7 +70,6 @@ const copy = {
     back: "گەڕانەکە بگۆڕە",
     changeSearch: "گەڕان بگۆڕە",
     fullDay: "پاکێجی ڕۆژی تەواو",
-    nextDay: "ڕۆژی دواتر",
     available: "بەردەستە",
     unavailableOption: "بەردەست نییە",
     noPrice: "نرخ بەردەست نییە",
@@ -98,7 +106,6 @@ const copy = {
     back: "Change search",
     changeSearch: "Change search",
     fullDay: "Full-day bundle",
-    nextDay: "next day",
     available: "Available",
     unavailableOption: "Unavailable",
     noPrice: "Price unavailable",
@@ -302,40 +309,63 @@ export function PublicCottageResults({
                       ...new Set(
                         cottage.inventory.map((unit) => unit.serviceDay),
                       ),
-                    ].map((day) => (
-                      <section
-                        className="result-service-day"
-                        key={day}
-                        aria-label={formatServiceDay(day, locale)}
-                      >
-                        <h3>{formatServiceDay(day, locale)}</h3>
-                        <ul className="result-shifts">
-                          {cottage.inventory
-                            .filter((unit) => unit.serviceDay === day)
-                            .map((unit) => (
+                    ].map((day) => {
+                      const dayInventory = cottage.inventory.filter(
+                        (unit) => unit.serviceDay === day,
+                      );
+                      const presentation =
+                        inventoryDayPresentation(dayInventory);
+                      return (
+                        <section
+                          className="result-service-day"
+                          key={day}
+                          aria-label={formatServiceDay(day, locale)}
+                        >
+                          <h3>{formatServiceDay(day, locale)}</h3>
+                          <ul className="result-shifts">
+                            {dayInventory.map((unit) => (
                               <li
                                 key={`${unit.kind}-${unit.position ?? "full"}`}
                               >
-                                <span>
-                                  {unit.kind === "full-day"
-                                    ? messages.fullDay
-                                    : unit.name}
-                                </span>
-                                <span>
-                                  <bdi dir="ltr">
-                                    {unit.startTime}–{unit.endTime}
-                                  </bdi>
-                                  {(unit.endTime < unit.startTime ||
-                                    (unit.kind === "full-day" &&
-                                      unit.endTime === unit.startTime)) && (
-                                    <> {messages.nextDay}</>
-                                  )}
-                                </span>
+                                <BookingPeriodIdentity
+                                  locale={locale}
+                                  kind={unit.kind}
+                                  position={unit.position}
+                                  originalName={unit.name}
+                                  presentation={presentation}
+                                />
                                 <b>
-                                  {unit.priceIqd === null
-                                    ? messages.noPrice
-                                    : formatIqd(unit.priceIqd, locale)}
+                                  <bdi dir="auto">
+                                    {unit.priceIqd === null
+                                      ? messages.noPrice
+                                      : formatIqd(unit.priceIqd, locale)}
+                                  </bdi>
                                 </b>
+                                <BookingPeriodEndpoints
+                                  locale={locale}
+                                  {...inventoryAccessBounds(unit)}
+                                />
+                                {unit.kind === "full-day" ? (
+                                  <span className="booking-period-explanation">
+                                    <BookingPeriodFullDayExplanation
+                                      locale={locale}
+                                      kind="full-day"
+                                      presentation={presentation}
+                                    />
+                                    <span>
+                                      {
+                                        bookingPeriodMessages[locale]
+                                          .fullDaySchedule
+                                      }
+                                    </span>
+                                    <span>
+                                      {
+                                        bookingPeriodMessages[locale]
+                                          .fullDayPrice
+                                      }
+                                    </span>
+                                  </span>
+                                ) : null}
                                 <span
                                   className={`result-availability${unit.available ? " result-availability-available" : ""}`}
                                 >
@@ -356,9 +386,10 @@ export function PublicCottageResults({
                                 )}
                               </li>
                             ))}
-                        </ul>
-                      </section>
-                    ))}
+                          </ul>
+                        </section>
+                      );
+                    })}
                   </div>
                   <div className="result-footer">
                     <p>{messages.prices}</p>

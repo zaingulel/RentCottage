@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  BookingPeriodIdentity,
+  BookingPeriodEndpoints,
+  BookingPeriodAccessSummary,
+  BookingPeriodFullDayExplanation,
+} from "./booking-period-details";
 import { useState } from "react";
 import { useBookingRequestRefresh } from "@/booking-request/use-booking-request-refresh";
 import { BookingRequestStatusContent } from "./booking-request-status-content";
@@ -276,12 +282,29 @@ function CustomerBookingRequestStatusView({
             <dd>
               {request.bookingPeriod.map((item) => (
                 <span
+                  className="booking-period-record"
                   key={`${item.serviceDay}-${item.kind}-${item.position ?? "full"}`}
                 >
-                  {formatIraqDateTime(item.startsAt, locale)} –{" "}
-                  {formatIraqDateTime(item.endsAt, locale)}
+                  <BookingPeriodIdentity
+                    locale={locale}
+                    kind={item.kind}
+                    position={item.position}
+                    originalName={item.displayName}
+                    presentation={request.periodPresentation}
+                  />
+                  <bdi dir="auto">{formatIqd(item.priceIqd, locale)}</bdi>
+                  <BookingPeriodEndpoints locale={locale} {...item} />
+                  <BookingPeriodFullDayExplanation
+                    locale={locale}
+                    kind={item.kind}
+                    presentation={request.periodPresentation}
+                  />
                 </span>
               ))}
+              <BookingPeriodAccessSummary
+                locale={locale}
+                items={request.bookingPeriod}
+              />
             </dd>
           </div>
           <div>

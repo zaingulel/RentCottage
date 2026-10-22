@@ -1591,3 +1591,13 @@ GRANT EXECUTE ON FUNCTION public.resolve_cottage_inventory_owner_calendar_span(u
 
 REVOKE ALL ON FUNCTION public.set_cottage_inventory_availability_batch(uuid, uuid, jsonb) FROM PUBLIC, anon, service_role;
 GRANT EXECUTE ON FUNCTION public.set_cottage_inventory_availability_batch(uuid, uuid, jsonb) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.cottage_booking_period_presentation(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.get_public_booking_quote_presentation(public.cottage_profile_source_language, text, jsonb) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_public_booking_quote_presentation(public.cottage_profile_source_language, text, jsonb) TO anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION "public"."get_customer_booking_request_presentation"("target_reference" "text") FROM PUBLIC, "anon", "service_role";
+GRANT EXECUTE ON FUNCTION "public"."get_customer_booking_request_presentation"("target_reference" "text") TO "authenticated";
+
+REVOKE ALL ON FUNCTION "public"."get_confirmed_booking_access_presentation"("target_reference" "text") FROM PUBLIC, "anon", "service_role";
+GRANT EXECUTE ON FUNCTION "public"."get_confirmed_booking_access_presentation"("target_reference" "text") TO "authenticated";

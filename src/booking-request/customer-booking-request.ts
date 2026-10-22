@@ -1,6 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
+  bookingPeriodPresentationFrom,
+  type BookingPeriodPresentation,
+} from "@/booking-quote/booking-period-presentation";
+
+import {
   validateQuotedItems,
   type BookingQuoteItem,
 } from "@/booking-quote/booking-quote";
@@ -31,6 +36,7 @@ const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export interface CustomerBookingRequest {
+  readonly periodPresentation?: BookingPeriodPresentation;
   readonly id: string;
   readonly bookingRequestReference: string;
   readonly status: BookingRequestStatus;
@@ -156,6 +162,11 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
   const bookingPeriod = cloneBookingPeriod(
     request.bookingPeriod as BookingQuoteItem[],
   );
+  const periodPresentation = bookingPeriodPresentationFrom(
+    request.periodPresentation,
+    bookingPeriod,
+  );
+  if (periodPresentation === undefined) return;
   const statusNotifications = (
     request.statusNotifications as CustomerBookingRequest["statusNotifications"]
   ).map((receipt) => ({
@@ -164,6 +175,7 @@ function fromData(value: unknown): CustomerBookingRequest | undefined {
     createdAt: receipt.createdAt,
   }));
   return {
+    periodPresentation,
     id: request.id,
     bookingRequestReference: request.bookingRequestReference,
     status: request.status,
@@ -198,9 +210,12 @@ export async function getCustomerBookingRequest(
   reference: string,
 ): Promise<CustomerBookingRequest | null> {
   if (!/^RC-REQ-[A-F0-9]{16}$/.test(reference)) return null;
-  const { data, error } = await client.rpc("get_customer_booking_request", {
-    target_reference: reference,
-  });
+  const { data, error } = await client.rpc(
+    "get_customer_booking_request_presentation",
+    {
+      target_reference: reference,
+    },
+  );
   if (error) throw new Error("Booking Request status is unavailable");
   if (data === null) return null;
   const request = fromData(data);

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -165,13 +165,24 @@ describe("CottageBookingPeriodPicker", () => {
           />,
         );
         const row = screen.getByRole("listitem");
-        const times = within(row).getByText(clock);
-        expect(times).toBeVisible();
-        expect(times.tagName).toBe("BDI");
-        expect(times).toHaveAttribute("dir", "ltr");
-        expect(times.textContent).toBe(clock);
+        const times = row.querySelectorAll("time");
+        expect(times).toHaveLength(2);
+        expect(times[0]).toHaveAttribute(
+          "datetime",
+          `2030-01-12T${clock.slice(0, 5)}:00+03:00`,
+        );
+        expect(times[1]).toHaveAttribute(
+          "datetime",
+          `${endsNextDay ? "2030-01-13" : "2030-01-12"}T${clock.slice(-5)}:00+03:00`,
+        );
+        expect(times[0].parentElement).toHaveAttribute("dir", "auto");
+        expect(times[1].parentElement).toHaveAttribute("dir", "auto");
+        expect(row).toHaveTextContent(
+          locale === "en" ? "2030" : locale === "ar" ? "2030" : "٢٠٣٠",
+        );
+        expect(row).not.toHaveTextContent(/AM|PM|ب\.ن|د\.ن/);
         if (endsNextDay) {
-          expect(row).toHaveTextContent(`${clock} ${nextDay}`);
+          expect(row).toHaveTextContent(nextDay);
         } else {
           expect(row).not.toHaveTextContent(nextDay);
         }
@@ -180,7 +191,8 @@ describe("CottageBookingPeriodPicker", () => {
     }
   });
 
-  it("shows a state only on an option that cannot be chosen", () => {
+  it("shows selected and unavailable states in text", async () => {
+    const user = userEvent.setup();
     render(<ProfileNavigation />);
     const rows = within(
       screen.getByRole("group", { name: "Sat, Jan 12" }),
@@ -190,6 +202,29 @@ describe("CottageBookingPeriodPicker", () => {
     expect(within(rows[0]).queryByText("Unavailable")).toBeNull();
     expect(within(rows[1]).getByText("Unavailable")).toBeVisible();
     expect(within(rows[2]).getByText("Unavailable")).toBeVisible();
+    expect(
+      within(rows[0]).getByRole("button", { name: "Morning" }),
+    ).toHaveAccessibleDescription(
+      "Arrival: Jan 12, 2030, 08:00 Departure: Jan 12, 2030, 14:00 All times are Iraq local time (UTC+3). IQD 60,000",
+    );
+    expect(
+      within(rows[1]).getByRole("button", { name: "Evening" }),
+    ).toHaveAccessibleDescription(
+      "Arrival: Jan 12, 2030, 18:00 Departure: Jan 12, 2030, 23:00 All times are Iraq local time (UTC+3). IQD 80,000 Unavailable",
+    );
+    await user.click(within(rows[0]).getByRole("button", { name: "Morning" }));
+    expect(within(rows[0]).getByText("Selected")).toBeVisible();
+    expect(
+      within(rows[0]).getByRole("button", { name: "Morning" }),
+    ).toHaveAccessibleDescription(
+      "Arrival: Jan 12, 2030, 08:00 Departure: Jan 12, 2030, 14:00 All times are Iraq local time (UTC+3). IQD 60,000 Selected",
+    );
+    expect(
+      within(rows[0]).getByRole("button", { name: "Morning" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("heading", { name: "Your selected access" }),
+    ).toBeVisible();
   });
 
   it("never shows a word for a total in the picker in any launch language", () => {
@@ -227,7 +262,38 @@ describe("CottageBookingPeriodPicker", () => {
     ).toBeVisible();
     const first = screen.getByRole("group", { name: "Sat, Jan 12" });
     const second = screen.getByRole("group", { name: "Sun, Jan 13" });
+    const navigate = replace.getMockImplementation()!;
+    let finishNavigation!: () => void;
+    replace.mockImplementation(
+      (...args) =>
+        new Promise<void>((resolve) => {
+          finishNavigation = () => {
+            navigate(...args);
+            resolve();
+          };
+        }),
+    );
     await user.click(within(first).getByRole("button", { name: "Morning" }));
+    expect(
+      within(first).getByRole("button", { name: "Morning" }),
+    ).toBeDisabled();
+    expect(
+      within(second).getByRole("button", { name: "Morning" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Get exact quote" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Message this cottage" }),
+    ).toBeDisabled();
+    expect(
+      screen.queryByRole("heading", { name: "Your selected access" }),
+    ).toBeNull();
+    await act(async () => finishNavigation());
+    replace.mockImplementation(navigate);
+    expect(
+      within(first).getByRole("button", { name: "Morning" }),
+    ).toHaveFocus();
     expect(
       within(first).getByRole("button", { name: "Morning" }),
     ).toHaveAttribute("aria-pressed", "true");
@@ -268,10 +334,10 @@ describe("CottageBookingPeriodPicker", () => {
     );
     const day = screen.getByRole("group", { name: "Sun, Jan 13" });
     const fullDay = within(day).getByRole("button", {
-      name: "Full-day bundle",
+      name: "Full-day",
     });
-    expect(fullDay).toHaveAccessibleName("Full-day bundle");
-    await user.click(within(fullDay).getByText("08:00–23:00"));
+    expect(fullDay).toHaveAccessibleName("Full-day");
+    await user.click(within(fullDay).getByText("Jan 13, 2030, 08:00"));
     expect(replace).toHaveBeenLastCalledWith(
       "/en/cottages/garden-house?from=2030-01-12&to=2030-01-13&selection=2030-01-12%3Ashift%3A1&selection=2030-01-13%3Afull-day" +
         suffix,
@@ -281,7 +347,7 @@ describe("CottageBookingPeriodPicker", () => {
       within(day).getByRole("button", { name: "Morning" }),
     ).toHaveAttribute("aria-pressed", "false");
     expect(
-      within(day).getByRole("button", { name: "Full-day bundle" }),
+      within(day).getByRole("button", { name: "Full-day" }),
     ).toHaveAttribute("aria-pressed", "true");
     const evening = within(day).getByRole("button", { name: "Evening" });
     expect(evening).toHaveAccessibleName("Evening");
@@ -292,13 +358,24 @@ describe("CottageBookingPeriodPicker", () => {
       { scroll: false },
     );
     expect(
-      within(day).getByRole("button", { name: "Full-day bundle" }),
+      within(day).getByRole("button", { name: "Full-day" }),
     ).toHaveAttribute("aria-pressed", "false");
-    await user.click(within(day).getByRole("button", { name: "Morning" }));
+    const morningControl = within(day).getByRole("button", { name: "Morning" });
+    morningControl.focus();
+    await user.keyboard("{Enter}");
+    expect(morningControl).toHaveFocus();
     expect(replace).toHaveBeenLastCalledWith(
       "/en/cottages/garden-house?from=2030-01-12&to=2030-01-13&selection=2030-01-12%3Ashift%3A1&selection=2030-01-13%3Ashift%3A1&selection=2030-01-13%3Ashift%3A2" +
         suffix,
       { scroll: false },
+    );
+    expect(
+      Array.from(
+        document.querySelectorAll(".booking-period-gap"),
+        (gap) => gap.textContent,
+      ),
+    ).toContain(
+      "No access between Jan 13, 2030, 14:00 and Jan 13, 2030, 18:00.",
     );
     await user.click(within(day).getByRole("button", { name: "Evening" }));
     expect(
@@ -349,11 +426,9 @@ describe("CottageBookingPeriodPicker", () => {
       within(first).getByRole("button", { name: "Evening" }),
     ).toBeEnabled();
     expect(
-      within(first).getByRole("button", { name: "Full-day bundle" }),
+      within(first).getByRole("button", { name: "Full-day" }),
     ).toBeDisabled();
-    await user.click(
-      within(first).getByRole("button", { name: "Full-day bundle" }),
-    );
+    await user.click(within(first).getByRole("button", { name: "Full-day" }));
     expect(replace).not.toHaveBeenCalled();
     await user.click(within(first).getByRole("button", { name: "Evening" }));
     expect(
@@ -373,6 +448,11 @@ describe("CottageBookingPeriodPicker", () => {
       { scroll: false },
     );
     expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Your selected access" }),
+    ).toBeNull();
+    await user.click(within(first).getByRole("button", { name: "Morning" }));
+    expect(within(first).getByText("Selected")).toBeVisible();
     expect(
       screen.queryByText(
         "A selected period is no longer offered. Clear that day's selection and choose again.",

@@ -1,3 +1,4 @@
+import { bookingPeriodMessages } from "../src/i18n/booking-period-messages";
 import { writeFile } from "node:fs/promises";
 import { observeRecordHeading } from "./fixtures/record-heading";
 import { accessMessages } from "../src/i18n/access-messages";
@@ -402,7 +403,17 @@ test("a verified Customer double-submit creates one Pending request and one mini
     );
     const periodToggleControl = page
       .getByRole("complementary")
-      .getByRole("button", { name: unit.name, exact: true });
+      .getByRole("button", {
+        name: [
+          unit.position === 1
+            ? bookingPeriodMessages[locale].morning
+            : bookingPeriodMessages[locale].evening,
+          unit.name,
+        ]
+          .filter((name, index, names) => index === 0 || name !== names[0])
+          .join(" "),
+        exact: true,
+      });
     await periodToggleControl.focus();
     await expect(periodToggleControl).toBeFocused();
     const periodToggleSource = await periodToggleControl.elementHandle();
@@ -436,12 +447,31 @@ test("a verified Customer double-submit creates one Pending request and one mini
       locale === "en" ? "ltr" : "rtl",
     );
     await expect(page.getByRole("heading", { name: copy.title })).toBeVisible();
+    await expect(
+      page.locator(".quote-items .booking-period-identity"),
+    ).toContainText(unit.name);
+    await expect(page.locator(".quote-items")).toContainText(
+      bookingPeriodMessages[locale].arrival,
+    );
+    await expect(page.locator(".quote-items")).toContainText(
+      bookingPeriodMessages[locale].departure,
+    );
+    await expect(page.locator(".quote-items")).toContainText(
+      bookingPeriodMessages[locale].iraqTimeZone,
+    );
   };
   for (const locale of testInfo.project.name === "mobile"
     ? (["ar", "ckb", "en"] as const)
     : (["en"] as const)) {
     await reachQuoteFromDiscovery(locale);
   }
+  const quotedPeriodIdentity = await page
+    .locator(".quote-items .booking-period-identity")
+    .innerText();
+  const quotedPeriodTimes = await page
+    .locator(".quote-items time")
+    .evaluateAll((times) => times.map((time) => time.getAttribute("datetime")));
+
   await expect(page.getByText("IQD 5,000", { exact: true })).toBeVisible();
   await expect(page.getByText("IQD 185,000", { exact: true })).toBeVisible();
   await expect(
@@ -642,6 +672,19 @@ test("a verified Customer double-submit creates one Pending request and one mini
       }),
     )
     .toEqual({ withdrawWidth: true, messagesRow: true, liftedMessages: true });
+  await expect(
+    page.locator(".booking-period-record .booking-period-identity"),
+  ).toHaveText(quotedPeriodIdentity.replace(/\s+/g, " "));
+  expect(
+    await page
+      .locator(".booking-period-record time")
+      .evaluateAll((times) =>
+        times.map((time) => time.getAttribute("datetime")),
+      ),
+  ).toEqual(quotedPeriodTimes);
+  await expect(page.locator(".booking-period-record")).toContainText(
+    "All times are Iraq local time (UTC+3).",
+  );
   await expect(progress.getByRole("listitem")).toHaveCount(4);
   await expect(
     progress.getByRole("listitem").filter({ hasText: "Owner decision" }),
@@ -1500,6 +1543,16 @@ test("a verified Customer double-submit creates one Pending request and one mini
       await expect(paidDetails.getByRole("status")).toContainText(
         "Delivery failed",
       );
+      await expect(
+        paidDetails.locator(".booking-period-record .booking-period-identity"),
+      ).toHaveText(quotedPeriodIdentity.replace(/\s+/g, " "));
+      expect(
+        await paidDetails
+          .locator(".booking-period-record time")
+          .evaluateAll((times) =>
+            times.map((time) => time.getAttribute("datetime")),
+          ),
+      ).toEqual(quotedPeriodTimes);
       const confirmationRetryControl = paidDetails.getByRole("button", {
         name: "Retry confirmation notice",
       });

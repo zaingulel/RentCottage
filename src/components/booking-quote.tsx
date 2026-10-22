@@ -1,14 +1,17 @@
 import {
-  continuousFullDayAccess,
-  type PublicBookingQuoteResult,
-} from "@/booking-quote/booking-quote";
+  BookingPeriodIdentity,
+  BookingPeriodEndpoints,
+  BookingPeriodAccessSummary,
+  BookingPeriodFullDayExplanation,
+} from "./booking-period-details";
+import { type PublicBookingQuoteResult } from "@/booking-quote/booking-quote";
 import type { CottageDiscoveryQuery } from "@/cottage-discovery/discovery-query";
 import type {
   BookingRequestAcceptanceEvidence,
   BookingRequestUiPolicy,
 } from "@/booking-request/booking-request-policy";
 import { bookingQuoteMessages } from "@/i18n/booking-quote-messages";
-import { formatIqd, formatIraqDateTime } from "@/i18n/format";
+import { formatIqd } from "@/i18n/format";
 import { directionFor, type Locale } from "@/i18n/routing";
 
 import { BookingRequestForm } from "./booking-request-form";
@@ -70,7 +73,6 @@ export function BookingQuoteView({
   if (!bookingRequestUiPolicy || !bookingRequestAcceptanceEvidence) {
     throw new Error("Quoted Booking Request requires policy evidence");
   }
-  const accessRanges = continuousFullDayAccess(quote.items);
   return (
     <main className="results-page page" dir={directionFor(locale)}>
       <header className="page-heading">
@@ -96,42 +98,35 @@ export function BookingQuoteView({
         >
           <h2 id="booking-period-heading">{copy.bookingPeriod}</h2>
           <ol className="quote-items">
-            {quote.items.map((item) => {
-              const itemLabel =
-                item.kind === "full-day"
-                  ? copy.fullDay
-                  : copy.shifts[item.position];
-              return (
-                <li
-                  key={`${item.serviceDay}-${item.kind}-${item.position ?? "full"}`}
-                  aria-label={`${itemLabel} ${item.serviceDay}`}
-                >
-                  <div>
-                    <strong>{itemLabel}</strong>
-                    <span>
-                      {formatIraqDateTime(item.startsAt, locale)} –{" "}
-                      {formatIraqDateTime(item.endsAt, locale)}
-                      {item.crossesMidnight ? ` (${copy.nextDay})` : ""}
-                    </span>
-                  </div>
-                  <strong>{formatIqd(item.priceIqd, locale)}</strong>
-                </li>
-              );
-            })}
+            {quote.items.map((item, index) => (
+              <li
+                key={`${item.serviceDay}-${item.kind}-${item.position ?? "full"}`}
+                aria-labelledby={`quote-period-${index}`}
+              >
+                <div>
+                  <span id={`quote-period-${index}`}>
+                    <BookingPeriodIdentity
+                      locale={locale}
+                      kind={item.kind}
+                      position={item.position}
+                      originalName={item.displayName}
+                      presentation={quote.periodPresentation}
+                    />
+                  </span>
+                  <strong>
+                    <bdi dir="auto">{formatIqd(item.priceIqd, locale)}</bdi>
+                  </strong>
+                  <BookingPeriodEndpoints locale={locale} {...item} />
+                  <BookingPeriodFullDayExplanation
+                    locale={locale}
+                    kind={item.kind}
+                    presentation={quote.periodPresentation}
+                  />
+                </div>
+              </li>
+            ))}
           </ol>
-          {accessRanges.length > 0 ? (
-            <div className="quote-access">
-              <h3>{copy.continuousAccess}</h3>
-              <ul>
-                {accessRanges.map((range) => (
-                  <li key={range.fromServiceDay}>
-                    {formatIraqDateTime(range.startsAt, locale)} –{" "}
-                    {formatIraqDateTime(range.endsAt, locale)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          <BookingPeriodAccessSummary locale={locale} items={quote.items} />
         </section>
         <section className="quote-card">
           <h2>{copy.houseRules}</h2>

@@ -1,5 +1,5 @@
 begin;
-select plan(24);
+select plan(38);
 
 select is(
   (select prosecdef from pg_proc where oid =
@@ -485,6 +485,70 @@ select results_eq(
     interval '24 hours', 2::bigint)$$,
   'a 24-hour Full-day quote ends on the next Service Day'
 );
+
+set local role anon;
+select lives_ok($presentation$
+  do $quote$
+  declare search jsonb := '{"from":"2099-08-21","to":"2099-08-21","guests":4,"amenities":[],"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]}';
+  declare original jsonb;
+  declare presented jsonb;
+  begin
+    original := public.get_public_booking_quote_with_fingerprint(
+      'en', 'cottage-30000000000040008000000000002901', search);
+    presented := public.get_public_booking_quote_presentation(
+      'en', 'cottage-30000000000040008000000000002901', search);
+    if presented ->> 'periodPresentation' is distinct from 'morning-evening-v1'
+      or presented - 'periodPresentation' is distinct from original
+      or presented #>> '{items,0,displayName}' is distinct from 'Morning'
+      or presented #>> '{items,0,startsAt}' is distinct from '2099-08-21T08:00:00+03:00'
+      or presented #>> '{items,0,endsAt}' is distinct from '2099-08-21T14:00:00+03:00'
+      or presented ->> 'bookingPriceIqd' is distinct from '100000'
+      or presented ->> 'customerTotalIqd' is distinct from '105000' then
+      raise exception 'Presentation changed the quoted identity or original financial contract';
+    end if;
+  end;
+  $quote$;
+$presentation$, 'anonymous presentation uses the complete revision without changing the selected quote or fingerprint');
+select throws_ok(
+  $$select public.cottage_booking_period_presentation(null)$$,
+  '42501', null, 'anonymous callers cannot execute the internal period presentation helper'
+);
+reset role;
+
+select ok((select provolatile = 's' and not prosecdef and proconfig = array['search_path=""']
+  from pg_proc where oid = 'public.cottage_booking_period_presentation(uuid)'::regprocedure),
+  'the internal presentation classifier is stable invoker with empty search path');
+select ok((select provolatile = 's' and prosecdef and proconfig = array['search_path=""']
+  from pg_proc where oid = 'public.get_public_booking_quote_presentation(public.cottage_profile_source_language,text,jsonb)'::regprocedure),
+  'the public presentation reads its quote and complete revision in one stable statement snapshot');
+select ok(not exists(select 1 from (values ('anon'),('authenticated'),('service_role')) roles(name)
+  where has_function_privilege(name, 'public.cottage_booking_period_presentation(uuid)', 'execute')),
+  'no API role can execute the internal presentation classifier');
+select function_privs_are('public','get_public_booking_quote_presentation',
+  array['cottage_profile_source_language','text','jsonb'], name, privileges,
+  'public presentation grants only the intended role: ' || name)
+from (values ('anon',array['EXECUTE']),('authenticated',array['EXECUTE']),
+  ('service_role',array['EXECUTE']),('public',array[]::text[])) roles(name,privileges);
+select throws_ok($$select public.cottage_booking_period_presentation(null)$$,
+  'RC204', null, 'missing current revision evidence cannot acquire two-shift meaning');
+select throws_ok($$select public.cottage_booking_period_presentation('ffffffff-ffff-4fff-8fff-ffffffffffff')$$,
+  'RC204', null, 'an unknown revision cannot acquire two-shift meaning');
+savepoint incomplete_presentation_revision;
+insert into public.cottage_shift_schedule_revisions(id,profile_id,revision)
+values ('ffffffff-ffff-4fff-8fff-ffffffffffff','30000000-0000-4000-8000-000000002901',2);
+select throws_ok($$select public.cottage_booking_period_presentation('ffffffff-ffff-4fff-8fff-ffffffffffff')$$,
+  'RC204', null, 'an incomplete revision cannot acquire two-shift meaning');
+rollback to savepoint incomplete_presentation_revision;
+set local role anon;
+select is(public.get_public_booking_quote_presentation('en','cottage-00000000000040008000000000000029',
+  '{"from":"2099-08-21","to":"2099-08-21","guests":4,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]}'::jsonb),
+  '{"status":"not-found"}'::jsonb, 'the presentation not-found result exposes no extra fields');
+select is(public.get_public_booking_quote_presentation('en','cottage-30000000000040008000000000002901',
+  '{"from":"2099-08-21","to":"2099-08-21","guests":9,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]}'::jsonb),
+  public.get_public_booking_quote_with_fingerprint('en','cottage-30000000000040008000000000002901',
+  '{"from":"2099-08-21","to":"2099-08-21","guests":9,"selections":[{"serviceDay":"2099-08-21","kind":"shift","position":1}]}'::jsonb),
+  'a non-quote result passes through without presentation or private fields');
+reset role;
 
 select * from finish();
 rollback;

@@ -54,23 +54,23 @@ const pending = {
 };
 describe("confirmed booking details", () => {
   it.each([
-    ["en", "Jan 1, 2101, 8:00 AM", "Jan 1, 2101, 12:00 PM", "IQD 115,000"],
+    ["en", "Jan 1, 2101, 08:00", "Jan 1, 2101, 12:00", "IQD 115,000"],
     [
       "ar",
-      "01\u200f/01\u200f/2101، 8:00 ص",
-      "01\u200f/01\u200f/2101، 12:00 م",
+      "01\u200f/01\u200f/2101، 08:00",
+      "01\u200f/01\u200f/2101، 12:00",
       "IQD 115,000",
     ],
     [
       "ckb",
-      "٢١٠١ کانوونی دووەم ١ ٨:٠٠ ب.ن",
-      "٢١٠١ کانوونی دووەم ١ ١٢:٠٠ د.ن",
+      "٢١٠١ کانوونی دووەم ١ ٠٨:٠٠",
+      "٢١٠١ کانوونی دووەم ١ ١٢:٠٠",
       "IQD ١١٥٬٠٠٠",
     ],
   ] as const)(
     "isolates confirmed booking names and dates in %s",
     (locale, startsAt, endsAt, customerTotal) => {
-      render(
+      const view = render(
         <div dir={locale === "en" ? "ltr" : "rtl"}>
           <ConfirmedBookingDetails
             locale={locale}
@@ -100,23 +100,46 @@ describe("confirmed booking details", () => {
         ckb: "ماوەی حجز",
       }[locale];
       const period = screen.getByText(periodLabel).nextElementSibling!;
-      expect(Array.from(period.children, (item) => item.textContent)).toEqual([
-        `Morning ${startsAt} – ${endsAt}`,
-        `Full-day ${startsAt} – ${endsAt}`,
-      ]);
+      const entries = period.querySelectorAll(
+        ":scope > .booking-period-record",
+      );
+      expect(entries).toHaveLength(2);
       for (const [index, name] of ["Morning", "Full-day"].entries()) {
-        const values = Array.from(
-          period.children[index].querySelectorAll("bdi"),
-        );
+        expect(entries[index]).toHaveTextContent(name);
+        const values = Array.from(entries[index].querySelectorAll("bdi"));
         expect(values.map((value) => value.textContent)).toEqual([
           name,
+          locale === "ckb" ? "IQD ١١٠٬٠٠٠" : "IQD 110,000",
           startsAt,
           endsAt,
         ]);
-        for (const value of values) {
-          expect(value.getAttribute("dir") ?? "auto").toBe("auto");
-        }
+        for (const value of values)
+          expect(value).toHaveAttribute("dir", "auto");
       }
+      expect(period).not.toHaveTextContent(/AM|PM|ب\.ن|د\.ن/);
+      view.rerender(
+        <ConfirmedBookingDetails
+          locale={locale}
+          access={{
+            ...base,
+            periodPresentation: "morning-evening-v1",
+            bookingPeriod: [
+              { ...base.bookingPeriod[0], displayName: "Preserved original" },
+            ],
+          }}
+          notification={pending}
+          navigation={null}
+        />,
+      );
+      const known = screen.getByText(periodLabel).nextElementSibling!;
+      expect(known).toHaveTextContent(
+        { en: "Morning", ar: "الفترة الصباحية", ckb: "ماوەی بەیانی" }[locale],
+      );
+      expect(
+        within(known as HTMLElement).getByText("Preserved original"),
+      ).toHaveAttribute("dir", "auto");
+      expect(known).toHaveTextContent(startsAt);
+      expect(known).toHaveTextContent(endsAt);
       expect(screen.getByText(customerTotal)).toBeInTheDocument();
     },
   );
@@ -421,8 +444,8 @@ it("confirmed record composition preserves facts and escapes source text", () =>
   ] of [
     [
       "en",
-      "Jan 1, 2101, 8:00 AM",
-      "Jan 1, 2101, 12:00 PM",
+      "Jan 1, 2101, 08:00",
+      "Jan 1, 2101, 12:00",
       [
         "Customer",
         "Booking period",
@@ -447,8 +470,8 @@ it("confirmed record composition preserves facts and escapes source text", () =>
     ],
     [
       "ar",
-      "01\u200f/01\u200f/2101، 8:00 ص",
-      "01\u200f/01\u200f/2101، 12:00 م",
+      "01\u200f/01\u200f/2101، 08:00",
+      "01\u200f/01\u200f/2101، 12:00",
       [
         "العميل",
         "فترة الحجز",
@@ -473,8 +496,8 @@ it("confirmed record composition preserves facts and escapes source text", () =>
     ],
     [
       "ckb",
-      "٢١٠١ کانوونی دووەم ١ ٨:٠٠ ب.ن",
-      "٢١٠١ کانوونی دووەم ١ ١٢:٠٠ د.ن",
+      "٢١٠١ کانوونی دووەم ١ ٠٨:٠٠",
+      "٢١٠١ کانوونی دووەم ١ ١٢:٠٠",
       [
         "کڕیار",
         "ماوەی حجز",
@@ -544,14 +567,14 @@ it("confirmed record composition preserves facts and escapes source text", () =>
         const lists = Array.from(region.querySelectorAll("dl"));
         expect(lists).toHaveLength(4);
         const period = lists[0].querySelectorAll("dd")[1];
-        expect(period.children).toHaveLength(1);
+        expect(period.children).toHaveLength(2);
         const entry = period.children[0];
         expect(
-          Array.from(entry.children, (child) => normalize(child.textContent)),
-        ).toEqual(["Morning", `${startsAt} – ${endsAt}`]);
+          entry.querySelector(".booking-period-identity"),
+        ).toHaveTextContent("Morning");
         expect(
           Array.from(
-            entry.children[1].querySelectorAll("bdi"),
+            entry.querySelectorAll("time"),
             (child) => child.textContent,
           ),
         ).toEqual([startsAt, endsAt]);
@@ -560,7 +583,7 @@ it("confirmed record composition preserves facts and escapes source text", () =>
             entry.querySelectorAll("bdi"),
             (child) => child.textContent,
           ),
-        ).toEqual(["Morning", startsAt, endsAt]);
+        ).toEqual(["Morning", amounts[0], startsAt, endsAt]);
         const moneyLabels =
           actorRole === "customer"
             ? [labels[3], labels[4], labels[5]]
@@ -586,7 +609,7 @@ it("confirmed record composition preserves facts and escapes source text", () =>
             ),
           ),
         ).toEqual([
-          ["Fictional Customer", `Morning ${startsAt} – ${endsAt}`, "4"],
+          ["Fictional Customer", expect.stringContaining(startsAt), "4"],
           moneyValues,
           [
             houseRules,

@@ -5,6 +5,7 @@ import { getCustomerBookingRequest } from "./customer-booking-request";
 
 const reference = "RC-REQ-AAAAAAAAAAAAAAAA";
 const baseRequest = {
+  periodPresentation: "original-names",
   id: "00000000-0000-4000-8000-000000000033",
   bookingRequestReference: reference,
   status: "declined",
@@ -50,6 +51,87 @@ function clientReturning(data: unknown) {
 }
 
 describe("Customer Booking Request database projection", () => {
+  it("retains historical identity and rejects unsupported presentation metadata", async () => {
+    for (const periodPresentation of [
+      undefined,
+      null,
+      "original-names",
+      "morning-evening-v1",
+    ]) {
+      const raw = {
+        ...rawRequest,
+        periodPresentation,
+        customerPhone: "private",
+      };
+      const client = clientReturning(raw);
+      const result = await getCustomerBookingRequest(client, reference);
+      expect(result).toEqual({
+        ...expectedRequest,
+        periodPresentation: periodPresentation ?? "original-names",
+      });
+      expect(result?.bookingPeriod).toEqual(baseRequest.bookingPeriod);
+      expect(result?.bookingPeriod[0]).not.toBe(raw.bookingPeriod[0]);
+      expect(client.rpc).toHaveBeenCalledWith(
+        "get_customer_booking_request_presentation",
+        { target_reference: reference },
+      );
+    }
+    const missingMarker: Record<string, unknown> = { ...rawRequest };
+    delete missingMarker.periodPresentation;
+    await expect(
+      getCustomerBookingRequest(clientReturning(missingMarker), reference),
+    ).resolves.toEqual(expectedRequest);
+    const historical = [
+      {
+        ...baseRequest.bookingPeriod[0],
+        position: 3,
+        displayName: "Original third shift",
+      },
+    ];
+    for (const periodPresentation of [undefined, null, "original-names"]) {
+      await expect(
+        getCustomerBookingRequest(
+          clientReturning({
+            ...rawRequest,
+            periodPresentation,
+            bookingPeriod: historical,
+          }),
+          reference,
+        ),
+      ).resolves.toMatchObject({
+        periodPresentation: "original-names",
+        bookingPeriod: historical,
+      });
+    }
+    for (const periodPresentation of [
+      "",
+      "morning-evening-v2",
+      1,
+      true,
+      false,
+      {},
+      [],
+      { periodPresentation: "original-names" },
+    ]) {
+      await expect(
+        getCustomerBookingRequest(
+          clientReturning({ ...rawRequest, periodPresentation }),
+          reference,
+        ),
+      ).rejects.toThrow("Booking Request status data is invalid");
+    }
+    await expect(
+      getCustomerBookingRequest(
+        clientReturning({
+          ...rawRequest,
+          periodPresentation: "morning-evening-v1",
+          bookingPeriod: historical,
+        }),
+        reference,
+      ),
+    ).rejects.toThrow("Booking Request status data is invalid");
+  });
+
   it.each([
     ["2099-08-21T09:19:59.999Z", "open"],
     ["2099-08-21T09:20:00.000Z", "elapsed"],

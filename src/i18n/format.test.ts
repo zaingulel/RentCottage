@@ -50,6 +50,54 @@ afterEach(() => {
 });
 
 describe("localized formatting", () => {
+  it("formats explicit h23 period endpoints without changing defaults", () => {
+    const cases = [
+      ["2026-10-17T00:00:00+03:00", "en", "Oct 17, 2026, 00:00"],
+      ["2026-10-17T12:00:00+03:00", "en", "Oct 17, 2026, 12:00"],
+      ["2026-10-17T23:00:00+03:00", "en", "Oct 17, 2026, 23:00"],
+      ["2026-10-17T00:00:00+03:00", "ar", "17\u200f/10\u200f/2026، 00:00"],
+      ["2026-10-17T12:00:00+03:00", "ar", "17\u200f/10\u200f/2026، 12:00"],
+      ["2026-10-17T23:00:00+03:00", "ar", "17\u200f/10\u200f/2026، 23:00"],
+      ["2026-10-17T00:00:00+03:00", "ckb", "٢٠٢٦ تشرینی یەکەم ١٧ ٠٠:٠٠"],
+      ["2026-10-17T12:00:00+03:00", "ckb", "٢٠٢٦ تشرینی یەکەم ١٧ ١٢:٠٠"],
+      ["2026-10-17T23:00:00+03:00", "ckb", "٢٠٢٦ تشرینی یەکەم ١٧ ٢٣:٠٠"],
+    ] as const;
+    for (const fallback of [false, true]) {
+      if (fallback) stubRuntimeWithoutSoraniData();
+      for (const [instant, locale, expected] of cases) {
+        expect(formatIraqDateTime(instant, locale, { hourCycle: "h23" })).toBe(
+          expected,
+        );
+      }
+      const instant = "2026-10-17T12:34:56Z";
+      expect(
+        formatIraqDateTime(instant, "en", { hourCycle: "h23", seconds: true }),
+      ).toBe("Oct 17, 2026, 15:34:56");
+      expect(
+        formatIraqDateTime(instant, "ar", { hourCycle: "h23", seconds: true }),
+      ).toBe("17\u200f/10\u200f/2026، 15:34:56");
+      expect(
+        formatIraqDateTime(instant, "ckb", { hourCycle: "h23", seconds: true }),
+      ).toBe("٢٠٢٦ تشرینی یەکەم ١٧ ١٥:٣٤:٥٦");
+      expect(formatIraqDateTime(instant, "en")).toBe("Oct 17, 2026, 3:34 PM");
+      expect(formatIraqDateTime(instant, "ar")).toBe(
+        "17\u200f/10\u200f/2026، 3:34 م",
+      );
+      expect(formatIraqDateTime(instant, "ckb")).toBe(
+        "٢٠٢٦ تشرینی یەکەم ١٧ ٣:٣٤ د.ن",
+      );
+      expect(formatIraqDateTime(instant, "en", { seconds: true })).toBe(
+        "Oct 17, 2026, 3:34:56 PM",
+      );
+      expect(formatIraqDateTime(instant, "ar", { seconds: true })).toBe(
+        "17\u200f/10\u200f/2026، 3:34:56 م",
+      );
+      expect(formatIraqDateTime(instant, "ckb", { seconds: true })).toBe(
+        "٢٠٢٦ تشرینی یەکەم ١٧ ٣:٣٤:٥٦ د.ن",
+      );
+    }
+  });
+
   it("uses Western digits for Arabic prices to match property counts", () => {
     expect(formatIqd(180000, "en")).toBe("IQD 180,000");
     expect(formatIqd(180000, "ar")).toBe("IQD 180,000");

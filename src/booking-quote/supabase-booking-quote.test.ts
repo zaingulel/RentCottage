@@ -16,6 +16,7 @@ const query = {
 const slug = "cottage-00000000000040008000000000000029";
 const response = {
   status: "quoted",
+  periodPresentation: "morning-evening-v1",
   slug,
   cottageName: "Quiet Garden",
   contentVersion: 2,
@@ -71,19 +72,104 @@ describe("Supabase Booking Quote", () => {
       quote: expect.objectContaining({
         slug,
         quoteFingerprint: "a".repeat(64),
+        periodPresentation: "morning-evening-v1",
+        items: response.items,
         bookingPriceIqd: 100_003,
         serviceFeeIqd: 5_000,
         customerTotalIqd: 105_003,
       }),
     });
     expect(client.rpc).toHaveBeenCalledWith(
-      "get_public_booking_quote_with_fingerprint",
+      "get_public_booking_quote_presentation",
       {
         target_locale: "en",
         target_slug: slug,
         requested_search: query,
       },
     );
+  });
+
+  it("accepts only supported presentation metadata without changing quote items", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const periodPresentation of ["morning-evening-v1", "original-names"]) {
+      const result = await new SupabaseBookingQuote(
+        clientReturning({ ...response, periodPresentation }),
+      ).load("en", slug, query);
+      expect(result).toEqual({
+        status: "quoted",
+        quote: {
+          slug,
+          quoteFingerprint: "a".repeat(64),
+          periodPresentation,
+          cottageName: "Quiet Garden",
+          contentVersion: 2,
+          houseRules: "No smoking",
+          termsVersion: "fictional-local-test-2026-08-22-v1",
+          marketplaceTerms: bookingTermsFixture("en"),
+          items: response.items,
+          bookingPriceIqd: 100_003,
+          serviceFeeIqd: 5_000,
+          customerTotalIqd: 105_003,
+        },
+      });
+    }
+    const missingMarker: Record<string, unknown> = { ...response };
+    delete missingMarker.periodPresentation;
+    for (const data of [
+      missingMarker,
+      ...[
+        undefined,
+        null,
+        "",
+        "morning-evening-v2",
+        true,
+        false,
+        1,
+        {},
+        [],
+      ].map((periodPresentation) => ({ ...response, periodPresentation })),
+      { ...response, exactAddress: "private" },
+      {
+        ...response,
+        items: [{ ...response.items[0], periodPresentation: "original-names" }],
+      },
+    ]) {
+      await expect(
+        new SupabaseBookingQuote(clientReturning(data)).load("en", slug, query),
+      ).resolves.toEqual({ status: "unavailable" });
+    }
+    const thirdShift = {
+      ...response.items[0],
+      position: 3,
+      displayName: "Original night",
+    };
+    const historicalQuery = {
+      ...query,
+      selections: [
+        {
+          serviceDay: "2026-08-21",
+          kind: "shift" as const,
+          position: 3 as const,
+        },
+      ],
+    };
+    await expect(
+      new SupabaseBookingQuote(
+        clientReturning({ ...response, items: [thirdShift] }),
+      ).load("en", slug, historicalQuery),
+    ).resolves.toEqual({ status: "unavailable" });
+    await expect(
+      new SupabaseBookingQuote(
+        clientReturning({
+          ...response,
+          periodPresentation: "original-names",
+          items: [thirdShift],
+        }),
+      ).load("en", slug, historicalQuery),
+    ).resolves.toMatchObject({
+      status: "quoted",
+      quote: { periodPresentation: "original-names", items: [thirdShift] },
+    });
   });
 
   it("accepts a next-day 24-hour quote and rejects contradictory endpoints", async () => {
@@ -120,7 +206,7 @@ describe("Supabase Booking Quote", () => {
       }),
     });
     expect(client.rpc).toHaveBeenCalledWith(
-      "get_public_booking_quote_with_fingerprint",
+      "get_public_booking_quote_presentation",
       {
         target_locale: "en",
         target_slug: slug,

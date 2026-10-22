@@ -1,3 +1,5 @@
+import type { BookingPeriodPresentation } from "./booking-period-presentation";
+
 import type { Locale } from "@/i18n/routing";
 import {
   BOOKING_TERMS_VERSION,
@@ -27,6 +29,7 @@ export type BookingQuoteItem = BookingQuoteItemBase &
   );
 
 export interface PublicBookingQuote {
+  periodPresentation?: BookingPeriodPresentation;
   slug: string;
   quoteFingerprint: string;
   cottageName: string;

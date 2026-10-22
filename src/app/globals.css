@@ -1297,34 +1297,16 @@ html[lang="ckb"] .page-title {
 
 .result-shifts > li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto auto;
-  grid-auto-flow: column;
-  row-gap: 0;
-  column-gap: var(--space-3);
-  padding-block: var(--space-2);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  padding-block: var(--space-3);
+  padding-inline: var(--space-4);
   color: var(--ink);
-}
-
-.result-shifts > li > :nth-child(2) {
-  color: var(--muted);
-  font-size: var(--font-size-1);
-}
-
-.result-shifts > li > :nth-child(4) {
-  font-size: var(--font-size-1);
-}
-
-.result-shifts > li > :nth-child(n + 3) {
-  justify-self: end;
-  text-align: end;
+  border-block-start: 1px solid var(--line);
 }
 
 .result-shifts > li > .status-badge {
-  grid-column: 1 / -1;
-  grid-row: 3;
   justify-self: start;
-  margin-block-start: var(--space-1);
 }
 
 .results-list .result-shifts {
@@ -1524,15 +1506,15 @@ html[lang="ckb"] .page-title {
 
 .booking-period-list > li {
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-2);
   min-inline-size: 0;
 }
 
 .booking-period-list .action-toggle {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-2);
   inline-size: 100%;
   padding: var(--space-3) var(--space-4);
   line-height: 1.5;
@@ -1542,7 +1524,7 @@ html[lang="ckb"] .page-title {
 
 .booking-period-label {
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-2);
   min-inline-size: 0;
 }
 
@@ -3242,11 +3224,13 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
 
 .quote-items > li > div {
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
 }
 
-.quote-items span,
-.quote-access {
+.quote-items .booking-period-endpoints,
+.quote-items .booking-period-explanation {
   color: var(--muted);
   line-height: 1.5;
 }
@@ -3625,11 +3609,6 @@ section.cottage-profile-editor :where(p, h1, h2, strong) {
 
 .confirmed-booking-details .fact-list dd > span + span {
   margin-block-start: var(--space-3);
-}
-
-.confirmed-booking-details .fact-list dd > span > strong,
-.confirmed-booking-details .fact-list dd > span > span {
-  display: block;
 }
 
 .confirmed-booking-details dd > small {
@@ -4981,4 +4960,66 @@ a:focus-visible,
 .owner-earnings {
   display: grid;
   gap: var(--space-4);
+}
+
+.booking-period-identity,
+.booking-period-endpoints,
+.booking-period-explanation,
+.booking-period-record,
+.fact-list dd > .booking-period-record {
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.booking-period-identity > bdi,
+.booking-period-endpoints,
+.booking-period-explanation {
+  font-size: var(--font-size-2);
+  font-weight: 400;
+}
+
+.booking-period-endpoints,
+.booking-period-explanation {
+  color: var(--muted);
+}
+
+.booking-period-access-summary {
+  display: grid;
+  gap: var(--space-2);
+  margin-block: var(--space-4);
+  border-block-start: 1px solid var(--line);
+  padding-block-start: var(--space-3);
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-2);
+}
+
+.booking-period-access-summary h3,
+.booking-period-access-summary p,
+.booking-period-access-summary ul {
+  margin: 0;
+}
+
+.booking-period-access-summary ul {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.booking-period-gap {
+  font-weight: 700;
+}
+
+.quote-items > li {
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+
+.booking-period-record,
+.quote-items > li {
+  padding-block: var(--space-3);
+  padding-inline: var(--space-4);
 }

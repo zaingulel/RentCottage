@@ -228,21 +228,21 @@ function renderPublicCottageDisplay({
           8,
         )
       : publicDisplayCottage.description,
-    inventory:
-      screen === "profile"
-        ? publicDisplayCottage.inventory.map((unit) => ({
-            ...unit,
-            available: !(
+    inventory: publicDisplayCottage.inventory.map((unit) => ({
+      ...unit,
+      available:
+        screen === "profile"
+          ? !(
               unit.serviceDay === "2099-08-21" &&
               unit.kind === "shift" &&
               unit.position === 2
-            ),
-            name:
-              longContent && unit.kind === "shift" && unit.position === 1
-                ? "هەڵبژاردەی درێژی بەیانی بۆ پشوودانی خێزان لە باخچەکە"
-                : unit.name,
-          }))
-        : publicDisplayCottage.inventory,
+            )
+          : unit.available,
+      name:
+        longContent && unit.kind === "shift" && unit.position === 1
+          ? "هەڵبژاردەی درێژی بەیانی Garden <script>original</script> بۆ پشوودانی خێزان لە باخچەکە"
+          : unit.name,
+    })),
     mediaUrls: publicDisplayCottage.mediaUrls.slice(0, photoCount),
     name: longContent
       ? "کۆتێجی باخچەی خەیاڵی بۆ کۆبوونەوەی خێزان لە ناوچەی شەقڵاوە لە نێوان دارەکان و چیاکان لەگەڵ شوێنی پشوودان و دانیشتنی دەرەوە"

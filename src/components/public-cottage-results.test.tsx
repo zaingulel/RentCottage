@@ -76,13 +76,24 @@ describe("PublicCottageResults", () => {
           />,
         );
         const row = screen.getByRole("listitem");
-        const times = within(row).getByText(clock);
-        expect(times).toBeVisible();
-        expect(times.tagName).toBe("BDI");
-        expect(times).toHaveAttribute("dir", "ltr");
-        expect(times.textContent).toBe(clock);
+        const times = row.querySelectorAll("time");
+        expect(times).toHaveLength(2);
+        expect(times[0]).toHaveAttribute(
+          "datetime",
+          `${unit.serviceDay}T${clock.slice(0, 5)}:00+03:00`,
+        );
+        expect(times[1]).toHaveAttribute(
+          "datetime",
+          `${endsNextDay ? (unit.serviceDay === "2026-09-22" ? "2026-09-23" : "2026-09-24") : unit.serviceDay}T${clock.slice(-5)}:00+03:00`,
+        );
+        expect(times[0].parentElement).toHaveAttribute("dir", "auto");
+        expect(times[1].parentElement).toHaveAttribute("dir", "auto");
+        expect(row).toHaveTextContent(
+          locale === "en" ? "2026" : locale === "ar" ? "2026" : "٢٠٢٦",
+        );
+        expect(row).not.toHaveTextContent(/AM|PM|ب\.ن|د\.ن/);
         if (endsNextDay) {
-          expect(row).toHaveTextContent(`${clock} ${nextDay}`);
+          expect(row).toHaveTextContent(nextDay);
         } else {
           expect(row).not.toHaveTextContent(nextDay);
         }
@@ -105,10 +116,14 @@ describe("PublicCottageResults", () => {
     expect(within(card).queryByText("total")).toBeNull();
     expect(within(card).getByRole("heading", { name: "Sep 22" })).toBeVisible();
     const rows = within(card).getAllByRole("listitem");
-    expect(rows[0]).toHaveTextContent("Shift 109:00–15:00IQD 60,000Available");
-    expect(within(rows[0]).getByText("IQD 60,000").tagName).toBe("B");
+    expect(rows[0]).toHaveTextContent(
+      "Shift 1 IQD 60,000Arrival: Sep 22, 2026, 09:00 Departure: Sep 22, 2026, 15:00 All times are Iraq local time (UTC+3).Available",
+    );
+    expect(within(rows[0]).getByText("IQD 60,000").closest("b")?.tagName).toBe(
+      "B",
+    );
     expect(rows[1]).toHaveTextContent(
-      "Full-day bundle09:00–23:00Price unavailableUnavailable",
+      "Full day Price unavailableArrival: Sep 23, 2026, 09:00 Departure: Sep 23, 2026, 23:00 All times are Iraq local time (UTC+3).",
     );
     expect(within(rows[1]).getByText("Price unavailable")).toBeVisible();
     const view = within(card).getByRole("link", { name: "View cottage" });
@@ -314,13 +329,15 @@ describe("PublicCottageResults", () => {
     const morning = within(first).getAllByRole("listitem")[0];
     expect(morning).toHaveTextContent('<img src=x onerror="alert(1)">');
     expect(morning.querySelector("img")).toBeNull();
-    expect(morning).toHaveTextContent("09:00–15:00");
-    expect(morning.querySelector("bdi")).toHaveAttribute("dir", "ltr");
+    expect(morning).toHaveTextContent("Morning");
+    expect(morning).toHaveTextContent("Arrival: Sep 22, 2026, 09:00");
+    expect(morning).toHaveTextContent("Departure: Sep 22, 2026, 15:00");
+    expect(morning.querySelector("bdi")).toHaveAttribute("dir", "auto");
     expect(morning).toHaveTextContent("IQD 60,000");
     expect(morning).toHaveTextContent("Available");
     expect(morning).toHaveTextContent("Selected filter");
     expect(within(first).getAllByRole("listitem")[1]).toHaveTextContent(
-      "Evening18:00–23:00IQD 80,000Unavailable",
+      "Evening IQD 80,000Arrival: Sep 22, 2026, 18:00 Departure: Sep 22, 2026, 23:00 All times are Iraq local time (UTC+3).Unavailable",
     );
     expect(within(second).getAllByRole("listitem")[2]).toHaveTextContent(
       "Price unavailable",

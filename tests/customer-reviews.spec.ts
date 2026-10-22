@@ -2850,7 +2850,9 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
               card.querySelectorAll(":scope > .confirmed-booking-group"),
             );
             const period = groups[0].querySelectorAll("dd")[1];
-            const entries = Array.from(period.children);
+            const entries = Array.from(
+              period.querySelectorAll(":scope > .booking-period-record"),
+            );
             const bounds = (element: Element) =>
               element.getBoundingClientRect().toJSON();
             const typography = (element: Element) => {
@@ -2886,13 +2888,17 @@ test("Cottage Owner replies once, visitors read the reply, and an administrator 
               card,
               ...groups,
               ...section.querySelectorAll("dt, dd"),
-              ...entries,
+              ...period.children,
               ...period.querySelectorAll("bdi"),
             ].map(bounds);
             const periodBounds = entries.map((entry) => ({
               entry: bounds(entry),
-              name: bounds(entry.children[0]),
-              range: bounds(entry.children[1]),
+              name: bounds(
+                entry.querySelector(":scope > .booking-period-identity")!,
+              ),
+              range: bounds(
+                entry.querySelector(":scope > .booking-period-endpoints")!,
+              ),
               timestamps: Array.from(entry.querySelectorAll("bdi"), (item) => ({
                 text: item.textContent,
                 rectangle: bounds(item),

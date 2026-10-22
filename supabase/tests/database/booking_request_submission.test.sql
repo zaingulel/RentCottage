@@ -129,7 +129,7 @@ create or replace function pg_temp.booking_submission_graph() returns jsonb lang
 );
 $$;
 
-select plan(467);
+select plan(474);
 
 set local role anon;
 select throws_ok(
@@ -995,6 +995,11 @@ select public.prepare_booking_request_submission(
   (select submission from journey_submission)
 ) as result;
 reset role;
+
+create temporary table presentation_original_attempt as
+select quote_payload, quote_fingerprint, intent_payload, intent_fingerprint
+from public.booking_request_submission_attempts
+where id = (select (result ->> 'attemptId')::uuid from prepared_submission);
 
 select is(
   (select result ->> 'status' from prepared_submission), 'ready',
@@ -4836,6 +4841,29 @@ select public.finalize_booking_request_submission(
 ) as result;
 reset role;
 grant select on finalized_submission to service_role;
+select lives_ok($presentation$
+  do $snapshot$
+  declare saved public.booking_snapshots;
+  declare original record;
+  begin
+    select snapshots.* into strict saved
+    from public.booking_snapshots snapshots
+    join public.booking_requests requests on requests.booking_snapshot_id = snapshots.id
+    where requests.booking_request_reference = (select result ->> 'bookingRequestReference' from finalized_submission);
+    select * into strict original from presentation_original_attempt;
+    if saved.period_presentation is distinct from 'morning-evening-v1'
+      or saved.quote_payload is distinct from original.quote_payload
+      or saved.quote_fingerprint is distinct from original.quote_fingerprint
+      or saved.intent_payload is distinct from original.intent_payload
+      or saved.intent_fingerprint is distinct from original.intent_fingerprint
+      or saved.quote_payload ? 'periodPresentation'
+      or saved.intent_payload ? 'periodPresentation' then
+      raise exception 'Finalization changed an authorized quote or omitted its separate period identity';
+    end if;
+  end;
+  $snapshot$;
+$presentation$, 'an authorized unextended attempt stores period identity separately from its original quote and acceptance');
+
 
 select is(
   (select result ->> 'status' from finalized_submission), 'pending',
@@ -8475,6 +8503,55 @@ select is(
   '41000000-0000-4000-8000-000000003202',
   'current public cover follows publication visibility'
 );
+select booking_request_reference from booking_request_lifecycle_target
+\gset job265_customer_
+set local role authenticated;
+select lives_ok($presentation$
+  do $body$
+  declare projected jsonb;
+  begin
+    projected := public.get_customer_booking_request_presentation(
+      (select booking_request_reference from booking_request_lifecycle_target));
+    if projected ->> 'periodPresentation' is distinct from 'morning-evening-v1'
+      or projected - 'periodPresentation' is distinct from (select result from customer_projection) then
+      raise exception 'Customer presentation must add only the retained identity to the original response';
+    end if;
+  end;
+  $body$;
+$presentation$, 'customer presentation returns stored identity and exactly the existing private projection');
+select set_config('request.jwt.claims', '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003203"}', true);
+select lives_ok($presentation$
+  do $body$ begin
+    if public.get_customer_booking_request_presentation(
+      (select booking_request_reference from booking_request_lifecycle_target)) is not null then
+      raise exception 'Different Customer discovered retained presentation';
+    end if;
+  end; $body$;
+$presentation$, 'customer presentation denies a different Customer');
+select set_config('request.jwt.claims', '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003204"}', true);
+select lives_ok($presentation$
+  do $body$ begin
+    if public.get_customer_booking_request_presentation(
+      (select booking_request_reference from booking_request_lifecycle_target)) is not null then
+      raise exception 'Unrelated Cottage Owner discovered retained presentation';
+    end if;
+  end; $body$;
+$presentation$, 'customer presentation denies an unrelated Cottage Owner');
+reset role;
+set local role anon;
+select throws_ok(format('select public.get_customer_booking_request_presentation(%L)', :'job265_customer_booking_request_reference'),
+  '42501', null, 'customer presentation denies anonymous execution');
+reset role;
+set local role service_role;
+select throws_ok(format('select public.get_customer_booking_request_presentation(%L)', :'job265_customer_booking_request_reference'),
+  '42501', null, 'customer presentation denies service-role execution');
+reset role;
+select ok(coalesce(has_function_privilege('authenticated', to_regprocedure('public.get_customer_booking_request_presentation(text)'), 'execute'), false)
+  and not coalesce(has_function_privilege('anon', to_regprocedure('public.get_customer_booking_request_presentation(text)'), 'execute'), false)
+  and not coalesce(has_function_privilege('service_role', to_regprocedure('public.get_customer_booking_request_presentation(text)'), 'execute'), false),
+  'customer presentation grants only authenticated execution among API roles');
+select set_config('request.jwt.claims', '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000003202"}', true);
+
 savepoint customer_cover_replaced_publication;
 insert into public.cottage_profile_review_cycles (
   id, profile_id, owner_user_id, source_revision_id, name, governorate,

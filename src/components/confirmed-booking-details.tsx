@@ -1,10 +1,16 @@
+import {
+  BookingPeriodIdentity,
+  BookingPeriodEndpoints,
+  BookingPeriodAccessSummary,
+  BookingPeriodFullDayExplanation,
+} from "./booking-period-details";
 import type { BookingLifecycleStatus } from "@/booking-request/booking-lifecycle";
 import { bookingLifecycleMessages } from "@/i18n/booking-lifecycle-messages";
 import { accessMessages } from "@/i18n/access-messages";
 import type { ConfirmedBookingAccess } from "@/booking-request/confirmed-booking-access";
 import type { PaidConfirmationNotificationPresentationStatus } from "@/booking-request/request-confirmed-booking-access";
 import type { NavigationHandoff } from "@/cottage-profile/map-provider";
-import { formatFilsAsIqd, formatIqd, formatIraqDateTime } from "@/i18n/format";
+import { formatFilsAsIqd, formatIqd } from "@/i18n/format";
 import type { Locale } from "@/i18n/routing";
 import {
   ActionFocusTarget,
@@ -194,22 +200,29 @@ export function ConfirmedBookingDetails({
               <dd>
                 {access.bookingPeriod.map((item) => (
                   <span
+                    className="booking-period-record"
                     key={`${item.serviceDay}-${item.kind}-${item.position ?? "full"}`}
                   >
-                    <strong>
-                      <bdi>{item.displayName}</bdi>
-                    </strong>{" "}
-                    <span>
-                      <bdi className="booking-period-timestamp">
-                        {formatIraqDateTime(item.startsAt, locale)}
-                      </bdi>{" "}
-                      –{" "}
-                      <bdi className="booking-period-timestamp">
-                        {formatIraqDateTime(item.endsAt, locale)}
-                      </bdi>
-                    </span>
+                    <BookingPeriodIdentity
+                      locale={locale}
+                      kind={item.kind}
+                      position={item.position}
+                      originalName={item.displayName}
+                      presentation={access.periodPresentation}
+                    />
+                    <bdi dir="auto">{formatIqd(item.priceIqd, locale)}</bdi>
+                    <BookingPeriodEndpoints locale={locale} {...item} />
+                    <BookingPeriodFullDayExplanation
+                      locale={locale}
+                      kind={item.kind}
+                      presentation={access.periodPresentation}
+                    />
                   </span>
                 ))}
+                <BookingPeriodAccessSummary
+                  locale={locale}
+                  items={access.bookingPeriod}
+                />
               </dd>
             </div>
             <div>

@@ -91,13 +91,17 @@ function serviceDay(offset: number) {
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
-function expectedMorningPeriod(day: string) {
+function expectedMorningEndpoints(day: string): [string, string] {
   const format = new Intl.DateTimeFormat("en-IQ", {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone: "Asia/Baghdad",
+    hourCycle: "h23",
   });
-  return `Morning ${format.format(new Date(`${day}T08:00:00+03:00`))} – ${format.format(new Date(`${day}T12:00:00+03:00`))}`;
+  return [
+    format.format(new Date(`${day}T08:00:00+03:00`)),
+    format.format(new Date(`${day}T12:00:00+03:00`)),
+  ];
 }
 
 function expectedServiceDayLabel(day: string) {
@@ -786,14 +790,14 @@ test("shows varied demo results and filters across desktop and mobile languages"
     const card = page
       .getByRole("article")
       .filter({ has: page.getByRole("heading", { name, exact: true }) });
-    for (const [index, label] of [
-      "Morning",
-      "Evening",
-      "Full-day bundle",
-    ].entries()) {
-      await expect(
-        card.getByRole("listitem").filter({ hasText: label }).locator("b"),
-      ).toHaveText(prices[index]);
+    for (const [index, label] of ["Morning", "Evening", "Full-day"].entries()) {
+      const periodRow = card.getByRole("listitem").filter({
+        has: page
+          .locator(".booking-period-identity > strong")
+          .filter({ hasText: new RegExp(`^${label}$`) }),
+      });
+      await expect(periodRow).toHaveCount(1);
+      await expect(periodRow.locator("b")).toHaveText(prices[index]);
     }
     await expect(card.getByText("total", { exact: true })).toHaveCount(0);
   }
@@ -827,16 +831,15 @@ test("shows varied demo results and filters across desktop and mobile languages"
     const card = page
       .getByRole("article")
       .filter({ has: page.getByRole("heading", { name, exact: true }) });
-    for (const [index, label] of [
-      "Morning",
-      "Evening",
-      "Full-day bundle",
-    ].entries()) {
+    for (const [index, label] of ["Morning", "Evening", "Full-day"].entries()) {
+      const periodRow = card.getByRole("listitem").filter({
+        has: page
+          .locator(".booking-period-identity > strong")
+          .filter({ hasText: new RegExp(`^${label}$`) }),
+      });
+      await expect(periodRow).toHaveCount(1);
       await expect(
-        card
-          .getByRole("listitem")
-          .filter({ hasText: label })
-          .getByText(states[index], { exact: true }),
+        periodRow.getByText(states[index], { exact: true }),
       ).toBeVisible();
     }
   }
@@ -1047,9 +1050,13 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
       });
       await card.scrollIntoViewIfNeeded();
       await expectScene(card.getByRole("heading", { name, exact: true }));
-      await expect(
-        card.getByRole("listitem").filter({ hasText: "Morning" }).locator("b"),
-      ).toHaveText(morningPrice);
+      const periodRow = card.getByRole("listitem").filter({
+        has: page
+          .locator(".booking-period-identity > strong")
+          .filter({ hasText: /^Morning$/ }),
+      });
+      await expect(periodRow).toHaveCount(1);
+      await expect(periodRow.locator("b")).toHaveText(morningPrice);
       await expectDemoImage(card.getByRole("img", { name, exact: true }));
     }
     await expect(page.getByRole("main")).not.toContainText(
@@ -1104,10 +1111,39 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
         name: expectedServiceDayLabel(demo.recordedDay).replace(/^\w+, /, ""),
       }),
     ).toBeVisible();
-    const morningOption = publicCottage
-      .getByRole("listitem")
-      .filter({ hasText: "Morning" });
-    await expect(morningOption).toContainText("08:00–12:00");
+    const morningOption = publicCottage.getByRole("listitem").filter({
+      has: page
+        .locator(".booking-period-identity > strong")
+        .filter({ hasText: /^Morning$/ }),
+    });
+    await expect(morningOption).toHaveCount(1);
+    await expect(
+      morningOption.locator(":scope > .booking-period-identity > strong"),
+    ).toHaveText("Morning");
+    const morningTimes = morningOption.locator(
+      ":scope > .booking-period-endpoints time",
+    );
+    await expect(morningTimes).toHaveCount(2);
+    await expect(morningTimes.nth(0)).toBeVisible();
+    await expect(morningTimes.nth(1)).toBeVisible();
+    await expect(morningTimes).toHaveText(
+      expectedMorningEndpoints(demo.recordedDay),
+    );
+    await expect(morningTimes.nth(0)).toHaveAttribute(
+      "datetime",
+      `${demo.recordedDay}T08:00:00+03:00`,
+    );
+    await expect(morningTimes.nth(1)).toHaveAttribute(
+      "datetime",
+      `${demo.recordedDay}T12:00:00+03:00`,
+    );
+    const morningContext = morningOption.locator(
+      ":scope > .booking-period-endpoints > .booking-period-explanation",
+    );
+    await expect(morningContext).toBeVisible();
+    await expect(morningContext).toHaveText(
+      "All times are Iraq local time (UTC+3).",
+    );
     await expect(morningOption).toContainText("IQD 180,000");
     await expect(
       morningOption.getByText("Available", { exact: true }),
@@ -1256,9 +1292,39 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
       .locator("header strong")
       .innerText();
     expect(bookingReference).toMatch(/^[A-Z0-9][A-Z0-9-]{0,119}$/);
-    const bookingPeriod = expectedMorningPeriod(demo.recordedDay);
-    await expect(detailValue(customerDetails, "Booking period")).toHaveText(
-      bookingPeriod,
+    const customerPeriod = detailValue(
+      customerDetails,
+      "Booking period",
+    ).locator(":scope > .booking-period-record");
+    await expect(customerPeriod).toHaveCount(1);
+    const customerPeriodIdentity = customerPeriod.locator(
+      ":scope > .booking-period-identity > strong",
+    );
+    await expect(customerPeriodIdentity).toBeVisible();
+    await expect(customerPeriodIdentity).toHaveText("Morning");
+    const customerPeriodTimes = customerPeriod.locator(
+      ":scope > .booking-period-endpoints time",
+    );
+    await expect(customerPeriodTimes).toHaveCount(2);
+    await expect(customerPeriodTimes.nth(0)).toBeVisible();
+    await expect(customerPeriodTimes.nth(1)).toBeVisible();
+    await expect(customerPeriodTimes).toHaveText(
+      expectedMorningEndpoints(demo.recordedDay),
+    );
+    await expect(customerPeriodTimes.nth(0)).toHaveAttribute(
+      "datetime",
+      `${demo.recordedDay}T08:00:00+03:00`,
+    );
+    await expect(customerPeriodTimes.nth(1)).toHaveAttribute(
+      "datetime",
+      `${demo.recordedDay}T12:00:00+03:00`,
+    );
+    const customerPeriodContext = customerPeriod.locator(
+      ":scope > .booking-period-endpoints > .booking-period-explanation",
+    );
+    await expect(customerPeriodContext).toBeVisible();
+    await expect(customerPeriodContext).toHaveText(
+      "All times are Iraq local time (UTC+3).",
     );
     await expect(
       detailValue(customerDetails, "Original booking price"),
@@ -1342,8 +1408,38 @@ test("records the continuous local RentCottage MVP story", async ({ page }) => {
     await expect(ownerDetails.locator("header strong")).toHaveText(
       bookingReference,
     );
-    await expect(detailValue(ownerDetails, "Booking period")).toHaveText(
-      bookingPeriod,
+    const ownerPeriod = detailValue(ownerDetails, "Booking period").locator(
+      ":scope > .booking-period-record",
+    );
+    await expect(ownerPeriod).toHaveCount(1);
+    const ownerPeriodIdentity = ownerPeriod.locator(
+      ":scope > .booking-period-identity > strong",
+    );
+    await expect(ownerPeriodIdentity).toBeVisible();
+    await expect(ownerPeriodIdentity).toHaveText("Morning");
+    const ownerPeriodTimes = ownerPeriod.locator(
+      ":scope > .booking-period-endpoints time",
+    );
+    await expect(ownerPeriodTimes).toHaveCount(2);
+    await expect(ownerPeriodTimes.nth(0)).toBeVisible();
+    await expect(ownerPeriodTimes.nth(1)).toBeVisible();
+    await expect(ownerPeriodTimes).toHaveText(
+      expectedMorningEndpoints(demo.recordedDay),
+    );
+    await expect(ownerPeriodTimes.nth(0)).toHaveAttribute(
+      "datetime",
+      `${demo.recordedDay}T08:00:00+03:00`,
+    );
+    await expect(ownerPeriodTimes.nth(1)).toHaveAttribute(
+      "datetime",
+      `${demo.recordedDay}T12:00:00+03:00`,
+    );
+    const ownerPeriodContext = ownerPeriod.locator(
+      ":scope > .booking-period-endpoints > .booking-period-explanation",
+    );
+    await expect(ownerPeriodContext).toBeVisible();
+    await expect(ownerPeriodContext).toHaveText(
+      "All times are Iraq local time (UTC+3).",
     );
     await expect(
       detailValue(ownerDetails, "Original booking price"),
