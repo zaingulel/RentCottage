@@ -7213,7 +7213,8 @@ begin
   if target_binding is null or jsonb_typeof(target_binding)<>'object'
     or target_binding ?& array['operationId','providerIdentity','idempotencyKey','requestFingerprint','notBefore','notAfter'] is not true
     or target_binding-array['operationId','providerIdentity','idempotencyKey','requestFingerprint','notBefore','notAfter']<>'{}'
-    or target_binding->'providerIdentity' is distinct from '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+    or (target_binding->'providerIdentity' is distinct from '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+      and target_binding->'providerIdentity' is distinct from '{"provider":"fictional-payments","environment":"hosted-demo-yvibcyqtyihpzpmomnzg","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb)
     or (target_binding->>'operationId')::uuid is null or coalesce(length(target_binding->>'idempotencyKey'),0)=0
     or coalesce(target_binding->>'requestFingerprint','') !~ '^[0-9a-f]{64}$'
     or (target_binding->>'notBefore' is not null and not isfinite((target_binding->>'notBefore')::timestamptz))

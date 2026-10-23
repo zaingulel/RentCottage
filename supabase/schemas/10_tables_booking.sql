@@ -697,7 +697,7 @@ CREATE TABLE IF NOT EXISTS "public"."simulated_payment_effects" (
     "physical_execution_count" smallint NOT NULL,
     "created_at" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    CONSTRAINT "simulated_payment_effect_scope" CHECK ((length(provider)>0 AND environment='local-test' AND length(merchant_id)>0 AND length(terminal_id)>0)),
+    CONSTRAINT "simulated_payment_effect_scope" CHECK ((length(provider)>0 AND environment='local-test' AND length(merchant_id)>0 AND length(terminal_id)>0) OR (provider='fictional-payments' AND environment='hosted-demo-yvibcyqtyihpzpmomnzg' AND merchant_id='fictional-merchant' AND terminal_id='fictional-terminal')),
     CONSTRAINT "simulated_payment_effect_state" CHECK ((((state='reserved' AND result IS NULL AND physical_execution_count=0) OR (state='closed-not-executed' AND result->>'outcome'='not-executed' AND physical_execution_count=0) OR (state='executed' AND result->>'outcome' IN ('succeeded','failed','indeterminate') AND physical_execution_count=1))) IS TRUE)
 );
 ALTER TABLE "public"."simulated_payment_effects" OWNER TO "postgres";
