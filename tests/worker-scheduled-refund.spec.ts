@@ -347,7 +347,10 @@ test("hosted fictional refund and settlement survive fresh Worker instances", as
         .replaceAll("00000000100", `00000000${identity.stem}`)
         .replaceAll("964750000100", `964750000${identity.stem}`)
         .replaceAll("confirmation-auth-", `confirmation-auth-${identity.stem}-`)
-        .replaceAll("CONFIRMATION-HOLD-1", `HOSTED-${kind}-${identity.stem}`)
+        .replaceAll(
+          "CONFIRMATION-HOLD-1",
+          `HOSTED-${kind.toUpperCase()}-${identity.stem}`,
+        )
         .replaceAll(
           "Confirmation Cottage",
           `hosted ${kind} ${identity.stem} Cottage`,
