@@ -132,8 +132,7 @@ describe("server environment", () => {
         name: "preview",
         hostedDemo: true,
         deployment: { commit: "c".repeat(40) },
-        privilegedAuditHmacKey:
-          "fixture-audit-key-with-at-least-32-characters",
+        privilegedAuditHmacKey: "fixture-audit-key-with-at-least-32-characters",
         supabase: {
           projectRef: "yvibcyqtyihpzpmomnzg",
           url: "https://yvibcyqtyihpzpmomnzg.supabase.co",
