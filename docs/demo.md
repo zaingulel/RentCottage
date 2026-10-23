@@ -182,13 +182,15 @@ authenticator; the operator never enrolls it on their behalf.
 ### Fictional supplier compatibility and recovery
 
 [#819](https://github.com/zaingulel/RentCottage/issues/819) supplies application composition for the approved
-hosted fictional suppliers and existing authorized journeys. Composition alone does not make hosted booking
-or notification processing usable. Before activating these journeys, require matching database declarations
-and migrations that admit the hosted identity and preserve the existing local contracts, plus the real
-database and Worker evidence below. The payment binding validator and effect constraints accept only
-`local-test`; notification effect functions also compare the original binding exactly and stamp `local-test`.
-They do not yet support hosted effects. A successful application admission or doubled supplier response does
-not establish database compatibility.
+hosted fictional suppliers and existing authorized journeys. The demo already sets `HOSTED_DEMO=true`; there
+is no separate supplier activation flag. Keep this application composition local, unmerged and undeployed until
+matching payment and notification database declarations and generated migrations are in place and the required
+real database and Worker checks pass. Then merge and deploy the complete compatible application and database
+changes together. An unfinished composition could leave synthetic bookings stuck while the existing website
+continues to operate. Payment compatibility must include `admit_booking_refund` and
+`admit_booking_settlement`, plus the payment binding validators and effect constraints. Notification
+compatibility must include its matching binding checks and effect functions. Application admission or a doubled
+supplier response alone does not establish database compatibility.
 
 Admission requires the validated preview configuration with `HOSTED_DEMO=true` and the exact project
 `yvibcyqtyihpzpmomnzg` at `https://yvibcyqtyihpzpmomnzg.supabase.co`, as pinned in
