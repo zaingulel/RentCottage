@@ -25,26 +25,126 @@ Propose a seven-day native test-phone map validity window, five-minute Supabase 
 lifetime and one-hour Access session. Record different owner-approved durations before setup. Capture existing
 settings and rollback values privately before changing them: a Git revert cannot restore provider settings.
 
-### Prepare native admission and identities after approval
+### Apply the native migration chain after target approval
 
-1. Create the approved fresh Supabase database, storage and keys. Verify the exact target before applying the
-   existing migration chain and retain migration-history evidence. Import neither production data nor shared
-   local authentication fixtures. The local commands, public codes and fixtures later in this guide never
-   prepare the managed project.
-2. Bootstrap only a deny-all dedicated Worker until native Access and approved target pins exist. Use the
-   `demo` configuration in `wrangler.jsonc`, `APP_ENVIRONMENT=preview` and `HOSTED_DEMO=true`; populate
-   `src/config/hosted-demo-target.ts` only from the approved resource receipt. Its null value deliberately
-   refuses hosted access. Bind only that project's settings, fresh server-only secrets and the deployed commit.
-   Keep real supplier/production keys, custom domains and scheduled triggers absent; use no ordinary preview
-   deployment workflow.
-3. Configure [Worker-wide Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)
-   with a self-hosted `worker` destination, the exact approved Worker identity and native email one-time password
-   (OTP) sign-in. Allow only the approved individual emails, with no domain-wide allow, bypass or account-wide
-   policy. Pin the exact Worker origin, Supabase project reference, Access issuer and application audience.
-   `hosted-demo-worker.ts` validates admission before forwarding pages, assets and actions; retain Worker-first
-   asset routing, disabled preview URLs and no scheduled handler. Regenerate and verify the app/Worker after
-   code or actual pin changes before activation.
-4. Close signup and anonymous sign-in. Privately configure two synthetic phone numbers with independent random
+Create the approved fresh Supabase database, storage and keys. Verify the exact empty target and ordered
+filenames before applying the existing migration chain, then retain matching migration-history evidence.
+Import neither production data nor shared local authentication fixtures. The local commands, public codes
+and fixtures later in this guide never prepare the managed project.
+
+Use the locked command-line interface (CLI), version 2.114.0, and inspect installed help before execution.
+If linked migration access fails with `LegacyDbConfigIpv6Error`, stop repeating that connection. The native
+[temporary CLI login-role endpoint](https://supabase.com/docs/reference/api/v1-create-login-role) is the
+supported fallback, using the approved scoped operator token with `database_write` and `read_only:false`.
+Verify its returned role and the dashboard's actual Session pooler endpoint before use. Endpoint failure,
+missing permission or an unexpected target stops setup; do not widen token scopes or substitute per-file
+Management API migration submission.
+
+In an isolated operator environment, privately set `DEMO_DATABASE_URL` to the verified password-free Session
+pooler URL, shaped as `postgresql://<returned-role>.<project-ref>@<session-pooler-host>:5432/postgres`.
+Preserve the actual returned-role tenant username and connection settings. Supply the temporary password
+only through inherited `PGPASSWORD`; this installed CLI's `--db-url` path does not use `SUPABASE_DB_PASSWORD`.
+Omit the URL's password field entirely: an empty `user:@host` password or `?password=` suppresses `PGPASSWORD`.
+Exclude ambient passfiles and unrelated connection variables. Never put the password in command arguments,
+receipts or this guide, and keep connection output in private operator evidence.
+
+Before every migration command, export both overrides below. The first overrides the enabled TOML setting;
+the second disables the separately combined switch, preventing the optional Docker-backed catalog cache.
+Do not edit TOML, add a custom `SET ROLE` or run Docker. Stop before applying migrations if the supported
+no-Docker invocation cannot be established.
+
+```sh
+export SUPABASE_EXPERIMENTAL_PGDELTA_ENABLED=false
+export SUPABASE_EXPERIMENTAL_PG_DELTA=false
+node scripts/run-log.mjs demo hosted migration dry run -- node_modules/.bin/supabase db push --db-url "$DEMO_DATABASE_URL" --dry-run
+node scripts/run-log.mjs demo hosted migrations -- node_modules/.bin/supabase db push --db-url "$DEMO_DATABASE_URL"
+node scripts/run-log.mjs demo hosted migration history -- node_modules/.bin/supabase migration list --db-url "$DEMO_DATABASE_URL"
+```
+
+Run the [native dry-run](https://supabase.com/docs/reference/cli/supabase-db-push) first and compare every
+selected filename version before applying. A failed credential/connection or unexpected history stops the
+sequence. Require exact local/remote version parity afterward; do not reset, seed, change the database
+password or repair migration history.
+
+### Bootstrap a deny-all Worker
+
+Use reviewed merged source with null pins in `src/config/hosted-demo-target.ts`. Require an isolated shell
+without inherited production credentials or ignored environment files injecting hosted or real settings.
+Build the existing entrypoint's OpenNext dependency with only the harmless synthetic settings below.
+Export those same settings for the scan and local admission observation so they examine the actual build
+inputs. These are synthetic local build values, never managed-project credentials.
+
+```sh
+export APP_ENVIRONMENT=test
+export SUPABASE_PROJECT_REF=local-test
+export SUPABASE_URL=http://127.0.0.1:54331
+export SUPABASE_PUBLISHABLE_KEY=local-test-publishable
+export SUPABASE_SECRET_KEY=local-test-secret
+export PRIVILEGED_AUDIT_HMAC_KEY=local-test-audit-key-with-at-least-32-characters
+export DEPLOYMENT_COMMIT="$(git rev-parse HEAD)"
+node scripts/run-log.mjs demo bootstrap build -- env -u HOSTED_DEMO npm run build:worker -- --env demo
+node scripts/run-log.mjs demo bootstrap client secrets -- npm run scan:client-secrets
+node scripts/run-log.mjs demo bootstrap bundle -- npx wrangler deploy --env demo --dry-run
+```
+
+The Next.js build receives synthetic `APP_ENVIRONMENT=test` with `HOSTED_DEMO` removed. The selected `demo`
+Wrangler configuration independently embeds Worker-first assets and supplies runtime `APP_ENVIRONMENT=preview`
+and `HOSTED_DEMO=true`. Null pins deliberately deny before forwarding. Use no generated stub, alternate
+entrypoint or build bypass. A compilation or scan failure stops setup.
+
+With those same synthetic exports, the existing native admission observer starts only a local Worker:
+
+```sh
+node scripts/run-log.mjs demo bootstrap admission -- env PLAYWRIGHT_SERVER=worker npx playwright test tests/worker-smoke.spec.ts --project=worker --config=playwright.worker-prebuilt.config.ts --grep '^worker worker-smoke\.spec\.ts hosted demo admission rejects unauthenticated asset and action requests$' --retries=0
+```
+
+Before upload, verify the null-pin entrypoint, Worker-first assets and absent schedule. Only after exact
+Worker creation/deployment approval, upload the denied artifact:
+
+```sh
+node scripts/run-log.mjs demo bootstrap deploy -- npx wrangler deploy --env demo --var "DEPLOYMENT_COMMIT:$DEPLOYMENT_COMMIT"
+```
+
+Retain the returned denied Worker version for rollback. Before configuring Access, actual hosted page,
+real asset and action requests must return nonblank `403` responses with `Cache-Control: no-store`.
+A forwarding response stops setup. Keep real supplier/production keys and scheduled triggers absent; use
+no ordinary preview deployment workflow. This synthetic artifact can never be reused as the admitted app.
+
+### Configure native admission and the approved dedicated domain
+
+Configure [Worker-wide Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)
+with a self-hosted `worker` destination, the exact approved bootstrap Worker identity and native email
+one-time password (OTP) sign-in. Allow only the two approved individual emails, with no domain-wide allow,
+bypass or account-wide policy. Read back the exact Access issuer, application audience and session lifetime.
+Use signed-in dashboard authority for Access and Domain Name System (DNS) settings; approved Wrangler scopes
+do not authorize scope expansion.
+
+Use only the owner-approved isolated hostname, represented here as `https://<approved-demo-host>`.
+Hostname approval does not authorize a nameserver transition or replacing the apex service. For a
+[full-zone transition](https://developers.cloudflare.com/dns/zone-setups/full-setup/setup/), prepare the
+Cloudflare zone from the complete Porkbun record export. Preserve the wildcard, exact mail-exchanger (MX)
+priorities/targets, Sender Policy Framework (SPF) and both Automated Certificate Management Environment (ACME)
+TXT values. Convert the apex ALIAS to an equivalent flattened apex CNAME and preserve DNS-only behavior for
+existing records. An automatic scan alone is insufficient.
+
+Present the actual assigned Cloudflare nameservers, complete record comparison, rollback nameservers and any
+mail-forwarding dependency before switching Porkbun delegation. Require separate exact-transition approval;
+missing provider support for mail continuity stops the switch. After approved delegation, active-zone
+readback and certificate readiness, attach only the approved demo hostname to the still-denied Worker using
+the dashboard-managed [Custom Domain](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/).
+Do not silently replace an existing exact-host CNAME or add source routing configuration. Native Access
+protects every Worker hostname; source will admit only the canonical hostname. Keep preview URLs disabled.
+
+Populate `src/config/hosted-demo-target.ts` only from the independently verified approved resource receipt:
+canonical origin, Supabase project reference, Access issuer and application audience. Complete the named
+actual-pin test, independent/security review and source-delivery gates, then merge before building or
+deploying an admitted app. `hosted-demo-worker.ts` validates admission before forwarding pages, assets and
+actions; retain Worker-first asset routing and no scheduled handler. If dashboard routing changes during
+deployment, preserve denial and reconcile only the approved exact route.
+
+### Prepare native identities
+
+1. Close signup and anonymous sign-in. Privately configure two synthetic phone numbers with independent random
    codes and finite native test-map expiry, retaining native phone/request verification rate limits and their
    actual settings. Keep Short Message Service (SMS) supplier credentials and hooks absent. The
    [managed Auth configuration](https://supabase.com/docs/reference/api/v1-update-auth-service-config) names
@@ -52,23 +152,30 @@ settings and rollback values privately before changing them: a Git revert cannot
    [local phone configuration](https://supabase.com/docs/guides/auth/phone-login). Prefer the signed-in dashboard.
    If expiry requires the Management API, use a narrowly scoped operator token after approval, never an
    application binding.
-5. Pre-create only approved native users through server-only administrator authority. Each tester signs into
+2. Pre-create only approved native users through server-only administrator authority. Each tester signs into
    their marketplace identity, explicitly enrolls as Cottage Owner and receives approval through the current
    application/review transitions with minimum synthetic evidence. Customer capability, Owner approval and
    PostgreSQL role/Row Level Security (RLS) contracts stay intact. This prepares minimum personas; scenario and
    catalog preparation are separate work.
-6. Establish possession of each tester's separate personal administrator email before explicitly provisioning
+3. Establish possession of each tester's separate personal administrator email before explicitly provisioning
    that identity. Privately hand off its password and have that person enroll their own authenticator for
    Multi-Factor Authentication (MFA). Access admission grants no marketplace role. There is no shared
    administrator, code-derived administrator or automatic grant from Access.
 
 The hosted phone flow is invitation-only simulated identity and verification. A provider accepting an OTP
 request is not proof of SMS delivery. Preserve the persistent disclosure and unavailable real-supplier states;
-the local paid-booking recording does not establish hosted payment availability.
+the local paid-booking recording does not establish hosted payment availability. Synthetic numbers must match
+`+964` followed by ten digits; they are not reserved numbers. Never reuse local fixture identities/codes or
+change country validation. A request for live SMS credentials stops setup. Each tester enrolls their own
+authenticator; the operator never enrolls it on their behalf.
 
-Before the final hosted build and deployment, require the reviewed committed tree, approved dedicated target
+### Build the final admitted app from merged source
+
+Before the final hosted build and deployment, require the reviewed merged tree, approved dedicated target
 and inspected matching demo Supabase bindings and secrets. Supply the approved preview/demo settings and that
-project's credentials to the build environment through the existing private setup. Confirm the existing remote
+project's credentials to a clean build environment through the existing private setup, with
+`APP_ENVIRONMENT=preview` and `HOSTED_DEMO=true`. Discard the bootstrap exports and artifact. Read back the
+project bindings, secret custody, Access policy, custom domain and expiry settings. Confirm the existing remote
 settings belong to that exact dedicated project before retaining them; never borrow preview or production
 settings. Only after the required provider approvals, run:
 
@@ -120,7 +227,10 @@ behavior. Mocks and local tests cannot replace managed provider observations. Be
 `node scripts/run-log.mjs demo hosted full verification -- npm run verify -- --full`, the existing client-secret scan,
 documentation lint, fresh independent/security review and explicit authentication sign-off. Hosted activation
 remains incomplete until actual-resource receipts, no-send/expiry proof, direct-access denial evidence,
-required identities and approvals are available.
+required identities and approvals are available. If Docker is prohibited, do not run it for these checks.
+The coordinator must establish permitted receipt reuse under the existing rules or report final activation
+blocked by the no-Docker restriction, preserving the denied Worker. Target creation, source merge and hosted
+continuous integration do not replace the full-local activation gate.
 
 ### Revoke, recover and roll back
 
@@ -134,7 +244,7 @@ resetting/re-enrolling their authenticator through native administrator controls
 review the incident and recovery.
 
 Roll deployment back to a known deny-all version, keep Access in place and remove demo secrets from active
-bindings. Restore captured provider settings where appropriate and preserve needed synthetic evidence. Project
+bindings. Restore only approved captured provider/DNS settings and preserve needed synthetic evidence. Project
 deletion or reset requires separate exact-target approval.
 
 ## Local rehearsal and recording
