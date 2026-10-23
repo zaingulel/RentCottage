@@ -268,6 +268,7 @@ try {
     "Capacity cases must preserve every retained shared-owner profile and immutable submitted source.",
   );
   harness.markTimingPhase("setup");
+  let admissionProfileId;
   const runtimeControl = JSON.parse(
     harness.runSql(`
     select to_jsonb(control) from public.cottage_translation_runtime_control control where singleton;
@@ -685,6 +686,8 @@ try {
         `${name}: observed PostgreSQL Lock wait; ${expectedState ?? "both transitions committed"}; current publication retains visible media and explicit restoration succeeds.`,
       );
     }
+
+    admissionProfileId = fixture.profileId;
   } finally {
     harness.markTimingPhase("cleanup");
     harness.runSql(`
@@ -724,6 +727,262 @@ try {
       runtimeControl,
     );
   }
+  harness.markTimingPhase("setup");
+  const admissionControlsSql = `
+    select jsonb_build_object(
+      'production', (select to_jsonb(control) from public.cottage_translation_runtime_control control where singleton),
+      'demo', (select to_jsonb(control) from public.cottage_demo_translation_control control where singleton)
+    );
+  `;
+  const admissionControls = JSON.parse(harness.runSql(admissionControlsSql));
+  assert.ok(admissionControls.production);
+  assert.equal(
+    admissionControls.demo?.environment,
+    "hosted-demo-yvibcyqtyihpzpmomnzg",
+  );
+  const admissionSessions = [];
+  const admissionSessionNames = [];
+  let admissionSchedules = 0;
+  try {
+    const admissionCycleId = JSON.parse(
+      harness
+        .runSql(
+          `
+      begin;
+      update public.cottage_translation_runtime_control set production_ready=false where singleton;
+      update public.cottage_demo_translation_control set enabled=true where singleton;
+      set local role authenticated;
+      ${claims(raceOwnerUserId, "aal1")}
+      select public.submit_cottage_profile_for_content_approval(
+        '${admissionProfileId}', (select version from public.owner_application_cottage_profiles where id='${admissionProfileId}')
+      );
+      reset role;
+      select to_jsonb(id) from public.cottage_profile_review_cycles
+        where profile_id='${admissionProfileId}' and state='in_review';
+      commit;
+    `,
+        )
+        .split("\n")
+        .at(-1),
+    );
+    assert.match(admissionCycleId, /^[0-9a-f-]{36}$/);
+    const serviceClaims = `
+      set local role service_role;
+      select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+    `;
+    const admissionFacts = () =>
+      JSON.parse(
+        harness.runSql(`
+      select jsonb_build_object(
+        'profile', (select to_jsonb(profile) from public.owner_application_cottage_profiles profile where id='${admissionProfileId}'),
+        'cycle', (select to_jsonb(cycle) from public.cottage_profile_review_cycles cycle where id='${admissionCycleId}'),
+        'attempts', coalesce((select jsonb_agg(to_jsonb(attempt) order by id) from public.cottage_profile_translation_attempts attempt where review_cycle_id='${admissionCycleId}'), '[]'::jsonb),
+        'heads', coalesce((select jsonb_agg(to_jsonb(head) order by locale) from public.cottage_profile_localized_heads head where review_cycle_id='${admissionCycleId}'), '[]'::jsonb),
+        'revisions', coalesce((select jsonb_agg(to_jsonb(revision) order by id) from public.cottage_profile_localized_revisions revision where review_cycle_id='${admissionCycleId}'), '[]'::jsonb),
+        'localizedDecisions', coalesce((select jsonb_agg(to_jsonb(decision) order by id) from public.cottage_profile_localized_decisions decision where review_cycle_id='${admissionCycleId}'), '[]'::jsonb),
+        'publicationDecisions', coalesce((select jsonb_agg(to_jsonb(decision) order by id) from public.cottage_profile_publication_decisions decision where review_cycle_id='${admissionCycleId}'), '[]'::jsonb),
+        'publications', coalesce((select jsonb_agg(to_jsonb(publication) order by id) from public.cottage_publication_snapshots publication where profile_id='${admissionProfileId}'), '[]'::jsonb),
+        'publishedLocalizations', coalesce((select jsonb_agg(to_jsonb(localization) order by publication_id, locale)
+          from public.cottage_publication_localizations localization join public.cottage_publication_snapshots publication on publication.id=localization.publication_id
+          where publication.profile_id='${admissionProfileId}'), '[]'::jsonb),
+        'publishedMedia', coalesce((select jsonb_agg(to_jsonb(media) order by publication_id, position)
+          from public.cottage_publication_media media join public.cottage_publication_snapshots publication on publication.id=media.publication_id
+          where publication.profile_id='${admissionProfileId}'), '[]'::jsonb)
+      );
+    `),
+      );
+    let leasedAttempt;
+    for (const writer of ["begin", "complete", "publish"]) {
+      harness.markTimingPhase("setup");
+      harness.runSql(
+        "update public.cottage_demo_translation_control set enabled=true where singleton;",
+      );
+      if (writer === "complete") {
+        leasedAttempt = JSON.parse(
+          harness
+            .runSql(
+              `
+          begin;
+          ${serviceClaims}
+          select to_jsonb(public.begin_cottage_profile_translation_execution(
+            '${admissionCycleId}', 'ar', 'ordinary', 50000
+          ));
+          commit;
+        `,
+            )
+            .split("\n")
+            .at(-1),
+        );
+        assert.equal(leasedAttempt.state, "pending");
+        assert.equal(
+          leasedAttempt.translation_environment,
+          "hosted-demo-yvibcyqtyihpzpmomnzg",
+        );
+      }
+      const completeArabic = leasedAttempt
+        ? `do $$ begin
+            if public.complete_cottage_profile_translation_execution(
+              '${leasedAttempt.id}', '${leasedAttempt.lease_token}', 'Fictional Arabic sample', 'Fictional Arabic rules',
+              'fictional-cottage-translations', 'catalog-v1', 'none', 'fictional-cottage-catalog-v1'
+            ) is distinct from true then raise exception 'Committed leased completion must succeed'; end if;
+          end $$;`
+        : "";
+      if (writer === "publish") {
+        harness.runSql(`
+          begin;
+          ${serviceClaims}
+          ${completeArabic}
+          do $$
+          declare attempt public.cottage_profile_translation_attempts;
+          begin
+            attempt := public.begin_cottage_profile_translation_execution('${admissionCycleId}', 'ckb', 'ordinary', 50000);
+            if public.complete_cottage_profile_translation_execution(
+              attempt.id, attempt.lease_token, 'Fictional Sorani sample', 'Fictional Sorani rules',
+              'fictional-cottage-translations', 'catalog-v1', 'none', 'fictional-cottage-catalog-v1'
+            ) is distinct from true then raise exception 'Sorani preparation must succeed'; end if;
+          end $$;
+          set local role authenticated;
+          ${claims(administratorUserId, "aal2")}
+          select public.decide_cottage_profile_localization('${admissionCycleId}', locale, true, 'Reviewed fictional concurrency sample')
+            from unnest(array['en','ar','ckb']::public.cottage_profile_source_language[]) locale;
+          commit;
+        `);
+      }
+      const writeSql =
+        writer === "begin"
+          ? `${serviceClaims}
+            select public.begin_cottage_profile_translation_execution('${admissionCycleId}', 'ar', 'ordinary', 50000);`
+          : writer === "complete"
+            ? `${serviceClaims} ${completeArabic}`
+            : `set local role authenticated;
+              ${claims(administratorUserId, "aal2")}
+              select public.approve_cottage_profile_publication('${admissionCycleId}', 'Reviewed fictional concurrency publication');`;
+      const baseline = admissionFacts();
+      if (writer === "complete") {
+        assert.equal(baseline.attempts.length, 1);
+        assert.equal(baseline.attempts[0].state, "pending");
+        assert.equal(baseline.heads.length, 1);
+      }
+      if (writer === "publish") {
+        assert.equal(baseline.heads.length, 3);
+        assert.equal(baseline.localizedDecisions.length, 3);
+        assert.equal(baseline.cycle.state, "in_review");
+        assert.equal(
+          harness.runSql(`
+            select count(*) from public.cottage_profile_review_photos reviewed
+            join public.cottage_profile_photos photo on photo.id=reviewed.photo_id
+            where reviewed.review_cycle_id='${admissionCycleId}' and photo.state='ready' and not photo.public_hidden;
+          `),
+          "1",
+        );
+      }
+      for (const writerFirst of [true, false]) {
+        harness.markTimingPhase("setup");
+        harness.runSql(
+          "update public.cottage_demo_translation_control set enabled=true where singleton;",
+        );
+        const name = `admission-${writer}-${writerFirst ? "writer-first" : "revocation-first"}`;
+        const holderName = `${name}-holder`;
+        const waiterName = `${name}-waiter`;
+        admissionSessionNames.push(holderName, waiterName);
+        const revokeSql =
+          "update public.cottage_demo_translation_control set enabled=false where singleton;";
+        harness.markTimingPhase("execution");
+        const holder = harness.startSession(`
+          begin;
+          select set_config('application_name', '${holderName}', false);
+          ${writerFirst ? writeSql : revokeSql}
+          select 'ADMISSION_HOLDER_PID=' || pg_backend_pid();
+          select '${name}-ready';
+        `);
+        admissionSessions.push(holder);
+        let waiter;
+        try {
+          await harness.waitForMarker(holder, `${name}-ready`);
+          const holderPid = Number(
+            holder.stdout
+              .split("\n")
+              .find((line) => line.startsWith("ADMISSION_HOLDER_PID="))
+              ?.slice("ADMISSION_HOLDER_PID=".length),
+          );
+          assert.ok(Number.isInteger(holderPid) && holderPid > 0);
+          waiter = harness.startSession(
+            `begin;
+            select set_config('application_name', '${waiterName}', false);
+            ${writerFirst ? revokeSql : writeSql}
+            commit;`,
+            true,
+          );
+          admissionSessions.push(waiter);
+          await harness.waitForLock(waiterName, waiter);
+          const waiting = JSON.parse(
+            harness.runSql(`
+              select jsonb_build_object('pid', pid, 'blockers', pg_blocking_pids(pid))
+              from pg_catalog.pg_stat_activity
+              where application_name='${waiterName}' and wait_event_type='Lock';
+            `),
+          );
+          assert.deepEqual(waiting.blockers, [holderPid]);
+          await harness.finishSession(holder, {
+            action: writerFirst ? "rollback" : "commit",
+          });
+          await harness.finishSession(
+            waiter,
+            writerFirst ? undefined : { expectedState: "RC246" },
+          );
+          assert.deepEqual(admissionFacts(), baseline);
+          assert.equal(
+            harness.runSql("select public.cottage_translation_runtime_mode();"),
+            "unavailable",
+          );
+          admissionSchedules += 1;
+          console.log(
+            `${name}: waiter ${waiting.pid} blocked by owning session ${holderPid}; ${writerFirst ? "writer rolled back, revocation committed" : "revocation committed, writer refused RC246"}; durable attempts, heads and publications unchanged.`,
+          );
+        } catch (error) {
+          await harness.cleanUpOwnedSession(holder, error);
+          if (waiter) await harness.cleanUpOwnedSession(waiter, error);
+          throw error;
+        }
+      }
+    }
+    assert.equal(admissionSchedules, 6);
+    console.log(
+      `admission changes serialize with translation and publication writers: ${admissionSchedules}/6 forced interleavings passed.`,
+    );
+  } finally {
+    harness.markTimingPhase("cleanup");
+    assert.ok(admissionSessions.every((session) => session.exit));
+    if (admissionSessionNames.length) {
+      assert.equal(
+        harness.runSql(`
+          select count(*) from pg_catalog.pg_stat_activity
+          where application_name=any(array[${admissionSessionNames.map((name) => `'${name}'`).join(",")}]);
+        `),
+        "0",
+        "Owned admission sessions must finish before runtime controls are restored.",
+      );
+    }
+    const restoreControls = [
+      ["cottage_translation_runtime_control", admissionControls.production],
+      ["cottage_demo_translation_control", admissionControls.demo],
+    ].map(([table, control]) => {
+      const columns = Object.keys(control)
+        .filter((column) => column !== "singleton")
+        .map((column) => `"${column}"`)
+        .join(", ");
+      return `update public.${table} set (${columns}) = (
+        select ${columns} from jsonb_populate_record(null::public.${table},
+          '${JSON.stringify(control).replaceAll("'", "''")}'::jsonb)
+      ) where singleton;`;
+    });
+    harness.runSql(`begin; ${restoreControls.join("\n")} commit;`);
+    assert.deepEqual(
+      JSON.parse(harness.runSql(admissionControlsSql)),
+      admissionControls,
+    );
+  }
+
   for (const operation of ["update", "submit"]) {
     harness.markTimingPhase("setup");
     const suspensionCommandId = randomUUID();

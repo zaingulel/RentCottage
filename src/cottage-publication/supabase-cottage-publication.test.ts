@@ -6,6 +6,25 @@ import { SupabaseCottagePublicationRepository } from "./supabase-cottage-publica
 const profileId = "70000000-0000-4000-8000-000000000024";
 const cycleId = "20000000-0000-4000-8000-000000000024";
 const revisionId = "30000000-0000-4000-8000-000000000024";
+const ordinaryProvenance = {
+  provider: "openai",
+  model: "ordinary-model",
+  effort: "none",
+  prompt_version: "ordinary-v1",
+};
+const fictionalProvenance = {
+  provider: "fictional-cottage-translations",
+  model: "catalog-v1",
+  effort: "none",
+  prompt_version: "fictional-cottage-catalog-v1",
+};
+const noProvenance = {
+  provider: null,
+  model: null,
+  effort: null,
+  prompt_version: null,
+};
+const environment = "hosted-demo-yvibcyqtyihpzpmomnzg";
 
 function result(data: unknown) {
   return Promise.resolve({ data, error: null });
@@ -34,6 +53,8 @@ function repositoryWith({
       id: revisionId,
       locale: "en",
       origin: "owner_source",
+      translation_environment: null,
+      ...noProvenance,
       description: "Description",
       house_rules: "Rules",
     },
@@ -48,7 +69,7 @@ function repositoryWith({
   attempts = [],
   humanReviews = [],
   qualityReports = [],
-  control = { production_ready: false },
+  mode = "unavailable",
 }: {
   cycle?: unknown;
   source?: unknown;
@@ -58,9 +79,14 @@ function repositoryWith({
   attempts?: unknown;
   humanReviews?: unknown;
   qualityReports?: unknown;
-  control?: unknown;
+  mode?: unknown;
 } = {}) {
   const client = {
+    rpc: vi.fn((name: string) => {
+      if (name !== "cottage_translation_runtime_mode")
+        throw new Error(`Unexpected RPC ${name}`);
+      return result(mode);
+    }),
     from: vi.fn((table: string) => {
       if (table === "cottage_profile_review_cycles") {
         return {
@@ -101,13 +127,6 @@ function repositoryWith({
           })),
         };
       }
-      if (table === "cottage_translation_runtime_control") {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({ single: vi.fn(() => result(control)) })),
-          })),
-        };
-      }
       if (table === "cottage_profile_translation_attempts") {
         return {
           select: vi.fn(() => ({
@@ -138,6 +157,179 @@ function repositoryWith({
 }
 
 describe("Supabase Cottage publication adapter", () => {
+  it.each(["production", "fictional", "unavailable"])(
+    "reads %s publication admission through the privileged mode RPC",
+    async (mode) => {
+      expect(
+        await repositoryWith({ mode }).loadCurrentReview(profileId),
+      ).toMatchObject({ publicationMode: mode });
+    },
+  );
+
+  it.each(["generated", "administrator_correction"])(
+    "preserves fictional provenance for a %s remediation head independently of runtime admission",
+    async (origin) => {
+      for (const mode of ["production", "fictional", "unavailable"]) {
+        const review = await repositoryWith({
+          mode,
+          revisions: [
+            {
+              id: revisionId,
+              locale: "ar",
+              origin,
+              description: "Fictional sample",
+              house_rules: "Fictional rules",
+              translation_environment: environment,
+              ...(origin === "generated" ? fictionalProvenance : noProvenance),
+            },
+          ],
+          qualityReports: [
+            { locale: "ar", reason: "Sample correction requested" },
+          ],
+        }).loadCurrentReview(profileId);
+        expect(review?.localizations[1]).toMatchObject({
+          origin,
+          translationEnvironment: environment,
+          qualityReportReason: "Sample correction requested",
+        });
+      }
+    },
+  );
+
+  it.each([
+    ["missing marker", { translation_environment: undefined }],
+    ["unknown marker", { translation_environment: "other-demo" }],
+    [
+      "owner source marked fictional",
+      { origin: "owner_source", ...noProvenance },
+    ],
+    ["fictional generated with ordinary tuple", ordinaryProvenance],
+    ["unmarked reserved tuple", { translation_environment: null }],
+    ["correction with generated tuple", { origin: "administrator_correction" }],
+    [
+      "generated without provenance",
+      { translation_environment: null, ...noProvenance },
+    ],
+  ])(
+    "rejects %s before rendering even a human-review fallback",
+    async (_name, change) => {
+      await expect(
+        repositoryWith({
+          revisions: [
+            {
+              id: revisionId,
+              locale: "ar",
+              origin: "generated",
+              description: "Sample",
+              house_rules: "Rules",
+              translation_environment: environment,
+              ...fictionalProvenance,
+              ...change,
+            },
+          ],
+          humanReviews: [{ locale: "ar", state: "active" }],
+        }).loadCurrentReview(profileId),
+      ).rejects.toThrow("invalid-provider-data");
+    },
+  );
+
+  it("retains a fictional marker when human review shows the original source", async () => {
+    const review = await repositoryWith({
+      revisions: [
+        {
+          id: revisionId,
+          locale: "ar",
+          origin: "generated",
+          description: "Sample",
+          house_rules: "Rules",
+          translation_environment: environment,
+          ...fictionalProvenance,
+        },
+      ],
+      humanReviews: [{ locale: "ar", state: "active" }],
+    }).loadCurrentReview(profileId);
+    expect(review?.localizations[1]).toMatchObject({
+      origin: "source_fallback",
+      description: "Description",
+      translationEnvironment: environment,
+      humanReviewRequired: true,
+    });
+  });
+
+  it("retains actual production readiness while admitting fictional administration and rejects corrupt mode combinations", async () => {
+    const administration = {
+      productionReady: false,
+      publicationMode: "fictional",
+      providerTermsApproved: false,
+      nativeReviewApproved: false,
+      qualityThresholdApproved: false,
+      ordinaryModel: null,
+      ordinaryEffort: null,
+      strongerModel: null,
+      strongerEffort: null,
+      judgeModel: null,
+      judgeEffort: null,
+      monthlyRequestLimit: null,
+      monthlyTokenLimit: null,
+      monthlySpendMicrousdLimit: null,
+      monthRequests: 0,
+      monthReservedTokens: 0,
+      monthReservedMicrousd: 0,
+      monthActualMicrousd: 0,
+      qualityReportCount: 0,
+    };
+    const rpc = vi
+      .fn()
+      .mockResolvedValue({ data: administration, error: null });
+    const client = { rpc } as unknown as SupabaseClient;
+    const repository = new SupabaseCottagePublicationRepository(client, client);
+    expect(await repository.loadTranslationAdministration()).toMatchObject({
+      productionReady: false,
+      publicationMode: "fictional",
+    });
+    for (const change of [
+      { publicationMode: undefined },
+      { publicationMode: "unknown" },
+      { productionReady: true },
+      { publicationMode: "production", productionReady: false },
+    ]) {
+      rpc.mockResolvedValueOnce({
+        data: { ...administration, ...change },
+        error: null,
+      });
+      await expect(repository.loadTranslationAdministration()).rejects.toThrow(
+        "invalid-provider-data",
+      );
+    }
+  });
+
+  it("allows ordinary provenance sharing individual reserved values without claiming fictional evidence", async () => {
+    for (const provenance of [
+      ordinaryProvenance,
+      { ...ordinaryProvenance, provider: "fictional-cottage-translations" },
+      { ...ordinaryProvenance, model: "catalog-v1" },
+      { ...ordinaryProvenance, prompt_version: "fictional-cottage-catalog-v1" },
+    ]) {
+      const review = await repositoryWith({
+        revisions: [
+          {
+            id: revisionId,
+            locale: "ar",
+            origin: "generated",
+            description: "Ordinary draft",
+            house_rules: "Rules",
+            translation_environment: null,
+            ...provenance,
+          },
+        ],
+      }).loadCurrentReview(profileId);
+      expect(review?.localizations[1]).toMatchObject({
+        origin: "generated",
+        translationEnvironment: null,
+      });
+    }
+  });
+
   it("returns originals for failed and human-routed targets while retaining source language", async () => {
     const arabicRevisionId = "30000000-0000-4000-8000-000000000025";
     const review = await repositoryWith({
@@ -156,6 +348,8 @@ describe("Supabase Cottage publication adapter", () => {
           id: revisionId,
           locale: "en",
           origin: "owner_source",
+          translation_environment: null,
+          ...noProvenance,
           description: "Original description",
           house_rules: "Original rules",
         },
@@ -163,6 +357,8 @@ describe("Supabase Cottage publication adapter", () => {
           id: arabicRevisionId,
           locale: "ar",
           origin: "generated",
+          translation_environment: null,
+          ...ordinaryProvenance,
           description: "Generated Arabic",
           house_rules: "Generated rules",
         },
@@ -357,8 +553,8 @@ describe("Supabase Cottage publication adapter", () => {
     ["localized heads", { heads: {} }],
     ["localized revisions", { revisions: {} }],
     ["localized decisions", { decisions: {} }],
-    ["runtime control", { control: {} }],
-    ["runtime readiness", { control: { production_ready: "false" } }],
+    ["runtime mode", { mode: {} }],
+    ["unknown runtime mode", { mode: "ready" }],
     [
       "decision approval",
       {
@@ -379,6 +575,8 @@ describe("Supabase Cottage publication adapter", () => {
             id: revisionId,
             locale: "en",
             origin: "owner_source",
+            translation_environment: null,
+            ...noProvenance,
             description: "Description",
           },
         ],

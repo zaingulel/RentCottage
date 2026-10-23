@@ -6,6 +6,65 @@ import {
 } from "./server-environment";
 
 describe("server environment", () => {
+  it("accepts a canonical initial-capture selector only on the exact hosted demo and keeps it server-only", () => {
+    const source = {
+      APP_ENVIRONMENT: "preview",
+      HOSTED_DEMO: "true",
+      SUPABASE_PROJECT_REF: "yvibcyqtyihpzpmomnzg",
+      SUPABASE_URL: "https://yvibcyqtyihpzpmomnzg.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "fixture-publishable",
+      SUPABASE_SECRET_KEY: "fixture-secret",
+      PRIVILEGED_AUDIT_HMAC_KEY:
+        "fixture-audit-key-with-at-least-32-characters",
+      DEPLOYMENT_COMMIT: "c".repeat(40),
+      HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID:
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    };
+    expect(readServerEnvironment(source)).toHaveProperty(
+      "failedInitialCaptureLifecycleId",
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    );
+    const publicEnvironment = readPublicSupabaseEnvironment(source);
+    expect(publicEnvironment).not.toHaveProperty(
+      "failedInitialCaptureLifecycleId",
+    );
+    expect(publicEnvironment).not.toHaveProperty(
+      "HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID",
+    );
+    expect(
+      readServerEnvironment({
+        ...source,
+        HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID: undefined,
+      }),
+    ).not.toHaveProperty("failedInitialCaptureLifecycleId");
+    for (const selector of [
+      "",
+      "not-a-uuid",
+      "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+      " aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\n",
+    ]) {
+      expect(() =>
+        readServerEnvironment({
+          ...source,
+          HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID: selector,
+        }),
+      ).toThrow(/HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID/);
+    }
+    for (const patch of [
+      { HOSTED_DEMO: undefined },
+      {
+        APP_ENVIRONMENT: "test",
+        HOSTED_DEMO: undefined,
+        SUPABASE_PROJECT_REF: "local-test",
+        SUPABASE_URL: "http://127.0.0.1:54331",
+      },
+    ]) {
+      expect(() => readServerEnvironment({ ...source, ...patch })).toThrow(
+        /HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID/,
+      );
+    }
+  });
   it("hosted demo refuses unpinned malformed and mismatched configuration", async () => {
     const target = {
       workerOrigin: "https://invited-demo.example.workers.dev",

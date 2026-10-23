@@ -21,6 +21,7 @@ import {
 } from "./cottage-publication";
 import { SupabaseCottagePublicationMediaAdapter } from "./supabase-cottage-publication-media";
 import { SupabaseCottagePublicationRepository } from "./supabase-cottage-publication";
+import { fictionalCottageTranslator } from "./fictional-cottage-translator";
 
 let privilegedClient: ReturnType<typeof createClient> | null = null;
 
@@ -53,25 +54,27 @@ export async function createRequestCottagePublication() {
 
 export async function createRequestCottageTranslation() {
   const repository = await createRequestCottagePublication();
-  const configuration: TranslationRuntimeConfiguration = getServerEnvironment()
-    .hostedDemo
+  const environment = getServerEnvironment();
+  const configuration: TranslationRuntimeConfiguration = environment.hostedDemo
     ? { enabled: false, code: "configuration_unavailable" }
     : readTranslationConfiguration(process.env);
-  const translator = configuration.enabled
-    ? createCottagePublicationTranslator(
-        createTranslationService({
-          configuration,
-          adapter: createOpenAIResponsesTranslationAdapter({
-            apiKey: configuration.apiKey,
-            timeoutMilliseconds: configuration.limits.timeoutMilliseconds,
-          }),
-          store: new SupabaseTranslationStore(
-            getCottagePublicationPrivilegedClient(),
+  const translator = environment.hostedDemo
+    ? fictionalCottageTranslator
+    : configuration.enabled
+      ? createCottagePublicationTranslator(
+          createTranslationService({
             configuration,
-          ),
-        }),
-      )
-    : productionTranslationUnavailable;
+            adapter: createOpenAIResponsesTranslationAdapter({
+              apiKey: configuration.apiKey,
+              timeoutMilliseconds: configuration.limits.timeoutMilliseconds,
+            }),
+            store: new SupabaseTranslationStore(
+              getCottagePublicationPrivilegedClient(),
+              configuration,
+            ),
+          }),
+        )
+      : productionTranslationUnavailable;
   const leaseDurationMilliseconds = configuration.enabled
     ? translationExecutionLeaseMilliseconds(
         configuration.limits.maximumAttempts,

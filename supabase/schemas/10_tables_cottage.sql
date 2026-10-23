@@ -91,6 +91,13 @@ CREATE TABLE IF NOT EXISTS "public"."cottage_profile_translation_attempts" (
     "route" "text" DEFAULT 'ordinary'::"text" NOT NULL,
     "lease_token" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "lease_expires_at" timestamp with time zone DEFAULT ("now"() + '00:05:00'::interval) NOT NULL,
+    "translation_environment" "text",
+    CONSTRAINT "cottage_profile_translation_attempt_environment" CHECK (translation_environment is null or translation_environment = 'hosted-demo-yvibcyqtyihpzpmomnzg'),
+    CONSTRAINT "cottage_profile_translation_attempt_provenance" CHECK (
+      (provider is null and model is null and effort is null and prompt_version is null)
+      or coalesce((translation_environment is null and not (provider = 'fictional-cottage-translations' and model = 'catalog-v1' and effort = 'none' and prompt_version = 'fictional-cottage-catalog-v1'))
+        or (translation_environment = 'hosted-demo-yvibcyqtyihpzpmomnzg' and provider = 'fictional-cottage-translations' and model = 'catalog-v1' and effort = 'none' and prompt_version = 'fictional-cottage-catalog-v1'), false)
+    ),
     CONSTRAINT "cottage_profile_translation_attempt_failure_code" CHECK ((("failure_code" IS NULL) OR ("failure_code" = ANY (ARRAY['adapter_unavailable'::"text", 'configuration_unavailable'::"text", 'unsupported_content'::"text", 'invalid_input'::"text", 'usage_limit_reached'::"text", 'provider_timeout'::"text", 'provider_unavailable'::"text", 'invalid_provider_response'::"text", 'cache_unavailable'::"text", 'usage_accounting_unavailable'::"text", 'provider_failure'::"text"])))),
     CONSTRAINT "cottage_profile_translation_attempt_outcome" CHECK (((("state" = 'pending'::"text") AND ("failure_code" IS NULL) AND ("provider" IS NULL) AND ("completed_at" IS NULL)) OR (("state" = 'completed'::"text") AND ("failure_code" IS NULL) AND ("provider" IS NOT NULL) AND ("model" IS NOT NULL) AND ("effort" IS NOT NULL) AND ("prompt_version" IS NOT NULL) AND ("completed_at" IS NOT NULL)) OR (("state" = 'failed'::"text") AND ("failure_code" IS NOT NULL) AND ("provider" IS NULL) AND ("completed_at" IS NOT NULL)) OR (("state" = 'superseded'::"text") AND ("failure_code" IS NULL) AND ("completed_at" IS NOT NULL)))),
     CONSTRAINT "cottage_profile_translation_attempts_attempt_number_check" CHECK (("attempt_number" >= 1)),
@@ -115,6 +122,15 @@ CREATE TABLE IF NOT EXISTS "public"."cottage_profile_localized_revisions" (
     "administrator_user_id" "uuid",
     "correction_reason" "text",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "translation_environment" "text",
+    CONSTRAINT "cottage_profile_localized_revision_environment" CHECK (translation_environment is null or translation_environment = 'hosted-demo-yvibcyqtyihpzpmomnzg'),
+    CONSTRAINT "cottage_profile_localized_revision_provenance" CHECK (
+      (origin = 'owner_source' and translation_environment is null)
+      or origin = 'administrator_correction'
+      or (origin = 'generated' and coalesce(
+        (translation_environment is null and not (provider = 'fictional-cottage-translations' and model = 'catalog-v1' and effort = 'none' and prompt_version = 'fictional-cottage-catalog-v1'))
+        or (translation_environment = 'hosted-demo-yvibcyqtyihpzpmomnzg' and provider = 'fictional-cottage-translations' and model = 'catalog-v1' and effort = 'none' and prompt_version = 'fictional-cottage-catalog-v1'), false))
+    ),
     CONSTRAINT "cottage_profile_localized_revision_origin" CHECK (((("origin" = 'owner_source'::"text") AND ("provider" IS NULL) AND ("model" IS NULL) AND ("effort" IS NULL) AND ("prompt_version" IS NULL) AND ("administrator_user_id" IS NULL) AND ("correction_reason" IS NULL)) OR (("origin" = 'generated'::"text") AND ("provider" IS NOT NULL) AND ("model" IS NOT NULL) AND ("effort" IS NOT NULL) AND ("prompt_version" IS NOT NULL) AND ("administrator_user_id" IS NULL) AND ("correction_reason" IS NULL)) OR (("origin" = 'administrator_correction'::"text") AND ("provider" IS NULL) AND ("model" IS NULL) AND ("effort" IS NULL) AND ("prompt_version" IS NULL) AND ("administrator_user_id" IS NOT NULL) AND (("char_length"("btrim"("correction_reason")) >= 1) AND ("char_length"("btrim"("correction_reason")) <= 1000))))),
     CONSTRAINT "cottage_profile_localized_revisions_description_check" CHECK ((("char_length"("description") >= 1) AND ("char_length"("description") <= 2000))),
     CONSTRAINT "cottage_profile_localized_revisions_house_rules_check" CHECK ((("char_length"("house_rules") >= 1) AND ("char_length"("house_rules") <= 1500))),
@@ -429,6 +445,17 @@ CREATE TABLE IF NOT EXISTS "public"."cottage_translation_cache" (
 );
 
 ALTER TABLE "public"."cottage_translation_cache" OWNER TO "postgres";
+
+CREATE TABLE IF NOT EXISTS "public"."cottage_demo_translation_control" (
+    "singleton" boolean DEFAULT true NOT NULL,
+    "environment" "text" DEFAULT 'hosted-demo-yvibcyqtyihpzpmomnzg'::"text" NOT NULL,
+    "enabled" boolean DEFAULT false NOT NULL,
+    CONSTRAINT "cottage_demo_translation_control_pkey" PRIMARY KEY ("singleton"),
+    CONSTRAINT "cottage_demo_translation_control_singleton" CHECK ("singleton"),
+    CONSTRAINT "cottage_demo_translation_control_environment" CHECK ("environment" = 'hosted-demo-yvibcyqtyihpzpmomnzg'::"text")
+);
+
+ALTER TABLE "public"."cottage_demo_translation_control" OWNER TO "postgres";
 
 CREATE TABLE IF NOT EXISTS "public"."cottage_translation_runtime_control" (
     "singleton" boolean DEFAULT true NOT NULL,

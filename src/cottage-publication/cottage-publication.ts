@@ -2,7 +2,11 @@ import type { TranslationFailureCode } from "@/translation/failure-code";
 
 export type LaunchLanguage = "ar" | "ckb" | "en";
 
+export const fictionalCottageTranslationEnvironment =
+  "hosted-demo-yvibcyqtyihpzpmomnzg";
+
 export interface CottageLocalizationReview {
+  translationEnvironment: typeof fictionalCottageTranslationEnvironment | null;
   locale: LaunchLanguage;
   contentLanguage?: LaunchLanguage;
   revisionId?: string;
@@ -19,15 +23,18 @@ export interface CottageLocalizationReview {
   qualityReportReason?: string;
 }
 
+export type CottagePublicationMode = "production" | "fictional" | "unavailable";
+
 export interface CottagePublicationReviewState {
   id: string;
   state: "in_review" | "approved" | "rejected";
-  productionReady: boolean;
+  publicationMode: CottagePublicationMode;
   sourceLanguage?: LaunchLanguage;
   localizations: CottageLocalizationReview[];
 }
 
 export interface CottageTranslationAdministration {
+  publicationMode: CottagePublicationMode;
   productionReady: boolean;
   providerTermsApproved: boolean;
   nativeReviewApproved: boolean;

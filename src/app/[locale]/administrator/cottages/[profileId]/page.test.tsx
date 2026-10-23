@@ -126,7 +126,7 @@ it("passes the AAL2 translation administration overview to the review surface", 
   const loadCurrentReview = vi.fn().mockResolvedValue({
     id: "cycle",
     state: "in_review",
-    productionReady: true,
+    publicationMode: "production",
     localizations: [],
   });
   const loadTranslationAdministration = vi

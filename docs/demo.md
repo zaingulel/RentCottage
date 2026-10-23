@@ -185,8 +185,9 @@ authenticator; the operator never enrolls it on their behalf.
 
 ### Fictional supplier compatibility and recovery
 
-The demo configuration sets `HOSTED_DEMO=true`; there is no separate supplier activation flag. Apply and verify
-matching database migrations before deploying the compatible application as one coordinated release, after the
+The demo configuration sets `HOSTED_DEMO=true` to select the fictional supplier composition. Cottage sample
+generation and publication also require the [database admission control](#admit-or-disable-fictional-cottage-publication).
+Apply and verify matching database migrations before deploying the compatible application as one coordinated release, after the
 required real database and Worker checks pass. An incompatible application and database combination could leave
 synthetic bookings stuck while the existing website continues to operate. Payment compatibility must include
 `admit_booking_refund` and
@@ -227,6 +228,318 @@ a fictional `delivered` result is not evidence that a person received a message.
 
 Scenario and catalog preparation belong to [#821](https://github.com/zaingulel/RentCottage/issues/821).
 Scheduling does not prepare those scenarios or remove the database compatibility and invitation gates.
+
+### Operate fictional workflow controls
+
+These procedures require the existing exact-target deployment, configuration and admission approvals. A manual,
+local proof or source merge grants none of them. Keep actual target readbacks, persona/record identifiers,
+command identities and observed outcomes in private operator evidence. Use the native provider controls and
+application screens below; never run local fixture preparation against the managed project.
+
+#### Admit or disable fictional cottage publication
+
+1. Verify the approved Worker origin is `https://demo.halabeekom.com`, its deployed commit is the reviewed
+   compatible application, and its bindings point to project `yvibcyqtyihpzpmomnzg` at
+   `https://yvibcyqtyihpzpmomnzg.supabase.co`. Verify the matching migration chain before admission. A mismatched
+   origin, commit, database or binding stops the operation.
+2. On that exact database, use native database-owner authority in one transaction. Lock the existing singleton
+   row in `public.cottage_translation_runtime_control` first, then the existing singleton row in
+   `public.cottage_demo_translation_control`, using `FOR UPDATE` in that order. Require exactly one row from
+   each, `singleton=true`, `production_ready=false` and demo environment `hosted-demo-yvibcyqtyihpzpmomnzg`.
+   Missing, malformed, mismatched or simultaneously enabled production/demo admission requires rollback and
+   a visible stop. Do not insert or repair a missing control or change production readiness.
+3. After authorized deployment/admission, change only the existing demo row's `enabled` value to `true`.
+   Require exactly one updated row. Read both controls and `public.cottage_translation_runtime_mode()` inside
+   the same transaction; require production readiness still false, the exact demo marker, enabled true and
+   mode `fictional` before committing. Retain the exact-target readback privately. Do not use a service-role
+   table update or grant browser access to either control.
+4. To disable fictional translation/publication, use the same exact-target transaction and production-then-demo
+   lock order, changing only `enabled` to `false`. Read back exactly one row per control, production readiness
+   false, demo disabled and mode `unavailable` before committing. Any failed check rolls back. Disabling does
+   not delete published content, cancel bookings or remove immutable provenance; use the
+   [compatible rollback procedure](#retain-compatible-readers-during-rollback) for operational rollback.
+
+#### Load, review and recover fictional cottage samples
+
+Enter source language English and one exact [English description and shared House Rules pair](#draft-english-source-copy).
+Use the text values without surrounding quotation marks, added line breaks or editorial changes. The finite
+catalog accepts only those six description/rules pairs for Arabic and Sorani. It does not translate arbitrary
+source text, call a live supplier or certify translation quality.
+
+After native owner approval and Cottage Profile submission, open the current cycle in the authenticator-verified
+Platform Administrator's `Language review`. For Arabic and Sorani, use `Load fictional sample` or
+`Reload fictional sample`. Inspect “Fictional translation sample; not production translation evidence” and the
+persisted attempt, localized revisions and three current heads. Reload may return the same finite sample.
+Decide each actual current head with the normal language review controls, then use `Publish all three languages`
+only when its native approval conditions permit it. Loading a sample approves no head or publication.
+
+Generated fictional revisions retain provider `fictional-cottage-translations`, model `catalog-v1`, effort
+`none`, prompt version `fictional-cottage-catalog-v1` and `translation_environment` equal to
+`hosted-demo-yvibcyqtyihpzpmomnzg`. Owner-source revisions retain a null environment marker. Administrator
+corrections retain the inherited fictional marker and their real administrator attribution/reason, with a null
+generated-provider tuple; they must still display their fictional disclosure. Missing or inconsistent mode,
+marker or provenance is a load failure, never evidence of readiness. Messages and reviews retain source fallback
+when their translation is unavailable.
+
+Unsupported source fails visibly with `unsupported_content` and leaves the profile
+`submitted_for_content_approval`. Recover through the native transitions in this order:
+
+1. The authenticator-verified Platform Administrator uses `Reject publication` for the current review cycle,
+   providing an explicit fictional explanatory reason. This invokes
+   `reject_cottage_profile_publication(target_review_cycle_id, target_reason)` and returns the profile to draft.
+2. Re-read the profile and its current version. The Cottage Owner restores the exact supported description and
+   shared House Rules through the native draft update, then submits it for a new review cycle.
+3. Follow that new current cycle for sample loading, per-head decisions and publication. Do not edit the
+   submitted draft, resubmit its active cycle, retry the rejected cycle or rewrite status directly.
+
+Native administrator correction is available only after the required generated revision exists. It cannot
+replace unsupported generation that produced no revision; an arbitrary edited source pair remains unsupported.
+
+Local marker-aware screen/approval observations and native finite-adapter persistence are separate evidence.
+Local test-app composition does not select this finite hosted supplier, so those observations do not establish
+a successful browser Load/Reload action. After separately approved compatible deployment and admission, drive
+the real hosted Administrator action and read its durable current heads before claiming that hosted path works.
+
+#### Select one initial capture failure and recover
+
+1. Prepare DEMO CUSTOMER 04's pending request through the normal Customer flow. Privately bind its exact request
+   and reference to the authoritative `booking_requests.payment_lifecycle_id`. Verify pending status, intended
+   Customer, Cottage Owner and cottage, and that its initial capture has not already executed. A conflicting
+   pending operation or existing selector stops preparation for private reconciliation.
+2. Through authorized native configuration on the pinned demo Worker, set only
+   `HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID` to that lifecycle's canonical lowercase universally unique
+   identifier (UUID). Read the exact Worker, target and selector back before Cottage Owner acceptance. This
+   server-only selector is not a Customer request field or public display value. Recheck it after deployment
+   because configuration replacement may remove bindings.
+3. Accept through the normal Cottage Owner flow and retain the selector until the original failed fictional
+   capture effect and `Payment Required` business state are both durable. Provider acceptance alone proves
+   neither. The selector applies only to that lifecycle's initial request capture; recovery and unrelated
+   operations retain their existing outcomes. Do not configure a global failure or rotate the selector onto
+   another pending lifecycle.
+4. Within the actual displayed recovery deadline, use native Customer payment recovery. Require the original
+   authorization's release, replacement authorization, replacement capture and Confirmed Booking receipts,
+   matched to their immutable operation identities. Stop on an expired deadline or uncertain effect instead
+   of forcing confirmation.
+5. After recording the original failure and observing recovery, remove the selector through the native Worker
+   configuration and confirm removal. Removing or changing it never rewrites the original stored effect.
+   Preserve the failure and recovery receipts for replay/readback checks.
+
+#### Recover the exact records without automatic reset
+
+Record the exact target, persona/record IDs, command/operation identities and last observed native stage
+privately. Re-read current state before retrying. Replay an existing idempotent command only with its original
+identity and identical payload; a fresh command identity belongs only to a genuinely new native action.
+After an ambiguous response, inspect native Auth/context or durable workflow/financial receipts before retry.
+A failed inquiry proves neither absence nor success.
+
+Stop on partial or conflicting state, missing admission/authority, unknown effect or expired recovery eligibility.
+Use the [sample rejection and new-cycle path](#load-review-and-recover-fictional-cottage-samples),
+[selected capture recovery](#select-one-initial-capture-failure-and-recover) or existing supported native
+reconciliation appropriate to the observed stage. Preserve unresolved work rather than invent a transition.
+Do not rewrite statuses, backdate, reset the managed database or repurpose local fixture creation. Native
+personal account recovery is a separate operation, not account deletion.
+
+There is no automatic managed reset command or standing authorization for destructive reset. A later destructive
+reset requires separately approved exact target and record/file inventory, preserved evidence, and verified
+ownership before any action. This procedure supplies recovery and stop points; it grants no deletion authority.
+
+#### Retain compatible readers during rollback
+
+On the approved exact target, [disable fictional admission](#admit-or-disable-fictional-cottage-publication) and
+[remove the capture selector](#select-one-initial-capture-failure-and-recover), preserving unresolved obligations
+and immutable records. Retain the reviewed marker-aware readers, fictional labels and additive schema. Never
+deploy an application that ignores `translation_environment` or calls retained fictional samples AI-generated.
+Forward repair must preserve compatible mode/provenance decoders and copy, including corrected fictional
+revision labels in English, Arabic and Sorani.
+
+Marketplace suspension alone does not hide Cottage Owner or Administrator review labels. If compatible readers
+cannot remain available, stop deployment and obtain an exact access-closing operational plan before replacement.
+Do not delete immutable revisions/effects as rollback, relabel them as production evidence or treat account
+recovery as deletion. Recheck outstanding booking/refund obligations before operational rollback.
+
+### Prepare fictional workflow material
+
+Use this material for [#821](https://github.com/zaingulel/RentCottage/issues/821) preparation through native
+application transitions. It is draft input, not a record of hosted accounts, uploaded documents, approved
+content, available inventory or completed bookings. The [six-cottage catalog](#fictional-cottages-and-availability)
+is the source for names, approximate areas, capacity, amenities, prices and bundled covers. Its local calendar
+states and local synthetic translations do not carry over to the hosted demo. All records still require native
+submission, review, approval and publication where applicable. No draft here establishes production readiness.
+
+Keep actual account mappings, resource identifiers, booking references, dates, observations and progress in the
+private job worklog. Use **unprepared**, **waiting for authority**, **waiting for time** or **verified** there,
+with the missing prerequisite or retained evidence. This guide defines readiness conditions rather than current
+progress. Never copy local fixture accounts, phone numbers, verification codes or credentials into hosted
+preparation. Account creation, role grants and invitations remain subject to their existing approval gates.
+
+#### Participant assignments
+
+These labels identify fictional roles, not login details or permission grants. Bind each label to a distinct,
+approved native marketplace identity privately before entry. Real testers act through their own authorized
+sessions; each personal Platform Administrator retains their own authenticator. Do not share administrator
+credentials or treat Access admission as marketplace authority.
+
+| Fictional Cottage Owner label | Assigned cottage |
+|---|---|
+| DEMO OWNER 01 | Palm Garden |
+| DEMO OWNER 02 | Zab Riverside |
+| DEMO OWNER 03 | Dukan Hills |
+| DEMO OWNER 04 | Orchard Retreat |
+| DEMO OWNER 05 | Tigris Courtyard |
+| DEMO OWNER 06 | Date Palm Cottage |
+
+DEMO CUSTOMER 01 through DEMO CUSTOMER 12 are distinct fictional Customer labels, separate from every Cottage
+Owner above. Their scenario assignments follow below. No Cottage Owner books their own cottage. Before each
+request, check both cottage inventory and that Customer's active Booking Periods across all cottages. A
+Customer cannot hold overlapping active requests or Confirmed Bookings. A Full-Day Bundle consumes both
+component shifts; it is never independent overlapping inventory. Reserve distinct approved participants for
+independent suspension/reactivation observations so those observations do not disrupt another active scenario.
+
+#### Draft English source copy
+
+Use the catalog's existing facts alongside the following descriptions. Each description deliberately identifies
+the cottage as fictional and avoids an exact address or contact details. English is the draft source language;
+Arabic and Sorani need their own valid provenance, content review and native approval. This text claims no
+translation approval or supplier quality. Bundled cover names identify source material, not uploaded or approved
+hosted photos.
+
+| Cottage | Draft description |
+|---|---|
+| Palm Garden | Fictional demonstration cottage in the Shaqlawa area of Erbil. A garden and pool setting for up to eight guests, with three bedrooms, two bathrooms and parking. No real accommodation is offered. |
+| Zab Riverside | Fictional demonstration cottage in the Koya area of Erbil. Garden and outdoor seating for up to six guests, with two bedrooms, one bathroom and parking. No real accommodation is offered. |
+| Dukan Hills | Fictional demonstration cottage in the Dukan area of Sulaymaniyah. Garden and pool space for up to twelve guests, with four bedrooms, three bathrooms and Wi-Fi. No real accommodation is offered. |
+| Orchard Retreat | Fictional demonstration cottage in the Amedi area of Duhok. A garden setting for up to four guests, with two bedrooms, one bathroom, parking and Wi-Fi. No real accommodation is offered. |
+| Tigris Courtyard | Fictional demonstration cottage in the Al-Tarmiyah area of Baghdad. Pool space for up to ten guests, with three bedrooms, two bathrooms, parking and air conditioning. No real accommodation is offered. |
+| Date Palm Cottage | Fictional demonstration cottage in the Hillah area of Babil. Garden, pool and outdoor seating for up to sixteen guests, with five bedrooms and three bathrooms. No real accommodation is offered. |
+
+Shared draft House Rules: “Fictional demonstration only. Respect neighbours, do not smoke indoors, and keep the
+party within the cottage's stated guest capacity.” These rules do not replace the actual versioned rules and
+terms that must appear in the native quote and Booking Request snapshot.
+
+Draft non-operative disclosure: “This is a fictional RentCottage demonstration. The participants, cottages,
+verification material, bookings and financial facts are synthetic. No real accommodation is offered, no real
+payment is taken and no real payout or external customer notification is promised. These specimen terms are
+non-operative and are not approved marketplace launch terms.” Retain the native price, fee, cancellation-policy
+and acknowledgement presentation; the specimen does not waive those checks or approve legal terms for launch.
+
+#### Verification-document specimens
+
+Create only conspicuously marked specimens for the private Owner Application flow. Do not imitate an official
+identity card, use real signatures, or include a real person's identity, property record or document number.
+Use the assigned fictional Cottage Owner and cottage label in these draft texts:
+
+- Identity specimen: “FICTIONAL DEMO SPECIMEN. DEMO OWNER [assigned number]. Invented participant for workflow
+  testing only. This is not identity evidence and has no legal validity.”
+- Authority-to-rent specimen: “FICTIONAL DEMO SPECIMEN. DEMO OWNER [assigned number] and [assigned cottage].
+  Invented authority-to-rent statement for testing the private submission and review workflow. No real property,
+  ownership, licence or authority is represented. No legal validity.”
+- Reviewer note specimen: “Fictional demonstration evidence only. Record the native review decision and its
+  reason against the submitted specimens. This does not certify a real identity, property, licence or compliance.”
+
+Document upload, restricted reviewer access, audit observations and the Owner Verification Record still need
+real native transitions and policy evidence. Do not publish a specimen, expose it to Customers, or infer approval
+from its existence. Do not invent a jurisdictional licence, exemption, expiry or legal determination to fill a
+required field; an unresolved requirement stops preparation visibly. Private access-detail fields likewise
+require approved synthetic material and paid-only readback, never real addresses or contact data.
+
+#### Draft future allocations
+
+After native pricing and shifts are entered, read the actual quote and database-backed eligibility. Select
+the earliest unoccupied offered Booking Period whose first shift starts at least six hours ahead when native
+Booking Request submission is accepted. Use the cottage's configured Iraq-time shift boundaries and the
+authoritative database clock. Recheck after entry delays and advance only the conflicting or ineligible
+scenario to its next valid period. Never move an existing booking's history or substitute a date offset for
+eligibility. Record the selected Service Days, actual shift times, purchased effective end and quote privately.
+These allocations remain draft input until native entry and availability readback establish them.
+
+For a period inside 48 hours, the fictional Customer must explicitly accept the native non-refundable rule
+before authorization. The full-refundable Customer cancellation scenario instead uses the first available
+period comfortably beyond the actual 48-hour boundary and must be canceled while still eligible. Each proposed
+party has four guests, within every catalog capacity. Preserve the catalog's separate option prices and check
+Customer conflicts across all cottages as well as cottage inventory and Full-Day Bundle component conflicts.
+
+| Customer label | Cottage; draft allocation | Intended scenario and dependency |
+|---|---|---|
+| DEMO CUSTOMER 01 | Palm Garden; earliest eligible period | Enquiry, request, acceptance, successful fictional capture, paid messaging and history. Keep this clean completion/review lane free of incidents, no-show and cancellation. Completion, Customer Review, Cottage Owner reply and earnings inspection follow only after actual eligibility. |
+| DEMO CUSTOMER 02 | Zab Riverside; distinct eligible period | Cottage Owner declines a pending request; preserve the authorization-release outcome. |
+| DEMO CUSTOMER 03 | Dukan Hills; distinct eligible period | Customer withdraws a pending request through its permitted transition. |
+| DEMO CUSTOMER 04 | Orchard Retreat; distinct eligible period | Deliberately failed fictional capture, then permitted payment recovery and confirmation. Use the [selected initial-capture failure and recovery procedure](#select-one-initial-capture-failure-and-recover). After recovery, reuse this participant for the independent Customer restriction lane below. |
+| DEMO CUSTOMER 05 | Tigris Courtyard; first available period comfortably beyond 48 hours | Confirmed Booking followed by Customer cancellation at least 48 hours before the actual first shift and full fictional refund. Check the live boundary before acting. |
+| DEMO CUSTOMER 06 | Date Palm Cottage; distinct eligible period | Confirmed Booking followed by reasoned Cottage Owner cancellation and full fictional refund. |
+| DEMO CUSTOMER 07 | Palm Garden; distinct eligible period | Confirmed Booking followed by reasoned Administrator cancellation, restricted incident and full fictional refund. Preserve the clean completion/review lane. |
+| DEMO CUSTOMER 08 | Zab Riverside; earliest eligible period inside 48 hours | Confirmed Booking followed by late Customer cancellation and its non-refundable outcome, explicitly disclosed before authorization. |
+| DEMO CUSTOMER 09 | Dukan Hills; distinct eligible period | Separate booking for incident/dispute and payout-hold handling. Requires verified native starting states; do not reuse a clean completion/review booking. |
+| DEMO CUSTOMER 10 | Orchard Retreat; distinct eligible period | Separate booking for an Administrator's reasoned Manual Refund Exception. Requires the applicable native eligibility and approved simulated amount. |
+| DEMO CUSTOMER 11 | Tigris Courtyard; earliest eligible Full-Day Bundle | Full-Day Bundle inventory observation and clean completion/settlement lane, subject to actual completion and settlement eligibility. Preserve it separately from the full-refundable cancellation scenario. |
+| DEMO CUSTOMER 12 | Date Palm Cottage; earliest eligible period | Independent review-moderation lane. A Customer Review and Cottage Owner reply require an actually Completed Booking and their native eligibility before moderation. Preserve it separately from Cottage Owner cancellation. |
+
+Prepare the Palm Garden completion/review, Tigris Courtyard settlement and Date Palm Cottage moderation lanes
+concurrently where their distinct participants and inventory permit. Give those lanes their earliest eligible
+periods; allocate other scenarios around them without overlap. Completion requires the purchased effective end
+to pass and a real scheduled completion receipt. Reviews must then be submitted within the native window ending
+just before purchased end plus 14 days. Settlement requires its actual maturity and remaining-value eligibility,
+with no unresolved blocking holds, disputes or refunds. No past date or timer alone verifies those outcomes.
+
+Draft calendar-only allocation: select a separate future Service Day with no scenario conflict for an Orchard
+Retreat Evening private block, leaving Morning open; its Full-Day Bundle must then be unavailable. Select a
+separate future Service Day for Date Palm Cottage Morning privately blocked with Evening open and the bundle
+unavailable. Observe both shifts separately in the native calendar and public availability readers. Keep private
+block reasons out of public results. A proposed block is not a reservation or evidence of available inventory.
+
+#### Independent Customer suspension and reactivation
+
+Use DEMO CUSTOMER 04 only after successful failed-capture recovery and once no request awaits a decision.
+Through the native authenticator-verified Platform Administrator screen, suspend and then reactivate that
+Customer with a conspicuously fictional rehearsal reason. Read the current revision before each action, use a
+fresh command identity per action and preserve that identity on retry. Suspension must block new Customer
+requests while preserving sign-in, history, existing Confirmed Booking access and cancellation rights. Read the
+authoritative restriction and immutable action/release facts; signed-out outsiders and administrators without
+the verified authenticator assurance must not obtain the private reason or audit. Customer copy omits private
+reasons. Reactivation is prospective and must not reopen a resolved request.
+
+Observe unchanged Cottage Owner and cottage restriction states through this Customer pair. Exercise Cottage
+Owner and cottage suspension/reactivation separately on isolated inventory after preserving evidence, without
+disrupting the clean maturity lanes. Verify that a cottage restriction survives Cottage Owner reactivation and
+that Cottage Owner restriction does not disable Customer capability. These are independent native controls,
+not account deletion, automatic role grants or a substitute for participant access checks.
+
+Draft conversation copy: Customer enquiry, “Fictional demo question: is outdoor seating listed for this
+cottage?”; Cottage Owner reply, “Fictional demo reply: please use the published amenities as the source.”
+Paid conversation: “Fictional demo booking message: our party has four guests.” and “Fictional demo reply:
+please follow the recorded House Rules.” Draft review: “Fictional demo review of the completed booking.”
+Draft public reply: “Fictional demo reply thanking the reviewer.” These contain no contacts or external links.
+The review author still chooses a valid rating; the draft does not establish that a review exists or is eligible.
+
+Incident/dispute, refund-exception and moderation descriptions must identify the fictional exercise and state
+its actual observed reason, amount or policy concern. Do not fabricate a real safety event, provider dispute,
+refund receipt or moderation breach from the draft. Finance/export inspection must reconcile the same persisted
+fictional facts and preserve private data controls. Neither elapsed time nor a successful scheduler tick proves
+completion, refund or settlement. Read the authoritative outcome before recording a scenario as verified.
+
+#### Workflow readiness checklist
+
+Use this stable checklist for all of #821. Each row requires actual evidence in the private worklog, including
+its scenario participants and authoritative references. Draft material alone verifies none of these rows.
+Historical or due scenarios require a verified native preparation recipe and real eligibility; do not backdate,
+rewrite statuses, accelerate clocks or perform an automatic destructive reset.
+
+| Issue requirement | Conditions for readiness |
+|---|---|
+| Fictional onboarding, verification documents and approvals | Distinct approved native identities, explicit Cottage Owner enrollment, private specimen upload and authorized authenticator-verified review; permitted and denied document-reader observations and audit evidence. |
+| Publication and content review | Native Cottage Profile submission, current localized-content provenance/review/approval and approved photos; actual publication and public-reader readback. Draft English and local fixture translations do not satisfy this. |
+| Pricing, calendar and private blocks | Catalog facts and individual option prices entered through native controls; future inventory and bundle/component exclusions checked in Cottage Owner and public readers, with no private reason exposed. |
+| Customer enquiry and booking decisions | Enquiry and permitted participant readers, authorized request with accurate quote/terms snapshot, and separate acceptance, decline and withdrawal scenarios observed through real transitions. |
+| Failed-payment recovery and confirmation | Follow the [selected initial-capture failure and recovery procedure](#select-one-initial-capture-failure-and-recover), observing the actual failed effect, native recovery deadline and authoritative capture/confirmation receipts; acceptance alone is insufficient. |
+| Messaging and private/paid-only fields | Separate enquiry and paid conversations observed; authorized participants and denied outsiders checked; exact address, directions, coordinates and contacts absent before confirmation and available only to permitted readers afterward. |
+| Cancellation/refund | Separate eligible Customer, Cottage Owner and Administrator cancellation scenarios with preserved financial snapshots and final fictional refund receipts; late Customer cancellation checked against the real 48-hour boundary. |
+| Completion, review, Cottage Owner reply and earnings | Actually eligible completion without an unresolved blocking incident; Customer Review within its native window, permitted Cottage Owner reply and earnings reconciled to persisted fictional financial facts. |
+| Administrator approvals and finance/export | Personal authorized administrator session, real approval decisions and reason/audit evidence; finance readers and export reconcile the same simulated facts without widening access. |
+| Refund exceptions, incidents/disputes and payout holds/settlement | Verified native starting states, authorized reasoned decisions, restricted records, actual hold/settlement eligibility and authoritative fictional effect/business receipts. No real provider effect or assumed due state. |
+| Moderation and independent suspension/reactivation | Eligible submitted content and an actual policy reason for moderation; separate Customer, Cottage Owner and cottage controls exercised independently with audited reasons and private-reader denial. Customer suspension blocks new requests while preserving sign-in, history and existing confirmed-booking rights; reactivation reopens no resolved request. Cottage Owner and cottage restrictions retain their independent effects. |
+| Distinct participants, available inventory and synthetic disclosure | Private mappings checked for self-booking, Customer conflicts and cottage conflicts; actual availability observed, synthetic data and non-operative terms disclosed, no copied local credentials. |
+| Visible partial/conflicting preparation and recovery | Missing authority, content, inventory, capability or observation stops the affected scenario visibly. Follow [exact-record recovery and reset limits](#recover-the-exact-records-without-automatic-reset), retaining current state and command identities; no automatic destructive reset or direct status rewriting. |
+| Domain preparation, database validation and multilingual walkthroughs | Applicable real database/policy evidence and English, Arabic and Sorani walkthroughs, including right-to-left, responsive and access-boundary observations. A narrower English local recording is insufficient. |
+| Changed protected boundary, if any | Approved full plan, security review, real database policy evidence, explicit sign-off and named mutation-proven anti-regression tests before use. This material authorizes no source, schema, runtime, account or provider change. |
 
 ### Operate native demo scheduling
 

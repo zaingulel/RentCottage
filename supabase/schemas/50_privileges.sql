@@ -1601,3 +1601,11 @@ GRANT EXECUTE ON FUNCTION "public"."get_customer_booking_request_presentation"("
 
 REVOKE ALL ON FUNCTION "public"."get_confirmed_booking_access_presentation"("target_reference" "text") FROM PUBLIC, "anon", "service_role";
 GRANT EXECUTE ON FUNCTION "public"."get_confirmed_booking_access_presentation"("target_reference" "text") TO "authenticated";
+
+REVOKE ALL ON TABLE public.cottage_demo_translation_control FROM PUBLIC, anon, authenticated, service_role;
+REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.cottage_demo_translation_control FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.cottage_translation_runtime_mode() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.cottage_translation_runtime_mode() TO service_role;
+
+GRANT SELECT(translation_environment) ON TABLE public.cottage_profile_localized_revisions TO authenticated;
