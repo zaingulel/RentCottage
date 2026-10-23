@@ -427,10 +427,6 @@ test("hosted fictional refund and settlement survive fresh Worker instances", as
         status: "recorded",
         result: { outcome: "succeeded" },
       });
-      const duplicateResults = await Promise.all([
-        invoke(first, "execute", request),
-        invoke(first, "execute", request),
-      ]);
       const stored = observe();
       expect(stored.operations).toHaveLength(1);
       expect(stored.effects).toHaveLength(1);
@@ -516,6 +512,10 @@ test("hosted fictional refund and settlement survive fresh Worker instances", as
         queried,
         `${kind} fresh Worker inquiry preserves the hosted scope`,
       ).toEqual(executed);
+      const duplicateResults = await Promise.all([
+        invoke(second, "execute", request),
+        invoke(second, "execute", request),
+      ]);
       for (const result of duplicateResults) expect(result).toEqual(executed);
       expect(await invoke(second, "execute", request)).toEqual(executed);
       expect(observe()).toEqual(stored);
