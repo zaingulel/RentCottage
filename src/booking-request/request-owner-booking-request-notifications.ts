@@ -4,7 +4,7 @@ import { createRequestSupabaseClient } from "@/access/supabase-server";
 
 import { ownerBookingRequestNotificationDisplay } from "./booking-request-display";
 import { listOwnerBookingRequestNotifications } from "./owner-booking-request-notifications";
-import { fictionalSupplierEnvironment } from "./booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "./fictional-supplier-environment";
 
 export async function loadOwnerBookingRequestNotifications() {
   if (!fictionalSupplierEnvironment()) return undefined;

@@ -1,6 +1,6 @@
 import "server-only";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
-import { fictionalSupplierEnvironment } from "./booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "./fictional-supplier-environment";
 import { getConfirmedBookingAccess } from "./confirmed-booking-access";
 import { simulatedMapProvider } from "@/cottage-profile/map-provider";
 import { SupabaseBookingNotificationStatusRepository } from "@/notification/notification-status-repository";

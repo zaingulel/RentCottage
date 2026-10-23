@@ -181,13 +181,11 @@ authenticator; the operator never enrolls it on their behalf.
 
 ### Fictional supplier compatibility and recovery
 
-[#819](https://github.com/zaingulel/RentCottage/issues/819) supplies application composition for the approved
-hosted fictional suppliers and existing authorized journeys. The demo already sets `HOSTED_DEMO=true`; there
-is no separate supplier activation flag. Keep this application composition local, unmerged and undeployed until
-matching payment and notification database declarations and generated migrations are in place and the required
-real database and Worker checks pass. Then merge and deploy the complete compatible application and database
-changes together. An unfinished composition could leave synthetic bookings stuck while the existing website
-continues to operate. Payment compatibility must include `admit_booking_refund` and
+The demo configuration sets `HOSTED_DEMO=true`; there is no separate supplier activation flag. Apply and verify
+matching database migrations before deploying the compatible application as one coordinated release, after the
+required real database and Worker checks pass. An incompatible application and database combination could leave
+synthetic bookings stuck while the existing website continues to operate. Payment compatibility must include
+`admit_booking_refund` and
 `admit_booking_settlement`, plus the payment binding validators and effect constraints. Notification
 compatibility must include its matching binding checks and effect functions. Application admission or a doubled
 supplier response alone does not establish database compatibility.
@@ -291,12 +289,11 @@ behavior. Mocks and local tests cannot replace managed provider observations. Be
 documentation lint, fresh independent/security review and explicit authentication sign-off. Hosted activation
 remains incomplete until actual-resource receipts, no-send/expiry proof, direct-access denial evidence,
 required identities and approvals are available. If Docker is prohibited, do not run it for these checks.
-The hosted supplier database changes require their real-database failing proof before implementation; their
-matching migrations, native database-backed Worker proof and full verification remain required. The coordinator
-must establish permitted receipt reuse under the existing rules or report activation blocked by the no-Docker
-restriction, preserving the denied Worker. Do not substitute the managed demo database, create a replacement
-stack or treat unit tests as this evidence. Target creation, source merge and hosted continuous integration do
-not replace database compatibility or the full-local activation gate.
+The hosted supplier database changes require matching migrations, native database-backed Worker proof and full
+verification. The coordinator must establish permitted real-database receipt reuse under the existing rules or
+report activation blocked if Docker is prohibited, preserving the denied Worker. Do not substitute the managed
+demo database, create a replacement stack or treat unit tests as this evidence. Target creation, source merge
+and hosted continuous integration do not replace database compatibility or the full-local activation gate.
 
 ### Revoke, recover and roll back
 

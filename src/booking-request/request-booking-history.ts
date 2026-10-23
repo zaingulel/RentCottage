@@ -1,6 +1,6 @@
 import "server-only";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
-import { fictionalSupplierEnvironment } from "./booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "./fictional-supplier-environment";
 import { listBookingHistory } from "./booking-history";
 
 export async function loadBookingHistory(

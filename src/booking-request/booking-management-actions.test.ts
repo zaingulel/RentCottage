@@ -32,7 +32,7 @@ vi.mock("./booking-cancellation", () => ({
 vi.mock("./supabase-booking-cancellation", () => ({
   SupabaseBookingCancellationRepository: class {},
 }));
-vi.mock("./booking-request-test-runtime", () => ({
+vi.mock("./fictional-supplier-environment", () => ({
   fictionalSupplierEnvironment: runtime,
 }));
 vi.mock("./booking-financial-view", () => ({ getBookingFinancialView: view }));

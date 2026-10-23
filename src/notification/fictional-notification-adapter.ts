@@ -4,7 +4,7 @@ import type {
   NotificationLease,
   NotificationQueryResult,
 } from "./notification-delivery";
-import { fictionalSupplierEnvironment } from "@/booking-request/booking-request-test-runtime-core";
+import { fictionalSupplierEnvironment } from "@/booking-request/fictional-supplier-environment-core";
 
 export interface FictionalNotificationEffectRepository {
   queryEffect(lease: NotificationLease): Promise<NotificationQueryResult>;

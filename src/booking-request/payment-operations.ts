@@ -10,7 +10,7 @@ import {
   SupabaseSimulatorEffectRepository,
 } from "@/payment/supabase-payment-operation-execution";
 import { createBookingRequestPaymentObservation } from "./booking-request-payment-observation";
-import { fictionalSupplierEnvironment } from "./booking-request-test-runtime-core";
+import { fictionalSupplierEnvironment } from "./fictional-supplier-environment-core";
 import { SupabaseBookingRequestPaymentObservationRepository } from "./supabase-booking-request-payment-observation";
 
 export type PaymentOperationsEnvironment = NonNullable<

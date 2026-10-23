@@ -9,7 +9,7 @@ import {
   bookingRequestAcceptanceEvidence,
   bookingRequestUiPolicy,
 } from "@/booking-request/booking-request-policy";
-import { fictionalSupplierEnvironment } from "@/booking-request/booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "@/booking-request/fictional-supplier-environment";
 import { ActionFocusTarget } from "@/components/interaction-controls";
 import { BookingQuoteView } from "@/components/booking-quote";
 import { InvalidCottageSearch } from "@/components/invalid-cottage-search";

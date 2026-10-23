@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 import {
   bookingRequestTestRuntimeIsEnabled,
   fictionalSupplierEnvironment,
-} from "./booking-request-test-runtime-core";
+} from "./fictional-supplier-environment-core";
 
 it("hosted fictional admission preserves local guards and rejects corrupt targets", () => {
   const fetch = vi

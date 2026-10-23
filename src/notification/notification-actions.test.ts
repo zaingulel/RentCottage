@@ -5,7 +5,7 @@ const { enabled, createClient, retry, revalidate } = vi.hoisted(() => ({
   retry: vi.fn(),
   revalidate: vi.fn(),
 }));
-vi.mock("@/booking-request/booking-request-test-runtime", () => ({
+vi.mock("@/booking-request/fictional-supplier-environment", () => ({
   fictionalSupplierEnvironment: enabled,
 }));
 vi.mock("@/access/supabase-server", () => ({

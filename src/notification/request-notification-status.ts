@@ -1,6 +1,6 @@
 import "server-only";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
-import { fictionalSupplierEnvironment } from "@/booking-request/booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "@/booking-request/fictional-supplier-environment";
 import {
   SupabaseBookingNotificationStatusRepository,
   type RequestNotificationStatus,

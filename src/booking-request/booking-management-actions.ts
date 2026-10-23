@@ -7,7 +7,7 @@ import {
   isBookingRequestReference,
   isIdentifier,
 } from "./booking-request-identifiers";
-import { fictionalSupplierEnvironment } from "./booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "./fictional-supplier-environment";
 import type {
   ConfirmedBookingCommand,
   ConfirmedBookingManagementResult,

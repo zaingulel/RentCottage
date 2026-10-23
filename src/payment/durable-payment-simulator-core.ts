@@ -1,7 +1,7 @@
 import {
   isFictionalSupplierEnvironment,
   type FictionalSupplierEnvironment,
-} from "@/booking-request/booking-request-test-runtime-core";
+} from "@/booking-request/fictional-supplier-environment-core";
 import {
   paymentBindingMatches,
   paymentIdentityMatches,

@@ -27,7 +27,7 @@ import type {
 } from "./booking-request-submission";
 import { createRequestBookingRequestSubmission } from "./request-booking-request-submission";
 import { isContactSafeBookingRequestText } from "./booking-request-content";
-import { fictionalSupplierEnvironment } from "./booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "./fictional-supplier-environment";
 import { isIdentifier } from "./booking-request-identifiers";
 
 function record(value: unknown): Record<string, unknown> | undefined {

@@ -9,7 +9,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/access/supabase-server", () => ({
   createRequestSupabaseClient: createRequestClient,
 }));
-vi.mock("@/booking-request/booking-request-test-runtime", () => ({
+vi.mock("@/booking-request/fictional-supplier-environment", () => ({
   fictionalSupplierEnvironment: runtimeEnabled,
 }));
 

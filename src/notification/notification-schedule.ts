@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-import { fictionalSupplierEnvironment } from "@/booking-request/booking-request-test-runtime-core";
+import { fictionalSupplierEnvironment } from "@/booking-request/fictional-supplier-environment-core";
 import { FictionalNotificationAdapter } from "./fictional-notification-adapter";
 import { createBookingNotificationDelivery } from "./notification-delivery";
 import { SupabaseNotificationDeliveryRepository } from "./supabase-notification-delivery";

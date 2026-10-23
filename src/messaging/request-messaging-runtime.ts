@@ -6,7 +6,7 @@ import { createRequestSupabaseClient } from "@/access/supabase-server";
 import {
   bookingRequestTestRuntimeIsEnabled,
   fictionalSupplierEnvironment,
-} from "@/booking-request/booking-request-test-runtime";
+} from "@/booking-request/fictional-supplier-environment";
 import { getServerEnvironment } from "@/config/server-runtime";
 
 import { createDeterministicMessageTranslationAdapter } from "./deterministic-message-translation";

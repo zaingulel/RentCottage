@@ -12,7 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   isFictionalSupplierEnvironment,
   type FictionalSupplierEnvironment,
-} from "@/booking-request/booking-request-test-runtime-core";
+} from "@/booking-request/fictional-supplier-environment-core";
 import type { FictionalNotificationEffectRepository } from "./fictional-notification-adapter";
 import type {
   NotificationBinding,

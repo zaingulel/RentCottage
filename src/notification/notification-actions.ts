@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { isLocale } from "@/i18n/routing";
 import { SupabaseBookingNotificationStatusRepository } from "./notification-status-repository";
-import { fictionalSupplierEnvironment } from "@/booking-request/booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "@/booking-request/fictional-supplier-environment";
 import {
   isBookingRequestReference,
   isIdentifier,

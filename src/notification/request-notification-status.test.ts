@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/access/supabase-server", () => ({
   createRequestSupabaseClient: mocks.createClient,
 }));
-vi.mock("@/booking-request/booking-request-test-runtime", () => ({
+vi.mock("@/booking-request/fictional-supplier-environment", () => ({
   fictionalSupplierEnvironment: mocks.runtime,
 }));
 import { loadRequestNotificationStatus } from "./request-notification-status";

@@ -54,7 +54,7 @@ test("hosted fictional notification replay retains one final effect", async () =
   const bundled = await build({
     stdin: {
       contents: `import { createClient } from "@supabase/supabase-js";
-        import { fictionalSupplierEnvironment } from "./src/booking-request/booking-request-test-runtime-core";
+        import { fictionalSupplierEnvironment } from "./src/booking-request/fictional-supplier-environment-core";
         import { SupabaseNotificationDeliveryRepository } from "./src/notification/supabase-notification-delivery";
         import { FictionalNotificationAdapter } from "./src/notification/fictional-notification-adapter";
         import { bookingRequestNotice } from "./src/notification/booking-request-notice";
@@ -173,10 +173,15 @@ test("hosted fictional notification replay retains one final effect", async () =
                     redirect: "error",
                   },
                 );
-                return new NativeResponse(await response.arrayBuffer(), {
-                  status: response.status,
-                  headers: Object.fromEntries(response.headers),
-                });
+                return new NativeResponse(
+                  response.body === null
+                    ? null
+                    : await response.arrayBuffer(),
+                  {
+                    status: response.status,
+                    headers: Object.fromEntries(response.headers),
+                  },
+                );
               },
             },
           },
