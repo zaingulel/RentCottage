@@ -1604,7 +1604,6 @@ GRANT EXECUTE ON FUNCTION "public"."get_confirmed_booking_access_presentation"("
 
 REVOKE ALL ON TABLE public.cottage_demo_translation_control FROM PUBLIC, anon, authenticated, service_role;
 REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.cottage_demo_translation_control FROM PUBLIC, anon, authenticated, service_role;
-GRANT SELECT ON TABLE public.cottage_demo_translation_control TO service_role;
 
 REVOKE ALL ON FUNCTION public.cottage_translation_runtime_mode() FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.cottage_translation_runtime_mode() TO service_role;

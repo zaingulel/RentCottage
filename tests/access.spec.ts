@@ -728,6 +728,7 @@ function registerOwnedJourney(
 test.describe.configure({ mode: "serial" });
 
 test("fictional cottage translation preserves durable provenance through the Worker", async () => {
+  test.skip(test.info().project.name !== "worker");
   assertIsolatedLocalAccessDatabase();
   const database = createLocalSupabaseConcurrencyHarness();
   database.guardDisposableLocalDatabase();

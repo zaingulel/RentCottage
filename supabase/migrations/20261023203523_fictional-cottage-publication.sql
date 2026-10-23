@@ -29,10 +29,6 @@ begin
   if (select public.is_platform_administrator('aal2')) IS NOT TRUE then raise exception 'AAL2 Platform Administrator access is required' using errcode = '42501'; end if;
   perform 1 from public.cottage_translation_runtime_control where singleton for share;
   perform 1 from public.cottage_demo_translation_control where singleton for share;
-  publication_mode := public.cottage_translation_runtime_mode();
-  if publication_mode = 'unavailable' then
-    raise exception 'Translation and publication are disabled by runtime control' using errcode = 'RC246';
-  end if;
   select * into cycle from public.cottage_profile_review_cycles where id = target_review_cycle_id for update;
   if not found or cycle.state <> 'in_review' then raise exception 'Cottage review cycle is unavailable' using errcode = 'RC204'; end if;
   select * into profile from public.owner_application_cottage_profiles where id = cycle.profile_id for update;
@@ -44,6 +40,10 @@ begin
   if not found or owner_context.role <> 'cottage_owner'
     or owner_context.owner_approval_state <> 'approved' then
     raise exception 'Approved Cottage Owner access is required' using errcode = '42501';
+  end if;
+  publication_mode := public.cottage_translation_runtime_mode();
+  if publication_mode = 'unavailable' then
+    raise exception 'Translation and publication are disabled by runtime control' using errcode = 'RC246';
   end if;
   if cycle.name is null or cycle.governorate is null or cycle.approximate_location is null
     or cycle.capacity is null or cycle.bedrooms is null or cycle.bathrooms is null
@@ -730,7 +730,6 @@ ALTER TABLE public.cottage_demo_translation_control
 
 REVOKE ALL ON TABLE public.cottage_demo_translation_control FROM PUBLIC, anon, authenticated, service_role;
 REVOKE REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.cottage_demo_translation_control FROM PUBLIC, anon, authenticated, service_role;
-GRANT SELECT ON public.cottage_demo_translation_control TO service_role;
 
 INSERT INTO public.cottage_demo_translation_control (singleton, environment, enabled)
 VALUES (true, 'hosted-demo-yvibcyqtyihpzpmomnzg', false);

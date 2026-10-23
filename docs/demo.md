@@ -185,8 +185,9 @@ authenticator; the operator never enrolls it on their behalf.
 
 ### Fictional supplier compatibility and recovery
 
-The demo configuration sets `HOSTED_DEMO=true`; there is no separate supplier activation flag. Apply and verify
-matching database migrations before deploying the compatible application as one coordinated release, after the
+The demo configuration sets `HOSTED_DEMO=true` to select the fictional supplier composition. Cottage sample
+generation and publication also require the [database admission control](#admit-or-disable-fictional-cottage-publication).
+Apply and verify matching database migrations before deploying the compatible application as one coordinated release, after the
 required real database and Worker checks pass. An incompatible application and database combination could leave
 synthetic bookings stuck while the existing website continues to operate. Payment compatibility must include
 `admit_booking_refund` and
@@ -227,6 +228,134 @@ a fictional `delivered` result is not evidence that a person received a message.
 
 Scenario and catalog preparation belong to [#821](https://github.com/zaingulel/RentCottage/issues/821).
 Scheduling does not prepare those scenarios or remove the database compatibility and invitation gates.
+
+### Operate fictional workflow controls
+
+These procedures require the existing exact-target deployment, configuration and admission approvals. A manual,
+local proof or source merge grants none of them. Keep actual target readbacks, persona/record identifiers,
+command identities and observed outcomes in private operator evidence. Use the native provider controls and
+application screens below; never run local fixture preparation against the managed project.
+
+#### Admit or disable fictional cottage publication
+
+1. Verify the approved Worker origin is `https://demo.halabeekom.com`, its deployed commit is the reviewed
+   compatible application, and its bindings point to project `yvibcyqtyihpzpmomnzg` at
+   `https://yvibcyqtyihpzpmomnzg.supabase.co`. Verify the matching migration chain before admission. A mismatched
+   origin, commit, database or binding stops the operation.
+2. On that exact database, use native database-owner authority in one transaction. Lock the existing singleton
+   row in `public.cottage_translation_runtime_control` first, then the existing singleton row in
+   `public.cottage_demo_translation_control`, using `FOR UPDATE` in that order. Require exactly one row from
+   each, `singleton=true`, `production_ready=false` and demo environment `hosted-demo-yvibcyqtyihpzpmomnzg`.
+   Missing, malformed, mismatched or simultaneously enabled production/demo admission requires rollback and
+   a visible stop. Do not insert or repair a missing control or change production readiness.
+3. After authorized deployment/admission, change only the existing demo row's `enabled` value to `true`.
+   Require exactly one updated row. Read both controls and `public.cottage_translation_runtime_mode()` inside
+   the same transaction; require production readiness still false, the exact demo marker, enabled true and
+   mode `fictional` before committing. Retain the exact-target readback privately. Do not use a service-role
+   table update or grant browser access to either control.
+4. To disable fictional translation/publication, use the same exact-target transaction and production-then-demo
+   lock order, changing only `enabled` to `false`. Read back exactly one row per control, production readiness
+   false, demo disabled and mode `unavailable` before committing. Any failed check rolls back. Disabling does
+   not delete published content, cancel bookings or remove immutable provenance; use the
+   [compatible rollback procedure](#retain-compatible-readers-during-rollback) for operational rollback.
+
+#### Load, review and recover fictional cottage samples
+
+Enter source language English and one exact [English description and shared House Rules pair](#draft-english-source-copy).
+Use the text values without surrounding quotation marks, added line breaks or editorial changes. The finite
+catalog accepts only those six description/rules pairs for Arabic and Sorani. It does not translate arbitrary
+source text, call a live supplier or certify translation quality.
+
+After native owner approval and Cottage Profile submission, open the current cycle in the authenticator-verified
+Platform Administrator's `Language review`. For Arabic and Sorani, use `Load fictional sample` or
+`Reload fictional sample`. Inspect “Fictional translation sample; not production translation evidence” and the
+persisted attempt, localized revisions and three current heads. Reload may return the same finite sample.
+Decide each actual current head with the normal language review controls, then use `Publish all three languages`
+only when its native approval conditions permit it. Loading a sample approves no head or publication.
+
+Generated fictional revisions retain provider `fictional-cottage-translations`, model `catalog-v1`, effort
+`none`, prompt version `fictional-cottage-catalog-v1` and `translation_environment` equal to
+`hosted-demo-yvibcyqtyihpzpmomnzg`. Owner-source revisions retain a null environment marker. Administrator
+corrections retain the inherited fictional marker and their real administrator attribution/reason, with a null
+generated-provider tuple; they must still display their fictional disclosure. Missing or inconsistent mode,
+marker or provenance is a load failure, never evidence of readiness. Messages and reviews retain source fallback
+when their translation is unavailable.
+
+Unsupported source fails visibly with `unsupported_content` and leaves the profile
+`submitted_for_content_approval`. Recover through the native transitions in this order:
+
+1. The authenticator-verified Platform Administrator uses `Reject publication` for the current review cycle,
+   providing an explicit fictional explanatory reason. This invokes
+   `reject_cottage_profile_publication(target_review_cycle_id, target_reason)` and returns the profile to draft.
+2. Re-read the profile and its current version. The Cottage Owner restores the exact supported description and
+   shared House Rules through the native draft update, then submits it for a new review cycle.
+3. Follow that new current cycle for sample loading, per-head decisions and publication. Do not edit the
+   submitted draft, resubmit its active cycle, retry the rejected cycle or rewrite status directly.
+
+Native administrator correction is available only after the required generated revision exists. It cannot
+replace unsupported generation that produced no revision; an arbitrary edited source pair remains unsupported.
+
+Local marker-aware screen/approval observations and native finite-adapter persistence are separate evidence.
+Local test-app composition does not select this finite hosted supplier, so those observations do not establish
+a successful browser Load/Reload action. After separately approved compatible deployment and admission, drive
+the real hosted Administrator action and read its durable current heads before claiming that hosted path works.
+
+#### Select one initial capture failure and recover
+
+1. Prepare DEMO CUSTOMER 04's pending request through the normal Customer flow. Privately bind its exact request
+   and reference to the authoritative `booking_requests.payment_lifecycle_id`. Verify pending status, intended
+   Customer, Cottage Owner and cottage, and that its initial capture has not already executed. A conflicting
+   pending operation or existing selector stops preparation for private reconciliation.
+2. Through authorized native configuration on the pinned demo Worker, set only
+   `HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID` to that lifecycle's canonical lowercase universally unique
+   identifier (UUID). Read the exact Worker, target and selector back before Cottage Owner acceptance. This
+   server-only selector is not a Customer request field or public display value. Recheck it after deployment
+   because configuration replacement may remove bindings.
+3. Accept through the normal Cottage Owner flow and retain the selector until the original failed fictional
+   capture effect and `Payment Required` business state are both durable. Provider acceptance alone proves
+   neither. The selector applies only to that lifecycle's initial request capture; recovery and unrelated
+   operations retain their existing outcomes. Do not configure a global failure or rotate the selector onto
+   another pending lifecycle.
+4. Within the actual displayed recovery deadline, use native Customer payment recovery. Require the original
+   authorization's release, replacement authorization, replacement capture and Confirmed Booking receipts,
+   matched to their immutable operation identities. Stop on an expired deadline or uncertain effect instead
+   of forcing confirmation.
+5. After recording the original failure and observing recovery, remove the selector through the native Worker
+   configuration and confirm removal. Removing or changing it never rewrites the original stored effect.
+   Preserve the failure and recovery receipts for replay/readback checks.
+
+#### Recover the exact records without automatic reset
+
+Record the exact target, persona/record IDs, command/operation identities and last observed native stage
+privately. Re-read current state before retrying. Replay an existing idempotent command only with its original
+identity and identical payload; a fresh command identity belongs only to a genuinely new native action.
+After an ambiguous response, inspect native Auth/context or durable workflow/financial receipts before retry.
+A failed inquiry proves neither absence nor success.
+
+Stop on partial or conflicting state, missing admission/authority, unknown effect or expired recovery eligibility.
+Use the [sample rejection and new-cycle path](#load-review-and-recover-fictional-cottage-samples),
+[selected capture recovery](#select-one-initial-capture-failure-and-recover) or existing supported native
+reconciliation appropriate to the observed stage. Preserve unresolved work rather than invent a transition.
+Do not rewrite statuses, backdate, reset the managed database or repurpose local fixture creation. Native
+personal account recovery is a separate operation, not account deletion.
+
+There is no automatic managed reset command or standing authorization for destructive reset. A later destructive
+reset requires separately approved exact target and record/file inventory, preserved evidence, and verified
+ownership before any action. This procedure supplies recovery and stop points; it grants no deletion authority.
+
+#### Retain compatible readers during rollback
+
+On the approved exact target, [disable fictional admission](#admit-or-disable-fictional-cottage-publication) and
+[remove the capture selector](#select-one-initial-capture-failure-and-recover), preserving unresolved obligations
+and immutable records. Retain the reviewed marker-aware readers, fictional labels and additive schema. Never
+deploy an application that ignores `translation_environment` or calls retained fictional samples AI-generated.
+Forward repair must preserve compatible mode/provenance decoders and copy, including corrected fictional
+revision labels in English, Arabic and Sorani.
+
+Marketplace suspension alone does not hide Cottage Owner or Administrator review labels. If compatible readers
+cannot remain available, stop deployment and obtain an exact access-closing operational plan before replacement.
+Do not delete immutable revisions/effects as rollback, relabel them as production evidence or treat account
+recovery as deletion. Recheck outstanding booking/refund obligations before operational rollback.
 
 ### Prepare fictional workflow material
 
@@ -334,7 +463,7 @@ Customer conflicts across all cottages as well as cottage inventory and Full-Day
 | DEMO CUSTOMER 01 | Palm Garden; earliest eligible period | Enquiry, request, acceptance, successful fictional capture, paid messaging and history. Keep this clean completion/review lane free of incidents, no-show and cancellation. Completion, Customer Review, Cottage Owner reply and earnings inspection follow only after actual eligibility. |
 | DEMO CUSTOMER 02 | Zab Riverside; distinct eligible period | Cottage Owner declines a pending request; preserve the authorization-release outcome. |
 | DEMO CUSTOMER 03 | Dukan Hills; distinct eligible period | Customer withdraws a pending request through its permitted transition. |
-| DEMO CUSTOMER 04 | Orchard Retreat; distinct eligible period | Deliberately failed fictional capture, then permitted payment recovery and confirmation. Requires the separately verified failed-capture preparation recipe. After recovery, reuse this participant for the independent Customer restriction lane below. |
+| DEMO CUSTOMER 04 | Orchard Retreat; distinct eligible period | Deliberately failed fictional capture, then permitted payment recovery and confirmation. Use the [selected initial-capture failure and recovery procedure](#select-one-initial-capture-failure-and-recover). After recovery, reuse this participant for the independent Customer restriction lane below. |
 | DEMO CUSTOMER 05 | Tigris Courtyard; first available period comfortably beyond 48 hours | Confirmed Booking followed by Customer cancellation at least 48 hours before the actual first shift and full fictional refund. Check the live boundary before acting. |
 | DEMO CUSTOMER 06 | Date Palm Cottage; distinct eligible period | Confirmed Booking followed by reasoned Cottage Owner cancellation and full fictional refund. |
 | DEMO CUSTOMER 07 | Palm Garden; distinct eligible period | Confirmed Booking followed by reasoned Administrator cancellation, restricted incident and full fictional refund. Preserve the clean completion/review lane. |
@@ -400,7 +529,7 @@ rewrite statuses, accelerate clocks or perform an automatic destructive reset.
 | Publication and content review | Native Cottage Profile submission, current localized-content provenance/review/approval and approved photos; actual publication and public-reader readback. Draft English and local fixture translations do not satisfy this. |
 | Pricing, calendar and private blocks | Catalog facts and individual option prices entered through native controls; future inventory and bundle/component exclusions checked in Cottage Owner and public readers, with no private reason exposed. |
 | Customer enquiry and booking decisions | Enquiry and permitted participant readers, authorized request with accurate quote/terms snapshot, and separate acceptance, decline and withdrawal scenarios observed through real transitions. |
-| Failed-payment recovery and confirmation | Verified failed-capture recipe, actual failed fictional capture, native recovery within its deadline and authoritative capture/confirmation receipts; acceptance alone is insufficient. |
+| Failed-payment recovery and confirmation | Follow the [selected initial-capture failure and recovery procedure](#select-one-initial-capture-failure-and-recover), observing the actual failed effect, native recovery deadline and authoritative capture/confirmation receipts; acceptance alone is insufficient. |
 | Messaging and private/paid-only fields | Separate enquiry and paid conversations observed; authorized participants and denied outsiders checked; exact address, directions, coordinates and contacts absent before confirmation and available only to permitted readers afterward. |
 | Cancellation/refund | Separate eligible Customer, Cottage Owner and Administrator cancellation scenarios with preserved financial snapshots and final fictional refund receipts; late Customer cancellation checked against the real 48-hour boundary. |
 | Completion, review, Cottage Owner reply and earnings | Actually eligible completion without an unresolved blocking incident; Customer Review within its native window, permitted Cottage Owner reply and earnings reconciled to persisted fictional financial facts. |
@@ -408,7 +537,7 @@ rewrite statuses, accelerate clocks or perform an automatic destructive reset.
 | Refund exceptions, incidents/disputes and payout holds/settlement | Verified native starting states, authorized reasoned decisions, restricted records, actual hold/settlement eligibility and authoritative fictional effect/business receipts. No real provider effect or assumed due state. |
 | Moderation and independent suspension/reactivation | Eligible submitted content and an actual policy reason for moderation; separate Customer, Cottage Owner and cottage controls exercised independently with audited reasons and private-reader denial. Customer suspension blocks new requests while preserving sign-in, history and existing confirmed-booking rights; reactivation reopens no resolved request. Cottage Owner and cottage restrictions retain their independent effects. |
 | Distinct participants, available inventory and synthetic disclosure | Private mappings checked for self-booking, Customer conflicts and cottage conflicts; actual availability observed, synthetic data and non-operative terms disclosed, no copied local credentials. |
-| Visible partial/conflicting preparation and recovery | Missing authority, content, inventory, capability or observation stops the affected scenario visibly. Document exact-target reset/recovery only after its procedure and ownership safeguards are verified; no automatic destructive reset or direct status rewriting. |
+| Visible partial/conflicting preparation and recovery | Missing authority, content, inventory, capability or observation stops the affected scenario visibly. Follow [exact-record recovery and reset limits](#recover-the-exact-records-without-automatic-reset), retaining current state and command identities; no automatic destructive reset or direct status rewriting. |
 | Domain preparation, database validation and multilingual walkthroughs | Applicable real database/policy evidence and English, Arabic and Sorani walkthroughs, including right-to-left, responsive and access-boundary observations. A narrower English local recording is insufficient. |
 | Changed protected boundary, if any | Approved full plan, security review, real database policy evidence, explicit sign-off and named mutation-proven anti-regression tests before use. This material authorizes no source, schema, runtime, account or provider change. |
 

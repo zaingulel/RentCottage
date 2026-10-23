@@ -53,11 +53,6 @@ describe("server environment", () => {
     }
     for (const patch of [
       { HOSTED_DEMO: undefined },
-      { APP_ENVIRONMENT: "production" },
-      {
-        SUPABASE_PROJECT_REF: "other-project",
-        SUPABASE_URL: "https://other-project.supabase.co",
-      },
       {
         APP_ENVIRONMENT: "test",
         HOSTED_DEMO: undefined,
@@ -65,7 +60,9 @@ describe("server environment", () => {
         SUPABASE_URL: "http://127.0.0.1:54331",
       },
     ]) {
-      expect(() => readServerEnvironment({ ...source, ...patch })).toThrow();
+      expect(() => readServerEnvironment({ ...source, ...patch })).toThrow(
+        /HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID/,
+      );
     }
   });
   it("hosted demo refuses unpinned malformed and mismatched configuration", async () => {

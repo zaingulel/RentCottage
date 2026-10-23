@@ -792,6 +792,79 @@ select lives_ok(
       perform public.approve_cottage_profile_publication(cycle_id, 'Production must reject fictional history');
       raise exception 'Production publication accepted fictional provenance';
     exception when sqlstate 'RC203' then null; end;
+    declare
+      retained_heads uuid[];
+      retained_controls jsonb;
+      ordinary_attempt public.cottage_profile_translation_attempts;
+    begin
+      reset role;
+      select array_agg(localized_revision_id order by locale) into retained_heads
+        from public.cottage_profile_localized_heads where review_cycle_id = cycle_id;
+      select jsonb_build_object(
+        'production', (select to_jsonb(control) from public.cottage_translation_runtime_control control where singleton),
+        'demo', (select to_jsonb(control) from public.cottage_demo_translation_control control where singleton)
+      ) into retained_controls;
+      begin
+        set local role service_role;
+        perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+        foreach review_locale in array array['ar', 'ckb']::public.cottage_profile_source_language[] loop
+          ordinary_attempt := public.begin_cottage_profile_translation_execution(cycle_id, review_locale, 'ordinary', 50000);
+          if public.complete_cottage_profile_translation_execution(ordinary_attempt.id, ordinary_attempt.lease_token,
+              'Ordinary production description', 'Ordinary production rules', 'openai', 'gpt-6-luna', 'none', 'v1')
+            is distinct from true then
+            raise exception 'Ordinary production head preparation must succeed';
+          end if;
+        end loop;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004603","role":"authenticated","aal":"aal2"}', true);
+        foreach review_locale in array array['en', 'ar', 'ckb']::public.cottage_profile_source_language[] loop
+          perform public.decide_cottage_profile_localization(cycle_id, review_locale, true, 'Reviewed ordinary current head');
+        end loop;
+        reset role;
+        if (select count(distinct locale) from public.cottage_profile_localized_revisions
+            where review_cycle_id = cycle_id and origin = 'generated'
+              and locale in ('ar', 'ckb') and translation_environment is null) <> 2 then
+          raise exception 'Both ordinary non-source generated locales are required for the history observer';
+        end if;
+        if (select count(*) from public.cottage_profile_localized_heads where review_cycle_id = cycle_id) <> 3
+          or (select count(*) from public.cottage_profile_localized_heads heads
+            join public.cottage_profile_localized_revisions revisions on revisions.id = heads.localized_revision_id
+            where heads.review_cycle_id = cycle_id and heads.locale in ('ar', 'ckb')
+              and revisions.translation_environment is null) <> 2 then
+          raise exception 'Every current non-source head must have ordinary provenance';
+        end if;
+        if (select count(*) from public.cottage_profile_localized_heads heads
+            where heads.review_cycle_id = cycle_id and (
+              select approved from public.cottage_profile_localized_decisions decisions
+              where decisions.localized_revision_id = heads.localized_revision_id
+                and decisions.review_cycle_id = cycle_id and decisions.locale = heads.locale
+              order by decisions.decided_at desc, decisions.id desc limit 1
+            ) is true) <> 3 then
+          raise exception 'All three current heads must hold approval before the history observer';
+        end if;
+        if not exists (select 1 from public.cottage_profile_localized_revisions
+            where review_cycle_id = cycle_id and translation_environment is not null) then
+          raise exception 'The history observer requires retained fictional provenance';
+        end if;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004603","role":"authenticated","aal":"aal2"}', true);
+        begin
+          perform public.approve_cottage_profile_publication(cycle_id, 'Ordinary heads must not erase fictional history');
+          raise exception 'Production publication accepted fictional history behind approved ordinary heads';
+        exception when sqlstate 'RC203' then null; end;
+        -- Roll back temporary native heads without catching unexpected publication success.
+        raise exception 'Roll back mixed-history observer' using errcode = 'ZX821';
+      exception when sqlstate 'ZX821' then null; end;
+      reset role;
+      if retained_heads is distinct from (select array_agg(localized_revision_id order by locale)
+          from public.cottage_profile_localized_heads where review_cycle_id = cycle_id)
+        or retained_controls is distinct from (select jsonb_build_object(
+          'production', (select to_jsonb(control) from public.cottage_translation_runtime_control control where singleton),
+          'demo', (select to_jsonb(control) from public.cottage_demo_translation_control control where singleton)
+        )) then
+        raise exception 'The mixed-history observer changed retained heads or controls';
+      end if;
+    end;
     reset role;
     update public.cottage_translation_runtime_control set production_ready = false;
     update public.cottage_demo_translation_control set enabled = true;
@@ -897,6 +970,16 @@ select lives_ok(
       update public.cottage_demo_translation_control set environment = 'hosted-demo-other';
       raise exception 'Other environment must refuse';
     exception when check_violation then null; end;
+    set local role service_role;
+    perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+    begin
+      perform enabled from public.cottage_demo_translation_control;
+      raise exception 'Service role must not read demo admission directly';
+    exception when insufficient_privilege then null; end;
+    if public.cottage_translation_runtime_mode() is distinct from 'fictional' then
+      raise exception 'Service role must retain runtime mode RPC access';
+    end if;
+    reset role;
     set local role authenticated;
     perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004601","role":"authenticated","aal":"aal1"}', true);
     begin
