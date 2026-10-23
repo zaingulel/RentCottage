@@ -72,9 +72,12 @@ verification. Do not blindly re-apply migrations or repair history.
 ### Bootstrap a deny-all Worker
 
 This bootstrap procedure applies before initial target-pin activation. Use reviewed merged source with null
-pins in `src/config/hosted-demo-target.ts`. After activation, roll back using the captured denied Worker
-version. Never clear pins in an unreviewed local tree or reuse an admitted artifact as bootstrap. Require an isolated shell
-without inherited production credentials or ignored environment files injecting hosted or real settings.
+pins in `src/config/hosted-demo-target.ts` and an explicitly empty `env.demo.triggers.crons: []`
+in the reviewed deployment configuration. The ordinary demo configuration includes a minute cron, so it cannot
+be used unchanged for bootstrap without scheduling. After activation, roll back using the captured denied Worker
+version and the schedule removal procedure below. Never clear pins in an unreviewed local tree or reuse an
+admitted artifact as bootstrap. Require an isolated shell without inherited production credentials or ignored
+environment files injecting hosted or real settings.
 Build the existing entrypoint's OpenNext dependency with only the harmless synthetic settings below.
 Export those same settings for the secret scan and the admission test's preview startup server. These are
 synthetic local build values, never managed-project credentials.
@@ -106,13 +109,14 @@ node scripts/run-log.mjs demo bootstrap admission -- env PLAYWRIGHT_SERVER=worke
 The selected Miniflare observer bundles source with fixture target pins and an OpenNext forwarding sentinel.
 It proves admission logic, not the compiled null-pin artifact. Actual hosted denial below proves that artifact.
 
-Before upload, verify the null-pin entrypoint, Worker-first assets and absent schedule. Only after exact
-Worker creation/deployment approval, upload the denied artifact:
+Before upload, verify the null-pin entrypoint, Worker-first assets and explicitly empty cron configuration.
+Only after exact Worker creation/deployment approval, upload the denied artifact:
 
 ```sh
 node scripts/run-log.mjs demo bootstrap deploy -- npx wrangler deploy --env demo --var "DEPLOYMENT_COMMIT:$DEPLOYMENT_COMMIT"
 ```
 
+Read back an empty schedule on the exact deployed Worker and allow propagation before continuing.
 Retain the returned denied Worker version for rollback. Before configuring Access, actual hosted page,
 real asset and action requests must return `403` with the exact body `Access denied` and
 `Cache-Control: no-store`. A Cloudflare edge error, such as error 1010, is an incomplete observation,
@@ -149,8 +153,8 @@ Populate `src/config/hosted-demo-target.ts` only from the independently verified
 canonical origin, Supabase project reference, Access issuer and application audience. Complete the named
 actual-pin test, independent/security review and source-delivery gates, then merge before building or
 deploying an admitted app. `hosted-demo-worker.ts` validates admission before forwarding pages, assets and
-actions; retain Worker-first asset routing and no scheduled handler. If dashboard routing changes during
-deployment, preserve denial and reconcile only the approved exact route.
+actions; retain Worker-first asset routing and the guarded native scheduling described below. If dashboard
+routing changes during deployment, preserve denial and reconcile only the approved exact route.
 
 ### Prepare native identities
 
@@ -221,10 +225,58 @@ text when translation is unavailable. They do not call a live translation suppli
 translation provenance for hosted content. No real payment, SMS or external customer notification is enabled;
 a fictional `delivered` result is not evidence that a person received a message.
 
-Scheduling belongs to [#820](https://github.com/zaingulel/RentCottage/issues/820), while scenario
-and catalog preparation belong to [#821](https://github.com/zaingulel/RentCottage/issues/821). Application
-composition adds neither a hosted scheduled handler nor prepared scenarios. Keep those dependencies separate
-from the database compatibility and invitation gates.
+Scenario and catalog preparation belong to [#821](https://github.com/zaingulel/RentCottage/issues/821).
+Scheduling does not prepare those scenarios or remove the database compatibility and invitation gates.
+
+### Operate native demo scheduling
+
+[`wrangler.jsonc`](../wrangler.jsonc) configures `env.demo.triggers.crons: ["* * * * *"]` for the
+[`hosted-demo-worker.ts`](../hosted-demo-worker.ts) entrypoint. This is the hosted demo's every-minute
+[Cloudflare Cron Trigger](https://developers.cloudflare.com/workers/configuration/cron-triggers/).
+Select the demo environment explicitly. Cloudflare uses Coordinated Universal Time (UTC) for cron.
+The database's authoritative clock and Iraq-time rules decide due eligibility, not the scheduled event's
+timestamp or the operator's laptop. Native scheduling needs no laptop trigger, public endpoint or Access token.
+
+The handler admits only the exact validated hosted demo and minute cron. Each tick concurrently invokes the
+existing bounded expiry, capture, refund, completion and notification drains once and awaits all five.
+The [scheduled handler contract](https://developers.cloudflare.com/workers/runtime-apis/handlers/scheduled/)
+keeps the invocation alive for its returned promise within the runtime limit. An idle successful tick may
+process no due work; the schedule still makes database calls. A fictional notification outcome never proves
+delivery to a person.
+
+Any thrown drain failure, or a resolved notification `uncertain` or `retryable` outcome, fails the hosted tick.
+The aggregate failure identifies the affected service names. Notification `stale`, `suppressed` and
+`unavailable` from lease contention retain their existing meanings and do not themselves fail the tick;
+a thrown database error does. Neither a successful invocation nor a failed acknowledgement overrides durable
+business facts.
+
+Source configuration, a source merge and local native Worker checks do not establish live activation.
+Require the named native runtime/database checks, fresh independent/security review and explicit scheduling
+sign-off before deployment. Deployment and schedule activation each require exact-target owner approval.
+After an approved deployment, retain the deployed version, exact Worker schedule readback and observed native
+execution with its durable outcomes as private activation evidence. Until those observations complete,
+automatic hosted execution remains unverified.
+
+For diagnosis, select the exact demo Worker in the Cloudflare dashboard, then Settings, Trigger Events,
+View events to inspect Cron Events. Check Worker failures alongside those invocation outcomes and verify the
+deployed version and configured cron. Allow provider propagation and event-display delay before concluding
+that no invocation occurred. Inspect the existing durable work, attempts, leases, business receipts and
+fictional effect/notification readers for the same operation identities. A tick failure can follow a committed
+transition whose acknowledgement was interrupted. Keep quarantined work held and preserve unresolved inquiry
+outcomes; do not infer that a failed inquiry proves absence.
+
+To stop scheduling, first obtain exact-target deployment approval for a reviewed configuration with
+`env.demo.triggers.crons: []`, then deploy it through the existing demo deployment procedure. Read back removal
+on that exact Worker and allow propagation and in-flight invocations to settle. Cloudflare leaves existing
+triggers in place when `triggers` or `crons` is omitted; omitting the property or rolling back code alone does
+not remove cron. Preserve work and receipt evidence while stopping.
+
+Resume only after diagnosis through the existing lease, fencing, durable inquiry and recovery rules.
+Restoring the reviewed minute schedule requires separate exact-target deployment/activation approval and
+readback. For code rollback, use the prior reviewed Worker version while managing cron explicitly as above.
+Rollback and retries cannot undo committed booking, payment, completion or notification facts. Never rewrite
+statuses, delete evidence, bypass quarantine or introduce a public trigger to force progress. The local
+rehearsal's manual trigger below remains local only.
 
 ### Build the final admitted app from merged source
 
@@ -234,7 +286,8 @@ project's credentials to a clean build environment through the existing private 
 `APP_ENVIRONMENT=preview` and `HOSTED_DEMO=true`. Discard the bootstrap exports and artifact. Read back the
 project bindings, secret custody, Access policy, custom domain and expiry settings. Confirm the existing remote
 settings belong to that exact dedicated project before retaining them; never borrow preview or production
-settings. Only after the required provider approvals, run:
+settings. The ordinary demo deployment also configures the minute cron; require explicit exact-target
+schedule activation approval as well as deployment approval before running it. Only after those approvals, run:
 
 ```sh
 export DEPLOYMENT_COMMIT="$(git rev-parse HEAD)"
