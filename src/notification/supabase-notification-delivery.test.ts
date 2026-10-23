@@ -1,8 +1,9 @@
 import { bookingEventNotice } from "./booking-event-notice";
 import { describe, expect, it, vi } from "vitest";
 import { SupabaseNotificationDeliveryRepository } from "./supabase-notification-delivery";
+import type { NotificationLease } from "./notification-delivery";
 
-const validLease = {
+const validLease: NotificationLease = {
   receiptId: "00000000-0000-4000-8000-000000000035",
   recipientUserId: "00000000-0000-4000-8000-000000000036",
   recipientRole: "customer",
@@ -40,6 +41,7 @@ describe("Supabase notification delivery repository", () => {
 
   it.each([
     { payload: { ...validLease.payload, title: "" } },
+    { payload: { ...validLease.payload, fictional: false } },
     { payload: { ...validLease.payload, unexpected: "field" } },
     {
       payload: {
@@ -202,4 +204,126 @@ describe("receiptless request notice binding", () => {
       } as never).listCandidates(10),
     ).rejects.toThrow(/invalid/);
   });
+});
+
+it("hosted notification composition binds every effect call", async () => {
+  const effect = {
+    effectId: "00000000-0000-4000-8000-000000000038",
+    supplierDeliveryReference: "fictional-notification-38",
+    executedAt: "2099-01-01T00:00:00Z",
+  };
+  const expectedBinding = {
+    receiptId: "00000000-0000-4000-8000-000000000035",
+    recipientUserId: "00000000-0000-4000-8000-000000000036",
+    recipientRole: "customer",
+    bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
+    bookingReference: "CONFIRMED-BOOKING-35",
+    locale: "en",
+    logicalId: "paid-confirmation:00000000-0000-4000-8000-000000000035",
+    templateVersion: "paid-confirmation-v1",
+    payload: validLease.payload,
+    payloadSha256: "a".repeat(64),
+  };
+  for (const environment of [
+    "hosted-demo-yvibcyqtyihpzpmomnzg",
+    "local-test",
+    undefined,
+  ] as const) {
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { status: "not-found" }, error: null })
+      .mockResolvedValueOnce({
+        data: { status: "delivered", ...effect },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { status: "delivered", historical: false },
+        error: null,
+      });
+    const repository = new SupabaseNotificationDeliveryRepository(
+      { rpc } as never,
+      environment,
+    );
+    await expect(repository.queryEffect(validLease)).resolves.toEqual({
+      status: "not-found",
+    });
+    await expect(repository.executeEffect(validLease)).resolves.toEqual({
+      status: "delivered",
+      ...effect,
+    });
+    await expect(
+      repository.completeDelivered(validLease, {
+        status: "delivered",
+        ...effect,
+      }),
+    ).resolves.toEqual({ status: "delivered", historical: false });
+    const args = {
+      target_receipt_id: "00000000-0000-4000-8000-000000000035",
+      target_generation: 1,
+      target_token: "00000000-0000-4000-8000-000000000037",
+      target_binding: {
+        ...expectedBinding,
+        ...(environment === "hosted-demo-yvibcyqtyihpzpmomnzg"
+          ? { fictionalEnvironment: "hosted-demo-yvibcyqtyihpzpmomnzg" }
+          : {}),
+      },
+    };
+    expect(rpc.mock.calls).toEqual([
+      ["query_fictional_booking_confirmation_notification_effect", args],
+      ["execute_fictional_booking_confirmation_notification_effect", args],
+      [
+        "complete_booking_confirmation_notification_delivery",
+        { ...args, target_effect_id: "00000000-0000-4000-8000-000000000038" },
+      ],
+    ]);
+
+    for (const status of ["stale", "suppressed"] as const) {
+      rpc.mockResolvedValue({ data: { status }, error: null });
+      await expect(repository.executeEffect(validLease)).resolves.toEqual({
+        status,
+      });
+    }
+    rpc.mockResolvedValue({ data: { status: "stale" }, error: null });
+    await expect(repository.queryEffect(validLease)).resolves.toEqual({
+      status: "stale",
+    });
+    rpc.mockResolvedValue({ data: { status: "unavailable" }, error: null });
+    await expect(
+      repository.completeDelivered(validLease, { status: "found", ...effect }),
+    ).resolves.toEqual({ status: "unavailable" });
+    for (const result of [
+      { data: null, error: { message: "PRIVATE database failure" } },
+      { data: { status: "invented" }, error: null },
+      { data: { status: "found", ...effect, effectId: null }, error: null },
+      {
+        data: { status: "delivered", ...effect, executedAt: "invalid" },
+        error: null,
+      },
+    ]) {
+      rpc.mockResolvedValue(result);
+      await expect(repository.queryEffect(validLease)).rejects.toThrow(
+        /unavailable|invalid notification/,
+      );
+      await expect(repository.executeEffect(validLease)).rejects.toThrow(
+        /unavailable|invalid notification/,
+      );
+      await expect(
+        repository.completeDelivered(validLease, {
+          status: "delivered",
+          ...effect,
+        }),
+      ).rejects.toThrow(/unavailable|invalid notification/);
+    }
+  }
+  for (const environment of [null, "hosted-demo-foreign", "", true, {}, 7]) {
+    const rpc = vi.fn();
+    expect(
+      () =>
+        new SupabaseNotificationDeliveryRepository(
+          { rpc } as never,
+          environment as never,
+        ),
+    ).toThrow("fictional notification environment");
+    expect(rpc).not.toHaveBeenCalled();
+  }
 });

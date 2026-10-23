@@ -399,7 +399,7 @@ CREATE TABLE IF NOT EXISTS "public"."fictional_booking_confirmation_notification
     "execution_lease_token" "uuid" NOT NULL,
     "supplier_delivery_reference" "text" NOT NULL,
     "executed_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
-    CONSTRAINT "fictional_booking_confirmation_notification_effect_identity" CHECK (supplier='fictional-notifications' AND environment='local-test' AND recipient_role IN ('customer','cottage_owner') AND payload_sha256 ~ '^[0-9a-f]{64}$' AND execution_lease_generation>0 AND ((event_id IS NULL AND logical_id='paid-confirmation:'||receipt_id AND template_version='paid-confirmation-v1') OR (event_id IS NOT NULL AND logical_id='booking-event:'||event_id AND template_version='booking-event-v1'))),
+    CONSTRAINT "fictional_booking_confirmation_notification_effect_identity" CHECK (supplier='fictional-notifications' AND environment IN ('local-test','hosted-demo-yvibcyqtyihpzpmomnzg') AND recipient_role IN ('customer','cottage_owner') AND payload_sha256 ~ '^[0-9a-f]{64}$' AND execution_lease_generation>0 AND ((event_id IS NULL AND logical_id='paid-confirmation:'||receipt_id AND template_version='paid-confirmation-v1') OR (event_id IS NOT NULL AND logical_id='booking-event:'||event_id AND template_version='booking-event-v1'))),
     CONSTRAINT fictional_booking_confirmation_notification_effects_source_shape CHECK ((receipt_id IS NOT NULL AND booking_reference IS NOT NULL) OR (receipt_id IS NULL AND event_id IS NOT NULL AND booking_reference IS NULL AND payload->>'kind' IN ('request_new','request_accepted','request_payment_required','request_declined','request_withdrawn','request_expired','recovery_processing','recovery_retryable','recovery_attention')))
 );
 
@@ -697,7 +697,7 @@ CREATE TABLE IF NOT EXISTS "public"."simulated_payment_effects" (
     "physical_execution_count" smallint NOT NULL,
     "created_at" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    CONSTRAINT "simulated_payment_effect_scope" CHECK ((length(provider)>0 AND environment='local-test' AND length(merchant_id)>0 AND length(terminal_id)>0)),
+    CONSTRAINT "simulated_payment_effect_scope" CHECK ((length(provider)>0 AND environment='local-test' AND length(merchant_id)>0 AND length(terminal_id)>0) OR (provider='fictional-payments' AND environment='hosted-demo-yvibcyqtyihpzpmomnzg' AND merchant_id='fictional-merchant' AND terminal_id='fictional-terminal')),
     CONSTRAINT "simulated_payment_effect_state" CHECK ((((state='reserved' AND result IS NULL AND physical_execution_count=0) OR (state='closed-not-executed' AND result->>'outcome'='not-executed' AND physical_execution_count=0) OR (state='executed' AND result->>'outcome' IN ('succeeded','failed','indeterminate') AND physical_execution_count=1))) IS TRUE)
 );
 ALTER TABLE "public"."simulated_payment_effects" OWNER TO "postgres";

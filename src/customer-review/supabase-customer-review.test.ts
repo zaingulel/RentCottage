@@ -2,15 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { createRequestClient, runtimeEnabled } = vi.hoisted(() => ({
   createRequestClient: vi.fn(),
-  runtimeEnabled: vi.fn(() => true),
+  runtimeEnabled: vi.fn<() => "local-test" | undefined>(() => "local-test"),
 }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/access/supabase-server", () => ({
   createRequestSupabaseClient: createRequestClient,
 }));
-vi.mock("@/booking-request/booking-request-test-runtime", () => ({
-  bookingRequestTestRuntimeIsEnabled: runtimeEnabled,
+vi.mock("@/booking-request/fictional-supplier-environment", () => ({
+  fictionalSupplierEnvironment: runtimeEnabled,
 }));
 
 import { createRequestCustomerReview } from "./request-customer-review";
@@ -37,7 +37,7 @@ function clientWith(data: unknown, error: unknown = null) {
 describe("Supabase Customer review repository", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    runtimeEnabled.mockReturnValue(true);
+    runtimeEnabled.mockReturnValue("local-test");
   });
   it("decodes exact customer suspension for new reviews without admitting malformed or owner reply outcomes", async () => {
     const input = {
@@ -257,7 +257,7 @@ describe("Supabase Customer review repository", () => {
     const request = await createRequestCustomerReview();
     await expect(request?.listOwner(input)).resolves.toEqual(page);
     expect(createRequestClient).toHaveBeenCalledOnce();
-    runtimeEnabled.mockReturnValue(false);
+    runtimeEnabled.mockReturnValue(undefined);
     await expect(createRequestCustomerReview()).resolves.toBeUndefined();
   });
 
@@ -1264,7 +1264,7 @@ describe("Supabase Customer review repository", () => {
     ]);
     expect(createRequestClient).toHaveBeenCalledOnce();
 
-    runtimeEnabled.mockReturnValue(false);
+    runtimeEnabled.mockReturnValue(undefined);
     await expect(createRequestCustomerReview()).resolves.toBeUndefined();
   });
 

@@ -5,7 +5,7 @@ import { notFound, redirect, unstable_rethrow } from "next/navigation";
 
 import { loadOwnerCottageFromPrices } from "@/cottage-discovery/request-cottage-discovery";
 import { loadOwnerCottageAccess } from "@/cottage-profile/request-owner-cottage-access";
-import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "@/booking-request/fictional-supplier-environment";
 import { waitingBookingRequestCount } from "@/booking-request/booking-request-display";
 import { loadOwnerBookingRequestNotifications } from "@/booking-request/request-owner-booking-request-notifications";
 import { BackofficeNavigation } from "@/components/backoffice-navigation";
@@ -27,7 +27,7 @@ async function loadOwnerCottages() {
       ),
       canCreate: approvalState === "approved",
       notifications:
-        approvalState === "approved" && bookingRequestTestRuntimeIsEnabled()
+        approvalState === "approved" && fictionalSupplierEnvironment()
           ? await loadOwnerBookingRequestNotifications()
           : undefined,
     };

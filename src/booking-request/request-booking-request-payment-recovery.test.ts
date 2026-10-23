@@ -1,31 +1,26 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-const { enabled, customer, createClient } = vi.hoisted(() => ({
-  enabled: vi.fn(),
+const { customer, createClient } = vi.hoisted(() => ({
   customer: vi.fn(),
   createClient: vi.fn(),
-}));
-vi.mock("./booking-request-test-runtime", () => ({
-  bookingRequestTestRuntimeIsEnabled: enabled,
 }));
 vi.mock("@/access/supabase-server", () => ({
   createRequestSupabaseClient: customer,
 }));
-vi.mock("@/config/server-runtime", () => ({
-  getServerEnvironment: () => ({
-    name: "test",
-    supabase: {
-      projectRef: "local-test",
-      url: "http://127.0.0.1:15331",
-      secretKey: "test-secret",
-    },
-  }),
-}));
 vi.mock("@supabase/supabase-js", () => ({ createClient }));
 import { createRequestBookingRequestPaymentRecovery } from "./request-booking-request-payment-recovery";
-beforeEach(() => vi.clearAllMocks());
-it("returns unavailable before constructing clients outside the fictional local runtime", async () => {
-  enabled.mockReturnValue(false);
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.unstubAllEnvs();
+  vi.stubEnv("APP_ENVIRONMENT", "test");
+  vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
+  vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:15331");
+  vi.stubEnv("SUPABASE_SECRET_KEY", "test-secret");
+  vi.stubEnv("HOSTED_DEMO", undefined);
+});
+afterEach(() => vi.unstubAllEnvs());
+it("returns unavailable before constructing clients in ordinary preview", async () => {
+  vi.stubEnv("APP_ENVIRONMENT", "preview");
   await expect(
     createRequestBookingRequestPaymentRecovery(),
   ).resolves.toBeUndefined();
@@ -33,7 +28,6 @@ it("returns unavailable before constructing clients outside the fictional local 
   expect(createClient).not.toHaveBeenCalled();
 });
 it("uses the request authenticated client for admission and stops on denial before private payment work", async () => {
-  enabled.mockReturnValue(true);
   const admit = vi
     .fn()
     .mockResolvedValue({ data: null, error: { code: "RC404" } });

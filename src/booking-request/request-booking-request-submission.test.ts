@@ -1,5 +1,5 @@
 import { setImmediate } from "node:timers/promises";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPaymentLifecycle } from "@/payment/payment-lifecycle";
 import { PaymentSimulator } from "@/payment/payment-simulator";
 
@@ -10,7 +10,6 @@ const {
   createSubmission,
   durablePaymentProvider,
   DurablePaymentSimulator,
-  getServerEnvironment,
 } = vi.hoisted(() => {
   const durablePaymentProvider = {
     identity: {
@@ -28,13 +27,11 @@ const {
     DurablePaymentSimulator: vi.fn(function DurablePaymentSimulator() {
       return durablePaymentProvider;
     }),
-    getServerEnvironment: vi.fn(),
   };
 });
 
 vi.mock("server-only", () => ({}));
 vi.mock("@supabase/supabase-js", () => ({ createClient }));
-vi.mock("@/config/server-runtime", () => ({ getServerEnvironment }));
 vi.mock("@/payment/durable-payment-simulator-core", () => ({
   DurablePaymentSimulator,
 }));
@@ -48,23 +45,28 @@ async function createRequestBookingRequestSubmission() {
   ).createRequestBookingRequestSubmission();
 }
 
-describe("request Booking Request submission factory", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.resetModules();
-    vi.unstubAllEnvs();
-  });
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.resetModules();
+  vi.unstubAllEnvs();
+  vi.stubEnv("APP_ENVIRONMENT", "test");
+  vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
+  vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
+  vi.stubEnv("SUPABASE_SECRET_KEY", "test-service-role-key");
+  vi.stubEnv("HOSTED_DEMO", undefined);
+});
 
-  it("refuses a forbidden runtime before reading privileged configuration or constructing providers", async () => {
+afterEach(() => vi.unstubAllEnvs());
+
+describe("request Booking Request submission factory", () => {
+  it("refuses a forbidden runtime before constructing clients, providers or submission", async () => {
     vi.stubEnv("APP_ENVIRONMENT", "preview");
-    vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
-    vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
 
     await expect(
       createRequestBookingRequestSubmission(),
     ).resolves.toBeUndefined();
-    expect(getServerEnvironment).not.toHaveBeenCalled();
     expect(createClient).not.toHaveBeenCalled();
+    expect(DurablePaymentSimulator).not.toHaveBeenCalled();
     expect(createSubmission).not.toHaveBeenCalled();
   });
 
@@ -79,23 +81,13 @@ describe("request Booking Request submission factory", () => {
         error: null,
       })),
     };
-    vi.stubEnv("APP_ENVIRONMENT", "test");
-    vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
-    vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
-    getServerEnvironment.mockReturnValue({
-      name: "test",
-      supabase: {
-        projectRef: "local-test",
-        url: "http://127.0.0.1:54331",
-        secretKey: "test-service-role-key",
-      },
-    });
     createClient.mockReturnValue(client);
     createSubmission.mockReturnValue({ submit: vi.fn() });
 
     await createRequestBookingRequestSubmission();
 
     expect(DurablePaymentSimulator).toHaveBeenCalledWith({
+      environment: "local-test",
       effects: expect.objectContaining({ client }),
       now: expect.any(Function),
     });
@@ -109,19 +101,6 @@ describe("request Booking Request submission factory", () => {
 });
 
 it("records inquiry evidence for pending authorizations before the database expiry pass", async () => {
-  vi.clearAllMocks();
-  vi.resetModules();
-  vi.stubEnv("APP_ENVIRONMENT", "test");
-  vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
-  vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
-  getServerEnvironment.mockReturnValue({
-    name: "test",
-    supabase: {
-      projectRef: "local-test",
-      url: "http://127.0.0.1:54331",
-      secretKey: "test-service-role-key",
-    },
-  });
   const admission = {
     operationId: "11111111-1111-4111-8111-111111111111",
     purpose: "booking-request-authorization",
@@ -197,19 +176,6 @@ it("records inquiry evidence for pending authorizations before the database expi
 });
 
 it("continues both unresolved recoveries and ordinary submission", async () => {
-  vi.clearAllMocks();
-  vi.resetModules();
-  vi.stubEnv("APP_ENVIRONMENT", "test");
-  vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
-  vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
-  getServerEnvironment.mockReturnValue({
-    name: "test",
-    supabase: {
-      projectRef: "local-test",
-      url: "http://127.0.0.1:54331",
-      secretKey: "test-service-role-key",
-    },
-  });
   const provider = new PaymentSimulator({
     now: () => "2099-08-21T17:00:00.000Z",
     outcomes: ["succeeded", "succeeded"],

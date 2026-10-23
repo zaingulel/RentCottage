@@ -49,7 +49,7 @@ create or replace function pg_temp.capture_execute(permit jsonb,outcome text def
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 -- BEGIN CANCELLATION FIXTURE
-create function pg_temp.seed_cancellation_booking(start_day date) returns void language plpgsql as $seed_function$
+create function pg_temp.seed_cancellation_booking(start_day date,supplier_environment text default 'local-test') returns void language plpgsql as $seed_function$
 declare fixture text := $fixture$
 -- BEGIN CONFIRMATION FIXTURE
 -- BEGIN CAPTURE RECOVERY SOURCE
@@ -136,7 +136,12 @@ insert into auth.users(id,aud,role,email,email_confirmed_at) values('10000000-00
 insert into public.account_contexts(user_id,role) values('10000000-0000-4000-8000-000000003801','platform_administrator');
 
 $fixture$;
+declare lifecycle text:='73000000-0000-4000-8000-000000001001';
+declare fingerprint text;
 begin
+  fingerprint:=encode(extensions.digest('{"provider":{"provider":"fictional-payments","environment":"'||supplier_environment||'","merchantId":"fictional-merchant","terminalId":"fictional-terminal"},"kind":"capture","paymentLifecycleId":"'||lifecycle||'","logicalOperationId":"'||lifecycle||':capture","attemptId":"'||lifecycle||':capture:attempt-2","amountFils":115000000,"currency":"IQD"}','sha256'),'hex');
+  fixture:=replace(fixture,'6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d',fingerprint);
+  fixture:=replace(fixture,'local-test',supplier_environment);
   fixture:=replace(fixture,'2101-01-02',(start_day+1)::text);
   fixture:=replace(fixture,'2101-01-01',start_day::text);
   fixture:=replace(fixture,'2100-12-31',(start_day-1)::text);
@@ -149,6 +154,96 @@ select no_plan();
 create function pg_temp.refund_intent_day(target_command_id uuid) returns date language sql security definer as $$
  select (created_at at time zone 'Asia/Baghdad')::date from public.booking_refund_intents where command_id=target_command_id;
 $$;
+savepoint hosted_refund;
+select pg_temp.seed_cancellation_booking('2101-01-01','hosted-demo-yvibcyqtyihpzpmomnzg');
+select is((select request_fingerprint from public.payment_provider_operations where payment_lifecycle_id='73000000-0000-4000-8000-000000001001' and operation_kind='capture'),
+  'f71cf4b10a334a8ead3094ea8ed0c5f5974d84c7999f26b015074d9fc7d1dd31','hosted refund fixture uses the independently verified capture fingerprint');
+select is((select amount_fils from public.payment_provider_operations where payment_lifecycle_id='73000000-0000-4000-8000-000000001001' and operation_kind='capture'),
+  115000000::bigint,'hosted refund retains the original captured total');
+create temp table hosted_refund_capture as select to_jsonb(operations) original from public.payment_provider_operations operations
+  where payment_lifecycle_id='73000000-0000-4000-8000-000000001001' and operation_kind='capture';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true);
+select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","aal":"aal2"}',true);
+create temp table hosted_refund_intent as select public.request_booking_refund_exception(
+  '60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003819','Hosted compensation',
+  '{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}') result;
+grant select on hosted_refund_intent to service_role;
+set local role service_role;
+create temp table hosted_refund_claim as select public.claim_booking_refund((result->>'intentId')::uuid) result from hosted_refund_intent;
+grant select on hosted_refund_claim to anon,authenticated;
+select is((select result->>'status' from hosted_refund_claim),'execute','hosted refund command obtains a fenced execution permit');
+select is((select result#>'{request,executionPermit,binding,providerIdentity}' from hosted_refund_claim),
+  '{"provider":"fictional-payments","environment":"hosted-demo-yvibcyqtyihpzpmomnzg","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb,
+  'hosted refund permit retains the authoritative capture identity');
+select throws_ok(format('select public.admit_booking_refund(%L::jsonb)',invalid.permit),
+  'RC409','Refund admission binding is invalid',invalid.description)
+from (select jsonb_set(result#>'{request,executionPermit}','{binding,captureOperationId}','"80000000-0000-4000-8000-000000000000"') permit,'hosted refund rejects forged capture' description from hosted_refund_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{binding,amountFils}','31000010'),'hosted refund rejects forged amount' from hosted_refund_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{generation}','2'),'hosted refund rejects forged generation' from hosted_refund_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{leaseToken}','"90000000-0000-4000-8000-000000003899"'),'hosted refund rejects forged lease' from hosted_refund_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{binding,providerIdentity,provider}','"foreign-provider"'),'hosted refund rejects foreign provider' from hosted_refund_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{binding,providerIdentity,environment}','"local-test"'),'hosted refund rejects a mismatched local environment' from hosted_refund_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{binding,providerIdentity,environment}','"unknown"'),'hosted refund rejects unknown environment' from hosted_refund_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{binding,providerIdentity,merchantId}','"foreign-merchant"'),'hosted refund rejects foreign merchant' from hosted_refund_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{binding,providerIdentity,terminalId}','"foreign-terminal"'),'hosted refund rejects foreign terminal' from hosted_refund_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{binding,providerIdentity}','null'),'hosted refund rejects null identity' from hosted_refund_claim
+  union all select (result#>'{request,executionPermit}')#-'{binding,providerIdentity}','hosted refund rejects missing identity' from hosted_refund_claim) invalid;
+set local role anon;
+select throws_ok($$select public.admit_booking_refund((select result#>'{request,executionPermit}' from hosted_refund_claim))$$,
+  '42501',null,'anonymous callers cannot admit a hosted refund');
+set local role authenticated;
+select throws_ok($$select public.admit_booking_refund((select result#>'{request,executionPermit}' from hosted_refund_claim))$$,
+  '42501',null,'authenticated callers cannot admit a hosted refund');
+set local role service_role;
+create temp table hosted_refund_admission(result jsonb);
+select lives_ok($$insert into hosted_refund_admission select public.admit_booking_refund(result#>'{request,executionPermit}') from hosted_refund_claim$$,
+  'approved hosted fictional refund admission preserves its capture binding');
+select is((select result->>'mode' from hosted_refund_admission),'execute','first hosted refund admission authorizes execution');
+create temp table hosted_refund_replay(result jsonb);
+select lives_ok($$insert into hosted_refund_replay select public.admit_booking_refund(result#>'{request,executionPermit}') from hosted_refund_claim$$,
+  'hosted refund permit can be replayed without a second admission');
+select is((select result->>'mode' from hosted_refund_replay),'reconcile','duplicate hosted refund permit grants inquiry only');
+select is((select result->>'operationId' from hosted_refund_replay),(select result->>'operationId' from hosted_refund_admission),
+  'hosted refund replay retains the same operation identity');
+create temp table hosted_refund_effect(result jsonb);
+select lives_ok($$insert into hosted_refund_effect select public.persist_simulated_payment_effect(result-array['purpose','binding','mode'],
+  jsonb_build_object('outcome','succeeded','providerRequestId','hosted-refund-request','providerReference','hosted-refund-reference','movementReference','hosted-refund-movement',
+    'evidence',jsonb_build_object('operationId',result->>'operationId','eventId','hosted-refund-event','provenance','fictional-provider',
+      'originalOutcome','succeeded','executedAt',clock_timestamp(),'occurredAt',clock_timestamp(),'closedAt',null))) from hosted_refund_admission$$,
+  'hosted refund executes through the durable effect store');
+create temp table hosted_refund_recorded(result jsonb);
+select lives_ok($$insert into hosted_refund_recorded select public.record_booking_request_payment_observation((admission.result->>'operationId')::uuid,effect.result,
+  jsonb_build_object('revision',public.get_booking_request_payment_observation_facts((admission.result->>'operationId')::uuid)->>'revision',
+    'recoveryState',null,'quarantineReason',null,'correctiveCaptureId',null)) from hosted_refund_admission admission cross join hosted_refund_effect effect$$,
+  'hosted refund records authoritative receipt and application consequences');
+select is(public.get_booking_refund_facts('60000000-0000-4000-8000-000000001001')->'refunded',
+  '{"bookingPriceFils":30000000,"bookingServiceFeeFils":1000000}'::jsonb,'hosted refund records the exact permitted allocation');
+select lives_ok($$select public.persist_simulated_payment_effect(admission.result-array['purpose','binding','mode'],effect.result)
+  from hosted_refund_admission admission cross join hosted_refund_effect effect$$,'hosted refund effect replay preserves the original execution');
+reset role;
+select is((select jsonb_build_object('provider',provider,'environment',environment,'merchantId',merchant_id,'terminalId',terminal_id)
+  from public.payment_provider_operations where id=(select (result->>'operationId')::uuid from hosted_refund_admission)),
+  '{"provider":"fictional-payments","environment":"hosted-demo-yvibcyqtyihpzpmomnzg","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb,
+  'hosted refund ledger retains the exact capture supplier identity');
+select ok((select ledger.amount_fils=31000000 and ledger.current_outcome='succeeded' and ledger.movement_reference='hosted-refund-movement'
+  and ledger.admission->'permit'=claim.result#>'{request,executionPermit}'
+  and ledger.admission#>>'{permit,binding,captureOperationId}'=(select original->>'id' from hosted_refund_capture)
+  from public.payment_provider_operations ledger cross join hosted_refund_claim claim
+  where ledger.id=(select (result->>'operationId')::uuid from hosted_refund_admission)),
+  'hosted refund preserves the full permit, capture linkage, amount and recorded outcome');
+select is((select physical_execution_count::integer from public.simulated_payment_effects
+  where operation_id=(select (result->>'operationId')::uuid from hosted_refund_admission)),1,'hosted refund replay has one physical execution');
+select is((select result from public.payment_provider_observations where operation_id=(select (result->>'operationId')::uuid from hosted_refund_admission)),
+  (select result from hosted_refund_effect),'hosted refund observation preserves its authoritative supplier receipt');
+select is((select count(*)::integer from public.booking_request_payment_history where provider_operation_id=(select (result->>'operationId')::uuid from hosted_refund_admission)
+  and operation_kind='refund' and outcome='succeeded'),1,'hosted refund has one authoritative successful history entry');
+select is((select count(*)::integer from public.booking_notification_events where refund_intent_id=(select (result->>'intentId')::uuid from hosted_refund_intent)
+  and event_kind='refund_returned'),2,'hosted refund retains one returned event for each original receipt recipient');
+select is((select to_jsonb(operations) from public.payment_provider_operations operations
+  where payment_lifecycle_id='73000000-0000-4000-8000-000000001001' and operation_kind='capture'),
+  (select original from hosted_refund_capture),'hosted refund never rewrites the original capture evidence');
+rollback to hosted_refund;
 select pg_temp.seed_cancellation_booking('2101-01-01');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);

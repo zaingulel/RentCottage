@@ -49,7 +49,7 @@ create or replace function pg_temp.capture_execute(permit jsonb,outcome text def
 $$;
 -- END PAYMENT EVIDENCE FIXTURE
 -- BEGIN COMPLETION FIXTURE
-create function pg_temp.seed_completion_booking(start_day date, confirm_booking boolean default true) returns void language plpgsql as $seed_function$
+create function pg_temp.seed_completion_booking(start_day date, confirm_booking boolean default true, supplier_environment text default 'local-test') returns void language plpgsql as $seed_function$
 declare fixture text := $fixture$
 -- BEGIN CONFIRMATION FIXTURE
 -- BEGIN CAPTURE RECOVERY SOURCE
@@ -136,7 +136,12 @@ insert into auth.users(id,aud,role,email,email_confirmed_at) values('10000000-00
 insert into public.account_contexts(user_id,role) values('10000000-0000-4000-8000-000000003801','platform_administrator');
 
 $fixture$;
+declare lifecycle text:='73000000-0000-4000-8000-000000001001';
+declare fingerprint text;
 begin
+  fingerprint:=encode(extensions.digest('{"provider":{"provider":"fictional-payments","environment":"'||supplier_environment||'","merchantId":"fictional-merchant","terminalId":"fictional-terminal"},"kind":"capture","paymentLifecycleId":"'||lifecycle||'","logicalOperationId":"'||lifecycle||':capture","attemptId":"'||lifecycle||':capture:attempt-2","amountFils":105000000,"currency":"IQD"}','sha256'),'hex');
+  fixture:=replace(fixture,'28d4ab70479df702acf9bb25ad91c2ddcd118bd75507dde1c874e0b015b7ac84',fingerprint);
+  fixture:=replace(fixture,'local-test',supplier_environment);
   fixture:=replace(fixture,'2101-01-02',(start_day+1)::text);
   fixture:=replace(fixture,'2101-01-01',start_day::text);
   fixture:=replace(fixture,'2100-12-31',(start_day-1)::text);
@@ -171,8 +176,118 @@ create function pg_temp.source_history() returns jsonb language sql as $$
  'observations',(select jsonb_agg(to_jsonb(o) order by id) from public.payment_provider_observations o),
  'paymentHistory',(select jsonb_agg(to_jsonb(h) order by id) from public.booking_request_payment_history h));
 $$;
-select plan(69);
+select plan(107);
+savepoint hosted_settlement;
+-- Past dates arrange this database boundary; completion still uses real database time.
+select pg_temp.seed_completion_booking((clock_timestamp() at time zone 'Asia/Baghdad')::date-3,true,'hosted-demo-yvibcyqtyihpzpmomnzg');
+select is((select request_fingerprint from public.payment_provider_operations where payment_lifecycle_id='73000000-0000-4000-8000-000000001001' and operation_kind='capture'),
+  '8d0a4190413d590cab9a5aea48f9bd360a83416dc19adf5b0e00f5aa7ae243df','hosted settlement fixture uses the independently verified capture fingerprint');
+select is((select amount_fils from public.payment_provider_operations where payment_lifecycle_id='73000000-0000-4000-8000-000000001001' and operation_kind='capture'),
+  105000000::bigint,'hosted settlement retains its distinct original captured total');
+create temp table hosted_settlement_capture as select to_jsonb(operations) original from public.payment_provider_operations operations
+  where payment_lifecycle_id='73000000-0000-4000-8000-000000001001' and operation_kind='capture';
+select pg_temp.actor('10000000-0000-4000-8000-000000003801','aal2');
+set local role authenticated;
+select throws_ok($$select public.request_booking_settlement('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000002299','Hosted settlement','stale',90000000)$$,
+  'RC409',null,'hosted settlement requires authoritative maturity rather than past dates alone');
+set local role service_role;
+select public.commit_booking_completion('60000000-0000-4000-8000-000000001001',(select value->>'revision' from public.list_due_booking_completions(50) value));
+set local role authenticated;
+select is(public.get_booking_settlement_facts('60000000-0000-4000-8000-000000001001')#>>'{maturity,payoutPrerequisiteAvailable}','true',
+  'hosted settlement consumes real database completion maturity');
+create temp table hosted_settlement_intent as select public.request_booking_settlement('60000000-0000-4000-8000-000000001001',
+  '90000000-0000-4000-8000-000000002299','Hosted settlement',public.get_booking_settlement_facts('60000000-0000-4000-8000-000000001001')->>'revision',90000000) result;
+grant select on hosted_settlement_intent to service_role;
+set local role service_role;
+create temp table hosted_settlement_claim as select public.claim_booking_settlement((result->>'intentId')::uuid) result from hosted_settlement_intent;
+grant select on hosted_settlement_claim to anon,authenticated;
+select is((select result->>'status' from hosted_settlement_claim),'execute','hosted settlement obtains a fenced execution permit');
+select is((select result#>'{request,executionPermit,binding,providerIdentity}' from hosted_settlement_claim),
+  '{"provider":"fictional-payments","environment":"hosted-demo-yvibcyqtyihpzpmomnzg","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb,
+  'hosted settlement permit retains the authoritative capture identity');
+select throws_ok(format('select public.admit_booking_settlement(%L::jsonb)',invalid.permit),
+  'RC409','Settlement admission binding is invalid',invalid.description)
+from (select jsonb_set(result#>'{request,executionPermit}','{binding,captureOperationId}','"80000000-0000-4000-8000-000000000000"') permit,'hosted settlement rejects forged capture' description from hosted_settlement_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{binding,amountFils}','94500000'),'hosted settlement rejects forged amount' from hosted_settlement_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{generation}','2'),'hosted settlement rejects forged generation' from hosted_settlement_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{leaseToken}','"92000000-0000-4000-8000-000000002299"'),'hosted settlement rejects forged lease' from hosted_settlement_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{binding,providerIdentity,provider}','"foreign-provider"'),'hosted settlement rejects foreign provider' from hosted_settlement_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{binding,providerIdentity,environment}','"local-test"'),'hosted settlement rejects a mismatched local environment' from hosted_settlement_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{binding,providerIdentity,environment}','"unknown"'),'hosted settlement rejects unknown environment' from hosted_settlement_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{binding,providerIdentity,merchantId}','"foreign-merchant"'),'hosted settlement rejects foreign merchant' from hosted_settlement_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{binding,providerIdentity,terminalId}','"foreign-terminal"'),'hosted settlement rejects foreign terminal' from hosted_settlement_claim
+  union all select jsonb_set(result#>'{request,executionPermit}','{binding,providerIdentity}','null'),'hosted settlement rejects null identity' from hosted_settlement_claim
+  union all select (result#>'{request,executionPermit}')#-'{binding,providerIdentity}','hosted settlement rejects missing identity' from hosted_settlement_claim) invalid;
+set local role anon;
+select throws_ok($$select public.admit_booking_settlement((select result#>'{request,executionPermit}' from hosted_settlement_claim))$$,
+  '42501',null,'anonymous callers cannot admit hosted settlement');
+set local role authenticated;
+select throws_ok($$select public.admit_booking_settlement((select result#>'{request,executionPermit}' from hosted_settlement_claim))$$,
+  '42501',null,'authenticated callers cannot admit hosted settlement');
+set local role service_role;
+create temp table hosted_settlement_blocked(result jsonb);
+savepoint hosted_hold_before;
+set local role authenticated;
+select public.record_booking_payout_command('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000002297','place_hold','Hosted admission stopped',null,null,null);
+set local role service_role;
+select lives_ok($$insert into hosted_settlement_blocked select public.admit_booking_settlement(result#>'{request,executionPermit}') from hosted_settlement_claim$$,
+  'hosted settlement rechecks a hold before admission');
+select is((select result->>'status' from hosted_settlement_blocked),'not-admitted','a hosted hold prevents physical settlement authority');
+rollback to hosted_hold_before;
+savepoint hosted_reservation_before;
+set local role authenticated;
+select public.request_booking_refund_exception('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000002298','Hosted refund reservation','{"bookingPriceFils":10000000,"bookingServiceFeeFils":0}');
+set local role service_role;
+select lives_ok($$insert into hosted_settlement_blocked select public.admit_booking_settlement(result#>'{request,executionPermit}') from hosted_settlement_claim$$,
+  'hosted settlement rechecks a refund reservation before admission');
+select is((select result->>'status' from hosted_settlement_blocked),'not-admitted','a hosted refund reservation prevents physical settlement authority');
+rollback to hosted_reservation_before;
+create temp table hosted_settlement_admission(result jsonb);
+select lives_ok($$insert into hosted_settlement_admission select public.admit_booking_settlement(result#>'{request,executionPermit}') from hosted_settlement_claim$$,
+  'approved hosted fictional settlement admission preserves its capture binding');
+select is((select result->>'mode' from hosted_settlement_admission),'execute','first hosted settlement admission authorizes execution');
+create temp table hosted_settlement_replay(result jsonb);
+select lives_ok($$insert into hosted_settlement_replay select public.admit_booking_settlement(result#>'{request,executionPermit}') from hosted_settlement_claim$$,
+  'hosted settlement permit can be replayed without a second admission');
+select is((select result->>'mode' from hosted_settlement_replay),'reconcile','duplicate hosted settlement permit grants inquiry only');
+select is((select result->>'operationId' from hosted_settlement_replay),(select result->>'operationId' from hosted_settlement_admission),
+  'hosted settlement replay retains the same operation identity');
+select lives_ok($$select pg_temp.payment_fixture_result(result,'succeeded') from hosted_settlement_admission$$,
+  'hosted settlement executes and records its durable effect');
+select lives_ok($$select pg_temp.payment_fixture_result(result,'succeeded') from hosted_settlement_admission$$,
+  'hosted settlement replay preserves the original execution and receipt');
+select is(public.claim_booking_settlement((select (result->>'intentId')::uuid from hosted_settlement_intent))->>'status','settled',
+  'recorded hosted settlement cannot execute again');
+reset role;
+select is((select jsonb_build_object('provider',provider,'environment',environment,'merchantId',merchant_id,'terminalId',terminal_id)
+  from public.payment_provider_operations where id=(select (result->>'operationId')::uuid from hosted_settlement_admission)),
+  '{"provider":"fictional-payments","environment":"hosted-demo-yvibcyqtyihpzpmomnzg","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb,
+  'hosted settlement ledger retains the exact capture supplier identity');
+select ok((select ledger.amount_fils=90000000 and ledger.current_outcome='succeeded'
+  and ledger.admission->'permit'=claim.result#>'{request,executionPermit}'
+  and ledger.admission#>>'{permit,binding,captureOperationId}'=(select original->>'id' from hosted_settlement_capture)
+  from public.payment_provider_operations ledger cross join hosted_settlement_claim claim
+  where ledger.id=(select (result->>'operationId')::uuid from hosted_settlement_admission)),
+  'hosted settlement preserves its exact permit, capture linkage, owner amount and outcome');
+select is((select physical_execution_count::integer from public.simulated_payment_effects
+  where operation_id=(select (result->>'operationId')::uuid from hosted_settlement_admission)),1,'hosted settlement replay has one physical execution');
+select is((select count(*)::integer from public.booking_settlement_receipts receipt
+  join public.payment_provider_observations observation on observation.id=receipt.observation_id and observation.operation_id=receipt.operation_id
+  join public.booking_request_payment_history history on history.sequence=receipt.history_sequence and history.provider_operation_id=receipt.operation_id
+  join public.simulated_payment_effects effect on effect.operation_id=receipt.operation_id
+  where receipt.operation_id=(select (result->>'operationId')::uuid from hosted_settlement_admission)
+    and observation.result=effect.result and history.operation_kind='settlement' and history.outcome='succeeded'
+    and receipt.active_hold_ids='{}'::uuid[] and receipt.active_dispute_ids='{}'::uuid[]),1,
+  'hosted settlement retains one immutable receipt bound to its effect, observation and history');
+select is((select count(*)::integer from public.booking_request_payment_history where provider_operation_id=(select (result->>'operationId')::uuid from hosted_settlement_admission)
+  and operation_kind='settlement' and outcome='succeeded'),1,'hosted settlement retains one successful history entry');
+select is((select to_jsonb(operations) from public.payment_provider_operations operations
+  where payment_lifecycle_id='73000000-0000-4000-8000-000000001001' and operation_kind='capture'),
+  (select original from hosted_settlement_capture),'hosted settlement never rewrites the original capture evidence');
+rollback to hosted_settlement;
 select pg_temp.seed_completion_booking((clock_timestamp() at time zone 'Asia/Baghdad')::date-3);
+select is((select request_fingerprint from public.payment_provider_operations where payment_lifecycle_id='73000000-0000-4000-8000-000000001001' and operation_kind='capture'),
+  '28d4ab70479df702acf9bb25ad91c2ddcd118bd75507dde1c874e0b015b7ac84','local settlement fixture preserves its original capture fingerprint');
 create temp table settlement_values(key text primary key,value jsonb);
 grant all on settlement_values to authenticated,service_role;
 create function pg_temp.settlement_value(key text) returns jsonb language sql as $$select value from settlement_values where settlement_values.key=$1$$;

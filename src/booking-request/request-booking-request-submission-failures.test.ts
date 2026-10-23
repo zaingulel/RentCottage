@@ -1,25 +1,22 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PaymentOperationAdmission } from "@/payment/payment-operation-execution";
 
-const { createClient, durablePaymentProvider, getServerEnvironment } =
-  vi.hoisted(() => ({
-    createClient: vi.fn(),
-    durablePaymentProvider: {
-      identity: {
-        provider: "fictional-payments",
-        environment: "local-test",
-        merchantId: "fictional-merchant",
-        terminalId: "fictional-terminal",
-      },
-      execute: vi.fn(),
-      query: vi.fn(),
+const { createClient, durablePaymentProvider } = vi.hoisted(() => ({
+  createClient: vi.fn(),
+  durablePaymentProvider: {
+    identity: {
+      provider: "fictional-payments",
+      environment: "local-test",
+      merchantId: "fictional-merchant",
+      terminalId: "fictional-terminal",
     },
-    getServerEnvironment: vi.fn(),
-  }));
+    execute: vi.fn(),
+    query: vi.fn(),
+  },
+}));
 
 vi.mock("server-only", () => ({}));
 vi.mock("@supabase/supabase-js", () => ({ createClient }));
-vi.mock("@/config/server-runtime", () => ({ getServerEnvironment }));
 vi.mock("@/payment/durable-payment-simulator-core", () => ({
   DurablePaymentSimulator: vi.fn(function DurablePaymentSimulator() {
     return durablePaymentProvider;
@@ -48,17 +45,12 @@ const admission: PaymentOperationAdmission = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.resetModules();
+  vi.unstubAllEnvs();
   vi.stubEnv("APP_ENVIRONMENT", "test");
   vi.stubEnv("SUPABASE_PROJECT_REF", "local-test");
   vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:54331");
-  getServerEnvironment.mockReturnValue({
-    name: "test",
-    supabase: {
-      projectRef: "local-test",
-      url: "http://127.0.0.1:54331",
-      secretKey: "test-service-role-key",
-    },
-  });
+  vi.stubEnv("SUPABASE_SECRET_KEY", "test-service-role-key");
+  vi.stubEnv("HOSTED_DEMO", undefined);
 });
 
 afterEach(() => {

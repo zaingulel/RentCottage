@@ -4,13 +4,7 @@ import type {
   NotificationLease,
   NotificationQueryResult,
 } from "./notification-delivery";
-import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime-core";
-
-interface FictionalNotificationEnvironment {
-  readonly APP_ENVIRONMENT?: string;
-  readonly SUPABASE_PROJECT_REF?: string;
-  readonly SUPABASE_URL?: string;
-}
+import { fictionalSupplierEnvironment } from "@/booking-request/fictional-supplier-environment-core";
 
 export interface FictionalNotificationEffectRepository {
   queryEffect(lease: NotificationLease): Promise<NotificationQueryResult>;
@@ -22,11 +16,13 @@ export class FictionalNotificationAdapter implements NotificationDeliveryAdapter
 
   constructor(
     effects: FictionalNotificationEffectRepository,
-    environment: FictionalNotificationEnvironment = process.env,
+    environment: Parameters<
+      typeof fictionalSupplierEnvironment
+    >[0] = process.env,
   ) {
-    if (!bookingRequestTestRuntimeIsEnabled(environment))
+    if (!fictionalSupplierEnvironment(environment))
       throw new Error(
-        "Fictional notifications require the exact local test runtime",
+        "Fictional notifications require an approved fictional runtime",
       );
     this.#effects = effects;
   }

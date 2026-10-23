@@ -1,6 +1,6 @@
 import "server-only";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
-import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "./fictional-supplier-environment";
 import { getConfirmedBookingAccess } from "./confirmed-booking-access";
 import { simulatedMapProvider } from "@/cottage-profile/map-provider";
 import { SupabaseBookingNotificationStatusRepository } from "@/notification/notification-status-repository";
@@ -19,7 +19,7 @@ export type PaidConfirmationNotificationPresentationStatus =
     };
 
 export async function loadConfirmedBookingAccess(reference: string) {
-  if (!bookingRequestTestRuntimeIsEnabled()) return undefined;
+  if (!fictionalSupplierEnvironment()) return undefined;
   const client = await createRequestSupabaseClient();
   const access = await getConfirmedBookingAccess(client, reference);
   if (!access) return null;

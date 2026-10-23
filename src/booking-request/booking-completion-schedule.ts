@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime-core";
+import { bookingRequestTestRuntimeIsEnabled } from "./fictional-supplier-environment-core";
 import {
   createBookingCompletion,
   type BookingCompletionResult,

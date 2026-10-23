@@ -3,7 +3,10 @@ import "server-only";
 import { createClient } from "@supabase/supabase-js";
 
 import { createRequestSupabaseClient } from "@/access/supabase-server";
-import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime";
+import {
+  bookingRequestTestRuntimeIsEnabled,
+  fictionalSupplierEnvironment,
+} from "@/booking-request/fictional-supplier-environment";
 import { getServerEnvironment } from "@/config/server-runtime";
 
 import { createDeterministicMessageTranslationAdapter } from "./deterministic-message-translation";
@@ -30,7 +33,7 @@ export async function createRequestMessagingRuntime() {
     messagingPrivilegedClient(),
   );
   return {
-    enabled: bookingRequestTestRuntimeIsEnabled(),
+    enabled: fictionalSupplierEnvironment() !== undefined,
     messaging: createRequestMessaging(identityClient, repository),
     reader: new SupabaseMessagingReader(identityClient),
     translation: createRequestMessageTranslation(

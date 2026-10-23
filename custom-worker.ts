@@ -8,7 +8,7 @@ import { runScheduledBookingCompletion } from "./src/booking-request/booking-com
 import { runScheduledBookingRefunds } from "./src/booking-request/booking-refund-schedule";
 import { runScheduledBookingRequestCapture } from "./src/booking-request/booking-request-capture-schedule";
 import { runScheduledBookingNotifications } from "./src/notification/notification-schedule";
-import { bookingRequestTestRuntimeIsEnabled } from "./src/booking-request/booking-request-test-runtime-core";
+import { bookingRequestTestRuntimeIsEnabled } from "./src/booking-request/fictional-supplier-environment-core";
 
 interface Environment {
   readonly APP_ENVIRONMENT?: string;

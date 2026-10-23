@@ -1,6 +1,6 @@
 import "server-only";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
-import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "./fictional-supplier-environment";
 import {
   getBookingFinancialView,
   type BookingParticipantRole,
@@ -9,7 +9,7 @@ export async function loadBookingFinancialView(
   reference: string,
   actorRole: BookingParticipantRole,
 ) {
-  if (!bookingRequestTestRuntimeIsEnabled()) return null;
+  if (!fictionalSupplierEnvironment()) return null;
   const client = await createRequestSupabaseClient();
   return getBookingFinancialView(client, reference, actorRole);
 }

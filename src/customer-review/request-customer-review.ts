@@ -1,12 +1,12 @@
 import "server-only";
 
 import { createRequestSupabaseClient } from "@/access/supabase-server";
-import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "@/booking-request/fictional-supplier-environment";
 
 import { SupabaseCustomerReviewRepository } from "./supabase-customer-review";
 
 export async function createRequestCustomerReview() {
-  if (!bookingRequestTestRuntimeIsEnabled()) {
+  if (!fictionalSupplierEnvironment()) {
     return undefined;
   }
 

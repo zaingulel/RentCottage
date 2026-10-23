@@ -3,7 +3,7 @@ import "server-only";
 import { createClient } from "@supabase/supabase-js";
 
 import { resolveRequestAccount } from "@/access/request-account-context";
-import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime";
+import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/fictional-supplier-environment";
 import { getServerEnvironment } from "@/config/server-runtime";
 
 import { createDeterministicReviewTranslationAdapter } from "./deterministic-review-translation";

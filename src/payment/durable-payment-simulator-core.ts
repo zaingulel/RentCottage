@@ -1,4 +1,8 @@
 import {
+  isFictionalSupplierEnvironment,
+  type FictionalSupplierEnvironment,
+} from "@/booking-request/fictional-supplier-environment-core";
+import {
   paymentBindingMatches,
   paymentIdentityMatches,
   validatedProviderResult,
@@ -38,6 +42,7 @@ export interface SimulatorEffectRepository {
 }
 
 interface DurablePaymentSimulatorOptions {
+  readonly environment?: FictionalSupplierEnvironment;
   readonly effects: SimulatorEffectRepository;
   readonly now: () => string;
   readonly executeOutcome?: ProviderOutcome;
@@ -45,15 +50,8 @@ interface DurablePaymentSimulatorOptions {
   readonly reconciliationOutcome?: ProviderOutcome;
 }
 
-const identity: PaymentProviderIdentity = Object.freeze({
-  provider: "fictional-payments",
-  environment: "local-test",
-  merchantId: "fictional-merchant",
-  terminalId: "fictional-terminal",
-});
-
 export class DurablePaymentSimulator implements PaymentProviderAdapter {
-  readonly identity = identity;
+  readonly identity: PaymentProviderIdentity;
   readonly #effects: SimulatorEffectRepository;
   readonly #now: () => string;
   readonly #executeOutcome: ProviderOutcome;
@@ -61,6 +59,16 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
   readonly #reconciliationOutcome: ProviderOutcome;
 
   constructor(options: DurablePaymentSimulatorOptions) {
+    const environment =
+      options.environment === undefined ? "local-test" : options.environment;
+    if (!isFictionalSupplierEnvironment(environment))
+      throw new Error("Fictional payment environment is invalid");
+    this.identity = Object.freeze({
+      provider: "fictional-payments",
+      environment,
+      merchantId: "fictional-merchant",
+      terminalId: "fictional-terminal",
+    });
     this.#effects = options.effects;
     this.#now = options.now;
     this.#executeOutcome = options.executeOutcome ?? "succeeded";
@@ -75,7 +83,7 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
     const admission: PaymentOperationAdmission | undefined = request.admission;
     if (
       !admission ||
-      !paymentIdentityMatches(admission.providerIdentity, identity) ||
+      !paymentIdentityMatches(admission.providerIdentity, this.identity) ||
       !paymentBindingMatches(admission.binding, request)
     )
       throw new Error("Fictional payment admission is invalid");

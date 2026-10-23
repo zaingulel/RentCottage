@@ -9,7 +9,7 @@ import {
   bookingRequestAcceptanceEvidence,
   bookingRequestUiPolicy,
 } from "@/booking-request/booking-request-policy";
-import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "@/booking-request/fictional-supplier-environment";
 import { ActionFocusTarget } from "@/components/interaction-controls";
 import { BookingQuoteView } from "@/components/booking-quote";
 import { InvalidCottageSearch } from "@/components/invalid-cottage-search";
@@ -33,7 +33,7 @@ export default async function RequestPage({
 }) {
   const { locale, slug } = await params;
   if (!isLocale(locale)) notFound();
-  if (!bookingRequestTestRuntimeIsEnabled()) {
+  if (!fictionalSupplierEnvironment()) {
     const copy = bookingRequestMessages[locale];
     return (
       <main className="results-page">

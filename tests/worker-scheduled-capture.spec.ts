@@ -6,8 +6,15 @@ const paymentEvidenceSql =
   readFileSync("supabase/fixtures/payment-evidence.sql", "utf8") +
   "\n-- END PAYMENT EVIDENCE FIXTURE\n";
 import { expect, test } from "@playwright/test";
+import { build } from "esbuild";
+import { Miniflare, Response as NativeResponse } from "miniflare";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import type {
+  BookingRequestCaptureExecutionPermit,
+  ProviderOperationRequest,
+} from "../src/payment/payment-contract";
 
 type SqlSession = { stdout: string };
 
@@ -35,6 +42,7 @@ const { captureCleanup, browserBookingFixtureIdentity, bookingFixtureSource } =
       | "owner"
       | "customer"
       | "request"
+      | "reference"
       | "commitment"
       | "operation"
       | "paymentLifecycle",
@@ -82,6 +90,311 @@ function pendingCaptureSeed(
     .replaceAll("CONFIRMATION-HOLD-1", `CAPTURE-HOLD-${identity.stem}`)
     .replaceAll("Confirmation Cottage", `capture ${identity.stem} Cottage`);
 }
+
+test("hosted fictional payments survive fresh Worker instances", async () => {
+  const harness = createLocalSupabaseConcurrencyHarness();
+  harness.guardDisposableLocalDatabase();
+  const testInfo = test.info();
+  const identity = browserBookingFixtureIdentity(
+    "capture",
+    testInfo.project.name,
+  );
+  const providerIdentity = {
+    provider: "fictional-payments",
+    environment: "hosted-demo-yvibcyqtyihpzpmomnzg",
+    merchantId: "fictional-merchant",
+    terminalId: "fictional-terminal",
+  };
+  const fingerprint = createHash("sha256")
+    .update(
+      JSON.stringify({
+        provider: providerIdentity,
+        kind: "capture",
+        paymentLifecycleId: identity.paymentLifecycle,
+        logicalOperationId: `${identity.paymentLifecycle}:capture`,
+        attemptId: `${identity.paymentLifecycle}:capture:attempt-2`,
+        amountFils: 115000000,
+        currency: "IQD",
+      }),
+      "utf8",
+    )
+    .digest("hex");
+  expect(fingerprint).toBe(
+    "f6d5f0d4cac345c4a6848a084f38328e735870447765dc06e7dd15f27aecc6cf",
+  );
+  const fixture = bookingFixtureSource(
+    readFileSync(
+      "supabase/tests/database/booking_request_confirmation.test.sql",
+      "utf8",
+    ),
+    {
+      start: "-- BEGIN CAPTURE RECOVERY SOURCE",
+      end: "-- END CAPTURE RECOVERY SOURCE",
+      required: [
+        "00000000100",
+        "964750000100",
+        "RC-REQ-0000000000001001",
+        "confirmation-auth-",
+        "CONFIRMATION-HOLD-1",
+        "Confirmation Cottage",
+        "insert into public.booking_request_capture_work",
+        "local-test",
+        "6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d",
+      ],
+    },
+  )
+    .replaceAll("RC-REQ-0000000000001001", identity.reference)
+    .replaceAll("00000000100", `00000000${identity.stem}`)
+    .replaceAll("964750000100", `964750000${identity.stem}`)
+    .replaceAll("confirmation-auth-", `confirmation-auth-${identity.stem}-`)
+    .replaceAll("CONFIRMATION-HOLD-1", `HOSTED-CAPTURE-${identity.stem}`)
+    .replaceAll(
+      "Confirmation Cottage",
+      `hosted capture ${identity.stem} Cottage`,
+    )
+    .replaceAll("local-test", providerIdentity.environment)
+    .replaceAll(
+      "6f86ac037886a0823766736c1c1ffb409cd9c98be93f038e0cfe5219c2a4a99d",
+      fingerprint,
+    );
+  const localOrigin = new URL(process.env.SUPABASE_URL!);
+  expect(localOrigin.protocol).toBe("http:");
+  expect(localOrigin.hostname).toBe("127.0.0.1");
+  const bindings = {
+    APP_ENVIRONMENT: "preview",
+    HOSTED_DEMO: "true",
+    SUPABASE_PROJECT_REF: "yvibcyqtyihpzpmomnzg",
+    SUPABASE_URL: "https://yvibcyqtyihpzpmomnzg.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: process.env.SUPABASE_PUBLISHABLE_KEY!,
+    SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY!,
+    PRIVILEGED_AUDIT_HMAC_KEY: process.env.PRIVILEGED_AUDIT_HMAC_KEY!,
+    DEPLOYMENT_COMMIT: "a".repeat(40),
+  };
+  const bundled = await build({
+    stdin: {
+      contents: `import { createPaymentOperations } from "./src/booking-request/payment-operations";
+        export default { async fetch(request, env) {
+          const { action, input } = await request.json();
+          const payment = createPaymentOperations(env);
+          if (!payment) throw new Error("Hosted payment composition is unavailable");
+          return Response.json(await payment.operations[action](input));
+        } };`,
+      resolveDir: process.cwd(),
+      loader: "ts",
+    },
+    bundle: true,
+    write: false,
+    format: "esm",
+    platform: "browser",
+    external: ["node:*", "cloudflare:*"],
+  });
+  const wrangler = JSON.parse(
+    readFileSync("wrangler.jsonc", "utf8").replace(/,\s*([}\]])/g, "$1"),
+  );
+  const createWorker = () =>
+    new Miniflare({
+      host: "127.0.0.1",
+      telemetry: { enabled: false },
+      workers: [
+        {
+          config: {
+            name: "hosted-payment-capture-fixture",
+            compatibilityDate: wrangler.compatibility_date,
+            compatibilityFlags: wrangler.compatibility_flags,
+            manifest: {
+              mainModule: "worker.js",
+              modules: {
+                "worker.js": {
+                  type: "esm",
+                  contents: bundled.outputFiles[0].text,
+                },
+              },
+            },
+            env: Object.fromEntries(
+              Object.entries(bindings).map(([name, value]) => [
+                name,
+                { type: "text" as const, value },
+              ]),
+            ),
+          },
+          dev: {
+            outboundService: {
+              type: "fetcher",
+              async handler(request) {
+                const url = new URL(request.url);
+                if (
+                  url.origin !== "https://yvibcyqtyihpzpmomnzg.supabase.co" ||
+                  !url.pathname.startsWith("/rest/v1/rpc/")
+                )
+                  throw new Error(
+                    "Unexpected hosted payment fixture outbound request",
+                  );
+                const response = await fetch(
+                  new URL(url.pathname + url.search, localOrigin),
+                  {
+                    method: request.method,
+                    headers: Object.fromEntries(request.headers),
+                    body: await request.arrayBuffer(),
+                    redirect: "error",
+                  },
+                );
+                return new NativeResponse(await response.arrayBuffer(), {
+                  status: response.status,
+                  headers: Object.fromEntries(response.headers),
+                });
+              },
+            },
+          },
+        },
+      ],
+    });
+  const invoke = async (worker: Miniflare, action: string, input: unknown) => {
+    const response = await worker.dispatchFetch(
+      "https://payment-fixture.test/",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, input }),
+      },
+    );
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+  const cleanup = captureCleanup({
+    stem: identity.stem,
+    paymentRecovery: true,
+  });
+  const observe = () =>
+    JSON.parse(
+      harness.runSql(`select jsonb_build_object(
+    'operations',(select coalesce(jsonb_agg(to_jsonb(operation) order by operation.id),'[]'::jsonb) from public.payment_provider_operations operation where operation.payment_lifecycle_id='${identity.paymentLifecycle}' and operation.operation_kind='capture'),
+    'effects',(select coalesce(jsonb_agg(to_jsonb(effect) order by effect.operation_id),'[]'::jsonb) from public.simulated_payment_effects effect join public.payment_provider_operations operation on operation.id=effect.operation_id where operation.payment_lifecycle_id='${identity.paymentLifecycle}' and operation.operation_kind='capture'),
+    'observations',(select coalesce(jsonb_agg(to_jsonb(observation) order by observation.id),'[]'::jsonb) from public.payment_provider_observations observation join public.payment_provider_operations operation on operation.id=observation.operation_id where operation.payment_lifecycle_id='${identity.paymentLifecycle}' and operation.operation_kind='capture')
+  );`),
+    );
+  let first: Miniflare | undefined;
+  let second: Miniflare | undefined;
+  try {
+    harness.runSql(cleanup);
+    harness.runSql(`begin; ${fixture} commit;`);
+    first = createWorker();
+    await first.ready;
+    const leased = JSON.parse(
+      harness.runSql(`begin; set local role service_role;
+      select public.lease_booking_request_capture_work('${identity.request}','${JSON.stringify(providerIdentity)}'::jsonb); commit;`),
+    ) as {
+      status: string;
+      permit: BookingRequestCaptureExecutionPermit;
+    };
+    expect(leased.status).toBe("leased");
+    const permit = leased.permit;
+    const request: ProviderOperationRequest = {
+      kind: "capture",
+      paymentLifecycleId: permit.paymentLifecycleId,
+      logicalOperationId: permit.captureLogicalOperationId,
+      attemptId: permit.capturePhysicalAttemptId,
+      amountFils: permit.amountFils,
+      currency: permit.currency,
+      executionPermit: permit,
+    };
+    const executed = await invoke(first, "execute", request);
+    expect(executed).toMatchObject({
+      status: "recorded",
+      result: { outcome: "succeeded" },
+    });
+    const stored = observe();
+    expect(stored.operations).toHaveLength(1);
+    expect(stored.effects).toHaveLength(1);
+    expect(stored.observations).toHaveLength(1);
+    const operation = stored.operations[0];
+    const effect = stored.effects[0];
+    expect(operation).toMatchObject({
+      claim_id: "72000000-0000-4000-8000-000000008721",
+      claim_generation: 1,
+      provider: providerIdentity.provider,
+      environment: providerIdentity.environment,
+      merchant_id: providerIdentity.merchantId,
+      terminal_id: providerIdentity.terminalId,
+      payment_lifecycle_id: identity.paymentLifecycle,
+      logical_operation_id: `${identity.paymentLifecycle}:capture`,
+      physical_attempt_id: `${identity.paymentLifecycle}:capture:attempt-2`,
+      operation_kind: "capture",
+      amount_fils: 115000000,
+      currency: "IQD",
+      provider_idempotency_key:
+        "booking-request-capture:60000000-0000-4000-8000-000000008721:1",
+      request_fingerprint: fingerprint,
+      current_outcome: "succeeded",
+      evidence_provenance: "fictional-provider",
+      capture_execution_permit: permit,
+    });
+    expect(effect).toMatchObject({
+      operation_id: operation.id,
+      provider: providerIdentity.provider,
+      environment: providerIdentity.environment,
+      merchant_id: providerIdentity.merchantId,
+      terminal_id: providerIdentity.terminalId,
+      state: "executed",
+      physical_execution_count: 1,
+      binding: {
+        operationId: operation.id,
+        providerIdentity,
+        idempotencyKey: operation.provider_idempotency_key,
+        requestFingerprint: fingerprint,
+        notBefore: operation.admission.notBefore,
+        notAfter: operation.admission.notAfter,
+      },
+      result: {
+        outcome: "succeeded",
+        providerRequestId: operation.provider_request_id,
+        providerReference: operation.provider_reference,
+        movementReference: operation.movement_reference,
+        evidence: {
+          operationId: operation.id,
+          provenance: "fictional-provider",
+          originalOutcome: "succeeded",
+          closedAt: null,
+        },
+      },
+    });
+    expect(effect.result).toEqual(stored.observations[0].result);
+    expect(executed).toEqual({ status: "recorded", result: effect.result });
+    expect(Date.parse(operation.executed_at)).toBe(
+      Date.parse(effect.result.evidence.executedAt),
+    );
+    expect(operation.recorded_at).toBeTruthy();
+    await first.dispose();
+    first = undefined;
+    second = createWorker();
+    const { executionPermit, ...binding } = request;
+    // A fresh inquiry receives no admission or capture permit from Worker 1.
+    const queried = await invoke(second, "query", {
+      ...binding,
+      providerRequestId: operation.provider_request_id,
+      providerReference: operation.provider_reference,
+    });
+    expect(
+      queried,
+      "fresh Worker inquiry preserves the hosted capture scope",
+    ).toEqual(executed);
+    const replays = await Promise.all([
+      invoke(second, "execute", { ...binding, executionPermit }),
+      invoke(second, "execute", { ...binding, executionPermit }),
+    ]);
+    for (const replay of replays) expect(replay).toEqual(executed);
+    expect(observe()).toEqual(stored);
+  } finally {
+    try {
+      await first?.dispose();
+    } finally {
+      try {
+        await second?.dispose();
+      } finally {
+        harness.runSql(cleanup);
+      }
+    }
+  }
+});
 
 test("the actual Worker settles overlapping capture despite expiry failure and repeated scheduling preserves one paid booking", async ({
   baseURL,
