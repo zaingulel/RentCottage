@@ -18,3 +18,7 @@ coverage/
 !.env.*.example
 !.dev.vars.*.example
 wrangler.jsonc.bak
+# Confidential commercial papers kept on the owner's machine only
+/docs/commercial/founder-equity-discussion.md
+/docs/commercial/muntajaa-cost-plan.md
+/docs/commercial/Muntajaa-Cost-Plan.docx

@@ -23,7 +23,7 @@ each document is set out in [DOC-SWEEP.md](DOC-SWEEP.md); the day-after triage i
 | [engineering/demo-runtime-investigation.md](engineering/demo-runtime-investigation.md) | record | What the evidence shows about the local demo preview failing on Wrangler, and what cause remains unresolved. |
 | [engineering/main-branch-rulesets.md](engineering/main-branch-rulesets.md) | record | The two rulesets on `main` as applied and read back, who can bypass the pull request and required check, and how to restore the earlier setting. |
 | `adr/` | record | Accepted architecture decisions. |
-| `commercial/` | record | Commercial papers for the marketplace business. |
+| `commercial/` | record | Commercial papers for the marketplace business. Confidential papers stay on the owner's machine and are git-ignored by exact path, so none is tracked here. |
 | `discovery/` | record | Client discovery and design exploration written before implementation. |
 | [design/owner-shift-schedule.md](design/owner-shift-schedule.md) | reference | The accepted two-shift owner setup, continuous Full-day access, editing limits, migration admission and validation limitations. |
 | [design/visual-audit-2026-10.md](design/visual-audit-2026-10.md) | record | Dated visual audit of the running product on 4 October 2026: ranked findings with screenshots, each linked to the issue that owns it. Not maintained. |
