@@ -1,18 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
 
-import { bookingRequestTestRuntimeIsEnabled } from "./fictional-supplier-environment-core";
+import { fictionalSupplierEnvironment } from "./fictional-supplier-environment-core";
 import {
   createBookingCompletion,
   type BookingCompletionResult,
 } from "./booking-completion";
 import { SupabaseBookingCompletionRepository } from "./supabase-booking-completion";
 
-type CompletionScheduleEnvironment = Parameters<
-  typeof bookingRequestTestRuntimeIsEnabled
->[0] & {
-  readonly SUPABASE_PUBLISHABLE_KEY?: string;
-  readonly SUPABASE_SECRET_KEY?: string;
-};
+type CompletionScheduleEnvironment = NonNullable<
+  Parameters<typeof fictionalSupplierEnvironment>[0]
+>;
 
 type ProcessDue = (
   limit: number,
@@ -23,12 +20,12 @@ export async function runScheduledBookingCompletion(
   injectedProcessDue?: ProcessDue,
 ) {
   if (
-    !bookingRequestTestRuntimeIsEnabled(environment) ||
+    !fictionalSupplierEnvironment(environment) ||
     !environment.SUPABASE_PUBLISHABLE_KEY ||
     !environment.SUPABASE_SECRET_KEY
   )
     throw new Error(
-      "Scheduled booking completion requires the exact local test runtime and credentials",
+      "Scheduled booking completion requires an approved fictional runtime and credentials",
     );
   const processDue =
     injectedProcessDue ??
