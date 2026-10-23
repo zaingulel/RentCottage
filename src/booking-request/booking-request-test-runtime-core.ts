@@ -1,3 +1,9 @@
+import { readServerEnvironment } from "../config/server-environment";
+
+export type FictionalSupplierEnvironment =
+  | "local-test"
+  | "hosted-demo-yvibcyqtyihpzpmomnzg";
+
 interface BookingRequestRuntimeEnvironment {
   readonly APP_ENVIRONMENT?: string;
   readonly SUPABASE_PROJECT_REF?: string;
@@ -24,5 +30,22 @@ export function bookingRequestTestRuntimeIsEnabled(
     );
   } catch {
     return false;
+  }
+}
+
+export function fictionalSupplierEnvironment(
+  environment: Parameters<typeof readServerEnvironment>[0] = process.env,
+): FictionalSupplierEnvironment | undefined {
+  if (environment.HOSTED_DEMO === undefined) {
+    return bookingRequestTestRuntimeIsEnabled(environment)
+      ? "local-test"
+      : undefined;
+  }
+  if (environment.HOSTED_DEMO !== "true") return undefined;
+  try {
+    readServerEnvironment(environment);
+    return "hosted-demo-yvibcyqtyihpzpmomnzg";
+  } catch {
+    return undefined;
   }
 }

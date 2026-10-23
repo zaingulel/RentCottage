@@ -1,3 +1,7 @@
 import "server-only";
 
-export { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime-core";
+export {
+  bookingRequestTestRuntimeIsEnabled,
+  fictionalSupplierEnvironment,
+  type FictionalSupplierEnvironment,
+} from "./booking-request-test-runtime-core";
