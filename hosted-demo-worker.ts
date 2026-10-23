@@ -4,6 +4,11 @@ import handler from "./.open-next/worker.js";
 
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
+import { runScheduledBookingCompletion } from "./src/booking-request/booking-completion-schedule";
+import { runScheduledBookingRefunds } from "./src/booking-request/booking-refund-schedule";
+import { runScheduledBookingRequestCapture } from "./src/booking-request/booking-request-capture-schedule";
+import { runScheduledBookingRequestExpiry } from "./src/booking-request/booking-request-expiry-schedule";
+import { runScheduledBookingNotifications } from "./src/notification/notification-schedule";
 import { hostedDemoTarget } from "./src/config/hosted-demo-target";
 import { readServerEnvironment } from "./src/config/server-environment";
 
@@ -19,6 +24,47 @@ function denied() {
 }
 
 export default {
+  async scheduled(controller, environment) {
+    if (
+      readServerEnvironment(environment).hostedDemo !== true ||
+      controller.cron !== "* * * * *"
+    )
+      throw new Error("Scheduled processing requires the approved demo and cron");
+
+    const scheduledTasks = [
+      {
+        name: "expiry",
+        result: runScheduledBookingRequestExpiry(environment),
+      },
+      {
+        name: "capture",
+        result: runScheduledBookingRequestCapture(environment),
+      },
+      { name: "refunds", result: runScheduledBookingRefunds(environment) },
+      { name: "completion", result: runScheduledBookingCompletion(environment) },
+      {
+        name: "notifications",
+        result: runScheduledBookingNotifications(environment).then((results) => {
+          if (
+            results.some(
+              ({ status }) => status === "uncertain" || status === "retryable",
+            )
+          )
+            throw new Error("Scheduled booking notifications are incomplete");
+        }),
+      },
+    ];
+    const results = await Promise.allSettled(
+      scheduledTasks.map((task) => task.result),
+    );
+    const failedServices = scheduledTasks.flatMap((task, index) =>
+      results[index].status === "rejected" ? [task.name] : [],
+    );
+    if (failedServices.length)
+      throw new Error(
+        `Hosted demo scheduled processing is incomplete: ${failedServices.join(", ")}`,
+      );
+  },
   async fetch(request, environment, context) {
     try {
       const configuration = readServerEnvironment(environment);

@@ -9,7 +9,7 @@ function config() {
 }
 
 describe("Worker schedule configuration", () => {
-  it("hosted demo routes every request through admission without schedules", () => {
+  it("hosted demo guards every request and schedules native processing every minute", () => {
     const wrangler = config();
     const demo = wrangler.env.demo;
 
@@ -26,11 +26,11 @@ describe("Worker schedule configuration", () => {
       APP_ENVIRONMENT: "preview",
       HOSTED_DEMO: "true",
     });
-    expect(demo.triggers).toBeUndefined();
+    expect(demo.triggers).toEqual({ crons: ["* * * * *"] });
     expect(demo.routes).toBeUndefined();
     expect(wrangler.triggers).toBeUndefined();
     const worker = readFileSync(join(process.cwd(), demo.main), "utf8");
-    expect(worker).not.toMatch(/\bscheduled\b/);
+    expect(worker).toMatch(/\bscheduled\b/);
   });
 
   it("routes through the custom Worker and schedules expiry only in test", () => {
