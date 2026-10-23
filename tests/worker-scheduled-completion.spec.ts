@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { build } from "esbuild";
+import { build, type Plugin } from "esbuild";
 import {
   Miniflare,
   Response as NativeResponse,
@@ -354,10 +354,74 @@ async function assertLifecycleViews(
     }
   }
 }
+const wrangler = JSON.parse(
+  readFileSync("wrangler.jsonc", "utf8").replace(/,\s*([}\]])/g, "$1"),
+);
+const hostedBindings = {
+  APP_ENVIRONMENT: "preview",
+  HOSTED_DEMO: "true",
+  SUPABASE_PROJECT_REF: "yvibcyqtyihpzpmomnzg",
+  SUPABASE_URL: "https://yvibcyqtyihpzpmomnzg.supabase.co",
+  SUPABASE_PUBLISHABLE_KEY: "native-fixture-publishable",
+  SUPABASE_SECRET_KEY: "native-fixture-secret",
+  PRIVILEGED_AUDIT_HMAC_KEY:
+    "native-fixture-audit-key-with-at-least-32-characters",
+  DEPLOYMENT_COMMIT: "a".repeat(40),
+};
+
+async function bundleHostedDemo(extraPlugins: Plugin[] = []): Promise<string> {
+  const bundled = await build({
+    entryPoints: [wrangler.env.demo.main],
+    bundle: true,
+    write: false,
+    format: "esm",
+    platform: "browser",
+    external: ["node:*", "cloudflare:*"],
+    plugins: [
+      {
+        name: "native-schedule-opennext-boundary",
+        setup(builder) {
+          builder.onResolve({ filter: /\.open-next\/worker\.js$/ }, () => ({
+            path: "opennext",
+            namespace: "native-opennext-fixture",
+          }));
+          builder.onLoad(
+            { filter: /.*/, namespace: "native-opennext-fixture" },
+            () => ({
+              contents:
+                'export default { fetch() { return new Response("OpenNext boundary"); } };',
+              loader: "js",
+            }),
+          );
+        },
+      },
+      ...extraPlugins,
+    ],
+  });
+  return bundled.outputFiles[0].text;
+}
+function hostedWorkerConfig(
+  name: string,
+  contents: string,
+  bindings: Record<string, string>,
+) {
+  return {
+    name,
+    compatibilityDate: wrangler.compatibility_date,
+    compatibilityFlags: wrangler.compatibility_flags,
+    manifest: {
+      mainModule: "worker.js",
+      modules: { "worker.js": { type: "esm" as const, contents } },
+    },
+    env: Object.fromEntries(
+      Object.entries(bindings).map(([name, value]) => [
+        name,
+        { type: "text" as const, value },
+      ]),
+    ),
+  } satisfies MiniflareOptions["workers"][number]["config"];
+}
 test("hosted native schedule admits only the exact demo and awaits all five drains", async () => {
-  const wrangler = JSON.parse(
-    readFileSync("wrangler.jsonc", "utf8").replace(/,\s*([}\]])/g, "$1"),
-  );
   const schedules = {
     "booking-request-expiry-schedule": [
       "expiry",
@@ -384,69 +448,40 @@ test("hosted native schedule admits only the exact demo and awaits all five drai
     "notifications",
     "refunds",
   ];
-  const bundled = await build({
-    entryPoints: [wrangler.env.demo.main],
-    bundle: true,
-    write: false,
-    format: "esm",
-    platform: "browser",
-    external: ["node:*", "cloudflare:*"],
-    plugins: [
-      {
-        name: "native-schedule-composition-boundaries",
-        setup(builder) {
-          builder.onResolve({ filter: /\.open-next\/worker\.js$/ }, () => ({
-            path: "opennext",
+  const bundled = await bundleHostedDemo([
+    {
+      name: "native-schedule-composition-boundaries",
+      setup(builder) {
+        builder.onResolve(
+          {
+            filter:
+              /\/(booking-request-expiry-schedule|booking-request-capture-schedule|booking-refund-schedule|booking-completion-schedule|notification-schedule)$/,
+          },
+          ({ path }) => ({
+            path: path.slice(path.lastIndexOf("/") + 1),
             namespace: "native-schedule-fixture",
-          }));
-          builder.onResolve(
-            {
-              filter:
-                /\/(booking-request-expiry-schedule|booking-request-capture-schedule|booking-refund-schedule|booking-completion-schedule|notification-schedule)$/,
-            },
-            ({ path }) => ({
-              path: path.slice(path.lastIndexOf("/") + 1),
-              namespace: "native-schedule-fixture",
-            }),
-          );
-          builder.onLoad(
-            { filter: /.*/, namespace: "native-schedule-fixture" },
-            ({ path }) => {
-              if (path === "opennext")
-                return {
-                  contents:
-                    'export default { fetch() { return new Response("OpenNext boundary"); } };',
-                  loader: "js",
-                };
-              const [service, exported] =
-                schedules[path as keyof typeof schedules];
-              return {
-                contents: `export async function ${exported}() {
+          }),
+        );
+        builder.onLoad(
+          { filter: /.*/, namespace: "native-schedule-fixture" },
+          ({ path }) => {
+            const [service, exported] =
+              schedules[path as keyof typeof schedules];
+            return {
+              contents: `export async function ${exported}() {
               const response = await fetch("https://schedule-observation.test/started/${service}");
               if (!response.ok) throw new Error("PRIVATE controlled drain rejection");
               const result = await response.json();
               await fetch("https://schedule-observation.test/finished/${service}");
               return result;
             }`,
-                loader: "js",
-              };
-            },
-          );
-        },
+              loader: "js",
+            };
+          },
+        );
       },
-    ],
-  });
-  const bindings = {
-    APP_ENVIRONMENT: "preview",
-    HOSTED_DEMO: "true",
-    SUPABASE_PROJECT_REF: "yvibcyqtyihpzpmomnzg",
-    SUPABASE_URL: "https://yvibcyqtyihpzpmomnzg.supabase.co",
-    SUPABASE_PUBLISHABLE_KEY: "native-fixture-publishable",
-    SUPABASE_SECRET_KEY: "native-fixture-secret",
-    PRIVILEGED_AUDIT_HMAC_KEY:
-      "native-fixture-audit-key-with-at-least-32-characters",
-    DEPLOYMENT_COMMIT: "a".repeat(40),
-  };
+    },
+  ]);
   const started: string[] = [];
   const events: string[] = [];
   const diagnostics: string[] = [];
@@ -456,23 +491,29 @@ test("hosted native schedule admits only the exact demo and awaits all five drai
   let releaseHeld: (() => void) | undefined;
   let allStarted: (() => void) | undefined;
   const options = (
-    values: Record<string, string> = bindings,
-  ): MiniflareOptions => ({
-    host: "127.0.0.1",
-    unsafeTriggerHandlers: true,
-    telemetry: { enabled: false },
-    workers: [
-      {
-        config: {
-          name: "hosted-native-composition-fixture",
-          compatibilityDate: wrangler.compatibility_date,
-          compatibilityFlags: wrangler.compatibility_flags,
-          manifest: {
-            mainModule: "observer.js",
-            modules: {
-              "observer.js": {
-                type: "esm",
-                contents: `import worker from "./worker.js";
+    values: Record<string, string> = hostedBindings,
+  ): MiniflareOptions => {
+    const config = hostedWorkerConfig(
+      "hosted-native-composition-fixture",
+      bundled,
+      values,
+    );
+    return {
+      host: "127.0.0.1",
+      unsafeTriggerHandlers: true,
+      telemetry: { enabled: false },
+      workers: [
+        {
+          config: {
+            ...config,
+            manifest: {
+              ...config.manifest,
+              mainModule: "observer.js",
+              modules: {
+                ...config.manifest.modules,
+                "observer.js": {
+                  type: "esm",
+                  contents: `import worker from "./worker.js";
 export default {
   fetch(request, environment, context) {
     return worker.fetch(request, environment, context);
@@ -489,56 +530,47 @@ export default {
     }
   },
 };`,
-              },
-              "worker.js": {
-                type: "esm",
-                contents: bundled.outputFiles[0].text,
+                },
               },
             },
           },
-          env: Object.fromEntries(
-            Object.entries(values).map(([name, value]) => [
-              name,
-              { type: "text" as const, value },
-            ]),
-          ),
-        },
-        dev: {
-          outboundService: {
-            type: "fetcher",
-            async handler(request) {
-              const url = new URL(request.url);
-              if (url.origin !== "https://schedule-observation.test")
-                throw new Error("Unexpected native composition egress");
-              if (url.pathname === "/failure" && request.method === "POST") {
-                diagnostics.push(await request.text());
-                return new NativeResponse("Observed");
-              }
-              const [, stage, service] = url.pathname.split("/");
-              if (
-                !["started", "finished"].includes(stage) ||
-                !services.includes(service)
-              )
-                throw new Error("Unexpected native composition observation");
-              events.push(`${stage}:${service}`);
-              if (stage === "finished") return new NativeResponse("Observed");
-              started.push(service);
-              if (started.length === services.length) allStarted?.();
-              if (service === held)
-                await new Promise<void>((resolve) => {
-                  releaseHeld = resolve;
-                });
-              if (service === rejected)
-                return new NativeResponse("Rejected", { status: 503 });
-              return NativeResponse.json(
-                service === "notifications" ? notificationResults : [],
-              );
+          dev: {
+            outboundService: {
+              type: "fetcher",
+              async handler(request) {
+                const url = new URL(request.url);
+                if (url.origin !== "https://schedule-observation.test")
+                  throw new Error("Unexpected native composition egress");
+                if (url.pathname === "/failure" && request.method === "POST") {
+                  diagnostics.push(await request.text());
+                  return new NativeResponse("Observed");
+                }
+                const [, stage, service] = url.pathname.split("/");
+                if (
+                  !["started", "finished"].includes(stage) ||
+                  !services.includes(service)
+                )
+                  throw new Error("Unexpected native composition observation");
+                events.push(`${stage}:${service}`);
+                if (stage === "finished") return new NativeResponse("Observed");
+                started.push(service);
+                if (started.length === services.length) allStarted?.();
+                if (service === held)
+                  await new Promise<void>((resolve) => {
+                    releaseHeld = resolve;
+                  });
+                if (service === rejected)
+                  return new NativeResponse("Rejected", { status: 503 });
+                return NativeResponse.json(
+                  service === "notifications" ? notificationResults : [],
+                );
+              },
             },
           },
         },
-      },
-    ],
-  });
+      ],
+    };
+  };
   // Miniflare's published Fetcher type imports a dev-only workers-types package.
   // The installed getWorker implementation returns the native fetcher proxy.
   type NativeUserWorker = { fetch(url: string): Promise<NativeResponse> };
@@ -601,8 +633,8 @@ export default {
         SUPABASE_PROJECT_REF: "other-project",
         SUPABASE_URL: "https://other-project.supabase.co",
       },
-      { SUPABASE_URL: bindings.SUPABASE_URL + "/path" },
-      { SUPABASE_URL: bindings.SUPABASE_URL + "?query=1" },
+      { SUPABASE_URL: hostedBindings.SUPABASE_URL + "/path" },
+      { SUPABASE_URL: hostedBindings.SUPABASE_URL + "?query=1" },
       {
         SUPABASE_URL: "https://user:password@yvibcyqtyihpzpmomnzg.supabase.co",
       },
@@ -612,7 +644,7 @@ export default {
       { DEPLOYMENT_COMMIT: "invalid" },
     ]) {
       const values = Object.fromEntries(
-        Object.entries({ ...bindings, ...patch }).filter(
+        Object.entries({ ...hostedBindings, ...patch }).filter(
           (entry): entry is [string, string] => entry[1] !== undefined,
         ),
       );
@@ -724,46 +756,11 @@ test.describe("scheduled completion and restricted lifecycle journeys", () => {
     expect(before.outcomes).toEqual([]);
     expect(before.maturity).toEqual([]);
     const { url: localOrigin, key, publishable } = connection();
-    const wrangler = JSON.parse(
-      readFileSync("wrangler.jsonc", "utf8").replace(/,\s*([}\]])/g, "$1"),
-    );
-    const bundled = await build({
-      entryPoints: [wrangler.env.demo.main],
-      bundle: true,
-      write: false,
-      format: "esm",
-      platform: "browser",
-      external: ["node:*", "cloudflare:*"],
-      plugins: [
-        {
-          name: "native-schedule-opennext-boundary",
-          setup(builder) {
-            builder.onResolve({ filter: /\.open-next\/worker\.js$/ }, () => ({
-              path: "opennext",
-              namespace: "native-schedule-fixture",
-            }));
-            builder.onLoad(
-              { filter: /.*/, namespace: "native-schedule-fixture" },
-              () => ({
-                contents:
-                  'export default { fetch() { return new Response("OpenNext boundary"); } };',
-                loader: "js",
-              }),
-            );
-          },
-        },
-      ],
-    });
+    const bundled = await bundleHostedDemo();
     const bindings = {
-      APP_ENVIRONMENT: "preview",
-      HOSTED_DEMO: "true",
-      SUPABASE_PROJECT_REF: "yvibcyqtyihpzpmomnzg",
-      SUPABASE_URL: "https://yvibcyqtyihpzpmomnzg.supabase.co",
+      ...hostedBindings,
       SUPABASE_PUBLISHABLE_KEY: publishable,
       SUPABASE_SECRET_KEY: key,
-      PRIVILEGED_AUDIT_HMAC_KEY:
-        "native-fixture-audit-key-with-at-least-32-characters",
-      DEPLOYMENT_COMMIT: "a".repeat(40),
     };
     type NoticeSource = { id: string; recipient: string; role: string };
     type NoticeWork = {
@@ -838,26 +835,11 @@ test.describe("scheduled completion and restricted lifecycle journeys", () => {
         telemetry: { enabled: false },
         workers: [
           {
-            config: {
-              name: "hosted-native-completion-fixture",
-              compatibilityDate: wrangler.compatibility_date,
-              compatibilityFlags: wrangler.compatibility_flags,
-              manifest: {
-                mainModule: "worker.js",
-                modules: {
-                  "worker.js": {
-                    type: "esm",
-                    contents: bundled.outputFiles[0].text,
-                  },
-                },
-              },
-              env: Object.fromEntries(
-                Object.entries(bindings).map(([name, value]) => [
-                  name,
-                  { type: "text" as const, value },
-                ]),
-              ),
-            },
+            config: hostedWorkerConfig(
+              "hosted-native-completion-fixture",
+              bundled,
+              bindings,
+            ),
             dev: {
               outboundService: {
                 type: "fetcher",
