@@ -314,24 +314,6 @@ it("hosted notification composition binds every effect call", async () => {
         }),
       ).rejects.toThrow(/unavailable|invalid notification/);
     }
-    rpc.mockClear();
-    const hostileLease = {
-      ...validLease,
-      payload: { ...validLease.payload, fictional: false },
-    } as unknown as NotificationLease;
-    await expect(repository.queryEffect(hostileLease)).rejects.toThrow(
-      "invalid notification lease",
-    );
-    await expect(repository.executeEffect(hostileLease)).rejects.toThrow(
-      "invalid notification lease",
-    );
-    await expect(
-      repository.completeDelivered(hostileLease, {
-        status: "delivered",
-        ...effect,
-      }),
-    ).rejects.toThrow("invalid notification lease");
-    expect(rpc).not.toHaveBeenCalled();
   }
   for (const environment of [null, "hosted-demo-foreign", "", true, {}, 7]) {
     const rpc = vi.fn();

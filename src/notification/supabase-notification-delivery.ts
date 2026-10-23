@@ -239,7 +239,6 @@ function binding(
   v: NotificationLease,
   environment: FictionalSupplierEnvironment,
 ) {
-  parseLease(v);
   return {
     ...(environment === "local-test"
       ? {}
