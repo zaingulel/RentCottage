@@ -174,9 +174,7 @@ test("hosted fictional notification replay retains one final effect", async () =
                   },
                 );
                 return new NativeResponse(
-                  response.body === null
-                    ? null
-                    : await response.arrayBuffer(),
+                  response.body === null ? null : await response.arrayBuffer(),
                   {
                     status: response.status,
                     headers: Object.fromEntries(response.headers),
