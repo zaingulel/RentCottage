@@ -41,6 +41,7 @@ describe("Supabase notification delivery repository", () => {
 
   it.each([
     { payload: { ...validLease.payload, title: "" } },
+    { payload: { ...validLease.payload, fictional: false } },
     { payload: { ...validLease.payload, unexpected: "field" } },
     {
       payload: {
