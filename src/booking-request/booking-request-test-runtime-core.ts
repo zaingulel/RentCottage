@@ -4,6 +4,12 @@ export type FictionalSupplierEnvironment =
   | "local-test"
   | "hosted-demo-yvibcyqtyihpzpmomnzg";
 
+export function isFictionalSupplierEnvironment(
+  value: unknown,
+): value is FictionalSupplierEnvironment {
+  return value === "local-test" || value === "hosted-demo-yvibcyqtyihpzpmomnzg";
+}
+
 interface BookingRequestRuntimeEnvironment {
   readonly APP_ENVIRONMENT?: string;
   readonly SUPABASE_PROJECT_REF?: string;

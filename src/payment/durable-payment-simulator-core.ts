@@ -1,4 +1,7 @@
-import type { FictionalSupplierEnvironment } from "@/booking-request/booking-request-test-runtime-core";
+import {
+  isFictionalSupplierEnvironment,
+  type FictionalSupplierEnvironment,
+} from "@/booking-request/booking-request-test-runtime-core";
 import {
   paymentBindingMatches,
   paymentIdentityMatches,
@@ -58,10 +61,7 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
   constructor(options: DurablePaymentSimulatorOptions) {
     const environment =
       options.environment === undefined ? "local-test" : options.environment;
-    if (
-      environment !== "local-test" &&
-      environment !== "hosted-demo-yvibcyqtyihpzpmomnzg"
-    )
+    if (!isFictionalSupplierEnvironment(environment))
       throw new Error("Fictional payment environment is invalid");
     this.identity = Object.freeze({
       provider: "fictional-payments",

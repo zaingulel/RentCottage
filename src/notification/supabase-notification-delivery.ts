@@ -9,7 +9,10 @@ import {
   type BookingNoticeEvent,
 } from "./booking-event-notice";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { FictionalSupplierEnvironment } from "@/booking-request/booking-request-test-runtime-core";
+import {
+  isFictionalSupplierEnvironment,
+  type FictionalSupplierEnvironment,
+} from "@/booking-request/booking-request-test-runtime-core";
 import type { FictionalNotificationEffectRepository } from "./fictional-notification-adapter";
 import type {
   NotificationBinding,
@@ -312,10 +315,7 @@ export class SupabaseNotificationDeliveryRepository
     private readonly client: SupabaseClient,
     private readonly environment: FictionalSupplierEnvironment = "local-test",
   ) {
-    if (
-      environment !== "local-test" &&
-      environment !== "hosted-demo-yvibcyqtyihpzpmomnzg"
-    )
+    if (!isFictionalSupplierEnvironment(environment))
       throw new Error("Invalid fictional notification environment");
   }
   async listCandidates(limit: number) {
