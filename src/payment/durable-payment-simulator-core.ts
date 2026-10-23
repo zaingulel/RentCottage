@@ -45,6 +45,7 @@ interface DurablePaymentSimulatorOptions {
   readonly environment?: FictionalSupplierEnvironment;
   readonly effects: SimulatorEffectRepository;
   readonly now: () => string;
+  readonly failedInitialCaptureLifecycleId?: string;
   readonly executeOutcome?: ProviderOutcome;
   readonly failureRetrySafe?: boolean;
   readonly reconciliationOutcome?: ProviderOutcome;
@@ -54,6 +55,7 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
   readonly identity: PaymentProviderIdentity;
   readonly #effects: SimulatorEffectRepository;
   readonly #now: () => string;
+  readonly #failedInitialCaptureLifecycleId: string | undefined;
   readonly #executeOutcome: ProviderOutcome;
   readonly #failureRetrySafe: boolean;
   readonly #reconciliationOutcome: ProviderOutcome;
@@ -63,12 +65,28 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
       options.environment === undefined ? "local-test" : options.environment;
     if (!isFictionalSupplierEnvironment(environment))
       throw new Error("Fictional payment environment is invalid");
+    if (
+      options.failedInitialCaptureLifecycleId !== undefined &&
+      (environment !== "hosted-demo-yvibcyqtyihpzpmomnzg" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+          options.failedInitialCaptureLifecycleId,
+        ) ||
+        options.executeOutcome !== undefined ||
+        options.failureRetrySafe !== undefined ||
+        options.reconciliationOutcome !== undefined)
+    ) {
+      throw new Error(
+        "Initial-capture selector requires a hosted demo canonical lowercase UUID without global outcome options",
+      );
+    }
     this.identity = Object.freeze({
       provider: "fictional-payments",
       environment,
       merchantId: "fictional-merchant",
       terminalId: "fictional-terminal",
     });
+    this.#failedInitialCaptureLifecycleId =
+      options.failedInitialCaptureLifecycleId;
     this.#effects = options.effects;
     this.#now = options.now;
     this.#executeOutcome = options.executeOutcome ?? "succeeded";
@@ -134,11 +152,14 @@ export class DurablePaymentSimulator implements PaymentProviderAdapter {
     request: ProviderOperationRequest,
   ): Promise<ProviderOperationResult> {
     const binding = this.#binding(request);
+    const outcome =
+      request.admission!.purpose === "booking-request-capture" &&
+      request.kind === "capture" &&
+      request.paymentLifecycleId === this.#failedInitialCaptureLifecycleId
+        ? "failed"
+        : this.#executeOutcome;
     return validatedProviderResult(
-      await this.#effects.executeOnce(
-        binding,
-        this.#result(binding, this.#executeOutcome),
-      ),
+      await this.#effects.executeOnce(binding, this.#result(binding, outcome)),
       binding.operationId,
     );
   }

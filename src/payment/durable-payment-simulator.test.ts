@@ -194,3 +194,177 @@ describe("isolated durable fictional provider", () => {
     expect(executedBinding).not.toHaveProperty("mode");
   });
 });
+
+describe("hosted demo initial-capture selector", () => {
+  it("rejects non-hosted malformed and conflicting failure selectors before effect access", async () => {
+    const { effects } = fixture();
+    const options = {
+      effects,
+      environment: "hosted-demo-yvibcyqtyihpzpmomnzg" as const,
+      now: () => "2098-01-01T00:00:00Z",
+      failedInitialCaptureLifecycleId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    };
+    for (const patch of [
+      { environment: undefined },
+      { environment: "local-test" as const },
+      { failedInitialCaptureLifecycleId: "" },
+      { failedInitialCaptureLifecycleId: "not-a-uuid" },
+      {
+        failedInitialCaptureLifecycleId:
+          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\n",
+      },
+      {
+        failedInitialCaptureLifecycleId: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+      },
+      { executeOutcome: "succeeded" as const },
+      { executeOutcome: "failed" as const },
+      { failureRetrySafe: false },
+      { failureRetrySafe: true },
+      { reconciliationOutcome: "succeeded" as const },
+    ]) {
+      expect(
+        () => new DurablePaymentSimulator({ ...options, ...patch }),
+      ).toThrow(/initial.capture/i);
+    }
+    const provider = new DurablePaymentSimulator(options);
+    const requestBinding = {
+      ...binding,
+      kind: "capture" as const,
+      paymentLifecycleId: options.failedInitialCaptureLifecycleId,
+    };
+    const admitted = {
+      ...admission,
+      purpose: "booking-request-capture" as const,
+      providerIdentity: provider.identity,
+      binding: requestBinding,
+    };
+    for (const changed of [
+      undefined,
+      { ...admitted, providerIdentity: identity },
+      {
+        ...admitted,
+        binding: {
+          ...requestBinding,
+          paymentLifecycleId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        },
+      },
+      { ...admitted, binding: { ...requestBinding, kind: "release" as const } },
+      { ...admitted, binding: { ...requestBinding, amountFils: 99 } },
+    ]) {
+      await expect(
+        provider.execute({
+          ...requestBinding,
+          executionPermit: null,
+          admission: changed,
+        }),
+      ).rejects.toThrow("admission");
+      await expect(
+        provider.query({
+          ...requestBinding,
+          providerRequestId: null,
+          providerReference: null,
+          admission: changed,
+        }),
+      ).rejects.toThrow("admission");
+    }
+    expect(effects.executeOnce).not.toHaveBeenCalled();
+    expect(effects.queryAndSealAbsent).not.toHaveBeenCalled();
+    expect(effects.resolve).not.toHaveBeenCalled();
+  });
+  it("fails only the designated original capture and preserves persisted results across selector changes", async () => {
+    const selected = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const unrelated = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const environment = "hosted-demo-yvibcyqtyihpzpmomnzg";
+    const cases: readonly [
+      PaymentOperationAdmission["purpose"],
+      PaymentOperationAdmission["binding"]["kind"],
+      string,
+      "succeeded" | "failed",
+    ][] = [
+      ["booking-request-capture", "capture", selected, "failed"],
+      ["booking-request-capture", "capture", unrelated, "succeeded"],
+      ["booking-request-payment-recovery", "capture", selected, "succeeded"],
+      [
+        "booking-request-payment-recovery",
+        "authorization",
+        selected,
+        "succeeded",
+      ],
+      ["booking-request-payment-recovery", "release", selected, "succeeded"],
+      ["booking-request-authorization", "authorization", selected, "succeeded"],
+      ["booking-request-release", "release", selected, "succeeded"],
+      ["booking-request-capture", "authorization", selected, "succeeded"],
+    ];
+    for (const [purpose, kind, paymentLifecycleId, outcome] of cases) {
+      const { effects } = fixture();
+      const requestBinding = { ...binding, kind, paymentLifecycleId };
+      const admitted = {
+        ...admission,
+        purpose,
+        providerIdentity: { ...identity, environment },
+        binding: requestBinding,
+      };
+      const request = {
+        ...requestBinding,
+        admission: admitted,
+        executionPermit: null,
+      };
+      const make = (failedInitialCaptureLifecycleId?: string) =>
+        new DurablePaymentSimulator({
+          effects,
+          environment,
+          now: () => "2098-01-01T00:00:00Z",
+          failedInitialCaptureLifecycleId,
+        });
+      const result = await make(selected).execute(request);
+      expect(result.outcome, `${purpose}/${kind}/${paymentLifecycleId}`).toBe(
+        outcome,
+      );
+      if (outcome === "failed") {
+        expect(result).toMatchObject({ retrySafe: false });
+        expect(result).not.toHaveProperty("movementReference");
+      }
+      expect(await make(unrelated).execute(request)).toEqual(result);
+      expect(await make().execute(request)).toEqual(result);
+      expect(
+        await make(unrelated).query({
+          ...requestBinding,
+          admission: { ...admitted, mode: "reconcile" },
+          providerRequestId: null,
+          providerReference: null,
+        }),
+      ).toEqual(result);
+      expect(effects.resolve).not.toHaveBeenCalled();
+    }
+    const { effects } = fixture();
+    const requestBinding = {
+      ...binding,
+      kind: "capture" as const,
+      paymentLifecycleId: selected,
+    };
+    const request = {
+      ...requestBinding,
+      executionPermit: null,
+      admission: {
+        ...admission,
+        purpose: "booking-request-capture" as const,
+        providerIdentity: { ...identity, environment },
+        binding: requestBinding,
+      },
+    };
+    const result = await new DurablePaymentSimulator({
+      effects,
+      environment,
+      now: () => "2098-01-01T00:00:00Z",
+    }).execute(request);
+    expect(result.outcome).toBe("succeeded");
+    expect(
+      await new DurablePaymentSimulator({
+        effects,
+        environment,
+        now: () => "2098-01-01T00:00:00Z",
+        failedInitialCaptureLifecycleId: selected,
+      }).execute(request),
+    ).toEqual(result);
+  });
+});

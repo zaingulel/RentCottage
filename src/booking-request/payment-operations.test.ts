@@ -151,6 +151,126 @@ it("hosted payment composition preserves its durable identity", async () => {
   ).toThrow("environment");
 });
 
+it("validates the hosted capture selector before client construction and composes lifecycle-specific durable effects", async () => {
+  createClient.mockClear();
+  const environment = {
+    APP_ENVIRONMENT: "preview",
+    HOSTED_DEMO: "true",
+    SUPABASE_PROJECT_REF: "yvibcyqtyihpzpmomnzg",
+    SUPABASE_URL: "https://yvibcyqtyihpzpmomnzg.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "fixture-publishable",
+    SUPABASE_SECRET_KEY: "fixture-secret",
+    PRIVILEGED_AUDIT_HMAC_KEY: "fixture-audit-key-with-at-least-32-characters",
+    DEPLOYMENT_COMMIT: "c".repeat(40),
+    HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID:
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  };
+  for (const patch of [
+    { HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID: "" },
+    { HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID: "malformed" },
+    {
+      HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID:
+        "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+    },
+    { HOSTED_DEMO: undefined },
+    { APP_ENVIRONMENT: "production" },
+    {
+      SUPABASE_PROJECT_REF: "other-project",
+      SUPABASE_URL: "https://other-project.supabase.co",
+    },
+    {
+      APP_ENVIRONMENT: "test",
+      HOSTED_DEMO: undefined,
+      SUPABASE_PROJECT_REF: "local-test",
+      SUPABASE_URL: "http://127.0.0.1:54331",
+    },
+  ]) {
+    expect(() =>
+      preparePaymentOperations({ ...environment, ...patch }),
+    ).toThrow();
+  }
+  expect(createClient).not.toHaveBeenCalled();
+  const stored = new Map<string, ProviderOperationResult>();
+  const rpc = vi.fn(
+    async (
+      _name: string,
+      args: {
+        target_binding: { operationId: string };
+        target_result: ProviderOperationResult;
+      },
+    ) => {
+      const id = args.target_binding.operationId;
+      if (!stored.has(id)) stored.set(id, args.target_result);
+      return { data: stored.get(id), error: null };
+    },
+  );
+  createClient.mockReturnValue({ rpc });
+  const prepare = preparePaymentOperations(environment);
+  expect(prepare).toBeTypeOf("function");
+  expect(createClient).not.toHaveBeenCalled();
+  const { provider } = prepare!();
+  const cases: readonly [
+    PaymentOperationAdmission["purpose"],
+    string,
+    string,
+    "failed" | "succeeded",
+  ][] = [
+    [
+      "booking-request-capture",
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "11111111-1111-4111-8111-111111111111",
+      "failed",
+    ],
+    [
+      "booking-request-payment-recovery",
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "22222222-2222-4222-8222-222222222222",
+      "succeeded",
+    ],
+    [
+      "booking-request-capture",
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "33333333-3333-4333-8333-333333333333",
+      "succeeded",
+    ],
+  ];
+  for (const [purpose, paymentLifecycleId, operationId, outcome] of cases) {
+    const binding = {
+      kind: "capture" as const,
+      paymentLifecycleId,
+      logicalOperationId: operationId,
+      attemptId: operationId,
+      amountFils: 1000,
+      currency: "IQD" as const,
+    };
+    const result = await provider.execute({
+      ...binding,
+      executionPermit: null,
+      admission: {
+        purpose,
+        operationId,
+        providerIdentity: provider.identity,
+        binding,
+        idempotencyKey: operationId,
+        requestFingerprint: "a".repeat(64),
+        notBefore: null,
+        notAfter: "2099-01-01T00:00:00Z",
+        mode: "execute",
+      },
+    });
+    expect(result.outcome).toBe(outcome);
+    expect(stored.get(operationId)).toEqual(result);
+    expect(rpc).toHaveBeenLastCalledWith("persist_simulated_payment_effect", {
+      target_binding: expect.objectContaining({
+        operationId,
+        idempotencyKey: operationId,
+      }),
+      target_result: result,
+    });
+  }
+  expect(stored.size).toBe(3);
+});
+
 it("preserves payment operation admission for the exact local test runtime", () => {
   const localEnvironment = {
     APP_ENVIRONMENT: "test",

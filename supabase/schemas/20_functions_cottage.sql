@@ -111,8 +111,15 @@ declare approved_description text;
 declare approved_house_rules text;
 declare reconciled_description text;
 declare reconciled_house_rules text;
+declare publication_mode text;
 begin
   if (select public.is_platform_administrator('aal2')) IS NOT TRUE then raise exception 'AAL2 Platform Administrator access is required' using errcode = '42501'; end if;
+  perform 1 from public.cottage_translation_runtime_control where singleton for share;
+  perform 1 from public.cottage_demo_translation_control where singleton for share;
+  publication_mode := public.cottage_translation_runtime_mode();
+  if publication_mode = 'unavailable' then
+    raise exception 'Translation and publication are disabled by runtime control' using errcode = 'RC246';
+  end if;
   select * into cycle from public.cottage_profile_review_cycles where id = target_review_cycle_id for update;
   if not found or cycle.state <> 'in_review' then raise exception 'Cottage review cycle is unavailable' using errcode = 'RC204'; end if;
   select * into profile from public.owner_application_cottage_profiles where id = cycle.profile_id for update;
@@ -125,14 +132,6 @@ begin
     or owner_context.owner_approval_state <> 'approved' then
     raise exception 'Approved Cottage Owner access is required' using errcode = '42501';
   end if;
-  if not coalesce((
-    select production_ready
-    from public.cottage_translation_runtime_control
-    where singleton
-  ), false) then
-    raise exception 'Production translation and publication are disabled by runtime control'
-      using errcode = 'RC246';
-  end if;
   if cycle.name is null or cycle.governorate is null or cycle.approximate_location is null
     or cycle.capacity is null or cycle.bedrooms is null or cycle.bathrooms is null
     or cardinality(cycle.amenities) < 1 then raise exception 'Reviewed public Cottage Profile fields are incomplete' using errcode = 'RC203'; end if;
@@ -142,8 +141,23 @@ begin
       from public.cottage_profile_localized_revisions revisions
       join public.cottage_profile_source_revisions source on source.id = cycle.source_revision_id
       where revisions.review_cycle_id = cycle.id and revisions.origin = 'generated'
-        and revisions.locale <> source.source_language) <> 2 then
+        and revisions.locale <> source.source_language
+        and revisions.translation_environment is not distinct from
+          (case when publication_mode = 'fictional' then 'hosted-demo-yvibcyqtyihpzpmomnzg' end)) <> 2 then
     raise exception 'Both non-source languages require generated provenance' using errcode = 'RC203';
+  end if;
+  if (publication_mode = 'production' and exists (
+    select 1 from public.cottage_profile_localized_revisions revisions
+    where revisions.review_cycle_id = cycle.id and revisions.translation_environment is not null
+  )) or exists (
+    select 1 from public.cottage_profile_localized_heads heads
+    join public.cottage_profile_localized_revisions revisions on revisions.id = heads.localized_revision_id
+    join public.cottage_profile_source_revisions source on source.id = cycle.source_revision_id
+    where heads.review_cycle_id = cycle.id and revisions.locale <> source.source_language
+      and revisions.translation_environment is distinct from
+        (case when publication_mode = 'fictional' then 'hosted-demo-yvibcyqtyihpzpmomnzg' end)
+  ) then
+    raise exception 'Current localized provenance does not match publication mode' using errcode = 'RC203';
   end if;
   if exists (
     select 1 from public.cottage_profile_localized_heads heads
@@ -378,6 +392,7 @@ declare cycle public.cottage_profile_review_cycles;
 declare source public.cottage_profile_source_revisions;
 declare attempt public.cottage_profile_translation_attempts;
 declare expected_head uuid;
+declare publication_mode text;
 begin
   if (select auth.role()) <> 'service_role' then
     raise exception 'Translation service access is required' using errcode = '42501';
@@ -388,12 +403,11 @@ begin
   if target_lease_milliseconds not between 1000 and 900000 then
     raise exception 'Translation execution lease is invalid' using errcode = '22023';
   end if;
-  if not coalesce((
-    select production_ready
-    from public.cottage_translation_runtime_control
-    where singleton for share
-  ), false) then
-    raise exception 'Production translation is disabled' using errcode = 'RC246';
+  perform 1 from public.cottage_translation_runtime_control where singleton for share;
+  perform 1 from public.cottage_demo_translation_control where singleton for share;
+  publication_mode := public.cottage_translation_runtime_mode();
+  if publication_mode = 'unavailable' then
+    raise exception 'Translation and publication are disabled by runtime control' using errcode = 'RC246';
   end if;
   select * into cycle
   from public.cottage_profile_review_cycles
@@ -436,7 +450,7 @@ begin
   insert into public.cottage_profile_translation_attempts (
     review_cycle_id, source_revision_id, target_language,
     expected_localized_revision_id, attempt_number, route,
-    lease_token, lease_expires_at
+    lease_token, lease_expires_at, translation_environment
   ) values (
     cycle.id, source.id, target_language, expected_head,
     coalesce((
@@ -446,7 +460,8 @@ begin
         and existing.target_language = begin_cottage_profile_translation_execution.target_language
     ), 0) + 1,
     target_route, gen_random_uuid(),
-    now() + target_lease_milliseconds * interval '1 millisecond'
+    now() + target_lease_milliseconds * interval '1 millisecond',
+    case when publication_mode = 'fictional' then 'hosted-demo-yvibcyqtyihpzpmomnzg' end
   ) returning * into attempt;
   return attempt;
 end;
@@ -617,16 +632,34 @@ declare localized_id uuid;
 declare cycle public.cottage_profile_review_cycles;
 declare current_head uuid;
 declare cycle_available boolean;
+declare publication_mode text;
 begin
   if (select auth.role()) <> 'service_role' then
     raise exception 'Translation service access is required' using errcode = '42501';
   end if;
-  if not coalesce((select production_ready from public.cottage_translation_runtime_control
-      where singleton for share), false) then
-    raise exception 'Production translation is disabled by runtime control' using errcode = 'RC246';
+  perform 1 from public.cottage_translation_runtime_control where singleton for share;
+  perform 1 from public.cottage_demo_translation_control where singleton for share;
+  publication_mode := public.cottage_translation_runtime_mode();
+  if publication_mode = 'unavailable' then
+    raise exception 'Translation and publication are disabled by runtime control' using errcode = 'RC246';
   end if;
   select * into attempt from public.cottage_profile_translation_attempts where id = target_attempt_id for update;
   if not found or attempt.state <> 'pending' then return false; end if;
+  if attempt.translation_environment is distinct from
+      (case when publication_mode = 'fictional' then 'hosted-demo-yvibcyqtyihpzpmomnzg' end)
+    or (publication_mode = 'fictional' and (
+      btrim(returned_provider), btrim(returned_model), btrim(returned_effort), btrim(returned_prompt_version)
+    ) is distinct from (
+      'fictional-cottage-translations', 'catalog-v1', 'none', 'fictional-cottage-catalog-v1'
+    ))
+    or (publication_mode = 'production' and (
+      btrim(returned_provider) = 'fictional-cottage-translations'
+      and btrim(returned_model) = 'catalog-v1'
+      and btrim(returned_effort) = 'none'
+      and btrim(returned_prompt_version) = 'fictional-cottage-catalog-v1'
+    )) then
+    raise exception 'Translation result does not match runtime provenance' using errcode = 'RC246';
+  end if;
   select * into cycle from public.cottage_profile_review_cycles
     where id = attempt.review_cycle_id for update;
   cycle_available := found;
@@ -653,13 +686,13 @@ begin
   end if;
   insert into public.cottage_profile_localized_revisions (
     review_cycle_id, locale, revision, origin, description, house_rules,
-    provider, model, effort, prompt_version
+    provider, model, effort, prompt_version, translation_environment
   ) values (
     attempt.review_cycle_id, attempt.target_language,
     coalesce((select max(revision) from public.cottage_profile_localized_revisions
       where review_cycle_id = attempt.review_cycle_id and locale = attempt.target_language), 0) + 1,
     'generated', btrim(translated_description), btrim(translated_house_rules),
-    btrim(returned_provider), btrim(returned_model), btrim(returned_effort), btrim(returned_prompt_version)
+    btrim(returned_provider), btrim(returned_model), btrim(returned_effort), btrim(returned_prompt_version), attempt.translation_environment
   ) returning id into localized_id;
   insert into public.cottage_profile_localized_heads (review_cycle_id, locale, localized_revision_id)
   values (attempt.review_cycle_id, attempt.target_language, localized_id)
@@ -678,9 +711,16 @@ CREATE OR REPLACE FUNCTION "public"."complete_cottage_profile_translation_execut
     SET "search_path" TO ''
     AS $$
 declare attempt public.cottage_profile_translation_attempts;
+declare publication_mode text;
 begin
   if (select auth.role()) <> 'service_role' then
     raise exception 'Translation service access is required' using errcode = '42501';
+  end if;
+  perform 1 from public.cottage_translation_runtime_control where singleton for share;
+  perform 1 from public.cottage_demo_translation_control where singleton for share;
+  publication_mode := public.cottage_translation_runtime_mode();
+  if publication_mode = 'unavailable' then
+    raise exception 'Translation and publication are disabled by runtime control' using errcode = 'RC246';
   end if;
   select * into attempt
   from public.cottage_profile_translation_attempts
@@ -735,13 +775,13 @@ begin
   end if;
   insert into public.cottage_profile_localized_revisions (
     review_cycle_id, locale, revision, origin, description, house_rules,
-    administrator_user_id, correction_reason
+    administrator_user_id, correction_reason, translation_environment
   ) values (
     target_review_cycle_id, target_locale,
     coalesce((select max(localized.revision) from public.cottage_profile_localized_revisions localized
       where localized.review_cycle_id = target_review_cycle_id and localized.locale = target_locale), 0) + 1,
     'administrator_correction', btrim(corrected_description), btrim(corrected_house_rules),
-    (select auth.uid()), btrim(target_reason)
+    (select auth.uid()), btrim(target_reason), current_revision.translation_environment
   ) returning * into revision;
   insert into public.cottage_profile_localized_heads (review_cycle_id, locale, localized_revision_id)
   values (target_review_cycle_id, target_locale, revision.id)
@@ -961,6 +1001,30 @@ $$;
 
 ALTER FUNCTION "public"."cottage_profile_required_data_is_complete"("target_profile_id" "uuid") OWNER TO "postgres";
 
+CREATE OR REPLACE FUNCTION public.cottage_translation_runtime_mode() RETURNS text
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path = ''
+    AS $$
+declare production public.cottage_translation_runtime_control;
+declare demo public.cottage_demo_translation_control;
+begin
+  select * into production from public.cottage_translation_runtime_control where singleton;
+  if not found then
+    raise exception 'Translation runtime control is unavailable' using errcode = 'RC246';
+  end if;
+  select * into demo from public.cottage_demo_translation_control where singleton;
+  if not found or demo.environment is distinct from 'hosted-demo-yvibcyqtyihpzpmomnzg'
+    or (production.production_ready and demo.enabled) then
+    raise exception 'Translation runtime admission is invalid' using errcode = 'RC246';
+  end if;
+  if production.production_ready then return 'production'; end if;
+  if demo.enabled then return 'fictional'; end if;
+  return 'unavailable';
+end;
+$$;
+
+ALTER FUNCTION public.cottage_translation_runtime_mode() OWNER TO postgres;
+
 CREATE OR REPLACE FUNCTION "public"."create_cottage_profile_review_cycle"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -1132,6 +1196,7 @@ begin
   end if;
   return jsonb_build_object(
     'productionReady', control.production_ready,
+    'publicationMode', public.cottage_translation_runtime_mode(),
     'approvedEvaluationArtifactDigest', control.approved_evaluation_artifact_digest,
     'productionApprovalDigest', control.production_approval_digest,
     'providerTermsApproved', control.provider_terms_approval_reference is not null,
@@ -2613,6 +2678,11 @@ declare publication public.cottage_publication_snapshots;
 declare remediation public.cottage_profile_review_cycles;
 declare current_head_visible boolean;
 declare published_visible boolean;
+declare published_head record;
+declare witness public.cottage_profile_localized_revisions;
+declare copied_head_id uuid;
+declare copied_head_revision integer;
+declare source_language public.cottage_profile_source_language;
 begin
   if char_length(btrim(coalesce(target_reason, ''))) not between 1 and 1000 then
     raise exception 'A translation report reason is required' using errcode = '22023';
@@ -2694,27 +2764,50 @@ begin
         publication.id
       ) returning * into remediation;
 
-      insert into public.cottage_profile_localized_revisions (
-        review_cycle_id, locale, revision, origin, description, house_rules,
-        provider, model, effort, prompt_version,
-        administrator_user_id, correction_reason
-      )
-      select remediation.id, localizations.locale, 1, published.origin,
-        localizations.description, localizations.house_rules,
-        published.provider, published.model, published.effort,
-        published.prompt_version, published.administrator_user_id,
-        published.correction_reason
-      from public.cottage_publication_localizations localizations
-      join public.cottage_profile_localized_revisions published
-        on published.id = localizations.localized_revision_id
-      where localizations.publication_id = publication.id;
-
-      insert into public.cottage_profile_localized_heads (
-        review_cycle_id, locale, localized_revision_id
-      )
-      select remediation.id, localized.locale, localized.id
-      from public.cottage_profile_localized_revisions localized
-      where localized.review_cycle_id = remediation.id;
+      select source.source_language into source_language
+      from public.cottage_profile_source_revisions source where source.id = cycle.source_revision_id;
+      for published_head in
+        select published.*, localizations.description as published_description,
+          localizations.house_rules as published_house_rules
+        from public.cottage_publication_localizations localizations
+        join public.cottage_profile_localized_revisions published
+          on published.id = localizations.localized_revision_id
+        where localizations.publication_id = publication.id
+      loop
+        copied_head_revision := 1;
+        if published_head.origin = 'administrator_correction' and published_head.locale <> source_language then
+          select generated.* into witness
+          from public.cottage_profile_localized_revisions generated
+          where generated.review_cycle_id = published_head.review_cycle_id
+            and generated.locale = published_head.locale and generated.origin = 'generated'
+            and generated.revision < published_head.revision
+            and generated.translation_environment is not distinct from published_head.translation_environment
+          order by generated.revision desc, generated.id desc limit 1;
+          if not found then
+            raise exception 'Corrected publication generated provenance is unavailable' using errcode = 'RC203';
+          end if;
+          insert into public.cottage_profile_localized_revisions (
+            review_cycle_id, locale, revision, origin, description, house_rules,
+            provider, model, effort, prompt_version, translation_environment
+          ) values (
+            remediation.id, witness.locale, 1, witness.origin, witness.description, witness.house_rules,
+            witness.provider, witness.model, witness.effort, witness.prompt_version, witness.translation_environment
+          );
+          copied_head_revision := 2;
+        end if;
+        insert into public.cottage_profile_localized_revisions (
+          review_cycle_id, locale, revision, origin, description, house_rules,
+          provider, model, effort, prompt_version, administrator_user_id, correction_reason,
+          translation_environment
+        ) values (
+          remediation.id, published_head.locale, copied_head_revision, published_head.origin,
+          published_head.published_description, published_head.published_house_rules,
+          published_head.provider, published_head.model, published_head.effort, published_head.prompt_version,
+          published_head.administrator_user_id, published_head.correction_reason, published_head.translation_environment
+        ) returning id into copied_head_id;
+        insert into public.cottage_profile_localized_heads (review_cycle_id, locale, localized_revision_id)
+        values (remediation.id, published_head.locale, copied_head_id);
+      end loop;
 
       insert into public.cottage_profile_review_photos (
         review_cycle_id, photo_id, position

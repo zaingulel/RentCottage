@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(56);
+select plan(61);
 
 select results_eq(
   $$select signature, position(
@@ -653,6 +653,432 @@ select throws_ok(
   )$$,
   '42501', null,
   'anonymous users cannot report Cottage translations'
+);
+
+
+reset role;
+select lives_ok(
+  $test$
+  do $fictional$
+  declare
+    cycle_id uuid;
+    attempt public.cottage_profile_translation_attempts;
+    corrected public.cottage_profile_localized_revisions;
+    publication public.cottage_publication_snapshots;
+    report public.cottage_translation_quality_reports;
+    current_id uuid;
+    review_locale public.cottage_profile_source_language;
+  begin
+    if (select enabled from public.cottage_demo_translation_control) is distinct from false then
+      raise exception 'Fictional admission must be disabled by default';
+    end if;
+    update public.cottage_translation_runtime_control set production_ready = false;
+    if public.cottage_translation_runtime_mode() is distinct from 'unavailable' then
+      raise exception 'Neither admission must be unavailable';
+    end if;
+    update public.cottage_demo_translation_control set enabled = true;
+    if public.cottage_translation_runtime_mode() is distinct from 'fictional' then
+      raise exception 'Exact demo admission must be fictional';
+    end if;
+    insert into storage.objects (bucket_id, name, metadata)
+    values (public.cottage_profile_photo_bucket_name(), 'published/remediation.png',
+      '{"mimetype":"image/png","size":100}'::jsonb);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004601","role":"authenticated","aal":"aal1"}', true);
+    perform public.update_owner_cottage_profile_draft(
+      '30000000-0000-4000-8000-000000004601',
+      (select version from public.owner_application_cottage_profiles),
+      'Translation Cottage', 'Erbil', 'Near Shaqlawa', 'Private address',
+      36.2, 44.1, 'Private directions', 8, 3, 2, array['garden'],
+      'en', 'Quiet cottage', 'No smoking'
+    );
+    perform public.submit_cottage_profile_for_content_approval(
+      '30000000-0000-4000-8000-000000004601',
+      (select version from public.owner_application_cottage_profiles)
+    );
+    select id into strict cycle_id from public.cottage_profile_review_cycles where state = 'in_review';
+    begin
+      perform public.cottage_translation_runtime_mode();
+      raise exception 'Browser role must not call runtime mode';
+    exception when insufficient_privilege then null; end;
+    reset role;
+    set local role service_role;
+    perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+    begin
+      update public.cottage_demo_translation_control set enabled = false;
+      raise exception 'Service must not change demo admission';
+    exception when insufficient_privilege then null; end;
+    reset role;
+    begin
+      perform public.begin_cottage_profile_translation(cycle_id, 'ar');
+      raise exception 'Legacy begin must remain production-only';
+    exception when sqlstate 'RC246' then null; end;
+    set local role service_role;
+    begin
+      perform public.reserve_cottage_translation_usage(
+        repeat('1',64), 'gpt-6-luna', 'none', 'v1', 100, 10000,
+        repeat('b',64), 2, 1000, 20000);
+      raise exception 'Fictional admission must not reserve live usage';
+    exception when sqlstate 'RC246' then null; end;
+    foreach review_locale in array array['ar','ckb']::public.cottage_profile_source_language[] loop
+      attempt := public.begin_cottage_profile_translation_execution(cycle_id, review_locale, 'ordinary', 50000);
+      if attempt.translation_environment is distinct from 'hosted-demo-yvibcyqtyihpzpmomnzg' then
+        raise exception 'Attempt provenance must be internally stamped';
+      end if;
+      begin
+        perform public.complete_cottage_profile_translation_execution(attempt.id, attempt.lease_token,
+          'Fictional description', 'Fictional rules', 'openai', 'catalog-v1', 'none', 'fictional-cottage-catalog-v1');
+        raise exception 'Forged fictional tuple must be refused';
+      exception when sqlstate 'RC246' then null; end;
+      if not public.complete_cottage_profile_translation_execution(attempt.id, attempt.lease_token,
+          'Fictional description', 'Fictional rules', 'fictional-cottage-translations',
+          'catalog-v1', 'none', 'fictional-cottage-catalog-v1') then
+        raise exception 'Current fictional lease must complete';
+      end if;
+    end loop;
+    reset role;
+    if (select count(*) from public.cottage_profile_localized_revisions
+        where review_cycle_id = cycle_id and translation_environment = 'hosted-demo-yvibcyqtyihpzpmomnzg') <> 2 then
+      raise exception 'Both generated revisions must retain fictional provenance';
+    end if;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004603","role":"authenticated","aal":"aal2"}', true);
+    if (public.get_cottage_translation_administration() ->> 'productionReady')::boolean is distinct from false
+      or public.get_cottage_translation_administration() ->> 'publicationMode' is distinct from 'fictional' then
+      raise exception 'Fictional publication must not claim production readiness';
+    end if;
+    foreach review_locale in array array['en','ar','ckb']::public.cottage_profile_source_language[] loop
+      perform public.decide_cottage_profile_localization(cycle_id, review_locale, true, 'Reviewed fictional sample');
+    end loop;
+    reset role;
+    set local role service_role;
+    perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+    attempt := public.begin_cottage_profile_translation_execution(cycle_id, 'ar', 'stronger_model', 50000);
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004603","role":"authenticated","aal":"aal2"}', true);
+    corrected := public.correct_cottage_profile_localization(cycle_id, 'ar',
+      'Corrected fictional description', 'Corrected fictional rules', 'Review correction');
+    if corrected.translation_environment is distinct from 'hosted-demo-yvibcyqtyihpzpmomnzg'
+      or corrected.administrator_user_id <> '00000000-0000-0000-0000-000000004603'::uuid
+      or corrected.correction_reason <> 'Review correction' then
+      raise exception 'Correction must preserve fictional provenance and actor';
+    end if;
+    begin
+      perform public.approve_cottage_profile_publication(cycle_id, 'Old approval must not apply');
+      raise exception 'Unapproved corrected head must block publication';
+    exception when sqlstate 'RC203' then null; end;
+    reset role;
+    set local role service_role;
+    perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+    if public.complete_cottage_profile_translation_execution(attempt.id, attempt.lease_token,
+        'Late description', 'Late rules', 'fictional-cottage-translations',
+        'catalog-v1', 'none', 'fictional-cottage-catalog-v1') then
+      raise exception 'Late completion must not replace a corrected current head';
+    end if;
+    reset role;
+    select localized_revision_id into current_id from public.cottage_profile_localized_heads
+      where review_cycle_id = cycle_id and locale = 'ar';
+    if current_id <> corrected.id then raise exception 'Stale completion changed the head'; end if;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004603","role":"authenticated","aal":"aal2"}', true);
+    perform public.decide_cottage_profile_localization(cycle_id, 'ar', true, 'Reviewed corrected sample');
+    reset role;
+    update public.cottage_demo_translation_control set enabled = false;
+    update public.cottage_translation_runtime_control set production_ready = true;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004603","role":"authenticated","aal":"aal2"}', true);
+    begin
+      perform public.approve_cottage_profile_publication(cycle_id, 'Production must reject fictional history');
+      raise exception 'Production publication accepted fictional provenance';
+    exception when sqlstate 'RC203' then null; end;
+    reset role;
+    update public.cottage_translation_runtime_control set production_ready = false;
+    update public.cottage_demo_translation_control set enabled = true;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004603","role":"authenticated","aal":"aal1"}', true);
+    begin
+      perform public.approve_cottage_profile_publication(cycle_id, 'AAL1 must remain denied');
+      raise exception 'AAL1 publication accepted';
+    exception when insufficient_privilege then null; end;
+    perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004603","role":"authenticated","aal":"aal2"}', true);
+    publication := public.approve_cottage_profile_publication(cycle_id, 'Approved fictional publication');
+    perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004601","role":"authenticated","aal":"aal1"}', true);
+    report := public.report_current_cottage_translation(cycle_id,
+      (select localized_revision_id from public.cottage_profile_localized_heads
+        where review_cycle_id = cycle_id and locale = 'ckb'), 'Fictional remediation');
+    if (select count(*) from public.cottage_profile_localized_heads heads
+        join public.cottage_profile_localized_revisions revisions on revisions.id = heads.localized_revision_id
+        where heads.review_cycle_id = report.remediation_review_cycle_id
+          and revisions.translation_environment = 'hosted-demo-yvibcyqtyihpzpmomnzg') <> 2 then
+      raise exception 'Remediation must copy generated and corrected fictional provenance';
+    end if;
+    if (select current_publication_id from public.owner_application_cottage_profiles) <> publication.id then
+      raise exception 'Remediation must preserve the published snapshot';
+    end if;
+    reset role;
+  end;
+  $fictional$;
+  $test$,
+  'fictional publication preserves production denial and current-head approval'
+);
+
+
+reset role;
+select lives_ok(
+  $test$
+  do $reads$
+  declare
+    revision_ids uuid[];
+    actor uuid;
+    rows jsonb;
+    runtime_mode text;
+  begin
+    select array_agg(localized_revision_id) into revision_ids
+    from public.cottage_profile_localized_heads
+    where review_cycle_id = (select id from public.cottage_profile_review_cycles where state = 'in_review');
+    if cardinality(revision_ids) <> 3 then raise exception 'Expected three current remediation heads'; end if;
+    foreach runtime_mode in array array['fictional', 'unavailable', 'production'] loop
+      update public.cottage_demo_translation_control set enabled = false;
+      update public.cottage_translation_runtime_control set production_ready = (runtime_mode = 'production');
+      update public.cottage_demo_translation_control set enabled = (runtime_mode = 'fictional');
+    foreach actor in array array[
+      '00000000-0000-0000-0000-000000004601'::uuid,
+      '00000000-0000-0000-0000-000000004603'::uuid,
+      '00000000-0000-0000-0000-000000004602'::uuid
+    ] loop
+      set local role authenticated;
+      perform set_config('request.jwt.claims', jsonb_build_object('sub',actor,'role','authenticated','aal',
+        case when actor = '00000000-0000-0000-0000-000000004603'::uuid then 'aal2' else 'aal1' end)::text, true);
+      select coalesce(jsonb_agg(to_jsonb(projected)), '[]'::jsonb) into rows from (
+        select id, locale, origin, description, house_rules, translation_environment,
+          provider, model, effort, prompt_version
+        from public.cottage_profile_localized_revisions where id = any(revision_ids)
+      ) projected;
+      if actor = '00000000-0000-0000-0000-000000004602'::uuid then
+        if jsonb_array_length(rows) <> 0 then raise exception 'Outsider read foreign localized content'; end if;
+      elsif jsonb_array_length(rows) <> 3 or (
+        select count(*) from jsonb_array_elements(rows) entry
+        where entry ->> 'translation_environment' = 'hosted-demo-yvibcyqtyihpzpmomnzg'
+      ) <> 2 then
+        raise exception 'Authorized projected read lost provenance or rows';
+      end if;
+      reset role;
+    end loop;
+    end loop;
+    update public.cottage_translation_runtime_control set production_ready = false;
+    update public.cottage_demo_translation_control set enabled = true;
+  end;
+  $reads$;
+  $test$,
+  'localized review provenance is readable only by its authorized participants'
+);
+
+select lives_ok(
+  $test$
+  do $admission$
+  begin
+    begin
+      delete from public.cottage_demo_translation_control;
+      perform public.cottage_translation_runtime_mode();
+      raise exception 'Missing demo singleton must refuse';
+    exception when sqlstate 'RC246' then null; end;
+    begin
+      delete from public.cottage_translation_runtime_control;
+      perform public.cottage_translation_runtime_mode();
+      raise exception 'Missing production singleton must refuse';
+    exception when sqlstate 'RC246' then null; end;
+    begin
+      update public.cottage_translation_runtime_control set production_ready = true;
+      perform public.cottage_translation_runtime_mode();
+      raise exception 'Both admissions must refuse';
+    exception when sqlstate 'RC246' then null; end;
+    begin
+      update public.cottage_demo_translation_control set environment = 'hosted-demo-other';
+      raise exception 'Other environment must refuse';
+    exception when check_violation then null; end;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004601","role":"authenticated","aal":"aal1"}', true);
+    begin
+      perform enabled from public.cottage_demo_translation_control;
+      raise exception 'Browser must not read demo control';
+    exception when insufficient_privilege then null; end;
+    reset role;
+    set local role anon;
+    begin
+      perform public.cottage_translation_runtime_mode();
+      raise exception 'Anonymous mode call must refuse';
+    exception when insufficient_privilege then null; end;
+    reset role;
+  end;
+  $admission$;
+  $test$,
+  'fictional admission refuses missing dual malformed and unauthorized controls'
+);
+
+select lives_ok(
+  $test$
+  do $provenance$
+  declare
+    cycle_id uuid;
+    attempt public.cottage_profile_translation_attempts;
+    original_heads uuid[];
+  begin
+    select id into strict cycle_id from public.cottage_profile_review_cycles where state = 'in_review';
+    select array_agg(localized_revision_id order by locale) into original_heads
+      from public.cottage_profile_localized_heads where review_cycle_id = cycle_id;
+    begin
+      insert into public.cottage_profile_localized_revisions (
+        review_cycle_id, locale, revision, origin, description, house_rules, translation_environment
+      ) values (cycle_id, 'en', 99, 'owner_source', 'Source', 'Rules', 'hosted-demo-yvibcyqtyihpzpmomnzg');
+      raise exception 'Owner source must never become fictional';
+    exception when check_violation then null; end;
+    begin
+      insert into public.cottage_profile_localized_revisions (
+        review_cycle_id, locale, revision, origin, description, house_rules,
+        provider, model, effort, prompt_version
+      ) values (cycle_id, 'ar', 99, 'generated', 'Description', 'Rules',
+        'fictional-cottage-translations', 'catalog-v1', 'none', 'fictional-cottage-catalog-v1');
+      raise exception 'Reserved tuple without fictional marker must refuse';
+    exception when check_violation then null; end;
+    begin
+      insert into public.cottage_profile_localized_revisions (
+        review_cycle_id, locale, revision, origin, description, house_rules,
+        provider, model, effort, prompt_version, translation_environment
+      ) values (cycle_id, 'ar', 99, 'generated', 'Description', 'Rules',
+        'openai', 'gpt-6-luna', 'none', 'v1', 'hosted-demo-yvibcyqtyihpzpmomnzg');
+      raise exception 'Fictional marker with ordinary tuple must refuse';
+    exception when check_violation then null; end;
+    begin
+      insert into public.cottage_profile_localized_revisions (
+        review_cycle_id, locale, revision, origin, description, house_rules,
+        provider, model, effort, prompt_version, translation_environment
+      ) values (cycle_id, 'ar', 99, 'generated', 'Description', 'Rules',
+        'fictional-cottage-translations', 'catalog-v1', 'none', 'fictional-cottage-catalog-v1', 'malformed');
+      raise exception 'Malformed provenance must refuse';
+    exception when check_violation then null; end;
+    set local role service_role;
+    perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+    attempt := public.begin_cottage_profile_translation_execution(cycle_id, 'ckb', 'ordinary', 50000);
+    reset role;
+    update public.cottage_demo_translation_control set enabled = false;
+    update public.cottage_translation_runtime_control set production_ready = true;
+    set local role service_role;
+    perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+    begin
+      perform public.complete_cottage_profile_translation_execution(attempt.id, attempt.lease_token,
+        'Wrong mode', 'Rules', 'openai', 'gpt-6-luna', 'none', 'v1');
+      raise exception 'Mismatched attempt mode must refuse';
+    exception when sqlstate 'RC246' then null; end;
+    reset role;
+    update public.cottage_translation_runtime_control set production_ready = false;
+    update public.cottage_demo_translation_control set enabled = true;
+    if original_heads is distinct from (select array_agg(localized_revision_id order by locale)
+        from public.cottage_profile_localized_heads where review_cycle_id = cycle_id) then
+      raise exception 'Hostile provenance changed current heads';
+    end if;
+  end;
+  $provenance$;
+  $test$,
+  'reserved provenance and mismatched attempt modes refuse without changing heads'
+);
+
+
+reset role;
+select lives_ok(
+  $test$
+  do $remediation$
+  declare
+    cycle_id uuid;
+    publication public.cottage_publication_snapshots;
+    original_publication public.cottage_publication_snapshots;
+    original_localizations jsonb;
+    original_text jsonb;
+    report public.cottage_translation_quality_reports;
+    replay public.cottage_translation_quality_reports;
+    witness public.cottage_profile_localized_revisions;
+    corrected public.cottage_profile_localized_revisions;
+    review_locale public.cottage_profile_source_language;
+    generation integer;
+    cycle_count bigint;
+    revision_count bigint;
+  begin
+    select id into strict cycle_id from public.cottage_profile_review_cycles where state = 'in_review';
+    select snapshots.* into strict original_publication from public.cottage_publication_snapshots snapshots
+      join public.cottage_profile_review_cycles cycles on cycles.remediation_publication_id = snapshots.id
+      where cycles.id = cycle_id;
+    select jsonb_agg(to_jsonb(localizations) order by locale),
+      jsonb_agg(jsonb_build_array(locale, description, house_rules) order by locale)
+      into original_localizations, original_text
+      from public.cottage_publication_localizations localizations where publication_id = original_publication.id;
+    for generation in 1..2 loop
+      if (select count(*) from public.cottage_profile_localized_heads where review_cycle_id = cycle_id) <> 3
+        or (select count(*) from public.cottage_profile_localized_revisions where review_cycle_id = cycle_id) <> 4 then
+        raise exception 'Remediation must carry three heads and one generated witness';
+      end if;
+      select revisions.* into strict corrected from public.cottage_profile_localized_heads heads
+        join public.cottage_profile_localized_revisions revisions on revisions.id = heads.localized_revision_id
+        where heads.review_cycle_id = cycle_id and heads.locale = 'ar';
+      select revisions.* into strict witness from public.cottage_profile_localized_revisions revisions
+        where revisions.review_cycle_id = cycle_id and revisions.locale = 'ar' and revisions.origin = 'generated';
+      if corrected.origin <> 'administrator_correction' or corrected.revision <> 2
+        or corrected.description <> 'Corrected fictional description'
+        or corrected.house_rules <> 'Corrected fictional rules'
+        or corrected.translation_environment is distinct from 'hosted-demo-yvibcyqtyihpzpmomnzg'
+        or corrected.provider is not null or corrected.model is not null
+        or corrected.effort is not null or corrected.prompt_version is not null
+        or witness.revision <> 1 or witness.description <> 'Fictional description'
+        or witness.house_rules <> 'Fictional rules'
+        or (witness.provider, witness.model, witness.effort, witness.prompt_version, witness.translation_environment)
+          is distinct from ('fictional-cottage-translations', 'catalog-v1', 'none',
+            'fictional-cottage-catalog-v1', 'hosted-demo-yvibcyqtyihpzpmomnzg')
+        or exists (select 1 from public.cottage_profile_localized_heads where localized_revision_id = witness.id) then
+        raise exception 'Carried witness must preserve evidence while corrected text remains the head';
+      end if;
+      select reports.* into strict report from public.cottage_translation_quality_reports reports
+        where reports.remediation_review_cycle_id = cycle_id;
+      select count(*) into cycle_count from public.cottage_profile_review_cycles;
+      select count(*) into revision_count from public.cottage_profile_localized_revisions;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004601","role":"authenticated","aal":"aal1"}', true);
+      replay := public.report_current_cottage_translation(report.review_cycle_id, report.localized_revision_id, 'Replay');
+      if replay.id <> report.id then raise exception 'Report replay changed immutable identity'; end if;
+      reset role;
+      if cycle_count <> (select count(*) from public.cottage_profile_review_cycles)
+        or revision_count <> (select count(*) from public.cottage_profile_localized_revisions) then
+        raise exception 'Report replay added a cycle or witness';
+      end if;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004603","role":"authenticated","aal":"aal2"}', true);
+      foreach review_locale in array array['en', 'ar', 'ckb']::public.cottage_profile_source_language[] loop
+        perform public.decide_cottage_profile_localization(cycle_id, review_locale, true, 'Reviewed remediation head');
+      end loop;
+      publication := public.approve_cottage_profile_publication(cycle_id, 'Approved corrected fictional remediation');
+      reset role;
+      if original_text is distinct from (select jsonb_agg(jsonb_build_array(locale, description, house_rules) order by locale)
+          from public.cottage_publication_localizations where publication_id = publication.id) then
+        raise exception 'Remediation publication changed the approved source or head text';
+      end if;
+      if generation = 1 then
+        set local role authenticated;
+        perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000004601","role":"authenticated","aal":"aal1"}', true);
+        report := public.report_current_cottage_translation(cycle_id,
+          (select localized_revision_id from public.cottage_profile_localized_heads
+            where review_cycle_id = cycle_id and locale = 'ckb'), 'Second fictional remediation');
+        cycle_id := report.remediation_review_cycle_id;
+        reset role;
+      end if;
+    end loop;
+    if to_jsonb(original_publication) is distinct from (select to_jsonb(snapshots)
+        from public.cottage_publication_snapshots snapshots where id = original_publication.id)
+      or original_localizations is distinct from (select jsonb_agg(to_jsonb(localizations) order by locale)
+        from public.cottage_publication_localizations localizations where publication_id = original_publication.id) then
+      raise exception 'Remediation rewrote immutable original publication evidence';
+    end if;
+  end;
+  $remediation$;
+  $test$,
+  'corrected fictional remediation preserves generated witnesses through repeated publication'
 );
 
 select * from finish();

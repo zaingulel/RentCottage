@@ -290,3 +290,5 @@ ALTER TABLE public.customer_review_translations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_review_translation_reports ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE private.administrator_booking_money_exports ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."cottage_demo_translation_control" ENABLE ROW LEVEL SECURITY;

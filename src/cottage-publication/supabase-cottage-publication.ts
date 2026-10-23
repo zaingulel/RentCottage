@@ -5,7 +5,10 @@ import {
   type TranslationFailureCode,
 } from "@/translation/failure-code";
 
+import { fictionalCottageTranslationEnvironment } from "./cottage-publication";
 import type {
+  CottageLocalizationReview,
+  CottagePublicationMode,
   CottageTranslationAttempt,
   CottageTranslationAdministration,
   CottagePublicationReviewState,
@@ -33,6 +36,55 @@ function language(value: unknown): LaunchLanguage {
     throw new Error("invalid-provider-data");
   }
   return value;
+}
+
+function publicationMode(value: unknown): CottagePublicationMode {
+  if (
+    value !== "production" &&
+    value !== "fictional" &&
+    value !== "unavailable"
+  ) {
+    throw new Error("invalid-provider-data");
+  }
+  return value;
+}
+
+function localizationProvenance(revision: Record<string, unknown>): {
+  origin: Exclude<CottageLocalizationReview["origin"], "source_fallback">;
+  translationEnvironment: CottageLocalizationReview["translationEnvironment"];
+} {
+  const marker = revision.translation_environment;
+  if (marker !== null && marker !== fictionalCottageTranslationEnvironment) {
+    throw new Error("invalid-provider-data");
+  }
+  const {
+    origin,
+    provider,
+    model,
+    effort,
+    prompt_version: promptVersion,
+  } = revision;
+  const tuple = [provider, model, effort, promptVersion];
+  const reserved =
+    provider === "fictional-cottage-translations" &&
+    model === "catalog-v1" &&
+    effort === "none" &&
+    promptVersion === "fictional-cottage-catalog-v1";
+  if (origin === "owner_source" || origin === "administrator_correction") {
+    if (
+      tuple.some((value) => value !== null) ||
+      (origin === "owner_source" && marker !== null)
+    ) {
+      throw new Error("invalid-provider-data");
+    }
+  } else if (origin === "generated") {
+    tuple.forEach(requiredString);
+    if (reserved !== (marker !== null))
+      throw new Error("invalid-provider-data");
+  } else {
+    throw new Error("invalid-provider-data");
+  }
+  return { origin, translationEnvironment: marker };
 }
 
 function requiredArray(value: unknown): unknown[] {
@@ -191,8 +243,13 @@ export class SupabaseCottagePublicationRepository {
     );
     assertSuccess(result.error);
     const data = record(result.data);
+    const mode = publicationMode(data.publicationMode);
+    const productionReady = requiredBoolean(data.productionReady);
+    if (productionReady !== (mode === "production"))
+      throw new Error("invalid-provider-data");
     return {
-      productionReady: requiredBoolean(data.productionReady),
+      publicationMode: mode,
+      productionReady,
       providerTermsApproved: requiredBoolean(data.providerTermsApproved),
       nativeReviewApproved: requiredBoolean(data.nativeReviewApproved),
       qualityThresholdApproved: requiredBoolean(data.qualityThresholdApproved),
@@ -253,7 +310,9 @@ export class SupabaseCottagePublicationRepository {
     const revisionsResult = revisionIds.length
       ? await this.client
           .from("cottage_profile_localized_revisions")
-          .select("id,locale,origin,description,house_rules")
+          .select(
+            "id,locale,origin,description,house_rules,translation_environment,provider,model,effort,prompt_version",
+          )
           .in("id", revisionIds)
       : { data: [], error: null };
     assertSuccess(revisionsResult.error);
@@ -302,6 +361,7 @@ export class SupabaseCottagePublicationRepository {
       Record<string, unknown>
     >();
     for (const revision of revisions.values()) {
+      localizationProvenance(revision);
       revisionsByLocale.set(language(revision.locale), revision);
     }
     const latestAttemptByLocale = new Map<
@@ -330,12 +390,10 @@ export class SupabaseCottagePublicationRepository {
         qualityReportReasonByLocale.set(locale, requiredString(report.reason));
       }
     }
-    const controlResult = await this.privilegedClient
-      .from("cottage_translation_runtime_control")
-      .select("production_ready")
-      .eq("singleton", true)
-      .single();
-    assertSuccess(controlResult.error);
+    const modeResult = await this.privilegedClient.rpc(
+      "cottage_translation_runtime_mode",
+    );
+    assertSuccess(modeResult.error);
     const state = cycle.state;
     if (state !== "in_review" && state !== "approved" && state !== "rejected") {
       throw new Error("invalid-provider-data");
@@ -344,9 +402,7 @@ export class SupabaseCottagePublicationRepository {
       id: cycleId,
       state,
       sourceLanguage,
-      productionReady: requiredBoolean(
-        record(controlResult.data).production_ready,
-      ),
+      publicationMode: publicationMode(modeResult.data),
       localizations: (["en", "ar", "ckb"] as const).map((locale) => {
         const revision = revisionsByLocale.get(locale);
         const humanReviewRequired = humanReviewLocales.has(locale);
@@ -365,6 +421,9 @@ export class SupabaseCottagePublicationRepository {
             contentLanguage: sourceLanguage,
             revisionId: revision ? requiredString(revision.id) : undefined,
             origin: "source_fallback" as const,
+            translationEnvironment: revision
+              ? localizationProvenance(revision).translationEnvironment
+              : null,
             description: requiredString(sourceRevision.description),
             houseRules: requiredString(sourceRevision.house_rules),
             approved: false,
@@ -374,19 +433,12 @@ export class SupabaseCottagePublicationRepository {
           };
         }
         const revisionId = requiredString(revision.id);
-        const origin = revision.origin;
-        if (
-          origin !== "owner_source" &&
-          origin !== "generated" &&
-          origin !== "administrator_correction"
-        ) {
-          throw new Error("invalid-provider-data");
-        }
+        const provenance = localizationProvenance(revision);
         return {
           locale,
           contentLanguage: locale,
           revisionId,
-          origin,
+          ...provenance,
           description: requiredString(revision.description),
           houseRules: requiredString(revision.house_rules),
           approved: approvedByRevision.get(revisionId) === true,

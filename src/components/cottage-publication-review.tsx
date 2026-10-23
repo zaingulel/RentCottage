@@ -17,6 +17,14 @@ import type { TranslationFailureCode } from "@/translation/failure-code";
 const copy = {
   en: {
     title: "Language review",
+    fictionalNotice:
+      "Fictional translation sample; not production translation evidence",
+    fictionalLimit:
+      "Use one of the six documented English descriptions and its House Rules. Restore that source pair if it changes, or correct an already loaded sample as an Administrator.",
+    fictionalGenerated: "Fictional translation sample",
+    fictionalCorrected: "Administrator correction of fictional sample",
+    loadSample: "Load fictional sample",
+    reloadSample: "Reload fictional sample",
     in_review: "In review",
     approved: "Published",
     rejected: "Rejected",
@@ -54,6 +62,13 @@ const copy = {
   },
   ar: {
     title: "مراجعة اللغات",
+    fictionalNotice: "عينة ترجمة خيالية؛ ليست دليلاً على ترجمة الإنتاج",
+    fictionalLimit:
+      "استخدم أحد الأوصاف الإنجليزية الستة الموثقة وقواعد المنزل الخاصة به. استعد النص الأصلي إذا تغير، أو صحح عينة محملة بصفتك مسؤولاً.",
+    fictionalGenerated: "عينة ترجمة خيالية",
+    fictionalCorrected: "تصحيح المسؤول لعينة خيالية",
+    loadSample: "تحميل عينة خيالية",
+    reloadSample: "إعادة تحميل عينة خيالية",
     in_review: "قيد المراجعة",
     approved: "منشور",
     rejected: "مرفوض",
@@ -90,6 +105,13 @@ const copy = {
   },
   ckb: {
     title: "پێداچوونەوەی زمان",
+    fictionalNotice: "نموونەی وەرگێڕانی خەیاڵی؛ بەڵگەی وەرگێڕانی بەرهەم نییە",
+    fictionalLimit:
+      "یەکێک لە شەش وەسفە ئینگلیزییە بەڵگەکراوەکان و یاساکانی ماڵەکەی بەکاربهێنە. ئەگەر گۆڕا سەرچاوەکە بگەڕێنەوە، یان وەک ئەدمین نموونەیەکی بارکراو ڕاست بکەرەوە.",
+    fictionalGenerated: "نموونەی وەرگێڕانی خەیاڵی",
+    fictionalCorrected: "ڕاستکردنەوەی ئەدمین بۆ نموونەی خەیاڵی",
+    loadSample: "بارکردنی نموونەی خەیاڵی",
+    reloadSample: "دووبارە بارکردنی نموونەی خەیاڵی",
     in_review: "لە پێداچوونەوەدایە",
     approved: "بڵاوکراوەتەوە",
     rejected: "ڕەتکرایەوە",
@@ -213,8 +235,13 @@ export function CottagePublicationReview({
   administration?: CottageTranslationAdministration;
 }) {
   const text = copy[locale];
+  const fictional = review.publicationMode === "fictional";
+  const admitted = review.publicationMode === "production" || fictional;
+  const hasFictionalSamples = review.localizations.some(
+    (item) => item.translationEnvironment !== null,
+  );
   const canPublish =
-    review.productionReady &&
+    admitted &&
     review.localizations.length === 3 &&
     review.localizations.every((item) => item.approved);
   return (
@@ -233,8 +260,12 @@ export function CottagePublicationReview({
           {text.sourceLanguage}: {languageName(review.sourceLanguage)}
         </p>
       ) : null}
-      {!review.productionReady ? <p role="status">{text.disabled}</p> : null}
-      {actor === "administrator" && administration ? (
+      {fictional || hasFictionalSamples ? (
+        <p role="status">{text.fictionalNotice}</p>
+      ) : null}
+      {fictional ? <p>{text.fictionalLimit}</p> : null}
+      {!admitted ? <p role="status">{text.disabled}</p> : null}
+      {actor === "administrator" && administration && !fictional ? (
         <section aria-labelledby="translation-controls-title">
           <h3 id="translation-controls-title">{text.controls}</h3>
           <p>
@@ -274,9 +305,13 @@ export function CottagePublicationReview({
               {item.origin === "owner_source"
                 ? text.source
                 : item.origin === "generated"
-                  ? text.generated
+                  ? item.translationEnvironment
+                    ? text.fictionalGenerated
+                    : text.generated
                   : item.origin === "administrator_correction"
-                    ? text.corrected
+                    ? item.translationEnvironment
+                      ? text.fictionalCorrected
+                      : text.corrected
                     : text.fallback}
             </p>
             {item.humanReviewRequired ? <p>{text.humanReview}</p> : null}
@@ -302,15 +337,21 @@ export function CottagePublicationReview({
                   type="hidden"
                   name="route"
                   value={
-                    item.origin === "generated" ? "stronger_model" : "ordinary"
+                    !fictional && item.origin === "generated"
+                      ? "stronger_model"
+                      : "ordinary"
                   }
                 />
-                <button type="submit" disabled={!review.productionReady}>
-                  {item.origin === "generated"
-                    ? item.qualityReportReason
-                      ? text.reprocessWithStrongerModel
-                      : text.reprocess
-                    : text.generate}{" "}
+                <button type="submit" disabled={!admitted}>
+                  {fictional
+                    ? item.origin === "generated"
+                      ? text.reloadSample
+                      : text.loadSample
+                    : item.origin === "generated"
+                      ? item.qualityReportReason
+                        ? text.reprocessWithStrongerModel
+                        : text.reprocess
+                      : text.generate}{" "}
                   {languageName(item.locale)}
                 </button>
               </form>

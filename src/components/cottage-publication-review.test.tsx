@@ -1,5 +1,13 @@
-import { render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+
+import { generateCottageTranslationAction } from "@/cottage-publication/actions";
 
 import { CottagePublicationReview } from "./cottage-publication-review";
 
@@ -15,7 +23,7 @@ vi.mock("@/cottage-publication/actions", () => ({
 const review = {
   id: "20000000-0000-4000-8000-000000000024",
   state: "in_review" as const,
-  productionReady: false,
+  publicationMode: "unavailable" as const,
   localizations: [
     {
       locale: "en" as const,
@@ -23,6 +31,7 @@ const review = {
       origin: "owner_source" as const,
       description: "Quiet cottage",
       houseRules: "No smoking",
+      translationEnvironment: null,
       approved: true,
     },
     {
@@ -31,6 +40,7 @@ const review = {
       origin: "generated" as const,
       description: "كوخ هادئ",
       houseRules: "ممنوع التدخين",
+      translationEnvironment: null,
       approved: false,
     },
     {
@@ -39,12 +49,171 @@ const review = {
       origin: "administrator_correction" as const,
       description: "کۆتێجێکی ئارام",
       houseRules: "جگەرەکێشان قەدەغەیە",
+      translationEnvironment: null,
       approved: false,
     },
   ],
 };
 
+const administration = {
+  productionReady: false,
+  publicationMode: "unavailable" as const,
+  providerTermsApproved: true,
+  nativeReviewApproved: true,
+  qualityThresholdApproved: true,
+  ordinaryModel: "gpt-6-luna",
+  ordinaryEffort: "none",
+  strongerModel: "gpt-6.1-sol",
+  strongerEffort: "low",
+  judgeModel: "gpt-6-astra",
+  judgeEffort: "medium",
+  monthlyRequestLimit: 100,
+  monthlyTokenLimit: 100000,
+  monthlySpendMicrousdLimit: 500000,
+  monthRequests: 3,
+  monthReservedTokens: 1200,
+  monthReservedMicrousd: 4000,
+  monthActualMicrousd: 1200,
+  qualityReportCount: 2,
+};
+
 describe("Cottage publication review", () => {
+  it.each([
+    [
+      "en",
+      "Fictional translation sample; not production translation evidence",
+      "Fictional translation sample",
+      "Administrator correction of fictional sample",
+      "Load fictional sample",
+      "Reload fictional sample",
+      "Publish all three languages",
+      "Owner source",
+    ],
+    [
+      "ar",
+      "عينة ترجمة خيالية؛ ليست دليلاً على ترجمة الإنتاج",
+      "عينة ترجمة خيالية",
+      "تصحيح المسؤول لعينة خيالية",
+      "تحميل عينة خيالية",
+      "إعادة تحميل عينة خيالية",
+      "نشر اللغات الثلاث",
+      "مصدر المالك",
+    ],
+    [
+      "ckb",
+      "نموونەی وەرگێڕانی خەیاڵی؛ بەڵگەی وەرگێڕانی بەرهەم نییە",
+      "نموونەی وەرگێڕانی خەیاڵی",
+      "ڕاستکردنەوەی ئەدمین بۆ نموونەی خەیاڵی",
+      "بارکردنی نموونەی خەیاڵی",
+      "دووبارە بارکردنی نموونەی خەیاڵی",
+      "بڵاوکردنەوەی هەرسێ زمان",
+      "سەرچاوەی خاوەن",
+    ],
+  ] as const)(
+    "labels fictional generation and correction honestly and submits sample reload in %s",
+    async (
+      locale,
+      notice,
+      generated,
+      corrected,
+      load,
+      reload,
+      publish,
+      source,
+    ) => {
+      const fictionalReview = {
+        ...review,
+        sourceLanguage: "en" as const,
+        publicationMode: "fictional" as const,
+        localizations: review.localizations.map((item) => ({
+          ...item,
+          approved: true,
+          translationEnvironment:
+            item.origin === "owner_source"
+              ? null
+              : ("hosted-demo-yvibcyqtyihpzpmomnzg" as const),
+        })),
+      };
+      const { rerender } = render(
+        <CottagePublicationReview
+          locale={locale}
+          review={fictionalReview}
+          actor="administrator"
+          administration={{ ...administration, publicationMode: "fictional" }}
+        />,
+      );
+      expect(screen.getByText(notice)).toBeVisible();
+      expect(screen.getByText(source)).toBeVisible();
+      expect(screen.getByText(generated)).toBeVisible();
+      expect(screen.getByText(corrected)).toBeVisible();
+      const reloadButton = screen.getByRole("button", {
+        name: `${reload} العربية`,
+      });
+      expect(reloadButton).toBeEnabled();
+      expect(reloadButton.closest("form")).toHaveFormValues({
+        route: "ordinary",
+      });
+      const previousCalls = vi.mocked(generateCottageTranslationAction).mock
+        .calls.length;
+      fireEvent.click(reloadButton);
+      await waitFor(() =>
+        expect(generateCottageTranslationAction).toHaveBeenCalledTimes(
+          previousCalls + 1,
+        ),
+      );
+      expect(screen.getByRole("button", { name: publish })).toBeEnabled();
+      expect(
+        screen.queryByText(
+          /AI-generated|gpt-|microusd|stronger model|نموذج أقوى|مۆدێلی بەهێزتر/,
+        ),
+      ).not.toBeInTheDocument();
+
+      rerender(
+        <CottagePublicationReview
+          locale={locale}
+          review={{
+            ...fictionalReview,
+            localizations: fictionalReview.localizations.map((item) =>
+              item.locale === "ar"
+                ? {
+                    ...item,
+                    origin: "source_fallback",
+                    revisionId: undefined,
+                    approved: false,
+                    translationEnvironment: null,
+                  }
+                : item,
+            ),
+          }}
+          actor="administrator"
+        />,
+      );
+      expect(
+        screen.getByRole("button", { name: `${load} العربية` }),
+      ).toBeEnabled();
+      expect(screen.getByRole("button", { name: publish })).toBeDisabled();
+      rerender(
+        <CottagePublicationReview
+          locale={locale}
+          review={{ ...fictionalReview, publicationMode: "unavailable" }}
+          actor="owner"
+        />,
+      );
+      expect(screen.getByText(notice)).toBeVisible();
+      expect(screen.getByText(corrected)).toBeVisible();
+      rerender(
+        <CottagePublicationReview
+          locale={locale}
+          review={{ ...fictionalReview, publicationMode: "production" }}
+          actor="owner"
+        />,
+      );
+      expect(screen.getByText(notice)).toBeVisible();
+      expect(screen.getByText(generated)).toBeVisible();
+      expect(screen.getByText(corrected)).toBeVisible();
+    },
+  );
+
   it("shows a truthful trilingual moderation state without claiming production readiness", () => {
     render(
       <CottagePublicationReview
@@ -247,7 +416,7 @@ describe("Cottage publication review", () => {
     rerender(
       <CottagePublicationReview
         locale="en"
-        review={{ ...review, productionReady: true, localizations }}
+        review={{ ...review, publicationMode: "production", localizations }}
         actor="administrator"
       />,
     );
@@ -286,7 +455,7 @@ describe("Cottage publication review", () => {
           locale={locale}
           review={{
             ...review,
-            productionReady: true,
+            publicationMode: "production",
             localizations: review.localizations.map((item) =>
               item.locale === "ar"
                 ? {
@@ -327,26 +496,7 @@ describe("Cottage publication review", () => {
         locale="en"
         review={review}
         actor="administrator"
-        administration={{
-          productionReady: false,
-          providerTermsApproved: true,
-          nativeReviewApproved: true,
-          qualityThresholdApproved: true,
-          ordinaryModel: "gpt-6-luna",
-          ordinaryEffort: "none",
-          strongerModel: "gpt-6.1-sol",
-          strongerEffort: "low",
-          judgeModel: "gpt-6-astra",
-          judgeEffort: "medium",
-          monthlyRequestLimit: 100,
-          monthlyTokenLimit: 100000,
-          monthlySpendMicrousdLimit: 500000,
-          monthRequests: 3,
-          monthReservedTokens: 1200,
-          monthReservedMicrousd: 4000,
-          monthActualMicrousd: 1200,
-          qualityReportCount: 2,
-        }}
+        administration={administration}
       />,
     );
 

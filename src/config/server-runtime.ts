@@ -4,6 +4,8 @@ export function getServerEnvironment() {
   return readServerEnvironment({
     APP_ENVIRONMENT: process.env.APP_ENVIRONMENT,
     HOSTED_DEMO: process.env.HOSTED_DEMO,
+    HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID:
+      process.env.HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID,
     SUPABASE_PROJECT_REF: process.env.SUPABASE_PROJECT_REF,
     SUPABASE_URL: process.env.SUPABASE_URL,
     SUPABASE_PUBLISHABLE_KEY: process.env.SUPABASE_PUBLISHABLE_KEY,

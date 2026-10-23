@@ -10,6 +10,11 @@ import { createRequire } from "node:module";
 import { crc32 } from "node:zlib";
 import * as OTPAuth from "otpauth";
 import { createClient } from "@supabase/supabase-js";
+import { build } from "esbuild";
+import { Miniflare, Response as NativeResponse } from "miniflare";
+import { readFileSync } from "node:fs";
+import { SupabaseCottageProfileRepository } from "../src/cottage-profile/supabase-cottage-profile";
+import { SupabaseCottagePublicationRepository } from "../src/cottage-publication/supabase-cottage-publication";
 import {
   type OwnedAccessJourney,
   prepareOwnedAccessJourney,
@@ -721,6 +726,377 @@ function registerOwnedJourney(
 }
 
 test.describe.configure({ mode: "serial" });
+
+test("fictional cottage translation preserves durable provenance through the Worker", async () => {
+  assertIsolatedLocalAccessDatabase();
+  const database = createLocalSupabaseConcurrencyHarness();
+  database.guardDisposableLocalDatabase();
+  const localOrigin = new URL(process.env.SUPABASE_URL!);
+  const ownerClient = createClient(
+    localOrigin.href,
+    process.env.SUPABASE_PUBLISHABLE_KEY!,
+    {
+      auth: { autoRefreshToken: false, persistSession: false },
+    },
+  );
+  const { data: signedIn, error: signInError } =
+    await ownerClient.auth.signInWithPassword({
+      phone: "+9647510000002",
+      password: "Local-test-password-2026",
+    });
+  if (signInError) throw signInError;
+  expect(signedIn.user?.id).toMatch(uuidPattern);
+  const { data: ownerContext, error: ownerContextError } = await ownerClient
+    .from("account_contexts")
+    .select("role,owner_approval_state")
+    .eq("user_id", signedIn.user!.id)
+    .single();
+  if (ownerContextError) throw ownerContextError;
+  expect(ownerContext).toEqual({
+    role: "cottage_owner",
+    owner_approval_state: "approved",
+  });
+
+  const description =
+    "Fictional demonstration cottage in the Shaqlawa area of Erbil. A garden and pool setting for up to eight guests, with three bedrooms, two bathrooms and parking. No real accommodation is offered.";
+  const houseRules =
+    "Fictional demonstration only. Respect neighbours, do not smoke indoors, and keep the party within the cottage's stated guest capacity.";
+  const { data: profile, error: profileError } = await ownerClient.rpc(
+    "create_owner_cottage_profile_draft",
+  );
+  if (profileError) throw profileError;
+  expect(profile.id).toMatch(uuidPattern);
+  const { data: updated, error: updateError } = await ownerClient.rpc(
+    "update_owner_cottage_profile_draft",
+    {
+      target_profile_id: profile.id,
+      target_expected_version: profile.version,
+      requested_name: "Fictional Worker translation sample",
+      requested_governorate: "Erbil",
+      requested_approximate_location: "Shaqlawa",
+      requested_exact_address: "Synthetic private Worker fixture address",
+      requested_exact_latitude: "36.408333",
+      requested_exact_longitude: "44.385834",
+      requested_private_directions:
+        "Synthetic private Worker fixture directions.",
+      requested_capacity: 8,
+      requested_bedrooms: 3,
+      requested_bathrooms: 2,
+      requested_amenities: ["garden", "parking", "pool"],
+      requested_source_language: "en",
+      requested_description: description,
+      requested_house_rules: houseRules,
+    },
+  );
+  if (updateError) throw updateError;
+  const { error: scheduleError } = await ownerClient.rpc(
+    "replace_cottage_shift_schedule",
+    {
+      target_profile_id: profile.id,
+      target_expected_revision: 0,
+      requested_shifts: [
+        { name: "Morning", startTime: "08:00", endTime: "12:00" },
+        { name: "Evening", startTime: "18:00", endTime: "23:00" },
+      ],
+    },
+  );
+  if (scheduleError) throw scheduleError;
+  const { data: photo, error: photoError } = await ownerClient.rpc(
+    "prepare_cottage_profile_photo_upload",
+    {
+      target_profile_id: profile.id,
+      requested_original_filename: "fictional-worker-translation.png",
+      requested_media_type: "image/png",
+      requested_size_bytes: cleanCottagePhoto.byteLength,
+    },
+  );
+  if (photoError) throw photoError;
+  const { error: uploadError } = await auditClient.storage
+    .from("cottage-profile-photos")
+    .upload(photo.object_path, cleanCottagePhoto, {
+      contentType: "image/png",
+      upsert: false,
+    });
+  if (uploadError) throw uploadError;
+  const { error: registerError } = await auditClient.rpc(
+    "register_cottage_profile_photo",
+    { target_photo_id: photo.id },
+  );
+  if (registerError) throw registerError;
+  const { data: submitted, error: submitError } = await ownerClient.rpc(
+    "submit_cottage_profile_for_content_approval",
+    { target_profile_id: profile.id, target_expected_version: updated.version },
+  );
+  if (submitError) throw submitError;
+
+  const profileReader = new SupabaseCottageProfileRepository(
+    ownerClient,
+    auditClient,
+  );
+  const prepared = await profileReader.load(profile.id);
+  expect(prepared).toMatchObject({
+    id: profile.id,
+    status: "submitted_for_content_approval",
+    sourceLanguage: "en",
+    description,
+    houseRules,
+    currentPublicationId: null,
+  });
+  expect(prepared?.photos).toHaveLength(1);
+  expect(prepared?.photos[0]).toMatchObject({ id: photo.id, state: "ready" });
+  const reviewReader = new SupabaseCottagePublicationRepository(
+    ownerClient,
+    auditClient,
+  );
+  const pending = await reviewReader.loadCurrentReview(profile.id);
+  expect(pending).toMatchObject({
+    state: "in_review",
+    publicationMode: "unavailable",
+    sourceLanguage: "en",
+  });
+  expect(pending?.id).toMatch(uuidPattern);
+  const reviewCycleId = pending!.id;
+  const readDurableFacts = async () => {
+    const [attempts, revisions, heads] = await Promise.all([
+      auditClient
+        .from("cottage_profile_translation_attempts")
+        .select(
+          "id,source_revision_id,target_language,state,translation_environment,provider,model,effort,prompt_version",
+        )
+        .eq("review_cycle_id", reviewCycleId)
+        .order("target_language"),
+      ownerClient
+        .from("cottage_profile_localized_revisions")
+        .select(
+          "id,locale,origin,description,house_rules,translation_environment,provider,model,effort,prompt_version",
+        )
+        .eq("review_cycle_id", reviewCycleId)
+        .order("locale"),
+      ownerClient
+        .from("cottage_profile_localized_heads")
+        .select("locale,localized_revision_id")
+        .eq("review_cycle_id", reviewCycleId)
+        .order("locale"),
+    ]);
+    for (const result of [attempts, revisions, heads])
+      if (result.error) throw result.error;
+    return {
+      attempts: attempts.data!,
+      revisions: revisions.data!,
+      heads: heads.data!,
+    };
+  };
+  const initial = await readDurableFacts();
+  expect(initial.attempts).toEqual([]);
+  expect(initial.revisions).toHaveLength(1);
+  expect(initial.revisions[0]).toMatchObject({
+    locale: "en",
+    origin: "owner_source",
+    description,
+    house_rules: houseRules,
+    translation_environment: null,
+  });
+  expect(initial.heads).toEqual([
+    { locale: "en", localized_revision_id: initial.revisions[0].id },
+  ]);
+  const controls = JSON.parse(
+    database.runSql(`select jsonb_build_object(
+    'production', (select jsonb_agg(production_ready) from public.cottage_translation_runtime_control where singleton),
+    'demo', (select jsonb_agg(jsonb_build_object('environment', environment, 'enabled', enabled)) from public.cottage_demo_translation_control where singleton)
+  );`),
+  ) as {
+    production: boolean[];
+    demo: { environment: string; enabled: boolean }[];
+  };
+  expect(controls.production).toEqual([false]);
+  expect(controls.demo).toEqual([
+    { environment: "hosted-demo-yvibcyqtyihpzpmomnzg", enabled: false },
+  ]);
+  const bundled = await build({
+    stdin: {
+      contents: `import { createClient } from "@supabase/supabase-js";
+        import { createCottagePublication, translationExecutionLeaseMilliseconds } from "./src/cottage-publication/cottage-publication";
+        import { fictionalCottageTranslator } from "./src/cottage-publication/fictional-cottage-translator";
+        import { SupabaseCottagePublicationRepository } from "./src/cottage-publication/supabase-cottage-publication";
+        export default { async fetch(request, env) {
+          const { reviewCycleId, targetLanguage } = await request.json();
+          const client = createClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
+          const publication = createCottagePublication({ repository: new SupabaseCottagePublicationRepository(client, client), translator: fictionalCottageTranslator, leaseDurationMilliseconds: translationExecutionLeaseMilliseconds(1, 1000) });
+          return Response.json(await publication.generateTranslation(reviewCycleId, targetLanguage));
+        } };`,
+      resolveDir: process.cwd(),
+      loader: "ts",
+    },
+    bundle: true,
+    write: false,
+    format: "esm",
+    platform: "browser",
+    external: ["node:*", "cloudflare:*"],
+  });
+  const wrangler = JSON.parse(
+    readFileSync("wrangler.jsonc", "utf8").replace(/,\s*([}\]])/g, "$1"),
+  );
+  const worker = new Miniflare({
+    host: "127.0.0.1",
+    telemetry: { enabled: false },
+    workers: [
+      {
+        config: {
+          name: "fictional-cottage-translation-fixture",
+          compatibilityDate: wrangler.compatibility_date,
+          compatibilityFlags: wrangler.compatibility_flags,
+          manifest: {
+            mainModule: "worker.js",
+            modules: {
+              "worker.js": {
+                type: "esm",
+                contents: bundled.outputFiles[0].text,
+              },
+            },
+          },
+          env: {
+            SUPABASE_URL: { type: "text", value: localOrigin.origin },
+            SUPABASE_SECRET_KEY: {
+              type: "text",
+              value: process.env.SUPABASE_SECRET_KEY!,
+            },
+          },
+        },
+        dev: {
+          outboundService: {
+            type: "fetcher",
+            async handler(request) {
+              const url = new URL(request.url);
+              const sourceRead =
+                request.method === "GET" &&
+                url.pathname === "/rest/v1/cottage_profile_source_revisions" &&
+                url.searchParams.get("select") ===
+                  "source_language,description,house_rules" &&
+                url.searchParams.get("id") ===
+                  `eq.${submitted.submitted_source_revision_id}` &&
+                [...url.searchParams.keys()].every(
+                  (key) => key === "select" || key === "id",
+                );
+              const translationWrite =
+                request.method === "POST" &&
+                [
+                  "/rest/v1/rpc/begin_cottage_profile_translation_execution",
+                  "/rest/v1/rpc/complete_cottage_profile_translation_execution",
+                ].includes(url.pathname) &&
+                !url.search;
+              if (
+                url.origin !== localOrigin.origin ||
+                (!sourceRead && !translationWrite)
+              )
+                throw new Error(
+                  "Unexpected fictional translation fixture outbound request",
+                );
+              const response = await fetch(url, {
+                method: request.method,
+                headers: Object.fromEntries(request.headers),
+                body:
+                  request.method === "GET"
+                    ? undefined
+                    : await request.arrayBuffer(),
+                redirect: "error",
+              });
+              return new NativeResponse(await response.arrayBuffer(), {
+                status: response.status,
+                headers: Object.fromEntries(response.headers),
+              });
+            },
+          },
+        },
+      },
+    ],
+  });
+  try {
+    database.runSql(
+      "update public.cottage_demo_translation_control set enabled = true where singleton;",
+    );
+    expect(
+      (await reviewReader.loadCurrentReview(profile.id))?.publicationMode,
+    ).toBe("fictional");
+    for (const targetLanguage of ["ar", "ckb"] as const) {
+      const response = await worker.dispatchFetch(
+        "https://fictional-translation-fixture.test/",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ reviewCycleId, targetLanguage }),
+        },
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ status: "completed" });
+    }
+    const facts = await readDurableFacts();
+    expect(facts.attempts).toHaveLength(2);
+    expect(facts.revisions).toHaveLength(3);
+    expect(facts.heads).toHaveLength(3);
+    const provenance = {
+      translation_environment: "hosted-demo-yvibcyqtyihpzpmomnzg",
+      provider: "fictional-cottage-translations",
+      model: "catalog-v1",
+      effort: "none",
+      prompt_version: "fictional-cottage-catalog-v1",
+    };
+    for (const locale of ["ar", "ckb"] as const) {
+      expect(
+        facts.attempts.filter((attempt) => attempt.target_language === locale),
+      ).toEqual([
+        expect.objectContaining({
+          ...provenance,
+          state: "completed",
+          source_revision_id: submitted.submitted_source_revision_id,
+        }),
+      ]);
+      const revision = facts.revisions.filter(
+        (revision) => revision.locale === locale,
+      );
+      expect(revision).toHaveLength(1);
+      expect(revision[0]).toMatchObject({
+        ...provenance,
+        origin: "generated",
+        description:
+          locale === "ar"
+            ? "كوخ تجريبي خيالي في منطقة شقلاوة في أربيل. حديقة ومسبح لما يصل إلى ثمانية ضيوف، مع ثلاث غرف نوم وحمامين وموقف سيارات. لا يُعرض أي سكن حقيقي."
+            : "کۆتێجێکی خەیاڵی بۆ پیشاندان لە ناوچەی شەقڵاوەی هەولێر. باخچە و مەلەوانگە بۆ تا هەشت میوان، لەگەڵ سێ ژووری نووستن و دوو حەمام و شوێنی پارککردن. هیچ شوێنێکی ڕاستەقینە بۆ مانەوە پێشکەش ناکرێت.",
+        house_rules:
+          locale === "ar"
+            ? "للعرض الخيالي فقط. احترم الجيران، ولا تدخن داخل المنزل، والتزم بعدد الضيوف المحدد للكوخ."
+            : "تەنها بۆ پیشاندانی خەیاڵی. ڕێزی دراوسێکان بگرە، لە ناو ماڵ جگەرە مەکێشە و ژمارەی میوانان لە سنووری دیاریکراوی کۆتێجەکە زیاتر مەکە.",
+      });
+      expect(facts.heads.filter((head) => head.locale === locale)).toEqual([
+        { locale, localized_revision_id: revision[0].id },
+      ]);
+    }
+    expect(
+      JSON.parse(
+        database.runSql(
+          "select jsonb_agg(production_ready) from public.cottage_translation_runtime_control where singleton;",
+        ),
+      ),
+    ).toEqual([false]);
+    const review = await reviewReader.loadCurrentReview(profile.id);
+    expect(review?.publicationMode).toBe("fictional");
+    expect(
+      review?.localizations.filter(
+        (item) => item.translationEnvironment !== null,
+      ),
+    ).toHaveLength(2);
+  } finally {
+    try {
+      await worker.dispose();
+    } finally {
+      database.runSql(
+        `update public.cottage_demo_translation_control set enabled = ${controls.demo[0].enabled} where singleton;`,
+      );
+    }
+  }
+  expect(
+    (await reviewReader.loadCurrentReview(profile.id))?.publicationMode,
+  ).toBe("unavailable");
+});
 
 test("the fictional booking-request back door is unavailable", async ({
   page,

@@ -39,7 +39,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("hosted demo refuses cottage translation even with approved provider settings", async () => {
+it("hosted demo generates only supported fictional samples without live provider construction or usage", async () => {
   const source = {
     APP_ENVIRONMENT: "preview",
     SUPABASE_PROJECT_REF: "demo-fixture",
@@ -85,6 +85,8 @@ it("hosted demo refuses cottage translation even with approved provider settings
   const reviewCycleId = "20000000-0000-4000-8000-000000000818";
   const attemptId = "40000000-0000-4000-8000-000000000818";
   const leaseToken = "50000000-0000-4000-8000-000000000818";
+  let description =
+    "Fictional demonstration cottage in the Shaqlawa area of Erbil. A garden and pool setting for up to eight guests, with three bedrooms, two bathrooms and parking. No real accommodation is offered.";
   client.rpc.mockImplementation(async (name: string) => {
     switch (name) {
       case "begin_cottage_profile_translation_execution":
@@ -103,6 +105,7 @@ it("hosted demo refuses cottage translation even with approved provider settings
           data: { granted: true, reservation_id: "synthetic-reservation" },
           error: null,
         };
+      case "complete_cottage_profile_translation_execution":
       case "route_current_cottage_translation_to_human_review":
       case "fail_cottage_profile_translation_execution":
         return { data: true, error: null };
@@ -118,8 +121,9 @@ it("hosted demo refuses cottage translation even with approved provider settings
             single: async () => ({
               data: {
                 source_language: "en",
-                description: "Synthetic cottage description",
-                house_rules: "Synthetic cottage house rules",
+                description,
+                house_rules:
+                  "Fictional demonstration only. Respect neighbours, do not smoke indoors, and keep the party within the cottage's stated guest capacity.",
               },
               error: null,
             }),
@@ -158,7 +162,7 @@ it("hosted demo refuses cottage translation even with approved provider settings
   vi.stubEnv("HOSTED_DEMO", "true");
   const hostedDemo = await createRequestCottageTranslation();
   expect(await hostedDemo.generateTranslation(reviewCycleId, "ar")).toEqual({
-    status: "configuration_unavailable",
+    status: "completed",
   });
   expect(readConfiguration).not.toHaveBeenCalled();
   expect(createAdapter).not.toHaveBeenCalled();
@@ -174,11 +178,44 @@ it("hosted demo refuses cottage translation even with approved provider settings
     },
   );
   expect(client.rpc).toHaveBeenCalledWith(
+    "complete_cottage_profile_translation_execution",
+    expect.objectContaining({
+      target_attempt_id: attemptId,
+      target_lease_token: leaseToken,
+      returned_provider: "fictional-cottage-translations",
+      returned_model: "catalog-v1",
+      returned_effort: "none",
+      returned_prompt_version: "fictional-cottage-catalog-v1",
+      translated_description:
+        "كوخ تجريبي خيالي في منطقة شقلاوة في أربيل. حديقة ومسبح لما يصل إلى ثمانية ضيوف، مع ثلاث غرف نوم وحمامين وموقف سيارات. لا يُعرض أي سكن حقيقي.",
+    }),
+  );
+  expect(client.rpc).not.toHaveBeenCalledWith(
+    "reserve_cottage_translation_usage",
+    expect.anything(),
+  );
+
+  vi.clearAllMocks();
+  description += " Edited.";
+  expect(await hostedDemo.generateTranslation(reviewCycleId, "ar")).toEqual({
+    status: "unsupported_content",
+  });
+  expect(client.rpc).toHaveBeenCalledWith(
     "fail_cottage_profile_translation_execution",
     {
       target_attempt_id: attemptId,
       target_lease_token: leaseToken,
-      target_failure_code: "configuration_unavailable",
+      target_failure_code: "unsupported_content",
     },
   );
+  expect(client.rpc).not.toHaveBeenCalledWith(
+    "complete_cottage_profile_translation_execution",
+    expect.anything(),
+  );
+  expect(client.rpc).not.toHaveBeenCalledWith(
+    "reserve_cottage_translation_usage",
+    expect.anything(),
+  );
+  expect(createAdapter).not.toHaveBeenCalled();
+  expect(translate).not.toHaveBeenCalled();
 });

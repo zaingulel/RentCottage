@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { readServerEnvironment } from "@/config/server-environment";
 import { DurablePaymentSimulator } from "@/payment/durable-payment-simulator-core";
 import type { PaymentProviderAdapter } from "@/payment/payment-contract";
 import {
@@ -26,6 +27,10 @@ export interface PaymentOperations {
 export function preparePaymentOperations(
   environment: PaymentOperationsEnvironment,
 ): (() => PaymentOperations) | undefined {
+  const failedInitialCaptureLifecycleId =
+    environment.HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID !== undefined
+      ? readServerEnvironment(environment).failedInitialCaptureLifecycleId
+      : undefined;
   const supplierEnvironment = fictionalSupplierEnvironment(environment);
   const secretKey = environment.SUPABASE_SECRET_KEY;
   if (!supplierEnvironment || !secretKey) return undefined;
@@ -37,6 +42,7 @@ export function preparePaymentOperations(
     );
     const provider = new DurablePaymentSimulator({
       environment: supplierEnvironment,
+      failedInitialCaptureLifecycleId,
       effects: new SupabaseSimulatorEffectRepository(serviceClient),
       now: () => new Date().toISOString(),
     });

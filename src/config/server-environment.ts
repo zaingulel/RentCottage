@@ -5,6 +5,7 @@ export type AppEnvironment = "development" | "test" | "preview" | "production";
 interface EnvironmentSource {
   APP_ENVIRONMENT?: string;
   HOSTED_DEMO?: string;
+  HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID?: string;
   SUPABASE_PROJECT_REF?: string;
   SUPABASE_URL?: string;
   SUPABASE_PUBLISHABLE_KEY?: string;
@@ -18,6 +19,7 @@ interface EnvironmentSource {
 export interface ServerEnvironment {
   name: AppEnvironment;
   hostedDemo?: true;
+  failedInitialCaptureLifecycleId?: string;
   deployment: {
     commit: string | null;
   };
@@ -32,7 +34,10 @@ export interface ServerEnvironment {
 
 export type PublicSupabaseEnvironment = Omit<
   ServerEnvironment,
-  "supabase" | "privilegedAuditHmacKey" | "deployment"
+  | "supabase"
+  | "privilegedAuditHmacKey"
+  | "deployment"
+  | "failedInitialCaptureLifecycleId"
 > & {
   supabase: Omit<ServerEnvironment["supabase"], "secretKey">;
 };
@@ -115,6 +120,19 @@ export function readServerEnvironment(
   source: EnvironmentSource,
 ): ServerEnvironment {
   const environment = readPublicSupabaseEnvironment(source);
+  const failedInitialCaptureLifecycleId =
+    source.HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID;
+  if (
+    failedInitialCaptureLifecycleId !== undefined &&
+    (!environment.hostedDemo ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+        failedInitialCaptureLifecycleId,
+      ))
+  ) {
+    throw new Error(
+      "HOSTED_DEMO_FAILED_CAPTURE_LIFECYCLE_ID requires a canonical lowercase UUID on the hosted demo",
+    );
+  }
   const privilegedAuditHmacKey = required(source, "PRIVILEGED_AUDIT_HMAC_KEY");
   if (privilegedAuditHmacKey.length < 32) {
     throw new Error("PRIVILEGED_AUDIT_HMAC_KEY must be at least 32 characters");
@@ -132,6 +150,9 @@ export function readServerEnvironment(
   }
   return {
     ...environment,
+    ...(failedInitialCaptureLifecycleId !== undefined
+      ? { failedInitialCaptureLifecycleId }
+      : {}),
     deployment: { commit: deploymentCommit ?? null },
     privilegedAuditHmacKey,
     supabase: {
