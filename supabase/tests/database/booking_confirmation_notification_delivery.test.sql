@@ -1,5 +1,5 @@
 begin;
-select plan(57);
+select plan(208);
 select ok(
   has_function_privilege('authenticated', 'public.get_confirmed_booking_access(text)', 'execute')
     and not has_function_privilege('anon', 'public.get_confirmed_booking_access(text)', 'execute')
@@ -193,6 +193,937 @@ reset role;
 set local role service_role;
 drop table owner_lease;
 create temp table owner_lease as select public.lease_booking_confirmation_notification_work('82000000-0000-4000-8000-000000003501') result;
+-- Scope cases reuse this live lease and roll back their own effects and attempts.
+-- This projection fixture does not prove public booking construction.
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg'))) result;
+select is((select result->>'status' from scope_effect),'delivered','hosted notification execute admits the approved scope');
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='hosted-demo-yvibcyqtyihpzpmomnzg') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'hosted execution stores one scoped effect under the valid lease');
+select ok(exists(select 1 from public.fictional_booking_confirmation_notification_effects e
+join public.booking_confirmation_notification_work w using(notification_id) cross join owner_lease l cross join scope_effect r
+where e.notification_id='82000000-0000-4000-8000-000000003501' and e.supplier='fictional-notifications' and e.environment='hosted-demo-yvibcyqtyihpzpmomnzg'
+and (e.logical_id,e.receipt_id,e.event_id,e.booking_request_id,e.booking_request_reference,e.booking_reference,e.recipient_user_id,e.recipient_role,e.notice_locale,e.template_version,e.payload,e.payload_sha256,e.execution_lease_generation,e.execution_lease_token)
+is not distinct from (w.logical_id,w.receipt_id,w.event_id,w.booking_request_id,w.booking_request_reference,w.booking_reference,w.recipient_user_id,w.recipient_role,w.notice_locale,w.template_version,w.payload,w.payload_sha256,(l.result->>'leaseGeneration')::bigint,(l.result->>'leaseToken')::uuid)
+and e.payload->'fictional'='true'::jsonb and e.executed_at>=transaction_timestamp() and e.executed_at<=clock_timestamp()
+and e.executed_at=(r.result->>'executedAt')::timestamptz and e.id=(r.result->>'effectId')::uuid
+and e.supplier_delivery_reference=r.result->>'supplierDeliveryReference'), 'hosted execution preserves the frozen tuple, fictional payload and database time');
+set local role service_role;
+create temp table scope_query as select public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg'))) result;
+select is((select result->>'status' from scope_query),'found','hosted query finds its matching effect');
+select is((select result-'status' from scope_query),(select result-'status' from scope_effect),'hosted query returns identical effect evidence');
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg'))),(select result from scope_effect),'hosted execute replays identical evidence');
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg')),(select (result->>'effectId')::uuid from scope_effect)),'{"status":"delivered","historical":false}'::jsonb,'hosted completion reports a final fictional outcome');
+reset role;
+select ok((select state='delivered' and lease_token is null and lease_expires_at is null and supplier_delivery_reference=(select result->>'supplierDeliveryReference' from scope_effect) and delivered_at=(select (result->>'executedAt')::timestamptz from scope_effect) from public.booking_confirmation_notification_work where notification_id='82000000-0000-4000-8000-000000003501') and (select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501') and (select count(*)=3 from public.booking_confirmation_notification_attempts where receipt_id='82000000-0000-4000-8000-000000003501' and lease_generation=(select (result->>'leaseGeneration')::bigint from owner_lease) and outcome='delivered'), 'hosted completion retains one effect and three delivered attempt facts');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+select is((select result->>'status' from scope_effect),'delivered','notification execute admits legacy local scope');
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'legacy execution stores one scoped effect under the valid lease');
+select ok(exists(select 1 from public.fictional_booking_confirmation_notification_effects e
+join public.booking_confirmation_notification_work w using(notification_id) cross join owner_lease l cross join scope_effect r
+where e.notification_id='82000000-0000-4000-8000-000000003501' and e.supplier='fictional-notifications' and e.environment='local-test'
+and (e.logical_id,e.receipt_id,e.event_id,e.booking_request_id,e.booking_request_reference,e.booking_reference,e.recipient_user_id,e.recipient_role,e.notice_locale,e.template_version,e.payload,e.payload_sha256,e.execution_lease_generation,e.execution_lease_token)
+is not distinct from (w.logical_id,w.receipt_id,w.event_id,w.booking_request_id,w.booking_request_reference,w.booking_reference,w.recipient_user_id,w.recipient_role,w.notice_locale,w.template_version,w.payload,w.payload_sha256,(l.result->>'leaseGeneration')::bigint,(l.result->>'leaseToken')::uuid)
+and e.payload->'fictional'='true'::jsonb and e.executed_at>=transaction_timestamp() and e.executed_at<=clock_timestamp()
+and e.executed_at=(r.result->>'executedAt')::timestamptz and e.id=(r.result->>'effectId')::uuid
+and e.supplier_delivery_reference=r.result->>'supplierDeliveryReference'), 'legacy execution preserves the frozen tuple, fictional payload and database time');
+set local role service_role;
+create temp table scope_query as select public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+select is((select result->>'status' from scope_query),'found','legacy query finds its matching effect');
+select is((select result-'status' from scope_query),(select result-'status' from scope_effect),'legacy query returns identical effect evidence');
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))),(select result from scope_effect),'legacy execute replays identical evidence');
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)),(select (result->>'effectId')::uuid from scope_effect)),'{"status":"delivered","historical":false}'::jsonb,'legacy completion reports a final fictional outcome');
+reset role;
+select ok((select state='delivered' and lease_token is null and lease_expires_at is null and supplier_delivery_reference=(select result->>'supplierDeliveryReference' from scope_effect) and delivered_at=(select (result->>'executedAt')::timestamptz from scope_effect) from public.booking_confirmation_notification_work where notification_id='82000000-0000-4000-8000-000000003501') and (select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501') and (select count(*)=3 from public.booking_confirmation_notification_attempts where receipt_id='82000000-0000-4000-8000-000000003501' and lease_generation=(select (result->>'leaseGeneration')::bigint from owner_lease) and outcome='delivered'), 'legacy completion retains one effect and three delivered attempt facts');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test'))) result;
+select is((select result->>'status' from scope_effect),'delivered','notification execute admits explicit local scope');
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'local execution stores one scoped effect under the valid lease');
+select ok(exists(select 1 from public.fictional_booking_confirmation_notification_effects e
+join public.booking_confirmation_notification_work w using(notification_id) cross join owner_lease l cross join scope_effect r
+where e.notification_id='82000000-0000-4000-8000-000000003501' and e.supplier='fictional-notifications' and e.environment='local-test'
+and (e.logical_id,e.receipt_id,e.event_id,e.booking_request_id,e.booking_request_reference,e.booking_reference,e.recipient_user_id,e.recipient_role,e.notice_locale,e.template_version,e.payload,e.payload_sha256,e.execution_lease_generation,e.execution_lease_token)
+is not distinct from (w.logical_id,w.receipt_id,w.event_id,w.booking_request_id,w.booking_request_reference,w.booking_reference,w.recipient_user_id,w.recipient_role,w.notice_locale,w.template_version,w.payload,w.payload_sha256,(l.result->>'leaseGeneration')::bigint,(l.result->>'leaseToken')::uuid)
+and e.payload->'fictional'='true'::jsonb and e.executed_at>=transaction_timestamp() and e.executed_at<=clock_timestamp()
+and e.executed_at=(r.result->>'executedAt')::timestamptz and e.id=(r.result->>'effectId')::uuid
+and e.supplier_delivery_reference=r.result->>'supplierDeliveryReference'), 'local execution preserves the frozen tuple, fictional payload and database time');
+set local role service_role;
+create temp table scope_query as select public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test'))) result;
+select is((select result->>'status' from scope_query),'found','local query finds its matching effect');
+select is((select result-'status' from scope_query),(select result-'status' from scope_effect),'local query returns identical effect evidence');
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test'))),(select result from scope_effect),'local execute replays identical evidence');
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test')),(select (result->>'effectId')::uuid from scope_effect)),'{"status":"delivered","historical":false}'::jsonb,'local completion reports a final fictional outcome');
+reset role;
+select ok((select state='delivered' and lease_token is null and lease_expires_at is null and supplier_delivery_reference=(select result->>'supplierDeliveryReference' from scope_effect) and delivered_at=(select (result->>'executedAt')::timestamptz from scope_effect) from public.booking_confirmation_notification_work where notification_id='82000000-0000-4000-8000-000000003501') and (select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501') and (select count(*)=3 from public.booking_confirmation_notification_attempts where receipt_id='82000000-0000-4000-8000-000000003501' and lease_generation=(select (result->>'leaseGeneration')::bigint from owner_lease) and outcome='delivered'), 'local completion retains one effect and three delivered attempt facts');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test'))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'query local to hosted refusal has one effect and a valid lease');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+savepoint notification_scope_control;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test')))->>'status','found','notification query same-scope control local to hosted');
+rollback to savepoint notification_scope_control;
+release savepoint notification_scope_control;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg')))->>'status','stale','notification query rejects an opposite-scope stored effect: local to hosted');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification query opposite-scope refusal preserves work, effect and attempts: local to hosted');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg'))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='hosted-demo-yvibcyqtyihpzpmomnzg') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'query hosted to legacy refusal has one effect and a valid lease');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+savepoint notification_scope_control;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg')))->>'status','found','notification query same-scope control hosted to legacy');
+rollback to savepoint notification_scope_control;
+release savepoint notification_scope_control;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)))->>'status','stale','notification query rejects an opposite-scope stored effect: hosted to legacy');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification query opposite-scope refusal preserves work, effect and attempts: hosted to legacy');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg'))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='hosted-demo-yvibcyqtyihpzpmomnzg') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'query hosted to local refusal has one effect and a valid lease');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+savepoint notification_scope_control;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg')))->>'status','found','notification query same-scope control hosted to local');
+rollback to savepoint notification_scope_control;
+release savepoint notification_scope_control;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test')))->>'status','stale','notification query rejects an opposite-scope stored effect: hosted to local');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification query opposite-scope refusal preserves work, effect and attempts: hosted to local');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test'))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'execute local to hosted refusal has one effect and a valid lease');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+savepoint notification_scope_control;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test')))->>'status','delivered','notification execute same-scope control local to hosted');
+rollback to savepoint notification_scope_control;
+release savepoint notification_scope_control;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg')))->>'status','stale','notification execute rejects an opposite-scope stored effect: local to hosted');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification execute opposite-scope refusal preserves work, effect and attempts: local to hosted');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg'))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='hosted-demo-yvibcyqtyihpzpmomnzg') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'execute hosted to legacy refusal has one effect and a valid lease');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+savepoint notification_scope_control;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg')))->>'status','delivered','notification execute same-scope control hosted to legacy');
+rollback to savepoint notification_scope_control;
+release savepoint notification_scope_control;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)))->>'status','stale','notification execute rejects an opposite-scope stored effect: hosted to legacy');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification execute opposite-scope refusal preserves work, effect and attempts: hosted to legacy');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg'))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='hosted-demo-yvibcyqtyihpzpmomnzg') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'execute hosted to local refusal has one effect and a valid lease');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+savepoint notification_scope_control;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg')))->>'status','delivered','notification execute same-scope control hosted to local');
+rollback to savepoint notification_scope_control;
+release savepoint notification_scope_control;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test')))->>'status','stale','notification execute rejects an opposite-scope stored effect: hosted to local');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification execute opposite-scope refusal preserves work, effect and attempts: hosted to local');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test'))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'completion local to hosted refusal has one effect and a valid lease');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+savepoint notification_scope_control;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test')),(select (result->>'effectId')::uuid from scope_effect))->>'status','delivered','notification completion same-scope control local to hosted');
+rollback to savepoint notification_scope_control;
+release savepoint notification_scope_control;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg')),(select (result->>'effectId')::uuid from scope_effect))->>'status','stale','notification completion rejects an opposite-scope stored effect: local to hosted');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification completion opposite-scope refusal preserves work, effect and attempts: local to hosted');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg'))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='hosted-demo-yvibcyqtyihpzpmomnzg') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'completion hosted to legacy refusal has one effect and a valid lease');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+savepoint notification_scope_control;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg')),(select (result->>'effectId')::uuid from scope_effect))->>'status','delivered','notification completion same-scope control hosted to legacy');
+rollback to savepoint notification_scope_control;
+release savepoint notification_scope_control;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)),(select (result->>'effectId')::uuid from scope_effect))->>'status','stale','notification completion rejects an opposite-scope stored effect: hosted to legacy');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification completion opposite-scope refusal preserves work, effect and attempts: hosted to legacy');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg'))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='hosted-demo-yvibcyqtyihpzpmomnzg') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'completion hosted to local refusal has one effect and a valid lease');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+savepoint notification_scope_control;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-yvibcyqtyihpzpmomnzg')),(select (result->>'effectId')::uuid from scope_effect))->>'status','delivered','notification completion same-scope control hosted to local');
+rollback to savepoint notification_scope_control;
+release savepoint notification_scope_control;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test')),(select (result->>'effectId')::uuid from scope_effect))->>'status','stale','notification completion rejects an opposite-scope stored effect: hosted to local');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification completion opposite-scope refusal preserves work, effect and attempts: hosted to local');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'query malformed null starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment',null)))->>'status','stale','notification query refuses optional scope null');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification query optional scope null leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'query malformed number starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment',7)))->>'status','stale','notification query refuses optional scope number');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification query optional scope number leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'query malformed boolean starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment',true)))->>'status','stale','notification query refuses optional scope boolean');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification query optional scope boolean leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'query malformed object starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','{}'::jsonb)))->>'status','stale','notification query refuses optional scope object');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification query optional scope object leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'query malformed array starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','[]'::jsonb)))->>'status','stale','notification query refuses optional scope array');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification query optional scope array leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'query malformed unknown starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-foreign')))->>'status','stale','notification query refuses optional scope unknown');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification query optional scope unknown leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'query malformed extra field starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test','unexpected',true)))->>'status','stale','notification query refuses optional scope extra field');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification query optional scope extra field leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'execute malformed null starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment',null)))->>'status','stale','notification execute refuses optional scope null');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification execute optional scope null leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'execute malformed number starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment',7)))->>'status','stale','notification execute refuses optional scope number');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification execute optional scope number leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'execute malformed boolean starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment',true)))->>'status','stale','notification execute refuses optional scope boolean');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification execute optional scope boolean leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'execute malformed object starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','{}'::jsonb)))->>'status','stale','notification execute refuses optional scope object');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification execute optional scope object leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'execute malformed array starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','[]'::jsonb)))->>'status','stale','notification execute refuses optional scope array');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification execute optional scope array leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'execute malformed unknown starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-foreign')))->>'status','stale','notification execute refuses optional scope unknown');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification execute optional scope unknown leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'execute malformed extra field starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test','unexpected',true)))->>'status','stale','notification execute refuses optional scope extra field');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification execute optional scope extra field leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'completion malformed null starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment',null)),(select (result->>'effectId')::uuid from scope_effect))->>'status','stale','notification completion refuses optional scope null');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification completion optional scope null leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'completion malformed number starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment',7)),(select (result->>'effectId')::uuid from scope_effect))->>'status','stale','notification completion refuses optional scope number');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification completion optional scope number leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'completion malformed boolean starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment',true)),(select (result->>'effectId')::uuid from scope_effect))->>'status','stale','notification completion refuses optional scope boolean');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification completion optional scope boolean leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'completion malformed object starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','{}'::jsonb)),(select (result->>'effectId')::uuid from scope_effect))->>'status','stale','notification completion refuses optional scope object');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification completion optional scope object leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'completion malformed array starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','[]'::jsonb)),(select (result->>'effectId')::uuid from scope_effect))->>'status','stale','notification completion refuses optional scope array');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification completion optional scope array leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'completion malformed unknown starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','hosted-demo-foreign')),(select (result->>'effectId')::uuid from scope_effect))->>'status','stale','notification completion refuses optional scope unknown');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification completion optional scope unknown leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select ok((select count(*)=1 from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501' and environment='local-test') and exists(select 1 from public.booking_confirmation_notification_work w,owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501' and w.state='processing' and w.lease_generation=(l.result->>'leaseGeneration')::bigint and w.lease_token=(l.result->>'leaseToken')::uuid and w.lease_expires_at>clock_timestamp() and public.booking_confirmation_notification_binding(w)=l.result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt'), 'completion malformed extra field starts from a valid same-scope effect');
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('fictionalEnvironment','local-test','unexpected',true)),(select (result->>'effectId')::uuid from scope_effect))->>'status','stale','notification completion refuses optional scope extra field');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification completion optional scope extra field leaves no mutation');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),'00000000-0000-4000-8000-000000009999'::uuid,((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)))->>'status','stale','notification query refuses wrong lease directly');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification query wrong lease preserves all evidence');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('templateVersion','changed')))->>'status','stale','notification query refuses corrupt tuple directly');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification query corrupt tuple preserves all evidence');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.query_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),(jsonb_set((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease),'{payload,fictional}','false'::jsonb)))->>'status','stale','notification query refuses corrupt payload directly');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification query corrupt payload preserves all evidence');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select throws_ok(format('set local role anon; select public.query_fictional_booking_confirmation_notification_effect(%L::uuid,%L::bigint,%L::uuid,%L::jsonb)','82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),(select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)),'42501',null,'anon cannot call notification query directly');
+reset role;
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select throws_ok(format('set local role authenticated; select public.query_fictional_booking_confirmation_notification_effect(%L::uuid,%L::bigint,%L::uuid,%L::jsonb)','82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),(select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)),'42501',null,'authenticated cannot call notification query directly');
+reset role;
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),'00000000-0000-4000-8000-000000009999'::uuid,((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)))->>'status','stale','notification execute refuses wrong lease directly');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification execute wrong lease preserves all evidence');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('templateVersion','changed')))->>'status','stale','notification execute refuses corrupt tuple directly');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification execute corrupt tuple preserves all evidence');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),(jsonb_set((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease),'{payload,fictional}','false'::jsonb)))->>'status','stale','notification execute refuses corrupt payload directly');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification execute corrupt payload preserves all evidence');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select throws_ok(format('set local role anon; select public.execute_fictional_booking_confirmation_notification_effect(%L::uuid,%L::bigint,%L::uuid,%L::jsonb)','82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),(select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)),'42501',null,'anon cannot call notification execute directly');
+reset role;
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select throws_ok(format('set local role authenticated; select public.execute_fictional_booking_confirmation_notification_effect(%L::uuid,%L::bigint,%L::uuid,%L::jsonb)','82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),(select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)),'42501',null,'authenticated cannot call notification execute directly');
+reset role;
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),'00000000-0000-4000-8000-000000009999'::uuid,((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)),(select (result->>'effectId')::uuid from scope_effect))->>'status','stale','notification completion refuses wrong lease directly');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification completion wrong lease preserves all evidence');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)||jsonb_build_object('templateVersion','changed')),(select (result->>'effectId')::uuid from scope_effect))->>'status','stale','notification completion refuses corrupt tuple directly');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification completion corrupt tuple preserves all evidence');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+create temp table scope_before as select jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')) snapshot;
+set local role service_role;
+select is(public.complete_booking_confirmation_notification_delivery('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),(jsonb_set((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease),'{payload,fictional}','false'::jsonb)),(select (result->>'effectId')::uuid from scope_effect))->>'status','stale','notification completion refuses corrupt payload directly');
+reset role;
+select is(jsonb_build_object(
+  'work',(select to_jsonb(w) from public.booking_confirmation_notification_work w where notification_id='82000000-0000-4000-8000-000000003501'),
+  'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) from public.fictional_booking_confirmation_notification_effects e where notification_id='82000000-0000-4000-8000-000000003501'),
+  'attempts',(select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]'::jsonb) from public.booking_confirmation_notification_attempts a where coalesce(event_id,receipt_id)='82000000-0000-4000-8000-000000003501')),(select snapshot from scope_before),'notification completion corrupt payload preserves all evidence');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select throws_ok(format('set local role anon; select public.complete_booking_confirmation_notification_delivery(%L::uuid,%L::bigint,%L::uuid,%L::jsonb,%L::uuid)','82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),(select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease),(select result->>'effectId' from scope_effect)),'42501',null,'anon cannot call notification completion directly');
+reset role;
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+create temp table scope_effect as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),((select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease))) result;
+reset role;
+select throws_ok(format('set local role authenticated; select public.complete_booking_confirmation_notification_delivery(%L::uuid,%L::bigint,%L::uuid,%L::jsonb,%L::uuid)','82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),(select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease),(select result->>'effectId' from scope_effect)),'42501',null,'authenticated cannot call notification completion directly');
+reset role;
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+reset role;
+select throws_ok($table$insert into public.fictional_booking_confirmation_notification_effects(
+id,supplier,environment,logical_id,receipt_id,event_id,booking_request_id,booking_request_reference,booking_reference,recipient_user_id,recipient_role,notice_locale,template_version,payload,payload_sha256,execution_lease_generation,execution_lease_token,supplier_delivery_reference)
+select '92000000-0000-4000-8000-000000003501','fictional-notifications','hosted-demo-foreign',w.logical_id,w.receipt_id,w.event_id,w.booking_request_id,w.booking_request_reference,w.booking_reference,w.recipient_user_id,w.recipient_role,w.notice_locale,w.template_version,w.payload,w.payload_sha256,(l.result->>'leaseGeneration')::bigint,(l.result->>'leaseToken')::uuid,'fictional-constraint-3501'
+from public.booking_confirmation_notification_work w cross join owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501'$table$,'23514','new row for relation "fictional_booking_confirmation_notification_effects" violates check constraint "fictional_booking_confirmation_notification_effect_identity"','notification effect constraint rejects an unknown environment');
+select is((select count(*) from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501'),0::bigint,'constraint unknown environment writes no effect');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+savepoint notification_scope_case;
+set local role service_role;
+reset role;
+select throws_ok($table$insert into public.fictional_booking_confirmation_notification_effects(
+id,supplier,environment,logical_id,receipt_id,event_id,booking_request_id,booking_request_reference,booking_reference,recipient_user_id,recipient_role,notice_locale,template_version,payload,payload_sha256,execution_lease_generation,execution_lease_token,supplier_delivery_reference)
+select '92000000-0000-4000-8000-000000003501','other-notifications','hosted-demo-yvibcyqtyihpzpmomnzg',w.logical_id,w.receipt_id,w.event_id,w.booking_request_id,w.booking_request_reference,w.booking_reference,w.recipient_user_id,w.recipient_role,w.notice_locale,w.template_version,w.payload,w.payload_sha256,(l.result->>'leaseGeneration')::bigint,(l.result->>'leaseToken')::uuid,'fictional-constraint-3501'
+from public.booking_confirmation_notification_work w cross join owner_lease l where w.notification_id='82000000-0000-4000-8000-000000003501'$table$,'23514','new row for relation "fictional_booking_confirmation_notification_effects" violates check constraint "fictional_booking_confirmation_notification_effect_identity"','notification effect constraint rejects a wrong supplier');
+select is((select count(*) from public.fictional_booking_confirmation_notification_effects where notification_id='82000000-0000-4000-8000-000000003501'),0::bigint,'constraint wrong supplier writes no effect');
+rollback to savepoint notification_scope_case;
+release savepoint notification_scope_case;
+set local role service_role;
+
 create temp table executed as select public.execute_fictional_booking_confirmation_notification_effect('82000000-0000-4000-8000-000000003501',(select (result->>'leaseGeneration')::bigint from owner_lease),(select (result->>'leaseToken')::uuid from owner_lease),(select result-'leaseGeneration'-'leaseToken'-'leaseExpiresAt' from owner_lease)) result;
 select is((select result->>'status' from executed),'delivered','execute first persists one effect');
 reset role;

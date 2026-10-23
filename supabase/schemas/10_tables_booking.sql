@@ -399,7 +399,7 @@ CREATE TABLE IF NOT EXISTS "public"."fictional_booking_confirmation_notification
     "execution_lease_token" "uuid" NOT NULL,
     "supplier_delivery_reference" "text" NOT NULL,
     "executed_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
-    CONSTRAINT "fictional_booking_confirmation_notification_effect_identity" CHECK (supplier='fictional-notifications' AND environment='local-test' AND recipient_role IN ('customer','cottage_owner') AND payload_sha256 ~ '^[0-9a-f]{64}$' AND execution_lease_generation>0 AND ((event_id IS NULL AND logical_id='paid-confirmation:'||receipt_id AND template_version='paid-confirmation-v1') OR (event_id IS NOT NULL AND logical_id='booking-event:'||event_id AND template_version='booking-event-v1'))),
+    CONSTRAINT "fictional_booking_confirmation_notification_effect_identity" CHECK (supplier='fictional-notifications' AND environment IN ('local-test','hosted-demo-yvibcyqtyihpzpmomnzg') AND recipient_role IN ('customer','cottage_owner') AND payload_sha256 ~ '^[0-9a-f]{64}$' AND execution_lease_generation>0 AND ((event_id IS NULL AND logical_id='paid-confirmation:'||receipt_id AND template_version='paid-confirmation-v1') OR (event_id IS NOT NULL AND logical_id='booking-event:'||event_id AND template_version='booking-event-v1'))),
     CONSTRAINT fictional_booking_confirmation_notification_effects_source_shape CHECK ((receipt_id IS NOT NULL AND booking_reference IS NOT NULL) OR (receipt_id IS NULL AND event_id IS NOT NULL AND booking_reference IS NULL AND payload->>'kind' IN ('request_new','request_accepted','request_payment_required','request_declined','request_withdrawn','request_expired','recovery_processing','recovery_retryable','recovery_attention')))
 );
 
