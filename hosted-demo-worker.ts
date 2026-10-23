@@ -29,7 +29,9 @@ export default {
       readServerEnvironment(environment).hostedDemo !== true ||
       controller.cron !== "* * * * *"
     )
-      throw new Error("Scheduled processing requires the approved demo and cron");
+      throw new Error(
+        "Scheduled processing requires the approved demo and cron",
+      );
 
     const scheduledTasks = [
       {
@@ -41,17 +43,23 @@ export default {
         result: runScheduledBookingRequestCapture(environment),
       },
       { name: "refunds", result: runScheduledBookingRefunds(environment) },
-      { name: "completion", result: runScheduledBookingCompletion(environment) },
+      {
+        name: "completion",
+        result: runScheduledBookingCompletion(environment),
+      },
       {
         name: "notifications",
-        result: runScheduledBookingNotifications(environment).then((results) => {
-          if (
-            results.some(
-              ({ status }) => status === "uncertain" || status === "retryable",
+        result: runScheduledBookingNotifications(environment).then(
+          (results) => {
+            if (
+              results.some(
+                ({ status }) =>
+                  status === "uncertain" || status === "retryable",
+              )
             )
-          )
-            throw new Error("Scheduled booking notifications are incomplete");
-        }),
+              throw new Error("Scheduled booking notifications are incomplete");
+          },
+        ),
       },
     ];
     const results = await Promise.allSettled(
