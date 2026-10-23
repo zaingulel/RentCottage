@@ -6,9 +6,9 @@ import {
 } from "./booking-request-test-runtime-core";
 
 it("hosted fictional admission preserves local guards and rejects corrupt targets", () => {
-  const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(
-    new Error("Admission must not access a supplier"),
-  );
+  const fetch = vi
+    .spyOn(globalThis, "fetch")
+    .mockRejectedValue(new Error("Admission must not access a supplier"));
   const hosted = {
     APP_ENVIRONMENT: "preview",
     HOSTED_DEMO: "true",
@@ -16,8 +16,7 @@ it("hosted fictional admission preserves local guards and rejects corrupt target
     SUPABASE_URL: "https://yvibcyqtyihpzpmomnzg.supabase.co",
     SUPABASE_PUBLISHABLE_KEY: "fixture-publishable",
     SUPABASE_SECRET_KEY: "fixture-secret",
-    PRIVILEGED_AUDIT_HMAC_KEY:
-      "fixture-audit-key-with-at-least-32-characters",
+    PRIVILEGED_AUDIT_HMAC_KEY: "fixture-audit-key-with-at-least-32-characters",
     DEPLOYMENT_COMMIT: "cccccccccccccccccccccccccccccccccccccccc",
   };
   const local = {
@@ -77,7 +76,9 @@ it("hosted fictional admission preserves local guards and rejects corrupt target
       { NEXT_PUBLIC_SUPABASE_SECRET_KEY: "fixture-exposed-secret" },
       { NEXT_PUBLIC_PRIVILEGED_AUDIT_HMAC_KEY: "fixture-exposed-audit-key" },
     ]) {
-      expect(fictionalSupplierEnvironment({ ...hosted, ...patch })).toBeUndefined();
+      expect(
+        fictionalSupplierEnvironment({ ...hosted, ...patch }),
+      ).toBeUndefined();
     }
 
     for (const url of [
