@@ -226,7 +226,8 @@ begin
   expected:=public.booking_refund_execution_permit(attempt);
   if attempt.id is null or target_permit is distinct from expected or intent.booking_request_id::text<>source->>'bookingRequestId'
     or capture.id::text<>source->>'captureOperationId'
-    or expected#>'{binding,providerIdentity}' is distinct from '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb then
+    or (expected#>'{binding,providerIdentity}' is distinct from '{"provider":"fictional-payments","environment":"local-test","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb
+      and expected#>'{binding,providerIdentity}' is distinct from '{"provider":"fictional-payments","environment":"hosted-demo-yvibcyqtyihpzpmomnzg","merchantId":"fictional-merchant","terminalId":"fictional-terminal"}'::jsonb) then
     raise exception 'Refund admission binding is invalid' using errcode='RC409'; end if;
   select * into ledger from public.payment_provider_operations where admission->>'purpose'='booking-refund' and admission#>>'{permit,attemptId}'=attempt.id::text;
   if found then return public.payment_operation_admission(ledger); end if;
