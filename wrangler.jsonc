@@ -37,6 +37,9 @@
       "name": "halabeekom-demo",
       "main": "hosted-demo-worker.ts",
       "preview_urls": false,
+      "triggers": {
+        "crons": ["* * * * *"],
+      },
       "assets": {
         "directory": ".open-next/assets",
         "binding": "ASSETS",

@@ -3,6 +3,13 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { build, type Plugin } from "esbuild";
+import {
+  Miniflare,
+  Response as NativeResponse,
+  type MiniflareOptions,
+} from "miniflare";
+import type { NotificationDeliveryResult } from "../src/notification/notification-delivery";
 import { randomUUID } from "node:crypto";
 import * as OTPAuth from "otpauth";
 import { getConfirmedBookingAccess } from "../src/booking-request/confirmed-booking-access";
@@ -347,6 +354,356 @@ async function assertLifecycleViews(
     }
   }
 }
+const wrangler = JSON.parse(
+  readFileSync("wrangler.jsonc", "utf8").replace(/,\s*([}\]])/g, "$1"),
+);
+const hostedBindings = {
+  APP_ENVIRONMENT: "preview",
+  HOSTED_DEMO: "true",
+  SUPABASE_PROJECT_REF: "yvibcyqtyihpzpmomnzg",
+  SUPABASE_URL: "https://yvibcyqtyihpzpmomnzg.supabase.co",
+  SUPABASE_PUBLISHABLE_KEY: "native-fixture-publishable",
+  SUPABASE_SECRET_KEY: "native-fixture-secret",
+  PRIVILEGED_AUDIT_HMAC_KEY:
+    "native-fixture-audit-key-with-at-least-32-characters",
+  DEPLOYMENT_COMMIT: "a".repeat(40),
+};
+
+async function bundleHostedDemo(extraPlugins: Plugin[] = []): Promise<string> {
+  const bundled = await build({
+    entryPoints: [wrangler.env.demo.main],
+    bundle: true,
+    write: false,
+    format: "esm",
+    platform: "browser",
+    external: ["node:*", "cloudflare:*"],
+    plugins: [
+      {
+        name: "native-schedule-opennext-boundary",
+        setup(builder) {
+          builder.onResolve({ filter: /\.open-next\/worker\.js$/ }, () => ({
+            path: "opennext",
+            namespace: "native-opennext-fixture",
+          }));
+          builder.onLoad(
+            { filter: /.*/, namespace: "native-opennext-fixture" },
+            () => ({
+              contents:
+                'export default { fetch() { return new Response("OpenNext boundary"); } };',
+              loader: "js",
+            }),
+          );
+        },
+      },
+      ...extraPlugins,
+    ],
+  });
+  return bundled.outputFiles[0].text;
+}
+function hostedWorkerConfig(
+  name: string,
+  contents: string,
+  bindings: Record<string, string>,
+) {
+  return {
+    name,
+    compatibilityDate: wrangler.compatibility_date,
+    compatibilityFlags: wrangler.compatibility_flags,
+    manifest: {
+      mainModule: "worker.js",
+      modules: { "worker.js": { type: "esm" as const, contents } },
+    },
+    env: Object.fromEntries(
+      Object.entries(bindings).map(([name, value]) => [
+        name,
+        { type: "text" as const, value },
+      ]),
+    ),
+  } satisfies MiniflareOptions["workers"][number]["config"];
+}
+test("hosted native schedule admits only the exact demo and awaits all five drains", async () => {
+  const schedules = {
+    "booking-request-expiry-schedule": [
+      "expiry",
+      "runScheduledBookingRequestExpiry",
+    ],
+    "booking-request-capture-schedule": [
+      "capture",
+      "runScheduledBookingRequestCapture",
+    ],
+    "booking-refund-schedule": ["refunds", "runScheduledBookingRefunds"],
+    "booking-completion-schedule": [
+      "completion",
+      "runScheduledBookingCompletion",
+    ],
+    "notification-schedule": [
+      "notifications",
+      "runScheduledBookingNotifications",
+    ],
+  };
+  const services = [
+    "capture",
+    "completion",
+    "expiry",
+    "notifications",
+    "refunds",
+  ];
+  const bundled = await bundleHostedDemo([
+    {
+      name: "native-schedule-composition-boundaries",
+      setup(builder) {
+        builder.onResolve(
+          {
+            filter:
+              /\/(booking-request-expiry-schedule|booking-request-capture-schedule|booking-refund-schedule|booking-completion-schedule|notification-schedule)$/,
+          },
+          ({ path }) => ({
+            path: path.slice(path.lastIndexOf("/") + 1),
+            namespace: "native-schedule-fixture",
+          }),
+        );
+        builder.onLoad(
+          { filter: /.*/, namespace: "native-schedule-fixture" },
+          ({ path }) => {
+            const [service, exported] =
+              schedules[path as keyof typeof schedules];
+            return {
+              contents: `export async function ${exported}() {
+              const response = await fetch("https://schedule-observation.test/started/${service}");
+              if (!response.ok) throw new Error("PRIVATE controlled drain rejection");
+              const result = await response.json();
+              await fetch("https://schedule-observation.test/finished/${service}");
+              return result;
+            }`,
+              loader: "js",
+            };
+          },
+        );
+      },
+    },
+  ]);
+  const started: string[] = [];
+  const events: string[] = [];
+  const diagnostics: string[] = [];
+  let notificationResults: readonly NotificationDeliveryResult[] = [];
+  let rejected: string | undefined;
+  let held: string | undefined;
+  let releaseHeld: (() => void) | undefined;
+  let allStarted: (() => void) | undefined;
+  const options = (
+    values: Record<string, string> = hostedBindings,
+  ): MiniflareOptions => {
+    const config = hostedWorkerConfig(
+      "hosted-native-composition-fixture",
+      bundled,
+      values,
+    );
+    return {
+      host: "127.0.0.1",
+      unsafeTriggerHandlers: true,
+      telemetry: { enabled: false },
+      workers: [
+        {
+          config: {
+            ...config,
+            manifest: {
+              ...config.manifest,
+              mainModule: "observer.js",
+              modules: {
+                ...config.manifest.modules,
+                "observer.js": {
+                  type: "esm",
+                  contents: `import worker from "./worker.js";
+export default {
+  fetch(request, environment, context) {
+    return worker.fetch(request, environment, context);
+  },
+  async scheduled(controller, environment, context) {
+    try {
+      return await worker.scheduled(controller, environment, context);
+    } catch (error) {
+      await fetch("https://schedule-observation.test/failure", {
+        method: "POST",
+        body: error.message,
+      });
+      throw error;
+    }
+  },
+};`,
+                },
+              },
+            },
+          },
+          dev: {
+            outboundService: {
+              type: "fetcher",
+              async handler(request) {
+                const url = new URL(request.url);
+                if (url.origin !== "https://schedule-observation.test")
+                  throw new Error("Unexpected native composition egress");
+                if (url.pathname === "/failure" && request.method === "POST") {
+                  diagnostics.push(await request.text());
+                  return new NativeResponse("Observed");
+                }
+                const [, stage, service] = url.pathname.split("/");
+                if (
+                  !["started", "finished"].includes(stage) ||
+                  !services.includes(service)
+                )
+                  throw new Error("Unexpected native composition observation");
+                events.push(`${stage}:${service}`);
+                if (stage === "finished") return new NativeResponse("Observed");
+                started.push(service);
+                if (started.length === services.length) allStarted?.();
+                if (service === held)
+                  await new Promise<void>((resolve) => {
+                    releaseHeld = resolve;
+                  });
+                if (service === rejected)
+                  return new NativeResponse("Rejected", { status: 503 });
+                return NativeResponse.json(
+                  service === "notifications" ? notificationResults : [],
+                );
+              },
+            },
+          },
+        },
+      ],
+    };
+  };
+  // Miniflare's published Fetcher type imports a dev-only workers-types package.
+  // The installed getWorker implementation returns the native fetcher proxy.
+  type NativeUserWorker = { fetch(url: string): Promise<NativeResponse> };
+  let runtime: Miniflare | undefined;
+  const cron = "* * * * *";
+  const invoke = (value = cron) =>
+    runtime!.dispatchFetch(
+      `http://localhost/cdn-cgi/local/scheduled?format=json&cron=${encodeURIComponent(value)}`,
+    );
+  const assertOutcome = async (
+    response: Awaited<ReturnType<typeof invoke>>,
+    status: number,
+  ) => {
+    expect(response.status).toBe(status);
+    const result = (await response.json()) as { outcome: string };
+    if (status === 200) expect(result.outcome).toBe("ok");
+    else expect(result.outcome).not.toBe("ok");
+  };
+  try {
+    runtime = new Miniflare(options());
+    for (const [results, status] of [
+      [[], 200],
+      [[{ status: "delivered", historical: false }], 200],
+      [[{ status: "delivered", historical: true }], 200],
+      [[{ status: "stale" }], 200],
+      [[{ status: "suppressed" }], 200],
+      [[{ status: "unavailable" }], 200],
+      [[{ status: "uncertain" }], 500],
+      [[{ status: "retryable" }], 500],
+    ] as const) {
+      started.length = 0;
+      events.length = 0;
+      notificationResults = results;
+      await assertOutcome(await invoke(), status);
+      expect(started.toSorted()).toEqual(services);
+      expect(
+        events.filter((event) => event.startsWith("finished:")).toSorted(),
+      ).toEqual(services.map((service) => `finished:${service}`));
+    }
+    started.length = 0;
+    for (const path of ["/__scheduled", "/cdn-cgi/local/scheduled"]) {
+      const worker = (await runtime.getWorker()) as unknown as NativeUserWorker;
+      const response = await worker.fetch(`https://demo.halabeekom.com${path}`);
+      expect(response.status).toBe(403);
+    }
+    expect(started).toEqual([]);
+    await assertOutcome(await invoke("0 * * * *"), 500);
+    expect(started).toEqual([]);
+    for (const patch of [
+      { HOSTED_DEMO: undefined },
+      { HOSTED_DEMO: "TRUE" },
+      { APP_ENVIRONMENT: "production" },
+      {
+        APP_ENVIRONMENT: "test",
+        SUPABASE_PROJECT_REF: "local-test",
+        SUPABASE_URL: "http://127.0.0.1:54321",
+        HOSTED_DEMO: undefined,
+      },
+      {
+        SUPABASE_PROJECT_REF: "other-project",
+        SUPABASE_URL: "https://other-project.supabase.co",
+      },
+      { SUPABASE_URL: hostedBindings.SUPABASE_URL + "/path" },
+      { SUPABASE_URL: hostedBindings.SUPABASE_URL + "?query=1" },
+      {
+        SUPABASE_URL: "https://user:password@yvibcyqtyihpzpmomnzg.supabase.co",
+      },
+      { SUPABASE_PUBLISHABLE_KEY: undefined },
+      { SUPABASE_SECRET_KEY: undefined },
+      { PRIVILEGED_AUDIT_HMAC_KEY: "too-short" },
+      { DEPLOYMENT_COMMIT: "invalid" },
+    ]) {
+      const values = Object.fromEntries(
+        Object.entries({ ...hostedBindings, ...patch }).filter(
+          (entry): entry is [string, string] => entry[1] !== undefined,
+        ),
+      );
+      await runtime.setOptions(options(values));
+      await assertOutcome(await invoke(), 500);
+      expect(started).toEqual([]);
+    }
+    await runtime.setOptions(options());
+    notificationResults = [];
+    for (const failure of [undefined, "expiry"]) {
+      const diagnosticOffset = diagnostics.length;
+      started.length = 0;
+      events.length = 0;
+      rejected = failure;
+      held = "completion";
+      const attempted = new Promise<void>((resolve) => {
+        allStarted = resolve;
+      });
+      let settled = false;
+      const invocation = invoke().then((response) => {
+        settled = true;
+        events.push("native:finished");
+        return response;
+      });
+      await attempted;
+      expect(started.toSorted()).toEqual(services);
+      // A separate native request crosses the isolate while completion is held.
+      const worker = (await runtime.getWorker()) as unknown as NativeUserWorker;
+      expect(
+        (await worker.fetch("https://demo.halabeekom.com/__scheduled")).status,
+      ).toBe(403);
+      expect(settled).toBe(false);
+      expect(releaseHeld).toBeDefined();
+      releaseHeld!();
+      await assertOutcome(await invocation, failure ? 500 : 200);
+      expect(diagnostics.slice(diagnosticOffset)).toEqual(
+        failure
+          ? ["Hosted demo scheduled processing is incomplete: expiry"]
+          : [],
+      );
+      expect(events.indexOf("finished:completion")).toBeLessThan(
+        events.indexOf("native:finished"),
+      );
+      expect(
+        events.filter((event) => event.startsWith("finished:")).toSorted(),
+      ).toEqual(
+        services
+          .filter((service) => service !== failure)
+          .map((service) => `finished:${service}`),
+      );
+      held = undefined;
+      releaseHeld = undefined;
+    }
+  } finally {
+    releaseHeld?.();
+    await runtime?.dispose();
+  }
+});
+
 test.describe("scheduled completion and restricted lifecycle journeys", () => {
   test.use({ actionTimeout: 10000 });
   test.beforeEach(async ({}, testInfo) => {
@@ -390,6 +747,300 @@ test.describe("scheduled completion and restricted lifecycle journeys", () => {
       );
       if (error) throw error;
       activeAdministratorId = null;
+    }
+  });
+  test("hosted native scheduling preserves completion and notices across overlap and interrupted acknowledgement", async () => {
+    // beforeEach seeds an owned historical SQL boundary fixture using the database Iraq date,
+    // not a booking graph created through the hosted product journey.
+    const before = observe();
+    expect(before.outcomes).toEqual([]);
+    expect(before.maturity).toEqual([]);
+    const { url: localOrigin, key, publishable } = connection();
+    const bundled = await bundleHostedDemo();
+    const bindings = {
+      ...hostedBindings,
+      SUPABASE_PUBLISHABLE_KEY: publishable,
+      SUPABASE_SECRET_KEY: key,
+    };
+    type NoticeSource = { id: string; recipient: string; role: string };
+    type NoticeWork = {
+      notification_id: string;
+      receipt_id: string;
+      event_id: string | null;
+      recipient_user_id: string;
+      recipient_role: string;
+      state: string;
+      logical_id: string;
+      payload: { fictional: boolean };
+      supplier_delivery_reference: string | null;
+    };
+    type NoticeEffect = Pick<
+      NoticeWork,
+      | "notification_id"
+      | "receipt_id"
+      | "recipient_user_id"
+      | "recipient_role"
+      | "logical_id"
+      | "payload"
+      | "supplier_delivery_reference"
+    > & { environment: string; supplier: string };
+    const notices = (): {
+      receipts: NoticeSource[];
+      reminders: NoticeSource[];
+      work: NoticeWork[];
+      effects: NoticeEffect[];
+    } =>
+      JSON.parse(
+        harness.runSql(`select jsonb_build_object(
+      'receipts',(select coalesce(jsonb_agg(jsonb_build_object('id',r.id,'recipient',r.recipient_user_id,'role',r.recipient_role) order by r.id),'[]'::jsonb)
+        from public.booking_receipts r join public.booking_confirmations c on c.id=r.booking_confirmation_id where c.booking_request_id='${request}'),
+      'reminders',(select coalesce(jsonb_agg(jsonb_build_object('id',e.id,'recipient',e.recipient_user_id,'role',e.recipient_role) order by e.id),'[]'::jsonb)
+        from public.booking_notification_events e where e.booking_request_id='${request}' and e.event_kind='preparation_reminder'),
+      'work',(select coalesce(jsonb_agg(to_jsonb(w) order by w.notification_id),'[]'::jsonb)
+        from public.booking_confirmation_notification_work w where w.booking_request_id='${request}'),
+      'effects',(select coalesce(jsonb_agg(to_jsonb(e) order by e.notification_id),'[]'::jsonb)
+        from public.fictional_booking_confirmation_notification_effects e where e.booking_request_id='${request}'));`),
+      );
+    // Validate observer cardinality at the disposable seam before driving native work.
+    const initialNotices = notices();
+    expect(initialNotices.receipts).toHaveLength(2);
+    expect(initialNotices.reminders).toHaveLength(2);
+    expect(
+      initialNotices.receipts
+        .map((receipt) => [receipt.role, receipt.recipient])
+        .toSorted(),
+    ).toEqual([
+      ["cottage_owner", owner],
+      ["customer", customer],
+    ]);
+    expect(initialNotices.work).toEqual([]);
+    expect(initialNotices.effects).toEqual([]);
+    let malformed = true;
+    let malformedLists = 0;
+    let completionWrites = 0;
+    let faultAcknowledgement = true;
+    let interruptedAcknowledgements = 0;
+    let committed: (() => void) | undefined;
+    let releaseAcknowledgement: (() => void) | undefined;
+    const acknowledgement = new Promise<void>((resolve) => {
+      releaseAcknowledgement = resolve;
+    });
+    const realCommit = new Promise<void>((resolve) => {
+      committed = resolve;
+    });
+    const createWorker = () =>
+      new Miniflare({
+        host: "127.0.0.1",
+        unsafeTriggerHandlers: true,
+        telemetry: { enabled: false },
+        workers: [
+          {
+            config: hostedWorkerConfig(
+              "hosted-native-completion-fixture",
+              bundled,
+              bindings,
+            ),
+            dev: {
+              outboundService: {
+                type: "fetcher",
+                async handler(outbound) {
+                  const url = new URL(outbound.url);
+                  if (
+                    url.origin !== "https://yvibcyqtyihpzpmomnzg.supabase.co" ||
+                    !url.pathname.startsWith("/rest/v1/rpc/")
+                  )
+                    throw new Error(
+                      "Unexpected native completion fixture egress",
+                    );
+                  if (
+                    malformed &&
+                    url.pathname === "/rest/v1/rpc/list_due_booking_completions"
+                  ) {
+                    malformedLists += 1;
+                    return NativeResponse.json({
+                      malformed: "not a candidate array",
+                    });
+                  }
+                  const body = await outbound.arrayBuffer();
+                  let interrupt = false;
+                  if (
+                    url.pathname === "/rest/v1/rpc/commit_booking_completion"
+                  ) {
+                    completionWrites += 1;
+                    const input = JSON.parse(
+                      Buffer.from(body).toString("utf8"),
+                    ) as { target_booking_request_id: string };
+                    if (
+                      input.target_booking_request_id === request &&
+                      faultAcknowledgement
+                    ) {
+                      faultAcknowledgement = false;
+                      interrupt = true;
+                    }
+                  }
+                  const response = await fetch(
+                    new URL(url.pathname + url.search, localOrigin),
+                    {
+                      method: outbound.method,
+                      headers: Object.fromEntries(outbound.headers),
+                      body,
+                      redirect: "error",
+                    },
+                  );
+                  if (interrupt) {
+                    if (!response.ok)
+                      throw new Error(
+                        "Controlled real completion commit failed",
+                      );
+                    await response.arrayBuffer();
+                    interruptedAcknowledgements += 1;
+                    committed!();
+                    await acknowledgement;
+                    return NativeResponse.json(
+                      {
+                        message:
+                          "Controlled completion acknowledgement interrupted",
+                      },
+                      { status: 503 },
+                    );
+                  }
+                  return new NativeResponse(
+                    response.body === null
+                      ? null
+                      : await response.arrayBuffer(),
+                    {
+                      status: response.status,
+                      headers: Object.fromEntries(response.headers),
+                    },
+                  );
+                },
+              },
+            },
+          },
+        ],
+      });
+    const invoke = (worker: Miniflare) =>
+      worker.dispatchFetch(
+        "http://localhost/cdn-cgi/local/scheduled?format=json&cron=%2A%20%2A%20%2A%20%2A%20%2A",
+      );
+    let runtime: Miniflare | undefined;
+    let fresh: Miniflare | undefined;
+    const overlapping: ReturnType<typeof invoke>[] = [];
+    try {
+      runtime = createWorker();
+      const corrupt = await invoke(runtime);
+      expect(corrupt.status).toBe(500);
+      expect(await corrupt.json()).not.toMatchObject({ outcome: "ok" });
+      expect(malformedLists).toBe(1);
+      expect(completionWrites).toBe(0);
+      expect(observe()).toEqual(before);
+      malformed = false;
+      let firstSettled = false;
+      const first = invoke(runtime).then((response) => {
+        firstSettled = true;
+        return response;
+      });
+      overlapping.push(first);
+      expect(
+        await Promise.race([
+          realCommit.then(() => "committed"),
+          first.then(() => "finished"),
+        ]),
+      ).toBe("committed");
+      const durable = observe();
+      expect(durable.outcomes).toHaveLength(1);
+      expect(durable.outcomes[0]).toMatchObject({
+        outcome: "completed",
+        effective_period_end: before.end,
+      });
+      expect(durable.original).toEqual(before.original);
+      const second = invoke(runtime);
+      overlapping.push(second);
+      const secondResult = await second;
+      expect(secondResult.status).toBe(200);
+      expect(await secondResult.json()).toMatchObject({ outcome: "ok" });
+      expect(firstSettled).toBe(false);
+      releaseAcknowledgement!();
+      const interrupted = await first;
+      expect(interrupted.status).toBe(500);
+      expect(await interrupted.json()).not.toMatchObject({ outcome: "ok" });
+      expect(interruptedAcknowledgements).toBe(1);
+      const afterOverlap = observe();
+      expect(afterOverlap.outcomes).toEqual(durable.outcomes);
+      expect(afterOverlap.maturity).toHaveLength(1);
+      expect(afterOverlap.maturity[0]).toMatchObject({
+        outcome: "completed",
+        effective_period_end: before.end,
+      });
+      expect(afterOverlap.end).toBe(before.end);
+      expect(afterOverlap.original).toEqual(before.original);
+      const overlapNotices = notices();
+      await runtime.dispose();
+      runtime = undefined;
+      fresh = createWorker();
+      const recovered = await invoke(fresh);
+      expect(recovered.status).toBe(200);
+      expect(await recovered.json()).toMatchObject({ outcome: "ok" });
+      expect(observe()).toEqual(afterOverlap);
+      const finalNotices = notices();
+      expect(finalNotices).toEqual(overlapNotices);
+      expect(finalNotices.receipts).toEqual(initialNotices.receipts);
+      expect(finalNotices.reminders).toEqual(initialNotices.reminders);
+      expect(finalNotices.work).toHaveLength(4);
+      expect(finalNotices.effects).toHaveLength(2);
+      for (const receipt of initialNotices.receipts) {
+        const delivered = finalNotices.work.filter(
+          (work) => work.notification_id === receipt.id,
+        );
+        const effects = finalNotices.effects.filter(
+          (effect) => effect.notification_id === receipt.id,
+        );
+        expect(delivered).toHaveLength(1);
+        expect(effects).toHaveLength(1);
+        expect(delivered[0]).toMatchObject({
+          receipt_id: receipt.id,
+          event_id: null,
+          recipient_user_id: receipt.recipient,
+          recipient_role: receipt.role,
+          logical_id: `paid-confirmation:${receipt.id}`,
+          state: "delivered",
+          payload: { fictional: true },
+          supplier_delivery_reference: effects[0].supplier_delivery_reference,
+        });
+        expect(effects[0]).toMatchObject({
+          supplier: "fictional-notifications",
+          environment: "hosted-demo-yvibcyqtyihpzpmomnzg",
+          receipt_id: receipt.id,
+          recipient_user_id: receipt.recipient,
+          recipient_role: receipt.role,
+          logical_id: `paid-confirmation:${receipt.id}`,
+          payload: delivered[0].payload,
+        });
+      }
+      for (const reminder of initialNotices.reminders) {
+        const suppressed = finalNotices.work.filter(
+          (work) => work.notification_id === reminder.id,
+        );
+        expect(suppressed).toHaveLength(1);
+        expect(suppressed[0]).toMatchObject({
+          event_id: reminder.id,
+          state: "suppressed",
+          recipient_user_id: reminder.recipient,
+          recipient_role: reminder.role,
+          logical_id: `booking-event:${reminder.id}`,
+          supplier_delivery_reference: null,
+        });
+        expect(
+          finalNotices.effects.filter(
+            (effect) => effect.notification_id === reminder.id,
+          ),
+        ).toEqual([]);
+      }
+    } finally {
+      releaseAcknowledgement?.();
+      await Promise.allSettled(overlapping);
+      await runtime?.dispose();
+      await fresh?.dispose();
     }
   });
   test("actual scheduled tick records completion once with the original purchased end and financial evidence", async ({
