@@ -3,8 +3,9 @@
 Choose the [invited hosted demo](#invited-hosted-demo) for isolated online access or the
 [local rehearsal](#local-rehearsal-and-recording) for the optional continuous Minimum Viable Product (MVP)
 recording. Online access does not require a video. All identities, cottages, verification evidence and private
-details are synthetic; neither route approves live suppliers or marketplace launch. Local payment simulation
-and fixture credentials belong only to the local route.
+details are synthetic; neither route approves live suppliers or marketplace launch. Local fixtures, test codes
+and credentials belong only to the local route. Hosted fictional supplier journeys also require the database
+compatibility and evidence below.
 
 ## Invited hosted demo
 
@@ -178,6 +179,53 @@ the local paid-booking recording does not establish hosted payment availability.
 change country validation. A request for live SMS credentials stops setup. Each tester enrolls their own
 authenticator; the operator never enrolls it on their behalf.
 
+### Fictional supplier compatibility and recovery
+
+[#819](https://github.com/zaingulel/RentCottage/issues/819) supplies application composition for the approved
+hosted fictional suppliers and existing authorized journeys. Composition alone does not make hosted booking
+or notification processing usable. Before activating these journeys, require matching database declarations
+and migrations that admit the hosted identity and preserve the existing local contracts, plus the real
+database and Worker evidence below. The payment binding validator and effect constraints accept only
+`local-test`; notification effect functions also compare the original binding exactly and stamp `local-test`.
+They do not yet support hosted effects. A successful application admission or doubled supplier response does
+not establish database compatibility.
+
+Admission requires the validated preview configuration with `HOSTED_DEMO=true` and the exact project
+`yvibcyqtyihpzpmomnzg` at `https://yvibcyqtyihpzpmomnzg.supabase.co`, as pinned in
+[`src/config/hosted-demo-target.ts`](../src/config/hosted-demo-target.ts). The selected fictional environment is
+`hosted-demo-yvibcyqtyihpzpmomnzg`. Production, ordinary preview, another project and corrupt or incomplete
+settings must refuse this composition. Preserve local admission separately. Never substitute local credentials,
+a memory-only simulator or a real supplier when a hosted call fails.
+
+Compatible storage must preserve payment identity, immutable bindings, idempotency and authoritative evidence
+for authorization, capture, release, recovery and refunds. Notifications must preserve intent, attempts, leases
+and final fictional outcomes. Do not interpret pending work, an accepted command or a supplier response alone
+as a completed business transition. Use the persisted effect and the authoritative business receipt or final
+notification state together.
+
+| Observed outcome | Meaning and recovery |
+|---|---|
+| Stored fictional success | Confirm it belongs to the same environment and immutable operation or notification binding. It proves a simulated outcome, never real money movement or delivery to a person. |
+| Pending or processing | Work remains unfinished. Continue only through the existing service and its current lease and deadline checks; do not mark it complete manually. |
+| Unknown, uncertain or unavailable | Preserve the unresolved state and evidence. After a restart, query the same durable identity before another execution; a failed inquiry proves neither success nor absence. |
+| Failed, stale or suppressed | Preserve the reported outcome. Retry only where the existing service permits it; do not replace identifiers, clear evidence or bypass fencing to force success. |
+
+A compatible restart-safe inquiry must find a previously stored effect or authoritative absence through the
+existing database-backed adapter. Replays and overlapping requests must not create another physical effect.
+An interrupted notification completion must be recoverable from the stored effect without another delivery.
+Binding rejection or a malformed database result must remain a failure or unresolved outcome, never become a
+successful payment or notification. Do not repair this by editing booking status or deleting supplier evidence.
+
+Hosted in-platform messaging and review readers retain their authenticated access checks and show original
+text when translation is unavailable. They do not call a live translation supplier or generate local-test
+translation provenance for hosted content. No real payment, SMS or external customer notification is enabled;
+a fictional `delivered` result is not evidence that a person received a message.
+
+Scheduling belongs to [#820](https://github.com/zaingulel/RentCottage/issues/820), while scenario
+and catalog preparation belong to [#821](https://github.com/zaingulel/RentCottage/issues/821). Application
+composition adds neither a hosted scheduled handler nor prepared scenarios. Keep those dependencies separate
+from the database compatibility and invitation gates.
+
 ### Build the final admitted app from merged source
 
 Before the final hosted build and deployment, require the reviewed merged tree, approved dedicated target
@@ -211,6 +259,10 @@ these observations, stop and return the native password alternative to the owner
 
 The coordinating session records these independent evidence classes:
 
+- For hosted fictional supplier journeys, matching declared schemas and migrations, real disposable PostgreSQL
+  evidence for hosted payment identity and notification scope, and native Worker observations across fresh
+  instances, retries and concurrent calls. Require one physical effect, durable inquiry and notification
+  completion evidence. Composition tests with doubled database responses cannot supply this proof.
 - Disposable real PostgreSQL preservation evidence, including account-access and owner-application security
   tests, through `node scripts/run-log.mjs demo hosted database preservation -- npm run verify:access:database`.
 - Existing authenticator and Owner browser journeys, after browser permission, through
@@ -237,9 +289,12 @@ behavior. Mocks and local tests cannot replace managed provider observations. Be
 documentation lint, fresh independent/security review and explicit authentication sign-off. Hosted activation
 remains incomplete until actual-resource receipts, no-send/expiry proof, direct-access denial evidence,
 required identities and approvals are available. If Docker is prohibited, do not run it for these checks.
-The coordinator must establish permitted receipt reuse under the existing rules or report final activation
-blocked by the no-Docker restriction, preserving the denied Worker. Target creation, source merge and hosted
-continuous integration do not replace the full-local activation gate.
+The hosted supplier database changes require their real-database failing proof before implementation; their
+matching migrations, native database-backed Worker proof and full verification remain required. The coordinator
+must establish permitted receipt reuse under the existing rules or report activation blocked by the no-Docker
+restriction, preserving the denied Worker. Do not substitute the managed demo database, create a replacement
+stack or treat unit tests as this evidence. Target creation, source merge and hosted continuous integration do
+not replace database compatibility or the full-local activation gate.
 
 ### Revoke, recover and roll back
 
