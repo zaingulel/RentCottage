@@ -104,6 +104,62 @@ describe("server environment", () => {
     }
   });
 
+  it("hosted demo accepts only the approved deployed target", async () => {
+    vi.doUnmock("./hosted-demo-target");
+    vi.resetModules();
+    try {
+      const { hostedDemoTarget } = await import("./hosted-demo-target");
+      const { readServerEnvironment } = await import("./server-environment");
+      expect(hostedDemoTarget).toEqual({
+        workerOrigin: "https://demo.halabeekom.com",
+        supabaseProjectRef: "yvibcyqtyihpzpmomnzg",
+        accessIssuer: "https://fragrant-snow-bffc.cloudflareaccess.com",
+        accessAudience:
+          "7cfcb76e2ce196644be64a1d8583ea74c6faef901a9f2c58cc6796468fdb8f92",
+      });
+      const source = {
+        APP_ENVIRONMENT: "preview",
+        HOSTED_DEMO: "true",
+        SUPABASE_PROJECT_REF: "yvibcyqtyihpzpmomnzg",
+        SUPABASE_URL: "https://yvibcyqtyihpzpmomnzg.supabase.co",
+        SUPABASE_PUBLISHABLE_KEY: "fixture-publishable",
+        SUPABASE_SECRET_KEY: "fixture-secret",
+        PRIVILEGED_AUDIT_HMAC_KEY:
+          "fixture-audit-key-with-at-least-32-characters",
+        DEPLOYMENT_COMMIT: "c".repeat(40),
+      };
+      expect(readServerEnvironment(source)).toEqual({
+        name: "preview",
+        hostedDemo: true,
+        deployment: { commit: "c".repeat(40) },
+        privilegedAuditHmacKey: "fixture-audit-key-with-at-least-32-characters",
+        supabase: {
+          projectRef: "yvibcyqtyihpzpmomnzg",
+          url: "https://yvibcyqtyihpzpmomnzg.supabase.co",
+          publishableKey: "fixture-publishable",
+          secretKey: "fixture-secret",
+        },
+      });
+      for (const patch of [
+        {
+          SUPABASE_PROJECT_REF: "other-project",
+          SUPABASE_URL: "https://other-project.supabase.co",
+        },
+        {
+          SUPABASE_URL:
+            "https://user:fixture-password@yvibcyqtyihpzpmomnzg.supabase.co",
+        },
+      ]) {
+        expect(() => readServerEnvironment({ ...source, ...patch })).toThrow(
+          /SUPABASE_URL/,
+        );
+      }
+    } finally {
+      vi.doUnmock("./hosted-demo-target");
+      vi.resetModules();
+    }
+  });
+
   it("provides the publishable connection without requiring the server secret", () => {
     expect(
       readPublicSupabaseEnvironment({
