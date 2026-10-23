@@ -1,17 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 
-import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime-core";
+import { fictionalSupplierEnvironment } from "@/booking-request/booking-request-test-runtime-core";
 import { FictionalNotificationAdapter } from "./fictional-notification-adapter";
 import { createBookingNotificationDelivery } from "./notification-delivery";
 import { SupabaseNotificationDeliveryRepository } from "./supabase-notification-delivery";
 
-interface NotificationScheduleEnvironment {
-  readonly APP_ENVIRONMENT?: string;
-  readonly SUPABASE_PROJECT_REF?: string;
-  readonly SUPABASE_URL?: string;
-  readonly SUPABASE_PUBLISHABLE_KEY?: string;
-  readonly SUPABASE_SECRET_KEY?: string;
-}
+type NotificationScheduleEnvironment = NonNullable<
+  Parameters<typeof fictionalSupplierEnvironment>[0]
+>;
 
 type ProcessDue = ReturnType<
   typeof createBookingNotificationDelivery
@@ -21,13 +17,14 @@ export async function runScheduledBookingNotifications(
   environment: NotificationScheduleEnvironment,
   injectedProcessDue?: ProcessDue,
 ) {
+  const supplierEnvironment = fictionalSupplierEnvironment(environment);
   if (
-    !bookingRequestTestRuntimeIsEnabled(environment) ||
+    !supplierEnvironment ||
     !environment.SUPABASE_PUBLISHABLE_KEY ||
     !environment.SUPABASE_SECRET_KEY
   ) {
     throw new Error(
-      "Booking notifications require the exact local test runtime and credentials",
+      "Booking notifications require an approved fictional runtime and credentials",
     );
   }
 
@@ -38,7 +35,10 @@ export async function runScheduledBookingNotifications(
       environment.SUPABASE_SECRET_KEY,
       { auth: { autoRefreshToken: false, persistSession: false } },
     );
-    const repository = new SupabaseNotificationDeliveryRepository(client);
+    const repository = new SupabaseNotificationDeliveryRepository(
+      client,
+      supplierEnvironment,
+    );
     processDue = createBookingNotificationDelivery({
       repository,
       adapter: new FictionalNotificationAdapter(repository, environment),

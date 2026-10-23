@@ -9,6 +9,7 @@ import {
   type BookingNoticeEvent,
 } from "./booking-event-notice";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { FictionalSupplierEnvironment } from "@/booking-request/booking-request-test-runtime-core";
 import type { FictionalNotificationEffectRepository } from "./fictional-notification-adapter";
 import type {
   NotificationBinding,
@@ -234,19 +235,28 @@ function parseLease(value: unknown): NotificationLease {
     leaseExpiresAt: v.leaseExpiresAt,
   };
 }
-const binding = (v: NotificationLease) => ({
-  ...(v.event ? { event: v.event } : {}),
-  receiptId: v.receiptId,
-  recipientUserId: v.recipientUserId,
-  recipientRole: v.recipientRole,
-  bookingRequestReference: v.bookingRequestReference,
-  bookingReference: v.bookingReference,
-  locale: v.locale,
-  logicalId: v.logicalId,
-  templateVersion: v.templateVersion,
-  payload: v.payload,
-  payloadSha256: v.payloadSha256,
-});
+function binding(
+  v: NotificationLease,
+  environment: FictionalSupplierEnvironment,
+) {
+  parseLease(v);
+  return {
+    ...(environment === "local-test"
+      ? {}
+      : { fictionalEnvironment: environment }),
+    ...(v.event ? { event: v.event } : {}),
+    receiptId: v.receiptId,
+    recipientUserId: v.recipientUserId,
+    recipientRole: v.recipientRole,
+    bookingRequestReference: v.bookingRequestReference,
+    bookingReference: v.bookingReference,
+    locale: v.locale,
+    logicalId: v.logicalId,
+    templateVersion: v.templateVersion,
+    payload: v.payload,
+    payloadSha256: v.payloadSha256,
+  };
+}
 function parseEffect<S extends "found" | "delivered">(
   v: Row,
   status: S,
@@ -299,7 +309,16 @@ export class SupabaseNotificationDeliveryRepository
     NotificationDeliveryRepository,
     FictionalNotificationEffectRepository
 {
-  constructor(private readonly client: SupabaseClient) {}
+  constructor(
+    private readonly client: SupabaseClient,
+    private readonly environment: FictionalSupplierEnvironment = "local-test",
+  ) {
+    if (
+      environment !== "local-test" &&
+      environment !== "hosted-demo-yvibcyqtyihpzpmomnzg"
+    )
+      throw new Error("Invalid fictional notification environment");
+  }
   async listCandidates(limit: number) {
     const { data, error } = await this.client.rpc(
       "list_due_booking_confirmation_notifications",
@@ -348,7 +367,7 @@ export class SupabaseNotificationDeliveryRepository
         ...(v.event ? { target_event_id: v.event.id } : {}),
         target_generation: v.leaseGeneration,
         target_token: v.leaseToken,
-        target_binding: binding(v),
+        target_binding: binding(v, this.environment),
       },
     );
     if (error) throw new Error("Notification effect query is unavailable");
@@ -368,7 +387,7 @@ export class SupabaseNotificationDeliveryRepository
         ...(v.event ? { target_event_id: v.event.id } : {}),
         target_generation: v.leaseGeneration,
         target_token: v.leaseToken,
-        target_binding: binding(v),
+        target_binding: binding(v, this.environment),
       },
     );
     if (error) throw new Error("Notification effect execution is unavailable");
@@ -394,7 +413,7 @@ export class SupabaseNotificationDeliveryRepository
         ...(v.event ? { target_event_id: v.event.id } : {}),
         target_generation: v.leaseGeneration,
         target_token: v.leaseToken,
-        target_binding: binding(v),
+        target_binding: binding(v, this.environment),
         target_effect_id: e.effectId,
       },
     );
