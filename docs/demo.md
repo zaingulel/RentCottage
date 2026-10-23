@@ -36,12 +36,12 @@ Use the locked command-line interface (CLI), version 2.114.0, and inspect instal
 If linked migration access fails with `LegacyDbConfigIpv6Error`, stop repeating that connection. The native
 [temporary CLI login-role endpoint](https://supabase.com/docs/reference/api/v1-create-login-role) is the
 supported fallback, using the approved scoped operator token with `database_write` and `read_only:false`.
-Verify its returned role and the dashboard's actual Session pooler endpoint before use. Endpoint failure,
-missing permission or an unexpected target stops setup; do not widen token scopes or substitute per-file
+Verify its returned role, `ttl_seconds` expiry and the dashboard's actual Session pooler endpoint before use.
+Endpoint failure, missing permission or an unexpected target stops setup; do not widen token scopes or substitute per-file
 Management API migration submission.
 
 In an isolated operator environment, privately set `DEMO_DATABASE_URL` to the verified password-free Session
-pooler URL, shaped as `postgresql://<returned-role>.<project-ref>@<session-pooler-host>:5432/postgres`.
+pooler URL, shaped as `postgresql://<returned-role>.<project-ref>@<session-pooler-host>:5432/postgres?sslmode=require`.
 Preserve the actual returned-role tenant username and connection settings. Supply the temporary password
 only through inherited `PGPASSWORD`; this installed CLI's `--db-url` path does not use `SUPABASE_DB_PASSWORD`.
 Omit the URL's password field entirely: an empty `user:@host` password or `?password=` suppresses `PGPASSWORD`.
@@ -56,23 +56,25 @@ no-Docker invocation cannot be established.
 ```sh
 export SUPABASE_EXPERIMENTAL_PGDELTA_ENABLED=false
 export SUPABASE_EXPERIMENTAL_PG_DELTA=false
-node scripts/run-log.mjs demo hosted migration dry run -- node_modules/.bin/supabase db push --db-url "$DEMO_DATABASE_URL" --dry-run
-node scripts/run-log.mjs demo hosted migrations -- node_modules/.bin/supabase db push --db-url "$DEMO_DATABASE_URL"
+node scripts/run-log.mjs demo hosted migration dry run -- node_modules/.bin/supabase db push --db-url "$DEMO_DATABASE_URL" --dry-run --skip-vault
+node scripts/run-log.mjs demo hosted migrations -- node_modules/.bin/supabase db push --db-url "$DEMO_DATABASE_URL" --skip-vault --yes
 node scripts/run-log.mjs demo hosted migration history -- node_modules/.bin/supabase migration list --db-url "$DEMO_DATABASE_URL"
 ```
 
 Run the [native dry-run](https://supabase.com/docs/reference/cli/supabase-db-push) first and compare every
 selected filename version before applying. A failed credential/connection or unexpected history stops the
 sequence. Require exact local/remote version parity afterward; do not reset, seed, change the database
-password or repair migration history.
+password or repair migration history. If the native credential expires after successful application,
+obtain a fresh temporary credential through the same native endpoint only for read-only migration-history
+verification. Do not blindly re-apply migrations or repair history.
 
 ### Bootstrap a deny-all Worker
 
 Use reviewed merged source with null pins in `src/config/hosted-demo-target.ts`. Require an isolated shell
 without inherited production credentials or ignored environment files injecting hosted or real settings.
 Build the existing entrypoint's OpenNext dependency with only the harmless synthetic settings below.
-Export those same settings for the scan and local admission observation so they examine the actual build
-inputs. These are synthetic local build values, never managed-project credentials.
+Export those same settings for the secret scan and the admission test's preview startup server. These are
+synthetic local build values, never managed-project credentials.
 
 ```sh
 export APP_ENVIRONMENT=test
@@ -92,11 +94,14 @@ Wrangler configuration independently embeds Worker-first assets and supplies run
 and `HOSTED_DEMO=true`. Null pins deliberately deny before forwarding. Use no generated stub, alternate
 entrypoint or build bypass. A compilation or scan failure stops setup.
 
-With those same synthetic exports, the existing native admission observer starts only a local Worker:
+With those same synthetic exports for its preview startup server, run the existing native admission observer:
 
 ```sh
 node scripts/run-log.mjs demo bootstrap admission -- env PLAYWRIGHT_SERVER=worker npx playwright test tests/worker-smoke.spec.ts --project=worker --config=playwright.worker-prebuilt.config.ts --grep '^worker worker-smoke\.spec\.ts hosted demo admission rejects unauthenticated asset and action requests$' --retries=0
 ```
+
+The selected Miniflare observer bundles source with fixture target pins and an OpenNext forwarding sentinel.
+It proves admission logic, not the compiled null-pin artifact. Actual hosted denial below proves that artifact.
 
 Before upload, verify the null-pin entrypoint, Worker-first assets and absent schedule. Only after exact
 Worker creation/deployment approval, upload the denied artifact:
@@ -106,9 +111,11 @@ node scripts/run-log.mjs demo bootstrap deploy -- npx wrangler deploy --env demo
 ```
 
 Retain the returned denied Worker version for rollback. Before configuring Access, actual hosted page,
-real asset and action requests must return nonblank `403` responses with `Cache-Control: no-store`.
-A forwarding response stops setup. Keep real supplier/production keys and scheduled triggers absent; use
-no ordinary preview deployment workflow. This synthetic artifact can never be reused as the admitted app.
+real asset and action requests must return `403` with the exact body `Access denied` and
+`Cache-Control: no-store`. A Cloudflare edge error, such as error 1010, is an incomplete observation,
+not proof of Worker denial. A forwarding response stops setup. Keep real supplier/production keys and scheduled
+triggers absent; use no ordinary preview deployment workflow. This synthetic artifact can never be reused as
+the admitted app.
 
 ### Configure native admission and the approved dedicated domain
 
