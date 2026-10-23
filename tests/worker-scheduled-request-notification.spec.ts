@@ -199,7 +199,8 @@ test("hosted fictional notification replay retains one final effect", async () =
     });
   const result = async (worker: Miniflare, action: Action, input: unknown) => {
     const response = await invoke(worker, action, input);
-    expect(response.status).toBe(200);
+    const errorBody = response.status === 200 ? "" : await response.text();
+    expect(response.status, `${action}: ${errorBody}`).toBe(200);
     return response.json();
   };
   const observe = () =>
