@@ -42,6 +42,12 @@ type AccessBrowserFixture = {
   bookingCottageName: string;
 };
 
+const approvedOwnerPhoneByProject: Record<string, string> = {
+  mobile: "+9647510000000",
+  desktop: "+9647510000001",
+  worker: "+9647510000002",
+};
+
 const {
   accessBrowserFixture,
   ACCESS_REVIEW_DOCUMENT_FILENAME: reviewDocumentFilename,
@@ -1847,12 +1853,7 @@ test("an approved owner continues the first Cottage Profile and submits a privat
   page,
   request,
 }, testInfo) => {
-  const phoneByProject: Record<string, string> = {
-    mobile: "+9647510000000",
-    desktop: "+9647510000001",
-    worker: "+9647510000002",
-  };
-  const phone = phoneByProject[testInfo.project.name];
+  const phone = approvedOwnerPhoneByProject[testInfo.project.name];
   if (!phone) throw new Error("Approved owner browser fixture is unmapped");
   const checkDraftProgressLayout =
     testInfo.project.name === "mobile" || testInfo.project.name === "desktop";
@@ -2996,10 +2997,42 @@ test("a Platform Administrator reaches access only after authenticator MFA", asy
     page.getByRole("button", { name: "Abandon draft" }),
   ).toBeEnabled();
   await page.getByRole("link", { name: "Manage Cottage Profiles" }).click();
-  const submittedProfile = page
-    .getByRole("article")
-    .filter({ hasText: "Submitted for content approval" })
-    .last();
+  const ownerPhone = approvedOwnerPhoneByProject[testInfo.project.name];
+  if (!ownerPhone)
+    throw new Error("Approved owner browser fixture is unmapped");
+  const owner = findAccessFixtureUser(
+    await listAllAccessFixtureUsers(auditClient.auth.admin),
+    ownerPhone,
+  );
+  if (!owner || !uuidPattern.test(owner.id))
+    throw new Error("Approved owner fixture is missing or malformed");
+  const submittedCottageIds: unknown = JSON.parse(
+    database.runSql(`select coalesce(jsonb_agg(id), '[]'::jsonb)
+      from public.owner_application_cottage_profiles
+      where owner_user_id = '${owner.id}'::uuid
+        and name = 'Shaqlawa Orchard Cottage'
+        and status = 'submitted_for_content_approval';`),
+  );
+  if (
+    !Array.isArray(submittedCottageIds) ||
+    submittedCottageIds.length !== 1 ||
+    typeof submittedCottageIds[0] !== "string" ||
+    !uuidPattern.test(submittedCottageIds[0])
+  ) {
+    throw new Error(
+      "Expected exactly one submitted approved-owner Cottage Profile",
+    );
+  }
+  const submittedCottageHref = `/en/administrator/cottages/${submittedCottageIds[0]}`;
+  const submittedProfile = page.getByRole("article").filter({
+    has: page.locator(`a[href="${submittedCottageHref}"]`),
+  });
+  await expect(submittedProfile).toHaveCount(1);
+  await expect(
+    submittedProfile.getByText("Submitted for content approval", {
+      exact: true,
+    }),
+  ).toBeVisible();
   expect(await submittedProfile.locator("img").getAttribute("src")).toMatch(
     /^\/api\/cottage-profile-photos\/[0-9a-f-]{36}$/,
   );
