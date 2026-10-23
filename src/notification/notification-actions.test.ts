@@ -6,7 +6,7 @@ const { enabled, createClient, retry, revalidate } = vi.hoisted(() => ({
   revalidate: vi.fn(),
 }));
 vi.mock("@/booking-request/booking-request-test-runtime", () => ({
-  bookingRequestTestRuntimeIsEnabled: enabled,
+  fictionalSupplierEnvironment: enabled,
 }));
 vi.mock("@/access/supabase-server", () => ({
   createRequestSupabaseClient: createClient,
@@ -28,15 +28,15 @@ const form = () => {
 beforeEach(() => {
   vi.clearAllMocks();
 });
-it("does not construct retry delivery outside the exact local runtime", async () => {
-  enabled.mockReturnValue(false);
+it("does not construct retry delivery outside an admitted fictional runtime", async () => {
+  enabled.mockReturnValue(undefined);
   await expect(
     retryPaidConfirmationNotification({ status: "idle" }, form()),
   ).resolves.toEqual({ status: "unavailable" });
   expect(createClient).not.toHaveBeenCalled();
 });
 it("revalidates both actor routes after the database authorizes one same-receipt retry", async () => {
-  enabled.mockReturnValue(true);
+  enabled.mockReturnValue("local-test");
   createClient.mockResolvedValue({});
   retry.mockResolvedValue({ status: "queued" });
   await expect(
@@ -50,7 +50,7 @@ it("revalidates both actor routes after the database authorizes one same-receipt
   );
 });
 it("returns a safe failure state without revalidating when retry is denied", async () => {
-  enabled.mockReturnValue(true);
+  enabled.mockReturnValue("local-test");
   createClient.mockResolvedValue({});
   retry.mockRejectedValue(new Error("stale or unauthorized"));
   const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -66,7 +66,7 @@ it("returns a safe failure state without revalidating when retry is denied", asy
 });
 
 it("binds an event retry separately from the original receipt", async () => {
-  enabled.mockReturnValue(true);
+  enabled.mockReturnValue("local-test");
   createClient.mockResolvedValue({});
   retry.mockResolvedValue({ status: "queued" });
   const data = form();
@@ -80,7 +80,7 @@ it("binds an event retry separately from the original receipt", async () => {
   );
 });
 it("rejects a malformed event retry before constructing a client", async () => {
-  enabled.mockReturnValue(true);
+  enabled.mockReturnValue("local-test");
   const data = form();
   data.set("eventId", "wrong");
   await expect(
@@ -90,7 +90,7 @@ it("rejects a malformed event retry before constructing a client", async () => {
 });
 
 it("retries a request source without inventing a paid receipt", async () => {
-  enabled.mockReturnValue(true);
+  enabled.mockReturnValue("local-test");
   createClient.mockResolvedValue({});
   retry.mockResolvedValue({ status: "queued" });
   const data = form();
@@ -105,7 +105,7 @@ it("retries a request source without inventing a paid receipt", async () => {
   );
 });
 it("rejects a receiptless retry unless it has a valid event", async () => {
-  enabled.mockReturnValue(true);
+  enabled.mockReturnValue("local-test");
   const data = form();
   data.delete("receiptId");
   data.set("eventId", "not-an-event");

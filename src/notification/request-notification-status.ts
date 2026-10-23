@@ -1,6 +1,6 @@
 import "server-only";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
-import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "@/booking-request/booking-request-test-runtime";
 import {
   SupabaseBookingNotificationStatusRepository,
   type RequestNotificationStatus,
@@ -44,7 +44,7 @@ export async function loadRequestNotificationStatus(
   reference: string,
   role: "customer" | "cottage_owner",
 ): Promise<RequestNotificationPresentation> {
-  if (!bookingRequestTestRuntimeIsEnabled()) return { status: "unavailable" };
+  if (!fictionalSupplierEnvironment()) return { status: "unavailable" };
   try {
     const notices = await withinRequestNotificationStatusDeadline(
       async (signal) => {

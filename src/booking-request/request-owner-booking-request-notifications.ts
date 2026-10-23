@@ -4,10 +4,10 @@ import { createRequestSupabaseClient } from "@/access/supabase-server";
 
 import { ownerBookingRequestNotificationDisplay } from "./booking-request-display";
 import { listOwnerBookingRequestNotifications } from "./owner-booking-request-notifications";
-import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "./booking-request-test-runtime";
 
 export async function loadOwnerBookingRequestNotifications() {
-  if (!bookingRequestTestRuntimeIsEnabled()) return undefined;
+  if (!fictionalSupplierEnvironment()) return undefined;
   const notifications = await listOwnerBookingRequestNotifications(
     await createRequestSupabaseClient(),
   );

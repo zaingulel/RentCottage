@@ -7,7 +7,7 @@ import {
   isBookingRequestReference,
   isIdentifier,
 } from "./booking-request-identifiers";
-import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "./booking-request-test-runtime";
 import type {
   ConfirmedBookingCommand,
   ConfirmedBookingManagementResult,
@@ -160,7 +160,7 @@ export async function manageConfirmedBooking(
   _previous: BookingManagementActionState,
   form: FormData,
 ): Promise<BookingManagementActionState> {
-  if (!bookingRequestTestRuntimeIsEnabled()) return { status: "unavailable" };
+  if (!fictionalSupplierEnvironment()) return { status: "unavailable" };
   const submission = submissionFrom(form);
   if (!submission) return { status: "invalid" };
   const result = await createRequestConfirmedBookingManagement().run(

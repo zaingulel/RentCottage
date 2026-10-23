@@ -27,7 +27,7 @@ import type {
 } from "./booking-request-submission";
 import { createRequestBookingRequestSubmission } from "./request-booking-request-submission";
 import { isContactSafeBookingRequestText } from "./booking-request-content";
-import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "./booking-request-test-runtime";
 import { isIdentifier } from "./booking-request-identifiers";
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -187,7 +187,7 @@ function inputFrom(
 export async function submitBookingRequest(
   value: unknown,
 ): Promise<SubmissionResult> {
-  if (!bookingRequestTestRuntimeIsEnabled()) {
+  if (!fictionalSupplierEnvironment()) {
     return { status: "payment-unavailable" };
   }
   const input = inputFrom(value);

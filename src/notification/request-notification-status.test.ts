@@ -2,14 +2,14 @@ import { afterEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
-  runtime: vi.fn(() => true),
+  runtime: vi.fn(() => "local-test"),
   createClient: vi.fn(async () => ({ rpc: mocks.rpc })),
 }));
 vi.mock("@/access/supabase-server", () => ({
   createRequestSupabaseClient: mocks.createClient,
 }));
 vi.mock("@/booking-request/booking-request-test-runtime", () => ({
-  bookingRequestTestRuntimeIsEnabled: mocks.runtime,
+  fictionalSupplierEnvironment: mocks.runtime,
 }));
 import { loadRequestNotificationStatus } from "./request-notification-status";
 import { SupabaseBookingNotificationStatusRepository } from "./notification-status-repository";

@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { createRequestSupabaseClient } from "@/access/supabase-server";
 import { isLocale } from "@/i18n/routing";
 import { SupabaseBookingNotificationStatusRepository } from "./notification-status-repository";
-import { bookingRequestTestRuntimeIsEnabled } from "@/booking-request/booking-request-test-runtime";
+import { fictionalSupplierEnvironment } from "@/booking-request/booking-request-test-runtime";
 import {
   isBookingRequestReference,
   isIdentifier,
@@ -17,7 +17,7 @@ export async function retryPaidConfirmationNotification(
   _previous: RetryPaidConfirmationNotificationState,
   formData: FormData,
 ): Promise<RetryPaidConfirmationNotificationState> {
-  if (!bookingRequestTestRuntimeIsEnabled()) return { status: "unavailable" };
+  if (!fictionalSupplierEnvironment()) return { status: "unavailable" };
   const locale = formData.get("locale");
   const reference = formData.get("reference");
   const receiptId = formData.get("receiptId");

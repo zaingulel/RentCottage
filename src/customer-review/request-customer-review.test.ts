@@ -30,7 +30,7 @@ vi.mock("@/config/server-runtime", () => ({
 
 afterEach(() => vi.unstubAllEnvs());
 
-it("admits review services only in the exact local test runtime", async () => {
+it("preserves local review and translation admission while refusing other targets", async () => {
   const localEnvironment = {
     APP_ENVIRONMENT: "test",
     SUPABASE_PROJECT_REF: "local-test",

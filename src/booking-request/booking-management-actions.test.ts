@@ -33,7 +33,7 @@ vi.mock("./supabase-booking-cancellation", () => ({
   SupabaseBookingCancellationRepository: class {},
 }));
 vi.mock("./booking-request-test-runtime", () => ({
-  bookingRequestTestRuntimeIsEnabled: runtime,
+  fictionalSupplierEnvironment: runtime,
 }));
 vi.mock("./booking-financial-view", () => ({ getBookingFinancialView: view }));
 vi.mock("./request-booking-settlement", () => ({
@@ -61,7 +61,7 @@ const form = (values: Record<string, string | undefined> = {}) => {
 describe("confirmed booking command authority", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    runtime.mockReturnValue(true);
+    runtime.mockReturnValue("local-test");
     client.auth.getUser.mockResolvedValue({
       data: { user: { id: "actor" } },
       error: null,
@@ -213,7 +213,7 @@ describe("confirmed booking command authority", () => {
     },
   );
   it("keeps the exact nonproduction runtime gate", async () => {
-    runtime.mockReturnValue(false);
+    runtime.mockReturnValue(undefined);
     expect(await manageConfirmedBooking({ status: "idle" }, form())).toEqual({
       status: "unavailable",
     });
@@ -349,7 +349,7 @@ describe("confirmed booking command authority", () => {
 describe("payout command authority", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    runtime.mockReturnValue(true);
+    runtime.mockReturnValue("local-test");
     client.auth.getUser.mockResolvedValue({
       data: { user: { id: "actor" } },
       error: null,
@@ -461,7 +461,7 @@ describe("confirmed booking form submission", () => {
     });
   beforeEach(() => {
     vi.clearAllMocks();
-    runtime.mockReturnValue(true);
+    runtime.mockReturnValue("local-test");
     client.auth.getUser.mockResolvedValue({
       data: { user: { id: "actor" } },
       error: null,
@@ -783,7 +783,7 @@ describe("confirmed booking form submission", () => {
     },
   );
   it("stays unavailable for a malformed form when the runtime is off", async () => {
-    runtime.mockReturnValue(false);
+    runtime.mockReturnValue(undefined);
     expect(
       await manageConfirmedBooking(
         { status: "idle" },
