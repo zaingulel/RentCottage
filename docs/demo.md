@@ -70,7 +70,9 @@ verification. Do not blindly re-apply migrations or repair history.
 
 ### Bootstrap a deny-all Worker
 
-Use reviewed merged source with null pins in `src/config/hosted-demo-target.ts`. Require an isolated shell
+This bootstrap procedure applies before initial target-pin activation. Use reviewed merged source with null
+pins in `src/config/hosted-demo-target.ts`. After activation, roll back using the captured denied Worker
+version. Never clear pins in an unreviewed local tree or reuse an admitted artifact as bootstrap. Require an isolated shell
 without inherited production credentials or ignored environment files injecting hosted or real settings.
 Build the existing entrypoint's OpenNext dependency with only the harmless synthetic settings below.
 Export those same settings for the secret scan and the admission test's preview startup server. These are
