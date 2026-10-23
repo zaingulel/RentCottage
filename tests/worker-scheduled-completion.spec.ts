@@ -449,6 +449,7 @@ test("hosted native schedule admits only the exact demo and awaits all five drai
   };
   const started: string[] = [];
   const events: string[] = [];
+  const diagnostics: string[] = [];
   let notificationResults: readonly NotificationDeliveryResult[] = [];
   let rejected: string | undefined;
   let held: string | undefined;
@@ -467,8 +468,28 @@ test("hosted native schedule admits only the exact demo and awaits all five drai
           compatibilityDate: wrangler.compatibility_date,
           compatibilityFlags: wrangler.compatibility_flags,
           manifest: {
-            mainModule: "worker.js",
+            mainModule: "observer.js",
             modules: {
+              "observer.js": {
+                type: "esm",
+                contents: `import worker from "./worker.js";
+export default {
+  fetch(request, environment, context) {
+    return worker.fetch(request, environment, context);
+  },
+  async scheduled(controller, environment, context) {
+    try {
+      return await worker.scheduled(controller, environment, context);
+    } catch (error) {
+      await fetch("https://schedule-observation.test/failure", {
+        method: "POST",
+        body: error.message,
+      });
+      throw error;
+    }
+  },
+};`,
+              },
               "worker.js": {
                 type: "esm",
                 contents: bundled.outputFiles[0].text,
@@ -489,6 +510,10 @@ test("hosted native schedule admits only the exact demo and awaits all five drai
               const url = new URL(request.url);
               if (url.origin !== "https://schedule-observation.test")
                 throw new Error("Unexpected native composition egress");
+              if (url.pathname === "/failure" && request.method === "POST") {
+                diagnostics.push(await request.text());
+                return new NativeResponse("Observed");
+              }
               const [, stage, service] = url.pathname.split("/");
               if (
                 !["started", "finished"].includes(stage) ||
@@ -598,6 +623,7 @@ test("hosted native schedule admits only the exact demo and awaits all five drai
     await runtime.setOptions(options());
     notificationResults = [];
     for (const failure of [undefined, "expiry"]) {
+      const diagnosticOffset = diagnostics.length;
       started.length = 0;
       events.length = 0;
       rejected = failure;
@@ -622,6 +648,11 @@ test("hosted native schedule admits only the exact demo and awaits all five drai
       expect(releaseHeld).toBeDefined();
       releaseHeld!();
       await assertOutcome(await invocation, failure ? 500 : 200);
+      expect(diagnostics.slice(diagnosticOffset)).toEqual(
+        failure
+          ? ["Hosted demo scheduled processing is incomplete: expiry"]
+          : [],
+      );
       expect(events.indexOf("finished:completion")).toBeLessThan(
         events.indexOf("native:finished"),
       );
