@@ -10,15 +10,12 @@ import {
   SupabaseSimulatorEffectRepository,
 } from "@/payment/supabase-payment-operation-execution";
 import { createBookingRequestPaymentObservation } from "./booking-request-payment-observation";
-import { bookingRequestTestRuntimeIsEnabled } from "./booking-request-test-runtime-core";
+import { fictionalSupplierEnvironment } from "./booking-request-test-runtime-core";
 import { SupabaseBookingRequestPaymentObservationRepository } from "./supabase-booking-request-payment-observation";
 
-export interface PaymentOperationsEnvironment {
-  readonly APP_ENVIRONMENT?: string;
-  readonly SUPABASE_PROJECT_REF?: string;
-  readonly SUPABASE_URL?: string;
-  readonly SUPABASE_SECRET_KEY?: string;
-}
+export type PaymentOperationsEnvironment = NonNullable<
+  Parameters<typeof fictionalSupplierEnvironment>[0]
+>;
 
 export interface PaymentOperations {
   readonly serviceClient: SupabaseClient;
@@ -29,9 +26,9 @@ export interface PaymentOperations {
 export function preparePaymentOperations(
   environment: PaymentOperationsEnvironment,
 ): (() => PaymentOperations) | undefined {
+  const supplierEnvironment = fictionalSupplierEnvironment(environment);
   const secretKey = environment.SUPABASE_SECRET_KEY;
-  if (!bookingRequestTestRuntimeIsEnabled(environment) || !secretKey)
-    return undefined;
+  if (!supplierEnvironment || !secretKey) return undefined;
   return () => {
     const serviceClient = createClient(
       environment.SUPABASE_URL as string,
@@ -39,6 +36,7 @@ export function preparePaymentOperations(
       { auth: { autoRefreshToken: false, persistSession: false } },
     );
     const provider = new DurablePaymentSimulator({
+      environment: supplierEnvironment,
       effects: new SupabaseSimulatorEffectRepository(serviceClient),
       now: () => new Date().toISOString(),
     });
