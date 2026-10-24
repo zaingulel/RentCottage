@@ -15,7 +15,7 @@ export type RequestAccount =
 export const resolveRequestAccount = cache(
   async (): Promise<RequestAccount> => {
     try {
-      const client = await createRequestSupabaseClient();
+      const client = await createRequestSupabaseClient("read-only");
       const { data, error } = await client.auth.getUser();
       if (
         error?.name === "AuthSessionMissingError" ||
