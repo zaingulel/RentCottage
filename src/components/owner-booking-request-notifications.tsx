@@ -396,7 +396,9 @@ export function OwnerBookingRequestNotifications({
         >
           {containsPaymentOrCancellationState ? copy.paymentTitle : copy.title}
         </Heading>
-        <p>{containsPaymentOrCancellationState ? copy.paymentIntro : copy.intro}</p>
+        <p>
+          {containsPaymentOrCancellationState ? copy.paymentIntro : copy.intro}
+        </p>
       </HeadingWrapper>
       {notifications.length === 0 ? <p>{copy.empty}</p> : null}
       {rows.length > 0 ? (
