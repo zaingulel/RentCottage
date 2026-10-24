@@ -1875,11 +1875,6 @@ test.describe("retained cancellation and refund controls", () => {
         card.getByText(copy.responseDeadline, { exact: true }),
       ).toHaveCount(0);
       await expect(card.getByRole("button")).toHaveCount(0);
-      expect(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= window.innerWidth,
-        ),
-      ).toBe(true);
       const details = card.getByRole("link", {
         name: copy.viewRequest,
         exact: true,
@@ -1902,6 +1897,11 @@ test.describe("retained cancellation and refund controls", () => {
       try {
         await page.setViewportSize({ width: 390, height: 844 });
         await expect(card).toBeVisible();
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= window.innerWidth,
+          ),
+        ).toBe(true);
         const phoneImage = testInfo.outputPath(
           `owner-cancelled-dashboard-${locale}-phone.png`,
         );

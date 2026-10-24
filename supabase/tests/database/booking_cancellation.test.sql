@@ -353,7 +353,7 @@ select is((select (result->0)-array['databaseNow','cancellationStatus','paymentS
   (select (result->0)-array['databaseNow','cancellationStatus','paymentStatus','paymentRequiredWindow','paymentRequiredExpiry'] from owner_notice_before),
   'cancelled Owner notice preserves original money purchased history and status receipts');
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001003',true);
-select is(public.list_owner_booking_request_notifications(),'[]'::jsonb,'another participant cannot read the cancelled Owner notice');
+select is(public.list_owner_booking_request_notifications(),'[]'::jsonb,'a Customer cannot read the cancelled Owner notice');
 reset role;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
 set local role authenticated;
