@@ -14,6 +14,10 @@ const { actOnBookingRequest, refresh } = vi.hoisted(() => ({
 vi.mock("@/booking-request/lifecycle-actions", () => ({ actOnBookingRequest }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
+import { bookingManagementMessages } from "@/i18n/booking-management-messages";
+import { ownerBookingRequestMessages } from "@/i18n/owner-booking-request-messages";
+import { bookingRequestDisplayStatusMessages } from "@/i18n/booking-request-status-messages";
+import { formatFilsAsIqd, formatIqd } from "@/i18n/format";
 import { OwnerBookingRequestNotifications } from "./owner-booking-request-notifications";
 import {
   ownerDisplayFixtures,
@@ -81,31 +85,129 @@ describe("Owner Booking Request notifications", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
   it("replaces the mounted card and its action state on authoritative payment updates", () => {
-    const view = render(
-      <OwnerBookingRequestNotifications
-        locale="en"
-        notifications={[pendingNotification]}
-      />,
-    );
-    view.rerender(
-      <OwnerBookingRequestNotifications
-        locale="en"
-        notifications={[
-          { ...pendingNotification, status: "capture-processing" },
-        ]}
-      />,
-    );
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Payment confirmation pending",
-    );
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    view.rerender(
-      <OwnerBookingRequestNotifications
-        locale="en"
-        notifications={[{ ...pendingNotification, status: "paid-confirmed" }]}
-      />,
-    );
-    expect(screen.getByRole("status")).toHaveTextContent("Booking confirmed");
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      const copy = ownerBookingRequestMessages[locale];
+      const management = bookingManagementMessages[locale];
+      const receipt = {
+        id: "00000000-0000-4000-8000-000000000034",
+        status: "accepted" as const,
+        createdAt: "2099-08-21T18:00:00.000Z",
+      };
+      const original = {
+        ...pendingNotification,
+        statusNotifications: [receipt],
+      };
+      const view = render(
+        <OwnerBookingRequestNotifications
+          locale={locale}
+          notifications={[original]}
+        />,
+      );
+      expect(screen.getAllByRole("button")).toHaveLength(2);
+      vi.advanceTimersToNextTimer();
+      expect(refresh).toHaveBeenCalled();
+      view.rerender(
+        <OwnerBookingRequestNotifications
+          locale={locale}
+          notifications={[{ ...original, status: "capture-processing" }]}
+        />,
+      );
+      expect(screen.getByRole("status")).toHaveTextContent(
+        bookingRequestDisplayStatusMessages[locale]["capture-processing"],
+      );
+      expect(screen.queryByRole("button")).not.toBeInTheDocument();
+      view.rerender(
+        <OwnerBookingRequestNotifications
+          locale={locale}
+          notifications={[{ ...original, status: "paid-confirmed" }]}
+        />,
+      );
+      expect(screen.getByRole("status")).toHaveTextContent(
+        bookingRequestDisplayStatusMessages[locale]["paid-confirmed"],
+      );
+      // Resume a live payment projection so the terminal update must clear its timer.
+      view.rerender(
+        <OwnerBookingRequestNotifications
+          locale={locale}
+          notifications={[
+            {
+              ...original,
+              status: "payment-required",
+              paymentRequiredWindow: {
+                recordedAt: "2099-08-21T09:00:00.000Z",
+                deadline: "2099-08-21T09:20:00.000Z",
+                phase: "open",
+              },
+            },
+          ]}
+        />,
+      );
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+      refresh.mockClear();
+      view.rerender(
+        <OwnerBookingRequestNotifications
+          locale={locale}
+          notifications={[{ ...original, status: "cancelled" }]}
+        />,
+      );
+      const card = screen.getByRole("article", {
+        name: original.bookingRequestReference,
+      });
+      expect(within(card).getByRole("status")).toHaveTextContent(
+        management.cancelled,
+      );
+      expect(
+        screen.getByRole("heading", { name: copy.paymentTitle }),
+      ).toBeVisible();
+      expect(screen.getByText(copy.paymentIntro)).toBeVisible();
+      for (const [label, amount] of [
+        [management.originalPrice, formatIqd(original.bookingPriceIqd, locale)],
+        [
+          management.originalCommission,
+          formatFilsAsIqd(original.marketplaceCommissionFils, locale),
+        ],
+        [
+          management.originalShare,
+          formatFilsAsIqd(original.ownerNetFils, locale),
+        ],
+      ])
+        expect(
+          within(card).getByText(label).nextElementSibling,
+        ).toHaveTextContent(amount);
+      expect(
+        within(card).getByText(copy.customer).nextElementSibling,
+      ).toHaveTextContent(original.customerName);
+      expect(
+        within(card).getByText(copy.bookingPeriod).nextElementSibling,
+      ).toHaveTextContent("Evening");
+      expect(
+        within(card).getByText(copy.notification).nextElementSibling,
+      ).toHaveTextContent(bookingRequestDisplayStatusMessages[locale].accepted);
+      expect(
+        within(card).queryByText(copy.responseDeadline),
+      ).not.toBeInTheDocument();
+      expect(
+        within(card).queryByText(
+          {
+            en: "Payment deadline",
+            ar: "موعد الدفع",
+            ckb: "کاتی کۆتایی پارەدان",
+          }[locale],
+        ),
+      ).not.toBeInTheDocument();
+      expect(within(card).queryByRole("button")).not.toBeInTheDocument();
+      expect(
+        within(card).getByRole("link", { name: copy.viewRequest }),
+      ).toHaveAttribute(
+        "href",
+        `/${locale}/owner/booking-requests/${original.bookingRequestReference}`,
+      );
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000);
+      expect(refresh).not.toHaveBeenCalled();
+      view.unmount();
+    }
   });
   it("shows only the future notice when the privileged test path is unavailable", () => {
     render(

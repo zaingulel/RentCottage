@@ -1,7 +1,6 @@
 import type { CustomerBookingRequest } from "./customer-booking-request";
 import type { OwnerBookingRequestNotification } from "./owner-booking-request-notifications";
 import {
-  isBookingRequestStatus,
   type BookingRequestPaymentStatus,
   type BookingRequestStatus,
 } from "./booking-request-status";
@@ -19,19 +18,23 @@ export type CustomerBookingRequestDisplay = Omit<
 
 export type OwnerBookingRequestNotificationDisplay = Omit<
   OwnerBookingRequestNotification,
-  "status" | "paymentStatus"
+  "status" | "paymentStatus" | "cancellationStatus"
 > & {
-  readonly status: BookingRequestDisplayStatus;
+  readonly status: BookingRequestDisplayStatus | "cancelled";
 };
 
 export function isPaymentDisplayStatus(
-  status: BookingRequestDisplayStatus,
+  status: BookingRequestDisplayStatus | "cancelled",
 ): status is BookingRequestPaymentStatus {
-  return !isBookingRequestStatus(status);
+  return (
+    status === "capture-processing" ||
+    status === "payment-required" ||
+    status === "paid-confirmed"
+  );
 }
 
 export function shouldRefreshBookingRequestStatus(
-  status: BookingRequestDisplayStatus,
+  status: BookingRequestDisplayStatus | "cancelled",
 ): boolean {
   return (
     status === "pending" ||
@@ -42,13 +45,15 @@ export function shouldRefreshBookingRequestStatus(
 }
 
 export function isWaitingBookingRequest(request: {
-  readonly status: BookingRequestDisplayStatus;
+  readonly status: BookingRequestDisplayStatus | "cancelled";
 }): boolean {
   return request.status === "pending";
 }
 
 export function waitingBookingRequestCount(
-  requests: readonly { readonly status: BookingRequestDisplayStatus }[],
+  requests: readonly {
+    readonly status: BookingRequestDisplayStatus | "cancelled";
+  }[],
 ): number {
   return requests.filter(isWaitingBookingRequest).length;
 }
@@ -60,10 +65,14 @@ export function customerBookingRequestDisplay({
   return { ...request, status: paymentStatus ?? request.status };
 }
 export function ownerBookingRequestNotificationDisplay({
+  cancellationStatus,
   paymentStatus,
   ...notification
 }: OwnerBookingRequestNotification): OwnerBookingRequestNotificationDisplay {
-  return { ...notification, status: paymentStatus ?? notification.status };
+  return {
+    ...notification,
+    status: cancellationStatus ?? paymentStatus ?? notification.status,
+  };
 }
 
 export function canRecoverBookingRequestPayment(

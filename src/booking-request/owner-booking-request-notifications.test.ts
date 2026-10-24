@@ -8,6 +8,7 @@ const commonFields = {
   bookingRequestReference: "RC-REQ-AAAAAAAAAAAAAAAA",
   status: "pending",
   paymentStatus: null,
+  cancellationStatus: null,
   paymentRequiredWindow: null,
   paymentRequiredExpiry: null,
   customerName: "Ava Hassan",
@@ -48,6 +49,61 @@ const projection = {
 };
 
 describe("Owner Booking Request notifications", () => {
+  it("retains authoritative cancellation and rejects inconsistent cancellation projections", async () => {
+    const cancelled = {
+      ...notification,
+      status: "accepted",
+      cancellationStatus: "cancelled",
+    };
+    await expect(
+      listOwnerBookingRequestNotifications(
+        clientReturning([notification, cancelled]),
+      ),
+    ).resolves.toEqual([
+      projection,
+      { ...projection, status: "accepted", cancellationStatus: "cancelled" },
+    ]);
+    const missing: Record<string, unknown> = { ...notification };
+    delete missing.cancellationStatus;
+    const window = {
+      recordedAt: "2099-08-21T09:00:00.000Z",
+      deadline: "2099-08-21T09:20:00.000Z",
+      databaseNow: "2099-08-21T09:20:00.000Z",
+    };
+    for (const invalid of [
+      missing,
+      ...[undefined, "pending", "refunded", false, 1, {}].map(
+        (cancellationStatus) => ({ ...cancelled, cancellationStatus }),
+      ),
+      ...["pending", "processing", "declined", "withdrawn", "expired"].map(
+        (status) => ({ ...cancelled, status }),
+      ),
+      ...["capture-processing", "payment-required", "paid-confirmed"].map(
+        (paymentStatus) => ({ ...cancelled, paymentStatus }),
+      ),
+      { ...cancelled, paymentRequiredWindow: window },
+      {
+        ...cancelled,
+        paymentRequiredExpiry: {
+          status: "processing",
+          deadline: window.deadline,
+        },
+      },
+      {
+        ...cancelled,
+        paymentStatus: "payment-required",
+        paymentRequiredWindow: window,
+        paymentRequiredExpiry: {
+          status: "processing",
+          deadline: window.deadline,
+        },
+      },
+    ]) {
+      await expect(
+        listOwnerBookingRequestNotifications(clientReturning([invalid])),
+      ).rejects.toThrow("data is invalid");
+    }
+  });
   it("retains the elapsed Payment Required window from database time", async () => {
     const client = {
       rpc: vi.fn().mockResolvedValue({

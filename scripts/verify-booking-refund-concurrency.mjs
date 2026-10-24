@@ -26,7 +26,7 @@ try {
     return source.slice(start, end);
   };
   const request = "60000000-0000-4000-8000-000000001001";
-  const cleanup = confirmedBookingCleanup();
+  const cleanup = confirmedBookingCleanup({ terminalRequest: true });
   const resetRefunds = refundReset();
   const administrator = `set local role authenticated; select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000003801',true); select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000003801","aal":"aal2"}',true);`;
   const exception = (key, price) =>
@@ -37,6 +37,13 @@ try {
   harness.guardDisposableLocalDatabase();
   try {
     harness.runSql(resetRefunds + cleanup);
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.owner_request_notifications where booking_request_id='${request}';`,
+      ),
+      "0",
+      "cleanup removes the owned request notice",
+    );
     harness.runSql(
       `${fixture("PAYMENT EVIDENCE FIXTURE")} ${fixture("CANCELLATION FIXTURE")} select pg_temp.seed_cancellation_booking('2101-01-01');`,
     );
@@ -163,6 +170,13 @@ try {
     for (const session of sessions)
       if (!session.exit) session.child.kill("SIGTERM");
     harness.runSql(resetRefunds + cleanup);
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.owner_request_notifications where booking_request_id='${request}';`,
+      ),
+      "0",
+      "cleanup removes the owned request notice",
+    );
   }
   timingOutcome = "passed";
 } finally {

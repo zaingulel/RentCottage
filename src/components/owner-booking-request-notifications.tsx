@@ -11,7 +11,6 @@ import {
   isPaymentDisplayStatus,
   isWaitingBookingRequest,
   shouldRefreshBookingRequestStatus,
-  type BookingRequestDisplayStatus,
   type OwnerBookingRequestNotificationDisplay,
 } from "@/booking-request/booking-request-display";
 import {
@@ -25,6 +24,7 @@ import {
   ownerRequestPeriod,
   ownerRequestTimeLeft,
 } from "@/i18n/owner-booking-request-messages";
+import { bookingManagementMessages } from "@/i18n/booking-management-messages";
 import { accessMessages } from "@/i18n/access-messages";
 import type { Locale } from "@/i18n/routing";
 import {
@@ -54,9 +54,9 @@ export function OwnerBookingRequestCard({
   const copy = ownerBookingRequestMessages[locale];
   const coverMediaUrl =
     presentation === "page" ? notification.coverMediaUrl : null;
-  const [status, setStatus] = useState<BookingRequestDisplayStatus>(
-    notification.status,
-  );
+  const [status, setStatus] = useState<
+    OwnerBookingRequestNotificationDisplay["status"]
+  >(notification.status);
   const paymentDeadline =
     notification.paymentRequiredExpiry?.deadline ??
     (status === "payment-required"
@@ -108,13 +108,17 @@ export function OwnerBookingRequestCard({
               : undefined
           }
         >
-          <BookingRequestStatusContent
-            locale={locale}
-            status={status}
-            role="owner"
-            paymentRequiredPhase={notification.paymentRequiredWindow?.phase}
-            paymentRequiredExpiry={notification.paymentRequiredExpiry}
-          />
+          {status === "cancelled" ? (
+            bookingManagementMessages[locale].cancelled
+          ) : (
+            <BookingRequestStatusContent
+              locale={locale}
+              status={status}
+              role="owner"
+              paymentRequiredPhase={notification.paymentRequiredWindow?.phase}
+              paymentRequiredExpiry={notification.paymentRequiredExpiry}
+            />
+          )}
         </span>
       </header>
       <dl className="fact-list">
@@ -153,7 +157,8 @@ export function OwnerBookingRequestCard({
             <dd>{notification.bookingNote}</dd>
           </div>
         ) : null}
-        {!isPaymentDisplayStatus(status) &&
+        {status !== "cancelled" &&
+        !isPaymentDisplayStatus(status) &&
         !notification.paymentRequiredExpiry ? (
           <div>
             <dt>{copy.responseDeadline}</dt>
@@ -167,18 +172,30 @@ export function OwnerBookingRequestCard({
           </div>
         ) : null}
         <div>
-          <dt>{copy.bookingPrice}</dt>
+          <dt>
+            {status === "cancelled"
+              ? bookingManagementMessages[locale].originalPrice
+              : copy.bookingPrice}
+          </dt>
           <dd>{formatIqd(notification.bookingPriceIqd, locale)}</dd>
         </div>
         <div>
-          <dt>{copy.commission}</dt>
+          <dt>
+            {status === "cancelled"
+              ? bookingManagementMessages[locale].originalCommission
+              : copy.commission}
+          </dt>
           <dd>
             {formatFilsAsIqd(notification.marketplaceCommissionFils, locale)}{" "}
             (10%)
           </dd>
         </div>
         <div>
-          <dt>{copy.ownerNet}</dt>
+          <dt>
+            {status === "cancelled"
+              ? bookingManagementMessages[locale].originalShare
+              : copy.ownerNet}
+          </dt>
           <dd>{formatFilsAsIqd(notification.ownerNetFils, locale)}</dd>
         </div>
         <div>
@@ -211,6 +228,14 @@ export function OwnerBookingRequestCard({
             if (next !== "pending" && next !== "processing") refresh?.();
           }}
         />
+      ) : notification.status === "cancelled" ? (
+        <ActionLink
+          kind="text"
+          prefetch={false}
+          href={`/${locale}/owner/booking-requests/${notification.bookingRequestReference}`}
+        >
+          {copy.viewRequest}
+        </ActionLink>
       ) : notification.status === "paid-confirmed" ? (
         <Link
           prefetch={false}
@@ -235,9 +260,9 @@ function OwnerBookingRequestRow({
   focusSuccessorId?: string;
 }) {
   const copy = ownerBookingRequestMessages[locale];
-  const [status, setStatus] = useState<BookingRequestDisplayStatus>(
-    notification.status,
-  );
+  const [status, setStatus] = useState<
+    OwnerBookingRequestNotificationDisplay["status"]
+  >(notification.status);
   return (
     <article
       aria-label={notification.bookingRequestReference}
@@ -275,7 +300,9 @@ function OwnerBookingRequestRow({
           {copy.viewRequest}
         </ActionLink>
         <span role="status" aria-live="polite">
-          {status === "pending" ? null : (
+          {status === "pending" ? null : status === "cancelled" ? (
+            bookingManagementMessages[locale].cancelled
+          ) : (
             <BookingRequestStatusContent
               locale={locale}
               status={status}
@@ -327,9 +354,11 @@ export function OwnerBookingRequestNotifications({
       </section>
     );
   }
-  const containsPaymentDisplayState = notifications.some(
+  const containsPaymentOrCancellationState = notifications.some(
     ({ status, paymentRequiredExpiry }) =>
-      isPaymentDisplayStatus(status) || paymentRequiredExpiry !== null,
+      status === "cancelled" ||
+      isPaymentDisplayStatus(status) ||
+      paymentRequiredExpiry !== null,
   );
   const Heading = presentation === "page" ? "h1" : "h2";
   const HeadingWrapper = presentation === "page" ? "header" : "div";
@@ -365,9 +394,9 @@ export function OwnerBookingRequestNotifications({
               : "section-title action-focus-target"
           }
         >
-          {containsPaymentDisplayState ? copy.paymentTitle : copy.title}
+          {containsPaymentOrCancellationState ? copy.paymentTitle : copy.title}
         </Heading>
-        <p>{containsPaymentDisplayState ? copy.paymentIntro : copy.intro}</p>
+        <p>{containsPaymentOrCancellationState ? copy.paymentIntro : copy.intro}</p>
       </HeadingWrapper>
       {notifications.length === 0 ? <p>{copy.empty}</p> : null}
       {rows.length > 0 ? (

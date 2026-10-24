@@ -132,6 +132,9 @@ set local role service_role;
 create temp table confirmation_capture as select public.complete_booking_request_capture('60000000-0000-4000-8000-000000001001',1,(select (result#>>'{permit,leaseToken}')::uuid from confirmation_capture_lease),(select result from confirmation_capture_result)) result;
 select public.finalize_booking_request_confirmation('60000000-0000-4000-8000-000000001001',(select result->'snapshot' from confirmation_capture));
 reset role;
+insert into public.owner_request_notifications (booking_request_id,owner_user_id,created_at)
+select id,owner_user_id,created_at from public.booking_requests
+where id='60000000-0000-4000-8000-000000001001';
 insert into auth.users(id,aud,role,email,email_confirmed_at) values('10000000-0000-4000-8000-000000003801','authenticated','authenticated','cancellation-admin@example.test',now());
 insert into public.account_contexts(user_id,role) values('10000000-0000-4000-8000-000000003801','platform_administrator');
 
@@ -324,6 +327,13 @@ select ok(not exists(select 1 from public.booking_cancellations) and (select sta
 create temp table preserved_snapshot as select quote_payload,intent_payload,acceptance_evidence from public.booking_snapshots;
 create temp table preserved_ranges as select access_ranges from public.cottage_booking_period_commitments;
 set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
+create temp table owner_notice_before as select public.list_owner_booking_request_notifications() result;
+select is((select jsonb_array_length(result) from owner_notice_before),1,'the owning Owner has exactly one notice before cancellation');
+select is((select result#>'{0,cancellationStatus}' from owner_notice_before),'null'::jsonb,'Owner notice has no cancellation before the authoritative transition');
+select is((select jsonb_build_array(result#>'{0,bookingPriceIqd}',result#>'{0,marketplaceCommissionFils}',result#>'{0,ownerNetFils}') from owner_notice_before),
+  '[110000,11000000,99000000]'::jsonb,'Owner notice retains the purchased price commission and share before cancellation');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
 create temp table cancelled_result as select public.commit_booking_cancellation('60000000-0000-4000-8000-000000001001','90000000-0000-4000-8000-000000003801','customer',null,null,pg_temp.cancellation_decision('customer',true)) result;
 select is((select result->>'status' from cancelled_result),'cancelled','customer cancellation commits');
 select is((select result->'refundObligation' from cancelled_result),'{"bookingPriceFils":110000000,"bookingServiceFeeFils":5000000}'::jsonb,'entire captured price and service fee are owed');
@@ -333,6 +343,17 @@ select is(jsonb_array_length(public.list_booking_history('customer')),1,'custome
 select is(public.get_confirmed_booking_access('RC-REQ-0000000000001001'),null::jsonb,'retained history does not grant active private access');
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001001',true);
 select is(jsonb_array_length(public.list_booking_history('cottage_owner')),1,'owner history retains the cancelled booking');
+create temp table owner_notice_after as select public.list_owner_booking_request_notifications() result;
+select is((select jsonb_array_length(result) from owner_notice_after),1,'the owning Owner retains exactly one notice after cancellation');
+select is((select result#>>'{0,cancellationStatus}' from owner_notice_after),'cancelled','Owner notice projects the authoritative saved cancellation');
+select is((select result#>'{0,paymentStatus}' from owner_notice_after),'null'::jsonb,'cancelled Owner notice clears the obsolete payment status');
+select is((select result#>'{0,paymentRequiredWindow}' from owner_notice_after),'null'::jsonb,'cancelled Owner notice clears the obsolete payment window');
+select is((select result#>'{0,paymentRequiredExpiry}' from owner_notice_after),'null'::jsonb,'cancelled Owner notice clears the obsolete payment expiry');
+select is((select (result->0)-array['databaseNow','cancellationStatus','paymentStatus','paymentRequiredWindow','paymentRequiredExpiry'] from owner_notice_after),
+  (select (result->0)-array['databaseNow','cancellationStatus','paymentStatus','paymentRequiredWindow','paymentRequiredExpiry'] from owner_notice_before),
+  'cancelled Owner notice preserves original money purchased history and status receipts');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001003',true);
+select is(public.list_owner_booking_request_notifications(),'[]'::jsonb,'another participant cannot read the cancelled Owner notice');
 reset role;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000001002',true);
 set local role authenticated;

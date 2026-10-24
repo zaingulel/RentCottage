@@ -31,7 +31,8 @@ import { ownerBookingEarningsMessages as earningsMessages } from "../src/i18n/ow
 import { ownerBookingEarnings } from "../src/booking-request/owner-booking-earnings";
 import { messagingMessages } from "../src/i18n/messaging-messages";
 import { customerReviewMessages } from "../src/i18n/customer-review-messages";
-import { formatInteger } from "../src/i18n/format";
+import { formatInteger, formatIqd, formatFilsAsIqd } from "../src/i18n/format";
+import { ownerBookingRequestMessages } from "../src/i18n/owner-booking-request-messages";
 import type { Locale } from "../src/i18n/routing";
 const { createLocalSupabaseConcurrencyHarness } = createRequire(
   import.meta.url,
@@ -204,6 +205,7 @@ const clear = () => {
     stem: identity.stem,
     administrator: identity.administrator,
     exportAdministrator,
+    terminalRequest: true,
     completion: true,
     settlement: true,
   });
@@ -218,6 +220,7 @@ const clear = () => {
     JSON.parse(
       harness.runSql(`with owned as (select value::uuid id from jsonb_array_elements_text('${conversations}'::jsonb)) select jsonb_build_object(
     'requests',(select count(*) from public.booking_requests r where r.id='${request}'),
+    'ownerNotices',(select count(*) from public.owner_request_notifications where booking_request_id='${request}'),
     'links',(select count(*) from public.messaging_conversation_booking_requests l where l.booking_request_id='${request}' or l.conversation_id in (select id from owned)),
     'conversations',(select count(*) from public.messaging_conversations c where c.id in (select id from owned)),
     'messages',(select count(*) from public.messaging_messages m where m.conversation_id in (select id from owned)),
@@ -227,6 +230,7 @@ const clear = () => {
     ),
   ).toEqual({
     requests: 0,
+    ownerNotices: 0,
     links: 0,
     conversations: 0,
     messages: 0,
@@ -1836,6 +1840,67 @@ test.describe("retained cancellation and refund controls", () => {
       page.getByText("PRIVATE owner operational reason", { exact: true }),
     ).toHaveCount(0);
     await assertResponsiveDetails(page, "cottage_owner");
+    for (const locale of ["en", "ar", "ckb"] as const) {
+      const copy = ownerBookingRequestMessages[locale];
+      await page.goto(`/${locale}/owner/cottages`);
+      const card = page.getByRole("article", { name: reference, exact: true });
+      await expect(card).toBeVisible();
+      await expect(card.getByRole("status")).toHaveText(
+        messages[locale].cancelled,
+      );
+      await expect(
+        card.getByText(browserQuote.cottageName, { exact: true }),
+      ).toBeVisible();
+      await expect(
+        card
+          .getByText(copy.bookingPeriod, { exact: true })
+          .locator("xpath=following-sibling::dd[1]"),
+      ).toContainText("Morning");
+      await expectAmount(
+        card,
+        messages[locale].originalPrice,
+        formatIqd(110000, locale),
+      );
+      await expect(
+        card
+          .getByText(messages[locale].originalCommission, { exact: true })
+          .locator("xpath=following-sibling::dd[1]"),
+      ).toContainText(formatFilsAsIqd(11000000, locale));
+      await expectAmount(
+        card,
+        messages[locale].originalShare,
+        formatFilsAsIqd(99000000, locale),
+      );
+      await expect(
+        card.getByText(copy.responseDeadline, { exact: true }),
+      ).toHaveCount(0);
+      await expect(card.getByRole("button")).toHaveCount(0);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true);
+      const details = card.getByRole("link", {
+        name: copy.viewRequest,
+        exact: true,
+      });
+      await expect(details).toHaveAttribute(
+        "href",
+        `/${locale}/owner/booking-requests/${reference}`,
+      );
+      await details.focus();
+      await expect(details).toBeFocused();
+      await details.press("Enter");
+      await expect(
+        page.getByRole("heading", {
+          name: messages[locale].cancelled,
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(
+        page.getByText(messages[locale].noPayout, { exact: true }),
+      ).toBeVisible();
+    }
   });
   test("administrator approves exact partial exceptions then cancels with a privileged reason", async ({
     page,
