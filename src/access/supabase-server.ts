@@ -4,7 +4,9 @@ import { cookies } from "next/headers";
 import { getServerEnvironment } from "@/config/server-runtime";
 import { supabaseAuthCookieName } from "./supabase-auth-cookie";
 
-export async function createRequestSupabaseClient() {
+export async function createRequestSupabaseClient(
+  cookieAccess: "read-write" | "read-only" = "read-write",
+) {
   const cookieStore = await cookies();
   const { supabase } = getServerEnvironment();
 
@@ -13,6 +15,8 @@ export async function createRequestSupabaseClient() {
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (values) => {
+        // Revoked-session cleanup cannot write render cookies; middleware owns response persistence.
+        if (cookieAccess === "read-only") return;
         for (const { name, value, options } of values) {
           cookieStore.set(name, value, options);
         }
