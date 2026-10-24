@@ -42,6 +42,7 @@ export interface OwnerBookingRequestNotification {
   bookingRequestReference: string;
   status: BookingRequestStatus;
   paymentStatus: BookingRequestPaymentStatus | null;
+  readonly cancellationStatus: "cancelled" | null;
   paymentRequiredWindow: BookingRequestPaymentRequiredWindow | null;
   readonly paymentRequiredExpiry: BookingRequestPaymentRequiredExpiry | null;
   customerName: string;
@@ -71,6 +72,7 @@ const keys = new Set([
   "bookingRequestReference",
   "status",
   "paymentStatus",
+  "cancellationStatus",
   "paymentRequiredWindow",
   "paymentRequiredExpiry",
   "customerName",
@@ -125,6 +127,13 @@ function notificationFrom(
     typeof notification.bookingRequestReference !== "string" ||
     !/^RC-REQ-[A-F0-9]{16}$/.test(notification.bookingRequestReference) ||
     !isBookingRequestStatus(notification.status) ||
+    (notification.cancellationStatus !== null &&
+      notification.cancellationStatus !== "cancelled") ||
+    (notification.cancellationStatus === "cancelled" &&
+      (notification.status !== "accepted" ||
+        paymentStatus !== null ||
+        paymentRequiredWindow !== null ||
+        paymentRequiredExpiry !== null)) ||
     paymentStatus === undefined ||
     paymentRequiredWindow === undefined ||
     paymentRequiredExpiry === undefined ||
@@ -200,6 +209,7 @@ function notificationFrom(
     bookingRequestReference: notification.bookingRequestReference,
     status: notification.status,
     paymentStatus,
+    cancellationStatus: notification.cancellationStatus,
     paymentRequiredWindow,
     paymentRequiredExpiry,
     customerName: notification.customerName,

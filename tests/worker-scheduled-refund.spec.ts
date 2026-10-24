@@ -94,15 +94,21 @@ test("scheduled cancellation refunds and notices settle once through the shared 
     confirmedBookingCleanup({
       stem: identity.stem,
       administrator: identity.administrator,
+      terminalRequest: true,
     });
   const observe = () =>
     JSON.parse(
       harness.runSql(
-        `select jsonb_build_object('capture',(select to_jsonb(capture) from public.payment_provider_operations capture join public.booking_confirmations confirmation on confirmation.capture_operation_id=capture.id where confirmation.booking_request_id='${request}'),'refunds',(select jsonb_agg(to_jsonb(operation) order by operation.id) from public.payment_provider_operations operation where operation.claim_id='${identity.claim}' and operation.operation_kind='refund'),'effects',(select sum(effect.physical_execution_count) from public.simulated_payment_effects effect join public.payment_provider_operations operation on operation.id=effect.operation_id where operation.claim_id='${identity.claim}' and operation.operation_kind='refund'),'returnedEvents',(select count(*) from public.booking_notification_events where booking_request_id='${request}' and event_kind='refund_returned'),'notices',(select jsonb_agg(jsonb_build_object('logicalId',w.logical_id,'receiptId',w.receipt_id,'eventId',w.event_id,'kind',e.event_kind,'recipientRole',w.recipient_role,'state',w.state,'payload',w.payload,'supplierDeliveryReference',w.supplier_delivery_reference) order by w.logical_id) from public.booking_confirmation_notification_work w join public.booking_notification_events e on e.id=w.event_id where w.booking_request_id='${request}'),'notificationEffects',(select count(*) from public.fictional_booking_confirmation_notification_effects where booking_request_id='${request}'));`,
+        `select jsonb_build_object('capture',(select to_jsonb(capture) from public.payment_provider_operations capture join public.booking_confirmations confirmation on confirmation.capture_operation_id=capture.id where confirmation.booking_request_id='${request}'),'refunds',(select jsonb_agg(to_jsonb(operation) order by operation.id) from public.payment_provider_operations operation where operation.claim_id='${identity.claim}' and operation.operation_kind='refund'),'effects',(select sum(effect.physical_execution_count) from public.simulated_payment_effects effect join public.payment_provider_operations operation on operation.id=effect.operation_id where operation.claim_id='${identity.claim}' and operation.operation_kind='refund'),'returnedEvents',(select count(*) from public.booking_notification_events where booking_request_id='${request}' and event_kind='refund_returned'),'notices',(select jsonb_agg(jsonb_build_object('logicalId',w.logical_id,'receiptId',w.receipt_id,'eventId',w.event_id,'kind',e.event_kind,'recipientRole',w.recipient_role,'state',w.state,'payload',w.payload,'supplierDeliveryReference',w.supplier_delivery_reference) order by w.logical_id) from public.booking_confirmation_notification_work w join public.booking_notification_events e on e.id=w.event_id where w.booking_request_id='${request}' and e.event_kind in ('cancelled','refund_requested','refund_returned')),'notificationEffects',(select count(*) from public.fictional_booking_confirmation_notification_effects where booking_request_id='${request}'));`,
       ),
     );
   try {
     harness.runSql(cleanup);
+    expect(
+      harness.runSql(
+        `select count(*) from public.owner_request_notifications where booking_request_id='${request}';`,
+      ),
+    ).toBe("0");
     harness.runSql(`${fixture} select pg_temp.seed_cancellation_booking('2101-01-01'); set local role authenticated; select set_config('request.jwt.claim.sub','${identity.owner}',true);
       select public.commit_booking_cancellation('${request}','90000000-0000-4000-8000-00000000${identity.stem}4','cottage_owner','Unavailable property',null,jsonb_build_object('revision',public.get_booking_cancellation_facts('${request}','cottage_owner')->>'revision','refundObligation','{"bookingPriceFils":110000000,"bookingServiceFeeFils":5000000}'::jsonb)); commit;`);
     const before = observe();
@@ -167,6 +173,11 @@ test("scheduled cancellation refunds and notices settle once through the shared 
     expect(observe()).toEqual(settled);
   } finally {
     harness.runSql(cleanup);
+    expect(
+      harness.runSql(
+        `select count(*) from public.owner_request_notifications where booking_request_id='${request}';`,
+      ),
+    ).toBe("0");
   }
 });
 
@@ -288,6 +299,7 @@ test("hosted fictional refund and settlement survive fresh Worker instances", as
     confirmedBookingCleanup({
       stem: identity.stem,
       administrator: identity.administrator,
+      terminalRequest: true,
       completion: true,
       settlement: true,
     });
@@ -296,6 +308,11 @@ test("hosted fictional refund and settlement survive fresh Worker instances", as
     let second: Miniflare | undefined;
     try {
       harness.runSql(cleanup);
+      expect(
+        harness.runSql(
+          `select count(*) from public.owner_request_notifications where booking_request_id='${identity.request}';`,
+        ),
+      ).toBe("0");
       const amountFils = kind === "refund" ? 115000000 : 105000000;
       const fingerprint = createHash("sha256")
         .update(
@@ -530,6 +547,11 @@ test("hosted fictional refund and settlement survive fresh Worker instances", as
           await second?.dispose();
         } finally {
           harness.runSql(cleanup);
+          expect(
+            harness.runSql(
+              `select count(*) from public.owner_request_notifications where booking_request_id='${identity.request}';`,
+            ),
+          ).toBe("0");
         }
       }
     }

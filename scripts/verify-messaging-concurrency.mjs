@@ -170,7 +170,7 @@ try {
   delete from public.booking_request_payment_required_expiry_work
     where booking_request_id='${request}';
   set session_replication_role=origin;
-  ${confirmedBookingCleanup()}
+  ${confirmedBookingCleanup({ terminalRequest: true })}
 `;
   const resultLine = (session) =>
     session.stdout.split("\n").find((line) => line.startsWith("{"));
@@ -369,6 +369,13 @@ try {
     );
     harness.markTimingPhase("cleanup");
     harness.runSql(cleanup);
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.owner_request_notifications where booking_request_id='${request}';`,
+      ),
+      "0",
+      "cleanup removes the owned request notice",
+    );
     assert.deepEqual(
       JSON.parse(harness.runSql(publicationResidueSql)),
       { sourceRevisions: 0, reviewCycles: 0, publications: 0 },
@@ -563,6 +570,13 @@ try {
     );
     harness.markTimingPhase("cleanup");
     harness.runSql(cleanup);
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.owner_request_notifications where booking_request_id='${request}';`,
+      ),
+      "0",
+      "cleanup removes the owned request notice",
+    );
     assert.deepEqual(
       JSON.parse(harness.runSql(publicationResidueSql)),
       { sourceRevisions: 0, reviewCycles: 0, publications: 0 },
@@ -968,6 +982,13 @@ try {
     harness.markTimingPhase("setup");
     harness.runSql(cleanup);
     assert.equal(
+      harness.runSql(
+        `select count(*) from public.owner_request_notifications where booking_request_id='${request}';`,
+      ),
+      "0",
+      "cleanup removes the owned request notice",
+    );
+    assert.equal(
       harness.runSql(`select
       (select count(*) from auth.users where id='${administrator}')+
       (select count(*) from public.account_contexts where user_id='${administrator}');`),
@@ -1167,6 +1188,13 @@ try {
 
     harness.markTimingPhase("setup");
     harness.runSql(cleanup);
+    assert.equal(
+      harness.runSql(
+        `select count(*) from public.owner_request_notifications where booking_request_id='${request}';`,
+      ),
+      "0",
+      "cleanup removes the owned request notice",
+    );
     harness.runSql(`
     ${fixture("PAYMENT EVIDENCE FIXTURE")}
     ${cutoffCancellationFixture}
@@ -1292,6 +1320,7 @@ try {
           'suspensionActions',(select count(*) from private.marketplace_suspension_actions where account_user_id in ('${customer}','${owner}') or profile_id='${profile}'),
           'listings',(select count(*) from public.cottage_marketplace_listings where profile_id='${profile}'),
           'requests',(select count(*) from public.booking_requests where id='${request}'),
+          'ownerNotices',(select count(*) from public.owner_request_notifications where booking_request_id='${request}'),
           'attempts',(select count(*) from public.booking_request_submission_attempts where id='${attempt}'),
           'conversations',(select count(*) from public.messaging_conversations where profile_id='${profile}'),
           'links',(select count(*) from public.messaging_conversation_booking_requests where booking_request_id='${request}'),
@@ -1317,6 +1346,7 @@ try {
           suspensionActions: 0,
           listings: 0,
           requests: 0,
+          ownerNotices: 0,
           attempts: 0,
           conversations: 0,
           links: 0,

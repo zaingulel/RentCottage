@@ -4343,9 +4343,10 @@ CREATE OR REPLACE FUNCTION "public"."list_owner_booking_request_notifications"()
     SET "search_path" TO ''
     AS $$
   select coalesce(jsonb_agg(jsonb_build_object('id',requests.id,'bookingRequestReference',requests.booking_request_reference,
-    'status',requests.status,'paymentStatus',public.booking_request_payment_status(requests),
-    'paymentRequiredWindow',public.booking_request_payment_required_window(requests),
-    'paymentRequiredExpiry',public.booking_request_payment_required_expiry_status(requests),
+    'status',requests.status,'cancellationStatus',case when cancellation.cancelled then 'cancelled' end,
+    'paymentStatus',case when not cancellation.cancelled then public.booking_request_payment_status(requests) end,
+    'paymentRequiredWindow',case when not cancellation.cancelled then public.booking_request_payment_required_window(requests) end,
+    'paymentRequiredExpiry',case when not cancellation.cancelled then public.booking_request_payment_required_expiry_status(requests) end,
     'customerName',requests.customer_name,'partySize',requests.party_size,'bookingNote',requests.booking_note,
     'cottageName',snapshots.quote_payload->>'cottageName','bookingPeriod',snapshots.quote_payload->'items',
     'bookingPriceIqd',(snapshots.quote_payload->>'bookingPriceIqd')::bigint,
@@ -4369,6 +4370,8 @@ CREATE OR REPLACE FUNCTION "public"."list_owner_booking_request_notifications"()
   from public.owner_request_notifications notifications
   join public.booking_requests requests on requests.id=notifications.booking_request_id
   join public.booking_snapshots snapshots on snapshots.id=requests.booking_snapshot_id
+  cross join lateral (select exists(select 1 from public.booking_cancellations cancellations
+    where cancellations.booking_request_id=requests.id) cancelled) cancellation
   where notifications.owner_user_id=(select auth.uid())
     and exists(select 1 from auth.users users where users.id=(select auth.uid()) and users.phone_confirmed_at is not null)
     and exists(select 1 from public.account_contexts contexts
