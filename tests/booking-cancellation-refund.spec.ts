@@ -1809,7 +1809,7 @@ test.describe("retained cancellation and refund controls", () => {
   test("owner must supply a reason and retains the no-payout cancellation outcome", async ({
     page,
     baseURL,
-  }) => {
+  }, testInfo) => {
     await participant(page.context(), owner, baseURL);
     await page.goto(`/ar/owner/booking-requests/${reference}`);
     const form = page.getByRole("form", { name: messages.ar.cancel });
@@ -1890,6 +1890,29 @@ test.describe("retained cancellation and refund controls", () => {
       );
       await details.focus();
       await expect(details).toBeFocused();
+      const desktopImage = testInfo.outputPath(
+        `owner-cancelled-dashboard-${locale}-desktop.png`,
+      );
+      await page.screenshot({ path: desktopImage, fullPage: true });
+      await testInfo.attach(`owner-cancelled-dashboard-${locale}-desktop`, {
+        path: desktopImage,
+        contentType: "image/png",
+      });
+      const originalViewport = page.viewportSize()!;
+      try {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await expect(card).toBeVisible();
+        const phoneImage = testInfo.outputPath(
+          `owner-cancelled-dashboard-${locale}-phone.png`,
+        );
+        await page.screenshot({ path: phoneImage, fullPage: true });
+        await testInfo.attach(`owner-cancelled-dashboard-${locale}-phone`, {
+          path: phoneImage,
+          contentType: "image/png",
+        });
+      } finally {
+        await page.setViewportSize(originalViewport);
+      }
       await details.press("Enter");
       await expect(
         page.getByRole("heading", {
